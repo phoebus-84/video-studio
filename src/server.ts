@@ -7,6 +7,8 @@ import { EventStreamManager } from "./events/bus.js";
 import { WorkspaceWatcher } from "./events/watcher.js";
 import { registerEditorRoutes } from "./routes/editor.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
+import fastifyStatic from "@fastify/static";
+import * as path from "node:path";
 import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
 import { configureLogging, getRedactPaths } from "./logging/index.js";
@@ -100,6 +102,14 @@ export async function createGateway(
       ? new FileSystemWorkspaceService(config.libraryRoots)
       : new FixtureWorkspaceService()
   );
+
+  // ── Serve library assets as static files ─────────────────────────────
+  const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
+  await app.register(fastifyStatic, {
+    root: path.resolve(libraryRoot),
+    prefix: "/library/",
+    decorateReply: false,
+  });
 
   registerRoutes(app, config, ws);
   registerEditorRoutes(app, {

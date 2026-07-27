@@ -95,13 +95,24 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       const epPath = path.join(root, channel, series, episode);
       try {
         await fs.access(epPath);
-        return {
+        const status = await this.detectStatus(epPath);
+        const base: EpisodeSummary = {
           slug: episode,
           title: this.titleFromSlug(episode),
-          status: await this.detectStatus(epPath),
+          status,
           pipeline: "narrated-illustrated-video",
           updatedAt: new Date().toISOString(),
         };
+
+        // Try to read episode.json for richer data
+        try {
+          const metaPath = path.join(epPath, "episode.json");
+          const raw = await fs.readFile(metaPath, "utf-8");
+          const meta = JSON.parse(raw);
+          return { ...base, ...meta, slug: episode, status, updatedAt: new Date().toISOString() };
+        } catch {
+          return base;
+        }
       } catch { /* not found */ }
     }
     return null;
