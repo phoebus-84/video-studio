@@ -62,8 +62,9 @@ async function synthesizeSpeech(text: string, voice: string, speed: number): Pro
     throw new Error(`TTS error: ${res.status} ${err?.detail ?? res.statusText}`);
   }
 
-  const result = await res.json() as { audio_path: string; duration_sec: number; format: string };
-  return { audioPath: result.audio_path, durationSec: result.duration_sec };
+  const body = await res.json() as { ok: boolean; result?: { wav_path: string; duration_sec: number; wav_size_bytes: number; job_id: string } };
+  if (!body.ok || !body.result) throw new Error(`TTS synthesis failed: ${JSON.stringify(body)}`);
+  return { audioPath: body.result.wav_path, durationSec: body.result.duration_sec };
 }
 
 // ── FFmpeg composition ─────────────────────────────────────────────────────
@@ -76,10 +77,6 @@ async function composeEpisodeVideo(
   const scenesDir = join(episodeDir, "assets", "images");
   const narrationFile = join(episodeDir, "artifacts", "narration", "narration-full.wav");
 
-  // Build frame PNGs
-  const frameDir = join(episodeDir, "artifacts", "frames");
-  mkdirSync(frameDir, { recursive: true });
-
   // Use Python PIL for image preprocessing via a quick inline call
   const { execSync: es } = await import("node:child_process");
 
@@ -89,6 +86,24 @@ async function composeEpisodeVideo(
     .sort();
 
   if (imgFiles.length === 0) throw new Error("No scene images found");
+
+  // Concatenate scene narration files if present
+  const narrationDir = join(episodeDir, "artifacts", "narration");
+  if (existsSync(narrationDir) && !existsSync(narrationFile)) {
+    const wavFiles = (await import("node:fs")).readdirSync(narrationDir)
+      .filter(f => f.match(/^s\d+\.wav$/))
+      .sort();
+    if (wavFiles.length > 0) {
+      const concatList = join(episodeDir, "artifacts", "narration", "concat.txt");
+      const listContent = wavFiles.map(f => `file '${join(narrationDir, f)}'`).join("\n");
+      (await import("node:fs")).writeFileSync(concatList, listContent);
+      es(`ffmpeg -y -f concat -safe 0 -i "${concatList}" -c copy "${narrationFile}" 2>/dev/null`);
+    }
+  }
+
+  // Build frame PNGs
+  const frameDir = join(episodeDir, "artifacts", "frames");
+  mkdirSync(frameDir, { recursive: true });
 
   // Convert jpgs to numbered png frames
   for (let i = 0; i < imgFiles.length; i++) {
@@ -204,9 +219,17 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       try {
         const result = await synthesizeSpeech(params.text, params.voice ?? "default", params.speed ?? 1.0);
 
+        // Copy audio to episode artifacts/narration/
+        const dir = episodeDir(params.channel, params.series, params.episode);
+        const narrationDir = join(dir, "artifacts", "narration");
+        mkdirSync(narrationDir, { recursive: true });
+        const destPath = join(narrationDir, `${params.sceneId}.wav`);
+        const { copyFileSync } = await import("node:fs");
+        copyFileSync(result.audioPath, destPath);
+
         return {
-          content: [{ type: "text" as const, text: `✅ ${params.sceneId} — ${result.durationSec.toFixed(1)}s` }],
-          details: { audioPath: result.audioPath, durationSec: result.durationSec },
+          content: [{ type: "text" as const, text: `✅ ${params.sceneId} — ${result.durationSec.toFixed(1)}s → ${destPath}` }],
+          details: { audioPath: destPath, durationSec: result.durationSec },
         };
       } catch (err) {
         return {
