@@ -1,8 +1,10 @@
 <script lang="ts">
   import { episode } from "$lib/episode-store.svelte.ts";
-  import { RENDER_REPORT, RENDER_ATTEMPT } from "$lib/render-fixtures";
 
-  /* For the MVP, we reference episode + render state. */
+  // Render status derived from episode assets (real)
+  const renderStatus = $derived(episode.assets.video ? "current" : "not-started");
+  const renderQaOverall = $derived(episode.assets.video ? "pass" : "pending");
+
   const ep = $derived(episode.state);
 
   const budgetPct = $derived.by(() => {
@@ -77,11 +79,11 @@
     <!-- Render status -->
     <div class="pb-render">
       <span class="pb-render-label">Last render</span>
-      <span class="pb-render-status" data-status={RENDER_ATTEMPT.status}>
-        {RENDER_ATTEMPT.status === "current" ? "Current" : RENDER_ATTEMPT.status}
+      <span class="pb-render-status" data-status={renderStatus}>
+        {renderStatus === "current" ? "Current" : renderStatus}
       </span>
-      <span class="pb-render-qa" data-overall={RENDER_REPORT.overall}>
-        {RENDER_REPORT.overall === "pass" ? "QA passed" : "QA failed"}
+      <span class="pb-render-qa" data-overall={renderQaOverall}>
+        {renderQaOverall === "pass" ? "QA passed" : "QA pending"}
       </span>
     </div>
   </div>

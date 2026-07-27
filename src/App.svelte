@@ -82,15 +82,16 @@
     if (episodeMap[key]) {
       episode.load(episodeMap[key]!);
     } else if (gatewayClient) {
-      // Parse channel/episode from the key (format: channel/episode)
       const parts = key.split("/");
-      if (parts.length >= 2) {
-        // Find the series from the library tree
-        const channel = parts[0]!;
-        const epSlug = parts[1]!;
+      if (parts.length === 3) {
+        const [channel, series, epSlug] = parts;
+        episode.loadFromGateway(gatewayClient, channel!, series!, epSlug!);
+      } else if (parts.length === 2) {
+        // Legacy: channel/episode format — infer series from library tree
+        const [channel, epSlug] = parts;
         const chEntry = library.tree.channels.find((c) => c.slug === channel);
         const series = chEntry?.series?.[0]?.slug ?? "unknown";
-        episode.loadFromGateway(gatewayClient, channel, series, epSlug);
+        episode.loadFromGateway(gatewayClient, channel!, series, epSlug!);
       }
     }
   });

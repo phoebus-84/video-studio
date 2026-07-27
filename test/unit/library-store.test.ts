@@ -27,5 +27,5 @@ test("loadError sets error state", () => {
 test("select updates selectedEpisode", () => {
   library.loadFixture(buildFixtureTree(DEFAULT_FIXTURE));
   library.select("tech-explainer", "how-it-works", "ep-02-memory");
-  expect(library.selectedEpisode).toBe("tech-explainer/ep-02-memory");
+  expect(library.selectedEpisode).toBe("tech-explainer/how-it-works/ep-02-memory");
 });

@@ -69,8 +69,8 @@ class LibraryStore {
   }
 
   /** Mark an episode as selected. */
-  select(channel: string, _series: string, episode: string) {
-    this.selectedEpisode = `${channel}/${episode}`;
+  select(channel: string, series: string, episode: string) {
+    this.selectedEpisode = `${channel}/${series}/${episode}`;
   }
 }
 

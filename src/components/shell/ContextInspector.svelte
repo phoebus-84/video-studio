@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { assets } from "$lib/asset-store.svelte.ts";
-  import { ASSETS_FIXTURE } from "$lib/asset-fixtures";
+  import { assets as assetStore } from "$lib/asset-store.svelte.ts";
+  import { episode } from "$lib/episode-store.svelte.ts";
   import type { AssetGroup } from "$lib/asset-types";
   import { scenes } from "$lib/scene-store.svelte.ts";
   import AssetPanel from "../assets/AssetPanel.svelte";
@@ -13,41 +13,35 @@
   type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
-  // Build asset groups from scenes if fixtures don't cover them.
-  // Guarded by _loaded to prevent re-entry from asset store writes.
-  let _groupsLoaded = false;
+  // Build asset groups from episode scenes + real image URLs
+  let _groupsBuilt = false;
   $effect(() => {
     const sceneList = scenes.scenes;
-    if (sceneList.length > 0 && !_groupsLoaded) {
-      _groupsLoaded = true;
+    const imgUrls = episode.assets.images;
+    if (sceneList.length > 0 && !_groupsBuilt) {
+      _groupsBuilt = true;
       untrack(() => {
-        const fixtureIds = new Set(ASSETS_FIXTURE.map((g) => g.sceneId));
-        const missing = sceneList.filter((s) => !fixtureIds.has(s.id));
-        if (missing.length > 0) {
-          const generated: AssetGroup[] = missing.map((scene) => ({
+        const generated: AssetGroup[] = sceneList.map((scene) => ({
+          sceneId: scene.id,
+          sceneTitle: scene.title,
+          attempts: [{
+            id: `gen-${scene.id}-1`,
             sceneId: scene.id,
-            sceneTitle: scene.title,
-            attempts: [{
-              id: `gen-${scene.id}-1`,
-              sceneId: scene.id,
-              prompt: scene.intent ?? `Asset for ${scene.title}`,
-              referenceImages: [],
-              provider: "fal.ai",
-              model: "flux-dev-v1",
-              seed: 42,
-              dimensions: { width: 1920, height: 1080 },
-              cost: 0,
-              license: "pending",
-              createdAt: new Date().toISOString(),
-              selected: true,
-              filePath: null,
-              fileAvailable: false,
-            }],
-          }));
-          assets.load([...ASSETS_FIXTURE, ...generated]);
-        } else {
-          assets.load(ASSETS_FIXTURE);
-        }
+            prompt: scene.intent ?? `Asset for ${scene.title}`,
+            referenceImages: [],
+            provider: "fal.ai",
+            model: "flux-dev-v1",
+            seed: 42,
+            dimensions: { width: 1920, height: 1080 },
+            cost: 0,
+            license: "pending",
+            createdAt: new Date().toISOString(),
+            selected: true,
+            filePath: imgUrls[scene.id] ?? null,
+            fileAvailable: imgUrls[scene.id] != null,
+          }],
+        }));
+        assetStore.load(generated);
       });
     }
   });

@@ -1,13 +1,25 @@
 <script lang="ts">
-  import { RENDER_ATTEMPT, RENDER_REPORT } from "$lib/render-fixtures";
+  import { episode } from "$lib/episode-store.svelte.ts";
   import type { RenderAttempt, RenderReport } from "$lib/render-types";
+  import { RENDER_ATTEMPT, RENDER_REPORT } from "$lib/render-fixtures";
 
   interface Props {
-    attempt?: RenderAttempt;
-    report?: RenderReport;
+    attempt?: RenderAttempt | null;
+    report?: RenderReport | null;
   }
 
-  let { attempt = RENDER_ATTEMPT, report = RENDER_REPORT }: Props = $props();
+  let { attempt = null, report = null }: Props = $props();
+
+  // Derive real render state from episode store
+  const realAttempt = $derived(
+    attempt ?? (
+      episode.assets.video
+        ? { ...RENDER_ATTEMPT, fileAvailable: true, filePath: episode.assets.video }
+        : { ...RENDER_ATTEMPT, fileAvailable: false, filePath: "Not yet rendered" }
+    )
+  );
+
+  const realReport = $derived(report ?? RENDER_REPORT);
 
   let currentTime = $state(0);
   let showCaptions = $state(true);
@@ -28,32 +40,38 @@
     /* In production: open a review thread at currentTime. */
   }
 
-  const passCount = $derived(report.findings.filter((f) => f.severity === "pass").length);
-  const warnCount = $derived(report.findings.filter((f) => f.severity === "warn").length);
-  const failCount = $derived(report.findings.filter((f) => f.severity === "fail").length);
+  const passCount = $derived(realReport.findings.filter((f) => f.severity === "pass").length);
+  const warnCount = $derived(realReport.findings.filter((f) => f.severity === "warn").length);
+  const failCount = $derived(realReport.findings.filter((f) => f.severity === "fail").length);
 </script>
 
 <div class="render-player" aria-label="Render viewer">
   <div class="rp-header">
     <h4 class="rp-title">Render</h4>
-    <span class="rp-status" data-status={attempt.status}>
-      {attempt.status === "current" ? "Current Deliverable" : attempt.status}
+    <span class="rp-status" data-status={realAttempt.status}>
+      {realAttempt.status === "current" ? "Current Deliverable" : realAttempt.status}
     </span>
   </div>
 
-  <!-- Placeholder video area -->
-  <div class="rp-video" aria-label="Video preview — {attempt.fileAvailable ? 'available' : 'unavailable'}">
-    {#if attempt.fileAvailable}
-      <div class="rp-video-placeholder">
-        <span class="rp-video-icon" aria-hidden="true">▶</span>
-        <span class="rp-video-label">
-          1920×1080 · {formatDuration(attempt.durationSeconds)} · {attempt.fps}fps
-        </span>
-      </div>
+  <!-- Video display -->
+  <div class="rp-video" aria-label="Video preview — {realAttempt.fileAvailable ? 'available' : 'unavailable'}">
+    {#if realAttempt.fileAvailable}
+      {#if episode.assets.video}
+        <video controls class="rp-real-video" src={episode.assets.video}>
+          Your browser cannot play this video.
+        </video>
+      {:else}
+        <div class="rp-video-placeholder">
+          <span class="rp-video-icon" aria-hidden="true">▶</span>
+          <span class="rp-video-label">
+            1920×1080 · {formatDuration(realAttempt.durationSeconds)} · {realAttempt.fps}fps
+          </span>
+        </div>
+      {/if}
     {:else}
       <div class="rp-video-missing">
         <span>Render file unavailable</span>
-        <span class="rp-missing-path">{attempt.filePath}</span>
+        <span class="rp-missing-path">{realAttempt.filePath}</span>
       </div>
     {/if}
   </div>
@@ -63,7 +81,7 @@
     <div class="rp-timecode" aria-label="Current timecode">
       <span class="rp-tc-current">{formatDuration(currentTime)}</span>
       <span class="rp-tc-sep">/</span>
-      <span class="rp-tc-total">{formatDuration(attempt.durationSeconds)}</span>
+      <span class="rp-tc-total">{formatDuration(realAttempt.durationSeconds)}</span>
     </div>
     <div class="rp-transport-actions">
       <label class="rp-caption-toggle">
@@ -82,17 +100,17 @@
 
   <!-- Meta row -->
   <div class="rp-meta">
-    <span>{attempt.codecs.video} / {attempt.codecs.audio}</span>
-    <span>{formatBytes(attempt.fileSizeBytes)}</span>
-    <span>Render {attempt.id}</span>
+    <span>{realAttempt.codecs.video} / {realAttempt.codecs.audio}</span>
+    <span>{formatBytes(realAttempt.fileSizeBytes)}</span>
+    <span>Render {realAttempt.id}</span>
   </div>
 
   <!-- QA Report -->
   <div class="rp-qa" aria-label="Quality report">
     <h5 class="rp-qa-title">
       Quality Report
-      <span class="rp-qa-summary" data-overall={report.overall}>
-        {report.overall === "pass" ? "✓ Pass" : "✗ Fail"}
+      <span class="rp-qa-summary" data-overall={realReport.overall}>
+        {realReport.overall === "pass" ? "✓ Pass" : "✗ Fail"}
       </span>
       <span class="rp-qa-counts">
         {passCount} pass · {warnCount} warn · {failCount} fail
@@ -100,7 +118,7 @@
     </h5>
 
     <ol class="rp-findings">
-      {#each report.findings as finding (finding.code)}
+      {#each realReport.findings as finding (finding.code)}
         <li class="rp-finding" data-severity={finding.severity}>
           <span class="rp-finding-symbol">
             {finding.severity === "pass" ? "✓" : finding.severity === "warn" ? "⚠" : "✗"}
@@ -147,7 +165,6 @@
     color: var(--vs-state-blocked);
   }
 
-  /* Placeholder video */
   .rp-video {
     aspect-ratio: 16 / 9;
     background: var(--vs-bg-inset);
@@ -156,6 +173,13 @@
     align-items: center;
     justify-content: center;
     margin-bottom: var(--vs-space-3);
+    overflow: hidden;
+  }
+
+  .rp-real-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
 
   .rp-video-placeholder {
@@ -189,7 +213,6 @@
     margin-top: var(--vs-space-1);
   }
 
-  /* Transport */
   .rp-transport {
     display: flex;
     align-items: center;
@@ -246,7 +269,6 @@
     background: var(--vs-accent-hover);
   }
 
-  /* Meta */
   .rp-meta {
     display: flex;
     gap: var(--vs-space-3);
@@ -258,7 +280,6 @@
     border-bottom: 1px solid var(--vs-border);
   }
 
-  /* QA */
   .rp-qa-title {
     font-size: var(--vs-text-sm);
     font-weight: var(--vs-font-weight-semibold);

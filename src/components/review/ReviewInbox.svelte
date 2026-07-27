@@ -1,9 +1,26 @@
 <script lang="ts">
-  import { INBOX_FIXTURE } from "$lib/review-fixtures";
+  import { episode } from "$lib/episode-store.svelte.ts";
   import type { ReviewThread } from "$lib/review-types";
   import { THREAD_STATUS_LABELS, AGENT_STATUS_LABELS } from "$lib/review-types";
 
-  let threads = $state<ReviewThread[]>([...INBOX_FIXTURE]);
+  // Threads from episode store (live) — fall back to empty
+  const threads = $derived(
+    episode.state.phase === "ready"
+      ? (episode.state.episode.reviews ?? []).map((r: any) => ({
+          id: r.id ?? `thread-${Date.now()}`,
+          anchor: r.anchor ?? "",
+          status: (r.status ?? "open") as ReviewThread["status"],
+          author: r.author ?? "unknown",
+          body: r.body ?? "",
+          agentStatus: (r.agentStatus ?? "idle") as ReviewThread["agentStatus"],
+          createdAt: r.createdAt ?? new Date().toISOString(),
+        })) as ReviewThread[]
+      : [] as ReviewThread[]
+  );
+
+  let mutableThreads = $state<ReviewThread[]>([]);
+  $effect(() => { mutableThreads = [...threads]; });
+
   let expandedId = $state<string | null>(null);
   let replyText = $state("");
 
@@ -12,14 +29,14 @@
   }
 
   function resolve(id: string) {
-    threads = threads.map((t) =>
+    mutableThreads = mutableThreads.map((t) =>
       t.id === id ? { ...t, status: "resolved" as const } : t,
     );
   }
 
   function sendReply(threadId: string) {
     if (!replyText.trim()) return;
-    threads = threads.map((t) => {
+    mutableThreads = mutableThreads.map((t) => {
       if (t.id !== threadId) return t;
       return {
         ...t,
@@ -39,7 +56,7 @@
   }
 
   function sortedThreads(): ReviewThread[] {
-    return [...threads].sort((a, b) => {
+    return [...mutableThreads].sort((a, b) => {
       /* Open/reopened first, then by recency. */
       const order = { open: 0, reopened: 1, resolved: 2 };
       return (
@@ -49,7 +66,7 @@
     });
   }
 
-  const openCount = $derived(threads.filter((t) => t.status !== "resolved").length);
+  const openCount = $derived(mutableThreads.filter((t) => t.status !== "resolved").length);
 </script>
 
 <div class="inbox" aria-label="Review inbox">
