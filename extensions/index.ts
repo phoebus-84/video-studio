@@ -14,6 +14,7 @@ import { registerWorkspaceTools } from "../src/workspace-tools.js";
 import { registerPipelineTools } from "../src/pipeline-tools.js";
 import { registerCapabilityTools } from "../src/capability-tools.js";
 import { registerSkillTools } from "../src/skill-tools.js";
+import { registerSlashCommands } from "../src/slash-commands.js";
 
 // ---------------------------------------------------------------------------
 // Module metadata
@@ -272,4 +273,8 @@ export default function (pi: ExtensionAPI): void {
   // --- Register skill and context tools ---------------------------------
 
   registerSkillTools(pi);
+
+  // --- Register slash commands ------------------------------------------
+
+  registerSlashCommands(pi);
 }
