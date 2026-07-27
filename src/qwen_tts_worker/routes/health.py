@@ -14,6 +14,7 @@ import time
 from fastapi import APIRouter, Request
 
 from qwen_tts_worker import __version__
+from qwen_tts_worker.models.diagnostics import DepStatus, DepProbe, probe_all
 from qwen_tts_worker.models.health import (
     DependencyCheck,
     DependencyStatus,
@@ -81,7 +82,27 @@ def _probe_dependencies() -> list[DependencyCheck]:
             )
         )
 
+    # --- External tool probes (mlx-audio, ffmpeg) ---
+    for probe in probe_all():
+        deps.append(_depcheck_from_probe(probe))
+
     return deps
+
+
+def _depcheck_from_probe(probe: DepProbe) -> DependencyCheck:
+    """Convert a diagnostics DepProbe into a health DependencyCheck."""
+    if probe.status == DepStatus.OK:
+        dep_status = DependencyStatus.OK
+    else:
+        dep_status = DependencyStatus.UNAVAILABLE
+    detail = probe.detail
+    if probe.version:
+        detail = (detail or "") + f" (version: {probe.version})".rstrip()
+    return DependencyCheck(
+        name=probe.name,
+        status=dep_status,
+        detail=detail or None,
+    )
 
 
 def _compute_service_status(

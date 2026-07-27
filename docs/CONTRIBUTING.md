@@ -12,22 +12,31 @@ qwen-tts-worker/
 │   ├── app.py              # FastAPI application factory
 │   ├── config.py           # Typed settings
 │   ├── logging_config.py   # Structured logging setup
+│   ├── cli/                # CLI commands
+│   │   └── __init__.py     # Model download command
 │   ├── models/             # Pydantic API models
 │   │   ├── health.py
 │   │   ├── errors.py
+│   │   ├── registry.py     # Model catalogue and validation
+│   │   ├── diagnostics.py  # External dependency probes
 │   │   ├── voices.py
 │   │   └── jobs.py
 │   └── routes/             # API route handlers
 │       ├── health.py
+│       ├── models.py       # Model registry endpoints
 │       └── voices.py
 ├── tests/                  # Test suite
 │   ├── conftest.py
 │   ├── test_app.py
 │   ├── test_config.py
+│   ├── test_diagnostics.py
+│   ├── test_download.py
 │   ├── test_errors.py
 │   ├── test_health.py
 │   ├── test_logging.py
-│   └── test_models.py
+│   ├── test_models.py
+│   ├── test_models_endpoints.py
+│   └── test_registry.py
 └── docs/                   # Documentation
     ├── API.md
     ├── OPERATOR.md
@@ -68,6 +77,22 @@ pytest tests/test_health.py -v
 # A single test
 pytest tests/test_health.py::TestHealthEndpoint::test_health_model_starts_none -v
 ```
+
+## Model registry conventions
+
+The model registry (`models/registry.py`) is the **single source of truth** for
+which model size/profile combinations are supported. When adding or removing
+model support:
+
+1. Update `_SUPPORTED_COMBINATIONS` in `registry.py`.
+2. If a new model size is added, update `_MODEL_METADATA` in `cli/__init__.py`
+   with the download URL, expected size, and SHA-256 hashes.
+3. Update `docs/OPERATOR.md` — supported models table.
+4. Add tests for the new combination in both `test_registry.py` and
+   `test_models_endpoints.py`.
+
+The registry never claims an unsupported combination exists. The
+`GET /models` endpoint returns exactly what the registry declares.
 
 ## Code conventions
 

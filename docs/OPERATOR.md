@@ -64,6 +64,72 @@ qwen-tts-worker
 
 The server starts without loading a TTS model. Model readiness is visible via the health endpoint and transitions through `none` → `loading` → `ready` as the model lifecycle manager operates.
 
+## Model management
+
+### Supported models
+
+The worker serves two Qwen3-TTS MLX model sizes:
+
+| Size | Files | Profile support |
+|------|-------|----------------|
+| 0.6B | `model.safetensors`, `config.json` | base, custom_voice, voice_design |
+| 1.7B | `model.safetensors`, `config.json` | base, custom_voice, voice_design |
+
+Each combination of size × profile is a separate entry. The registry
+only reports on combinations it knows — it never invents or claims
+unsupported configurations.
+
+### Checking model status
+
+```bash
+# List all known models and their installation readiness
+curl -s http://127.0.0.1:8000/models | jq .
+
+# Check a single combination
+curl -s http://127.0.0.1:8000/models/0.6B/base | jq .
+```
+
+Statuses:
+
+| Status | Meaning |
+|--------|---------|
+| `not_installed` | No model directory exists |
+| `partial` | Directory exists but is missing required safetensors files |
+| `complete` | All required files present |
+| `corrupt` | Files exist but cannot be read or hash mismatch |
+
+### Downloading models
+
+Model downloads are **explicit** — the worker never downloads anything
+automatically. Use the CLI:
+
+```bash
+python -m qwen_tts_worker.cli.download 0.6B
+python -m qwen_tts_worker.cli.download 1.7B --models-dir /cache/models
+```
+
+The download command:
+
+1. Checks available disk space before starting any transfer (requires 2× expected size).
+2. Verifies SHA-256 hashes of every downloaded file.
+3. Writes a `.download.json` audit manifest alongside the model.
+4. Supports cancellation via `SIGINT` (Ctrl+C).
+
+### Diagnostics
+
+Check external tool availability:
+
+```bash
+curl -s http://127.0.0.1:8000/models/diagnostics | jq .
+```
+
+This probes:
+
+- **ffmpeg** — required for audio transcoding and WAV validation. Install via `brew install ffmpeg`.
+- **mlx-audio** — the MLX TTS runtime. Install via `pip install mlx-audio`.
+
+Both probes also appear in the `/health` endpoint dependency list.
+
 ## Health monitoring
 
 ### Quick liveness check

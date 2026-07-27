@@ -63,6 +63,95 @@ Per-dependency probe results (e.g. filesystem, model registry).
 }
 ```
 
+## Model registry
+
+### `GET /models`
+
+List every known Qwen3-TTS MLX model size/profile combination and its
+installation readiness.  The registry is the authoritative catalogue —
+combinations that are **not** supported are never listed.
+
+#### Response `200 OK`
+
+```json
+[
+  {
+    "size": "0.6B",
+    "profile": "base",
+    "status": "not_installed",
+    "path": "./models/qwen3-tts-0.6B/base",
+    "missing_files": [],
+    "installed_size_bytes": null,
+    "detail": "Directory does not exist."
+  },
+  {
+    "size": "0.6B",
+    "profile": "custom_voice",
+    "status": "complete",
+    "path": "./models/qwen3-tts-0.6B/custom_voice",
+    "missing_files": [],
+    "installed_size_bytes": 1300000000,
+    "detail": "All required files present."
+  }
+]
+```
+
+### `GET /models/{size}/{profile}`
+
+Get installation status for a single model size/profile combination.
+
+#### Response `200 OK`
+
+```json
+{
+  "size": "0.6B",
+  "profile": "base",
+  "status": "complete",
+  "path": "./models/qwen3-tts-0.6B/base",
+  "missing_files": [],
+  "installed_size_bytes": 1300000000,
+  "detail": "All required files present."
+}
+```
+
+#### Response `404 Not Found`
+
+Returned when the size, profile, or combination is unknown.
+
+```json
+{
+  "error": "Unknown model size: '3B'. Known sizes: 0.6B, 1.7B",
+  "detail": [],
+  "request_id": "..."
+}
+```
+
+### `GET /models/diagnostics`
+
+Run mlx-audio and FFmpeg dependency probes. Returns status for each
+external tool required by the TTS pipeline. Does **not** load any model.
+
+#### Response `200 OK`
+
+```json
+{
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "status": "ok",
+      "version": "6.1.1",
+      "detail": "Found at /usr/local/bin/ffmpeg"
+    },
+    {
+      "name": "mlx-audio",
+      "status": "ok",
+      "version": "0.1.0",
+      "detail": "Importable; no model loaded."
+    }
+  ]
+}
+```
+
 ## Voice profiles
 
 Voice profiles describe how a narrator should sound. They are persistent
@@ -187,6 +276,5 @@ The following endpoints will be added in subsequent issues:
 - `POST /jobs` — Submit a narration segment for synthesis (qtw-2af.4)
 - `GET /jobs/{job_id}` — Poll job status
 - `DELETE /jobs/{job_id}` — Cancel a job
-- `GET /models` — List available and installed models (qtw-2af.2)
 - `POST /models/load` — Load a model (qtw-2af.3)
 - `POST /models/unload` — Unload the current model
