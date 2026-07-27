@@ -1,14 +1,35 @@
 {
   "name": "@video-studio/web",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "npm run check:context && npm test",
+    "dev": "vite",
+    "build": "npm run check:context && vite build && npm run check:svelte",
+    "preview": "vite preview",
+    "check": "npm run check:context && npm run check:svelte && npm run check:types && npm run lint && npm test",
     "check:context": "node scripts/check-design-context.mjs",
-    "test": "node --test test/*.test.mjs"
+    "check:svelte": "svelte-check --tsconfig ./tsconfig.json",
+    "check:types": "tsc --noEmit",
+    "lint": "eslint --ext .ts,.svelte src test",
+    "test": "vitest run",
+    "test:browser": "playwright test"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-svelte": "^3.5.1",
+    "svelte": "^5.38.0",
+    "svelte-check": "^4.3.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.6",
+    "vitest": "^3.1.7"
   }
 }
