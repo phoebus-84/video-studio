@@ -266,5 +266,18 @@ export type {
   BudgetLedger,
 } from "./policy/index.js";
 
+// Rerun (targeted reruns and crash recovery)
+export {
+  planRerun,
+  analyzeRecovery,
+  canResumeWithoutDuplicate,
+} from "./rerun/index.js";
+export type {
+  RerunMode,
+  RerunStageEntry,
+  RerunPlan,
+  RecoveryState,
+} from "./rerun/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
