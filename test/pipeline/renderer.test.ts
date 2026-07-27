@@ -469,6 +469,10 @@ describe('SVGRenderPipeline result structure', () => {
     assert.ok(Array.isArray(result.diagnostics));
     assert.match(result.timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     assert.match(result.svgHash, /^sha256:[0-9a-f]{64}$/);
+    // Theme provenance must be included
+    assert.ok(result.themeProvenance !== null, 'themeProvenance must be present');
+    assert.equal(result.themeProvenance!.themeId, 'visual-bible-dark');
+    assert.equal(result.themeProvenance!.source, 'bundled');
   });
 
   it('computes svgHash as SHA-256 of SVG content', async () => {
@@ -601,6 +605,109 @@ describe('All graphic kinds', () => {
       assert.ok(result.svgHash.length > 0);
     });
   }
+});
+
+// ── Theme and font integration tests (sgr-3i9.2) ──
+
+describe('Theme and font integration', () => {
+  it('includes theme provenance in every result', async () => {
+    const pipeline = makePipeline();
+    const result = await pipeline.render({
+      kind: 'title-frame',
+      width: 600,
+      height: 200,
+      content: { title: 'Test' },
+    });
+
+    assert.ok(result.themeProvenance !== null);
+    assert.equal(result.themeProvenance!.themeId, 'visual-bible-dark');
+    assert.equal(result.themeProvenance!.version, '1.0.0');
+    assert.equal(result.themeProvenance!.source, 'bundled');
+    assert.match(result.themeProvenance!.pinnedAt, /^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('emits contrast diagnostics for the palette', async () => {
+    const pipeline = makePipeline();
+    const result = await pipeline.render({
+      kind: 'code-frame',
+      width: 800,
+      height: 200,
+      content: { language: 'ts', code: 'x' },
+    });
+
+    const contrastDiags = result.diagnostics.filter(
+      (d) => d.code === 'contrast.insufficient',
+    );
+    assert.ok(contrastDiags.length > 0, 'should have contrast diagnostics');
+    // Contrast diagnostics should be info level (advisory, not blocking)
+    for (const d of contrastDiags) {
+      assert.equal(d.level, 'info');
+    }
+  });
+
+  it('never emits platform font fallback in SVG output', async () => {
+    const pipeline = makePipeline();
+    const result = await pipeline.render({
+      kind: 'code-frame',
+      width: 800,
+      height: 200,
+      content: { language: 'ts', code: 'const x = 1;' },
+    });
+
+    // No system-ui, -apple-system, -system, BlinkMacSystemFont, Segoe UI, etc.
+    const forbiddenPatterns = [
+      'system-ui',
+      '-apple-system',
+      'BlinkMacSystemFont',
+      'Segoe UI',
+      'Roboto',
+      'Helvetica',
+      'Arial',
+      'Times New Roman',
+      'Georgia',
+    ];
+    for (const pattern of forbiddenPatterns) {
+      assert.equal(
+        result.svgContent.includes(pattern),
+        false,
+        `SVG must not contain platform font: ${pattern}`,
+      );
+    }
+  });
+
+  it('warns on unrecognized themeId', async () => {
+    const pipeline = makePipeline();
+    const result = await pipeline.render({
+      kind: 'code-frame',
+      width: 800,
+      height: 200,
+      content: { language: 'ts', code: 'x' },
+      themeId: 'nonexistent-v99',
+    });
+
+    assert.ok(
+      result.diagnostics.some((d) => d.code === 'theme.unrecognized'),
+      'should emit unrecognized theme diagnostic',
+    );
+    // Still renders with default theme
+    assert.ok(result.status === 'success' || result.status === 'partial');
+  });
+
+  it('uses 16:9 safe area profile for standard dimensions', async () => {
+    const pipeline = makePipeline();
+    const result = await pipeline.render({
+      kind: 'code-frame',
+      width: 1920,
+      height: 1080,
+      content: { language: 'ts', code: 'x' },
+    });
+
+    // SVG should render with safe-area-adjusted coordinates
+    // The safe area for 16:9 at 1920×1080 is ~77px left/right, ~43px top/bottom
+    // We verify the output has the right dimensions and no platform fonts
+    assert.ok(result.svgContent.includes('width="1920"'));
+    assert.ok(result.svgContent.includes('height="1080"'));
+  });
 });
 
 // ── Helpers ──

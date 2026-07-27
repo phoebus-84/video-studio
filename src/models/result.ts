@@ -1,6 +1,7 @@
 // ── Render result models ──
 
 import type { GraphicKind } from './request.js';
+import type { ThemeProvenance } from '../theme/types.js';
 
 // ── Diagnostic ──
 
@@ -52,4 +53,6 @@ export interface GraphicRenderResult {
   timestamp: string;
   /** Canonical sha256-prefixed hash of the SVG output, for integrity */
   svgHash: string;
+  /** Theme provenance — identifies the resolved theme token set and its origin */
+  themeProvenance: ThemeProvenance | null;
 }
