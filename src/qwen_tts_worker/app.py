@@ -15,7 +15,9 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from qwen_tts_worker import __version__
@@ -58,6 +60,15 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
         # Redact server header
         servers=[],
+    )
+
+    # --- CORS (allow web UI on localhost:5199) ---
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5199", "http://127.0.0.1:5199"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # --- Middleware: request-id injection ---
@@ -127,5 +138,11 @@ def create_app() -> FastAPI:
 
     # --- Routes ---
     app.include_router(api_router)
+
+    # Mount voices directory for WAV file serving
+    import os
+    voices_dir = os.path.join(os.getcwd(), "voices")
+    os.makedirs(voices_dir, exist_ok=True)
+    app.mount("/voices", StaticFiles(directory=voices_dir), name="voices")
 
     return app
