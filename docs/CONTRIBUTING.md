@@ -26,6 +26,7 @@ src/
   workspace.ts          — Temporary workspace lifecycle
   doctor.ts             — Diagnostic tool
   logging.ts            — Structured JSON-line logger with redaction
+  validator.ts          — Timeline semantic validator (pre-FFmpeg checks)
 tests/
   fixtures/
     fake-ffmpeg.ts      — Fake process system (state + FakeChildProcess)
@@ -36,6 +37,19 @@ docs/
 ```
 
 ## Design Decisions
+
+### Pre-FFmpeg validation
+
+The validator (`src/validator.ts`) enforces editorial constraints before any
+FFmpeg process is spawned. It detects:
+- Impossible timing (duration mismatches, overlaps, negative in-points)
+- Out-of-bounds captions/transitions/audio fades
+- Stale dependency markers from upstream systems
+- Missing or hash-mismatched assets (via injectable `AssetProbe`)
+
+The validator never silently clamps, reorders, or repairs editorial timing.
+Every rejection is a typed, machine-readable `ValidationMessage` with a code,
+JSON-Path location, and contextual diagnostics.
 
 ### No shell interpolation
 

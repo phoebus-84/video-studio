@@ -21,6 +21,27 @@ export type {
   Logger,
   DoctorReport,
   RequiredCapabilityReport,
+  // Timeline
+  Timeline,
+  TimelineVersion,
+  Canvas,
+  SafeArea,
+  OutputProfile,
+  Scene,
+  AssetRef,
+  Transition,
+  Caption,
+  AudioConfig,
+  VisualTransform,
+  Crop,
+  VideoFilter,
+  StaleMarker,
+  // Validation
+  ValidationResult,
+  ValidationMessage,
+  ValidationOptions,
+  AssetProbe,
+  AssetProbeResult,
 } from "./types.js";
 
 export {
@@ -29,6 +50,7 @@ export {
   ProcessCancelledError,
   ProcessTimeoutError,
   WorkspaceError,
+  TimelineValidationError,
 } from "./types.js";
 
 // Discovery
@@ -52,3 +74,6 @@ export { runDoctor } from "./doctor.js";
 
 // Logging
 export { createLogger } from "./logging.js";
+
+// Validator
+export { validateTimeline } from "./validator.js";
