@@ -43,6 +43,10 @@ export interface GenerationResult {
   readonly status: "completed";
   readonly outputs: readonly OutputAsset[];
   readonly providerRequestId: string;
+  /** The profile identity used for this generation. */
+  readonly profileId: string;
+  /** Immutable schema fingerprint of the profile at generation time. */
+  readonly schemaFingerprint: string;
   readonly cost: CostBreakdown | null;
   readonly startedAt: Date;
   readonly completedAt: Date;
@@ -119,4 +123,71 @@ export interface FalAdapterConfig {
   readonly baseUrl: string;
   readonly defaultTimeoutMs: number;
   readonly maxRetries: number;
+}
+
+// ─── Endpoint profiles ────────────────────────────────────────────────
+
+/** Supported image-generation operations. */
+export type ProfileOperation = "text-to-image" | "image-edit";
+
+/** A single parameter definition in an endpoint profile. */
+export interface ParameterField {
+  readonly name: string;
+  readonly type: "string" | "number" | "boolean" | "enum" | "integer";
+  readonly required: boolean;
+  readonly defaultValue?: unknown;
+  readonly enumValues?: readonly string[];
+  readonly min?: number;
+  readonly max?: number;
+  readonly description: string;
+}
+
+/** Capability constraints declared by an endpoint profile. */
+export interface EndpointCapabilities {
+  readonly supportedAspectRatios: readonly string[];
+  readonly supportsSeed: boolean;
+  readonly supportsReferenceImages: boolean;
+  readonly maxReferenceImages: number;
+  readonly supportsNegativePrompt: boolean;
+  readonly defaultImageSize: string;
+}
+
+/** Pricing metadata for spend estimation. */
+export interface PricingMetadata {
+  readonly unit: "inference" | "image" | "step";
+  readonly estimatedUnitCost: number;
+  readonly currency: string;
+}
+
+/** Deprecation information for a profile that should no longer be used. */
+export interface DeprecationInfo {
+  readonly message: string;
+  readonly migrationTarget?: string;
+  readonly sunsetDate?: string;
+}
+
+/**
+ * A versioned, immutable endpoint profile representing a tested fal.ai
+ * endpoint. Profiles are pure data – they do not encode pipeline behavior.
+ * Unknown input parameters must fail validation before any spend occurs.
+ */
+export interface EndpointProfile {
+  /** Stable identity, e.g. "fal-ai/flux/dev@v1". */
+  readonly profileId: string;
+  /** The fal.ai endpoint, e.g. "fal-ai/flux/dev". */
+  readonly endpointId: string;
+  /** The operation category. */
+  readonly operation: ProfileOperation;
+  /** Contract version used for request/response handling. */
+  readonly contractVersion: string;
+  /** Immutable hash of the parameter schema at definition time. */
+  readonly schemaFingerprint: string;
+  /** All accepted parameters for this endpoint. */
+  readonly parameterSchema: readonly ParameterField[];
+  /** Capability constraints. */
+  readonly capabilities: EndpointCapabilities;
+  /** Pricing metadata for spend estimation. */
+  readonly pricing: PricingMetadata;
+  /** Non-null if the profile is deprecated. */
+  readonly deprecation: DeprecationInfo | null;
 }

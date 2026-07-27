@@ -18,6 +18,7 @@ import {
   FalCancelledError,
   FalAdapterError,
 } from "./errors.js";
+import { deprecationDiagnostic } from "./profiles.js";
 import { resolveConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 import { createLogger } from "./logger.js";
@@ -78,7 +79,18 @@ export class FalClientImpl implements FalClient {
       );
     }
 
-    // Build request
+    // Warn if the profile is deprecated
+    if (contract.profile) {
+      const diag = deprecationDiagnostic(contract.profile);
+      if (diag) {
+        this.logger.warn("fal deprecated profile", {
+          profileId: contract.profile.profileId,
+          diagnostic: diag,
+        });
+      }
+    }
+
+    // Build request – validation happens here, before any HTTP call
     const body = contract.buildRequestBody(input);
     const url = `${this.config.baseUrl}/${input.binding.endpointId}`;
 

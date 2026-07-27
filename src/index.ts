@@ -17,6 +17,13 @@ export type {
   Downloader,
   DownloadResult,
   FalAdapterConfig,
+  // Profile types
+  EndpointProfile,
+  ParameterField,
+  EndpointCapabilities,
+  PricingMetadata,
+  DeprecationInfo,
+  ProfileOperation,
 } from "./types.js";
 
 // Errors
@@ -28,6 +35,8 @@ export {
   FalCancelledError,
   FalTimeoutError,
   FalContractError,
+  FalValidationError,
+  FalDeprecatedProfileError,
   FalDownloadError,
 } from "./errors.js";
 
@@ -52,7 +61,19 @@ export { HttpDownloader } from "./downloader.js";
 
 // Contracts
 export type { EndpointContract } from "./contracts/v1.js";
-export { V1BaseContract } from "./contracts/v1.js";
+export { V1BaseContract, ProfileContract } from "./contracts/v1.js";
+
+// Profiles
+export {
+  getProfile,
+  listProfiles,
+  computeSchemaFingerprint,
+  validateParameters,
+  requireValidParameters,
+  deprecationDiagnostic,
+  fluxDevV1,
+  fluxFillV1,
+} from "./profiles.js";
 
 // Client
 export { FalClientImpl, createFalClient } from "./client.js";

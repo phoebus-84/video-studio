@@ -119,6 +119,34 @@ export class FalContractError extends FalAdapterError {
   }
 }
 
+/** Parameter validation failed – unknown/invalid parameters rejected before spend. */
+export class FalValidationError extends FalAdapterError {
+  constructor(
+    message: string,
+    details: Record<string, unknown> = {},
+  ) {
+    super(message, "FAL_VALIDATION_ERROR", false, details);
+    this.name = "FalValidationError";
+  }
+}
+
+/** The requested profile is deprecated and should be migrated. */
+export class FalDeprecatedProfileError extends FalAdapterError {
+  constructor(
+    profileId: string,
+    message: string,
+    migrationTarget?: string,
+  ) {
+    super(
+      message,
+      "FAL_DEPRECATED_PROFILE",
+      false,
+      { profileId, migrationTarget: migrationTarget ?? null },
+    );
+    this.name = "FalDeprecatedProfileError";
+  }
+}
+
 /** Download validation failed (e.g. hash mismatch). */
 export class FalDownloadError extends FalAdapterError {
   constructor(url: string, reason: string, retryable = true) {
