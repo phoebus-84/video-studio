@@ -3,6 +3,7 @@
   import EpisodeHeader from "./EpisodeHeader.svelte";
   import StageRail from "./StageRail.svelte";
   import EditorWorkspace from "../editor/EditorWorkspace.svelte";
+  import SceneViewer from "./SceneViewer.svelte";
 
   const ep = $derived(episode.state);
 </script>
@@ -31,6 +32,7 @@
     <div class="ws-canvas">
       <EditorWorkspace />
     </div>
+    <SceneViewer />
   {/if}
 </div>
 
