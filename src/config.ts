@@ -42,7 +42,7 @@ export interface EnvOverrides {
   AVG_LIBRARY_ROOT?: string;
   AVG_GATEWAY_URL?: string;
   AVG_GATEWAY_TOKEN?: string;
-  AVG_FAL_KEY?: string;
+  FAL_KEY?: string;
   AVG_TTS_WORKER_URL?: string;
 }
 
@@ -75,7 +75,7 @@ function readEnv(): EnvOverrides {
     AVG_LIBRARY_ROOT: process.env.AVG_LIBRARY_ROOT,
     AVG_GATEWAY_URL: process.env.AVG_GATEWAY_URL,
     AVG_GATEWAY_TOKEN: process.env.AVG_GATEWAY_TOKEN,
-    AVG_FAL_KEY: process.env.AVG_FAL_KEY,
+    FAL_KEY: process.env.FAL_KEY,
     AVG_TTS_WORKER_URL: process.env.AVG_TTS_WORKER_URL,
   };
 }
@@ -129,18 +129,18 @@ export async function resolveConfig(): Promise<StudioConfig> {
   }
 
   // fal key
-  const falKeyRef = env.AVG_FAL_KEY ?? "";
+  const falKeyRef = env.FAL_KEY ?? "";
   if (falKeyRef) {
     diagnostics.push({
       level: "info",
       key: "falKey",
-      message: "fal.ai key configured via AVG_FAL_KEY",
+      message: "fal.ai key configured via FAL_KEY",
     });
   } else {
     diagnostics.push({
       level: "warning",
       key: "falKey",
-      message: "fal.ai key not configured (set AVG_FAL_KEY)",
+      message: "fal.ai key not configured (set FAL_KEY)",
     });
   }
 

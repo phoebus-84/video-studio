@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,7 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
     name: "pva_rpc_health",
     label: "RPC Health",
     description: "Check the health of the RPC connection to the gateway.",
-    parameters: {} as any,
+    parameters: Type.Object({}),
     async execute(_toolCallId: string, _params: unknown, _signal: unknown, _onUpdate: unknown, _ctx: unknown) {
       const health = monitor.health;
       return {
@@ -124,7 +125,7 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
         details: { rpcHealth: health },
       };
     },
-  } as any);
+  });
 }
 
 // ── Gateway event processing ────────────────────────────────────────────────
