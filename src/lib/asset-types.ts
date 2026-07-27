@@ -12,10 +12,14 @@ export interface AssetAttempt {
   license: string;
   createdAt: string;
   selected: boolean;
+  /** Public URL for the generated image (served by gateway). */
+  imageUrl: string | null;
   /** Local file path relative to the episode asset directory. */
-  filePath: string;
+  filePath: string | null;
   /** Whether the file is available on disk. */
   fileAvailable: boolean;
+  /** Asset generation state. */
+  state: "ready" | "generating" | "failed" | "idle";
 }
 
 export interface AssetGroup {

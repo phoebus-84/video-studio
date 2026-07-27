@@ -1,5 +1,6 @@
 <script lang="ts">
   import { scenes } from "$lib/scene-store.svelte.ts";
+  import { assets as assetStore } from "$lib/asset-store.svelte.ts";
   import { ROLE_LABELS, TRANSITION_LABELS } from "$lib/scene-types";
 
   function formatTime(sec: number): string {
@@ -10,6 +11,7 @@
 
   function selectScene(id: string) {
     scenes.select(id);
+    assetStore.selectGroup(id);
   }
 
   function statusSymbol(status: string): string {

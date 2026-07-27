@@ -13,15 +13,18 @@
   type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
-  // Build asset groups from episode scenes + real image URLs
-  let _groupsBuilt = false;
+  // Build asset groups from episode scenes + real image URLs.
+  // Rebuilds whenever episodes or scenes change.
   $effect(() => {
+    if (episode.state.phase !== "ready") return;
     const sceneList = scenes.scenes;
+    if (sceneList.length === 0) return;
+
     const imgUrls = episode.assets.images;
-    if (sceneList.length > 0 && !_groupsBuilt) {
-      _groupsBuilt = true;
-      untrack(() => {
-        const generated: AssetGroup[] = sceneList.map((scene) => ({
+    untrack(() => {
+      const generated: AssetGroup[] = sceneList.map((scene) => {
+        const imgUrl = imgUrls[scene.id] ?? null;
+        return {
           sceneId: scene.id,
           sceneTitle: scene.title,
           attempts: [{
@@ -31,19 +34,21 @@
             referenceImages: [],
             provider: "fal.ai",
             model: "flux-dev-v1",
-            seed: 42,
+            seed: null,
             dimensions: { width: 1920, height: 1080 },
-            cost: 0,
-            license: "pending",
+            cost: null,
+            license: imgUrl ? "generated" : "pending",
             createdAt: new Date().toISOString(),
             selected: true,
-            filePath: imgUrls[scene.id] ?? null,
-            fileAvailable: imgUrls[scene.id] != null,
+            imageUrl: imgUrl,
+            filePath: imgUrl,
+            fileAvailable: imgUrl != null,
+            state: imgUrl ? "ready" as const : "generating" as const,
           }],
-        }));
-        assetStore.load(generated);
+        };
       });
-    }
+      assetStore.load(generated);
+    });
   });
 
   // Select the asset group when a scene is selected

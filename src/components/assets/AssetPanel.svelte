@@ -39,9 +39,15 @@
               <span class="ap-selected-badge">Selected</span>
             {/if}
             {#if !attempt.fileAvailable}
-              <span class="ap-missing-badge">File unavailable</span>
+              <span class="ap-missing-badge">No image</span>
             {/if}
           </div>
+
+          {#if attempt.imageUrl}
+            <div class="ap-thumb">
+              <img src={attempt.imageUrl} alt={attempt.sceneId} loading="lazy" />
+            </div>
+          {/if}
 
           <div class="ap-prompt">{attempt.prompt}</div>
 
@@ -160,10 +166,26 @@
     line-height: 1.4;
     margin-bottom: var(--vs-space-2);
     display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .ap-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: var(--vs-radius-sm);
+    overflow: hidden;
+    margin-bottom: var(--vs-space-2);
+    background: var(--vs-bg-inset);
+  }
+
+  .ap-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .ap-meta {

@@ -34,6 +34,29 @@ class EpisodeStore {
     try {
       const detail = await client.getEpisode(channel, series, epSlug) as any;
       const now = new Date().toISOString();
+      // Build asset URLs FIRST (before loading workspace, so effects see them)
+      const libraryBase = this._gatewayBaseUrl || "http://127.0.0.1:5198";
+      const epBase = `${libraryBase}/library/${channel}/${series}/${epSlug}`;
+      const imgUrls: Record<string, string> = {};
+      const narUrls: Record<string, string> = {};
+
+      for (const scene of detail.scenes ?? []) {
+        imgUrls[scene.id] = `${epBase}/assets/images/${scene.id}.jpg`;
+        narUrls[scene.id] = `${epBase}/artifacts/narration/${scene.id}.wav`;
+      }
+
+      this.assets = {
+        images: imgUrls,
+        narration: narUrls,
+        video: `${epBase}/artifacts/final.mp4`,
+      };
+
+      // Augment scenes with image URLs before loading
+      const augmentedScenes = (detail.scenes ?? []).map((s: any) => ({
+        ...s,
+        imageUrl: imgUrls[s.id] ?? null,
+      }));
+
       const workspace: EpisodeWorkspace = {
         slug: epSlug,
         channel,
@@ -60,31 +83,13 @@ class EpisodeStore {
         createdAt: now,
         updatedAt: now,
         pipeline: detail.pipeline ?? "narrated-illustrated-video",
-        scenes: detail.scenes ?? [],
+        scenes: augmentedScenes,
         budget: detail.budget,
         reviews: detail.reviews ?? [],
         staleness: detail.staleness ?? { stale: [], affected: [] },
         blockers: detail.blockers ?? [],
       };
       this.load(workspace);
-
-      // Build asset URLs
-      const libraryBase = this._gatewayBaseUrl || "http://127.0.0.1:5198";
-      const epBase = `${libraryBase}/library/${channel}/${series}/${epSlug}`;
-      const imgUrls: Record<string, string> = {};
-      const narUrls: Record<string, string> = {};
-
-      for (const scene of detail.scenes ?? []) {
-        imgUrls[scene.id] = `${epBase}/assets/images/${scene.id}.jpg`;
-        narUrls[scene.id] = `${epBase}/artifacts/narration/${scene.id}.wav`;
-      }
-
-      this.assets = {
-        images: imgUrls,
-        narration: narUrls,
-        video: `${epBase}/artifacts/final.mp4`,
-      };
-
       // Build narration segments from scenes (each scene = one narration segment)
       const segments = (detail.scenes ?? []).map((s: any, i: number) => ({
         id: s.id ?? `n${i + 1}`,
