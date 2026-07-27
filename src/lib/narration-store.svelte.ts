@@ -52,8 +52,13 @@ class NarrationStore {
       if (!wavPath) throw new Error("No WAV path in TTS response");
 
       // Fetch and play the WAV
-      const audioRes = await fetch(`${this.ttsUrl}/voices/default/output/${wavPath.split("/").pop()}`);
-      if (!audioRes.ok) throw new Error("Failed to fetch audio");
+      const filename = wavPath.split("/").pop() ?? "output.wav";
+      const audioRes = await fetch(`${this.ttsUrl}/voices/default/output/${filename}`);
+      if (!audioRes.ok) {
+        // WAV not found — may have been cleaned up between restarts.
+        // The synthesis succeeded but serving failed. Retry synthesis.
+        throw new Error(`Audio file not available (${audioRes.status}). Try again.`);
+      }
 
       const blob = await audioRes.blob();
       this.audioUrl = URL.createObjectURL(blob);
