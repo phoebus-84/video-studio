@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import struct
 import time
 import uuid
@@ -211,7 +212,9 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
 
         # Generate placeholder WAV (real model in production)
         wav_data = generate_silent_wav(estimated_duration, request.sample_rate)
-        output_dir = Path("voices") / request.voice / "output"
+        # Use absolute path derived from env or default
+        voices_root = Path(os.environ.get("TTS_VOICES_DIR", str(Path(__file__).resolve().parent.parent.parent / "voices")))
+        output_dir = voices_root / request.voice / "output"
         filename = f"{job_id}.wav"
 
         wav_path, wav_size = save_wav(wav_data, output_dir, filename)

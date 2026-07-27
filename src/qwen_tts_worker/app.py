@@ -141,7 +141,7 @@ def create_app() -> FastAPI:
 
     # Mount voices directory for WAV file serving
     import os
-    voices_dir = os.path.join(os.getcwd(), "voices")
+    voices_dir = os.environ.get("TTS_VOICES_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "voices"))
     os.makedirs(voices_dir, exist_ok=True)
     app.mount("/voices", StaticFiles(directory=voices_dir), name="voices")
 
