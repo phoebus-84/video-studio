@@ -2,6 +2,7 @@
   import AppShell from "$components/shell/AppShell.svelte";
   import { library } from "$lib/library-store.svelte.ts";
   import { episode } from "$lib/episode-store.svelte.ts";
+  import { GatewayClient } from "$contracts/client";
   import { buildFixtureTree, DEFAULT_FIXTURE } from "$lib/fixtures";
   import {
     EPISODE_FIXTURE,
@@ -48,9 +49,27 @@
 
   let { theme }: Props = $props();
 
-  /* Initialize with fixture data until gateway integration lands. */
+  let connected = $state(false);
+
+  /* Try gateway first, fall back to fixtures. */
   $effect(() => {
-    library.loadFixture(buildFixtureTree(DEFAULT_FIXTURE));
+    const gwUrl = localStorage.getItem("vs-gateway-url") ?? "http://127.0.0.1:5198";
+    const gwToken = localStorage.getItem("vs-gateway-token") ?? "";
+
+    if (gwToken) {
+      const client = new GatewayClient({
+        baseUrl: gwUrl,
+        tokenProvider: () => gwToken,
+      });
+
+      library.loadFromGateway(client).then(() => {
+        connected = true;
+      }).catch(() => {
+        library.loadFixture(buildFixtureTree(DEFAULT_FIXTURE));
+      });
+    } else {
+      library.loadFixture(buildFixtureTree(DEFAULT_FIXTURE));
+    }
   });
 
   /* Wire episode selection from library into the episode workspace. */
@@ -74,4 +93,4 @@
   });
 </script>
 
-<AppShell connected={false} {theme} />
+<AppShell {connected} {theme} />
