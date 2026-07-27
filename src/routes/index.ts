@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type { Config } from "../config/schema.js";
+import type { WorkspaceService } from "../workspace/service.js";
 import { collectHealth, gatewayHealth, unknownHealth } from "../health/index.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
+import { registerWorkspaceRoutes } from "./workspace.js";
 
 /**
  * Register all REST API routes.
@@ -9,6 +11,7 @@ import { ErrorCode, GatewayError } from "../errors/index.js";
 export function registerRoutes(
   app: FastifyInstance,
   _config: Config,
+  workspace: WorkspaceService,
 ): void {
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/health", {
@@ -65,6 +68,9 @@ export function registerRoutes(
       ws: "/ws",
     };
   });
+
+  // ── Workspace discovery ──────────────────────────────────────────────────
+  registerWorkspaceRoutes(app, workspace);
 
   // ── 404 catch-all ─────────────────────────────────────────────────────────
   app.setNotFoundHandler((_request, reply) => {

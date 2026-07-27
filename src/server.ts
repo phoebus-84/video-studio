@@ -8,6 +8,8 @@ import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
 import { configureLogging, getRedactPaths } from "./logging/index.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
+import type { WorkspaceService } from "./workspace/service.js";
+import { FixtureWorkspaceService } from "./workspace/fixture-service.js";
 
 export interface GatewayInstance {
   app: ReturnType<typeof Fastify>;
@@ -30,6 +32,7 @@ export interface GatewayInstance {
 export async function createGateway(
   config: Config,
   token: string,
+  workspace?: WorkspaceService,
 ): Promise<GatewayInstance> {
   const app = Fastify({
     logger: {
@@ -72,7 +75,7 @@ export async function createGateway(
   registerErrorHandler(app);
 
   // ── Routes ───────────────────────────────────────────────────────────────
-  registerRoutes(app, config);
+  registerRoutes(app, config, workspace ?? new FixtureWorkspaceService());
   registerWebSocket(app, token);
   registerSSE(app);
   registerOpenApiRoute(app);
