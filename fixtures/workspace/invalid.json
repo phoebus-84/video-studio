@@ -1,0 +1,68 @@
+[
+  {
+    "name": "text source without immutable content hash",
+    "base": "fairy-tale",
+    "operation": "delete",
+    "path": "sourceSnapshot.source.contentHash"
+  },
+  {
+    "name": "repository source uses a mutable branch instead of a full commit",
+    "base": "repository",
+    "operation": "set",
+    "path": "sourceSnapshot.commit",
+    "value": "main"
+  },
+  {
+    "name": "policy hides a material downgrade behind continue",
+    "base": "fairy-tale",
+    "operation": "set",
+    "path": "episode.settings.approvalPolicy.onMaterialDowngrade",
+    "value": "continue"
+  },
+  {
+    "name": "policy omits an explicit conflict action",
+    "base": "fairy-tale",
+    "operation": "delete",
+    "path": "seriesSettings.values.approvalPolicy.onConflict"
+  },
+  {
+    "name": "budget warning exceeds budget limit",
+    "base": "fairy-tale",
+    "operation": "set",
+    "path": "episode.settings.budget.warnAtMicros",
+    "value": 2500001
+  },
+  {
+    "name": "current deliverable path escapes episode output",
+    "base": "fairy-tale",
+    "operation": "set",
+    "path": "currentDeliverable.media.path",
+    "value": "output/../../private.mp4"
+  },
+  {
+    "name": "clone voice profile omits reference source",
+    "base": "repository",
+    "operation": "delete",
+    "path": "voiceProfile.referenceSource"
+  },
+  {
+    "name": "attribution-required license omits attribution text",
+    "base": "repository",
+    "operation": "delete",
+    "path": "sourceSnapshot.license.attributionText"
+  },
+  {
+    "name": "channel contains an unowned field outside extension points",
+    "base": "fairy-tale",
+    "operation": "set",
+    "path": "channel.providerApiKey",
+    "value": "must-not-be-persisted"
+  },
+  {
+    "name": "episode references a series from another channel",
+    "base": "fairy-tale",
+    "operation": "set",
+    "path": "episode.seriesId",
+    "value": "ser_01ARZ3NDEKTSV4RRFFQ69G5FBV"
+  }
+]

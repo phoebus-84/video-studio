@@ -24,6 +24,7 @@ Contracts use semantic package versions and explicit resource `apiVersion` value
 - [`docs/compatibility-policy.md`](docs/compatibility-policy.md)
 - [`docs/wire-conventions.md`](docs/wire-conventions.md)
 - [`docs/identity-and-provenance.md`](docs/identity-and-provenance.md)
+- [`docs/workspace-and-policy.md`](docs/workspace-and-policy.md)
 
 Run `npm run check` to validate schemas and execute the compatibility examples and policy tests.
 

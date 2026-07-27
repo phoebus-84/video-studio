@@ -1,0 +1,177 @@
+{
+  "channel": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "Channel",
+    "channelId": "chn_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "slug": "moonlit-tales",
+    "title": "Moonlit Tales",
+    "audience": "Families who enjoy gentle illustrated retellings of public-domain fairy tales."
+  },
+  "channelSettings": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "ChannelSettings",
+    "channelId": "chn_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "values": {
+      "approvalPolicy": {
+        "mode": "autopilot",
+        "onPaidAction": "requireApproval",
+        "onBudgetExceeded": "requireApproval",
+        "onMaterialDowngrade": "requireApproval",
+        "onCapabilityUnavailable": "requireApproval",
+        "onValidationFailure": "requireApproval",
+        "onConflict": "requireApproval",
+        "onLicenseOrSafetyBlocker": "requireApproval"
+      },
+      "budget": {
+        "currency": "USD",
+        "limitMicros": 5000000,
+        "warnAtMicros": 4000000,
+        "reservationRequired": true
+      },
+      "outputProfile": {
+        "id": "youtube-1080p-30",
+        "width": 1920,
+        "height": 1080,
+        "frameRate": 30
+      },
+      "locale": "en-US"
+    }
+  },
+  "series": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "Series",
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "channelId": "chn_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "slug": "classic-fairy-tales",
+    "title": "Classic Fairy Tales",
+    "format": "A single narrator adapts one public-domain tale into a 3 to 8 minute illustrated explainer."
+  },
+  "seriesSettings": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SeriesSettings",
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "values": {
+      "approvalPolicy": {
+        "mode": "guided",
+        "onPaidAction": "requireApproval",
+        "onBudgetExceeded": "requireApproval",
+        "onMaterialDowngrade": "requireApproval",
+        "onCapabilityUnavailable": "requireApproval",
+        "onValidationFailure": "requireApproval",
+        "onConflict": "requireApproval",
+        "onLicenseOrSafetyBlocker": "requireApproval"
+      },
+      "budget": {
+        "currency": "USD",
+        "limitMicros": 3500000,
+        "warnAtMicros": 3000000,
+        "reservationRequired": true
+      },
+      "outputProfile": {
+        "id": "youtube-1080p-30",
+        "width": 1920,
+        "height": 1080,
+        "frameRate": 30
+      },
+      "locale": "en-US"
+    }
+  },
+  "episode": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "Episode",
+    "episodeId": "ep_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "slug": "the-frog-prince",
+    "title": "The Frog Prince, Retold",
+    "settings": {
+      "approvalPolicy": {
+        "mode": "guided",
+        "onPaidAction": "requireApproval",
+        "onBudgetExceeded": "requireApproval",
+        "onMaterialDowngrade": "requireApproval",
+        "onCapabilityUnavailable": "requireApproval",
+        "onValidationFailure": "requireApproval",
+        "onConflict": "requireApproval",
+        "onLicenseOrSafetyBlocker": "requireApproval"
+      },
+      "budget": {
+        "currency": "USD",
+        "limitMicros": 2500000,
+        "warnAtMicros": 2000000,
+        "reservationRequired": true
+      },
+      "outputProfile": {
+        "id": "youtube-1080p-30",
+        "width": 1920,
+        "height": 1080,
+        "frameRate": 30
+      },
+      "locale": "en-US"
+    },
+    "sourceSnapshotRefs": [
+      {
+        "id": "art_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "revision": 1,
+        "contentHash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    ],
+    "currentDeliverablePath": "output/current.json"
+  },
+  "sourceSnapshot": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "TextSourceSnapshot",
+    "artifactId": "art_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "source": {
+      "uri": "https://www.gutenberg.org/files/1250/1250-0.txt",
+      "revision": "gutenberg-1250-2026-07-27",
+      "contentHash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "license": {
+      "spdxId": "CC0-1.0",
+      "commercialUse": "allowed",
+      "attributionRequired": false,
+      "evidencePath": "sources/frog-prince/license.md"
+    },
+    "capturedAt": "2026-07-27T12:00:00Z",
+    "sourceLanguage": "en",
+    "revision": 1
+  },
+  "voiceProfile": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "VoiceProfileMetadata",
+    "artifactId": "art_01ARZ3NDEKTSV4RRFFQ69G5FCV",
+    "revision": 1,
+    "name": "Warm Storyteller",
+    "voiceMode": "preset",
+    "language": "en-US",
+    "createdAt": "2026-07-27T12:00:00Z"
+  },
+  "visualBible": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "VisualBibleMetadata",
+    "artifactId": "art_01ARZ3NDEKTSV4RRFFQ69G5FDV",
+    "revision": 1,
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "themeId": "moonlit-watercolor",
+    "createdAt": "2026-07-27T12:00:00Z"
+  },
+  "currentDeliverable": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "CurrentDeliverable",
+    "episodeId": "ep_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "renderAttemptId": "att_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "media": {
+      "path": "output/att_01ARZ3NDEKTSV4RRFFQ69G5FAV.mp4",
+      "hash": {
+        "contentHash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "byteLength": 1048576
+      }
+    },
+    "renderReport": {
+      "id": "art_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+      "revision": 1,
+      "contentHash": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    },
+    "updatedAt": "2026-07-27T12:00:00Z"
+  }
+}

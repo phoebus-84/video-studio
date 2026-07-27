@@ -1,0 +1,191 @@
+{
+  "channel": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "Channel",
+    "channelId": "chn_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "slug": "open-source-atlas",
+    "title": "Open Source Atlas",
+    "audience": "Developers who want concise visual documentation for unfamiliar open-source systems."
+  },
+  "channelSettings": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "ChannelSettings",
+    "channelId": "chn_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "values": {
+      "approvalPolicy": {
+        "mode": "autopilot",
+        "onPaidAction": "requireApproval",
+        "onBudgetExceeded": "requireApproval",
+        "onMaterialDowngrade": "requireApproval",
+        "onCapabilityUnavailable": "requireApproval",
+        "onValidationFailure": "requireApproval",
+        "onConflict": "requireApproval",
+        "onLicenseOrSafetyBlocker": "requireApproval"
+      },
+      "budget": {
+        "currency": "USD",
+        "limitMicros": 5000000,
+        "warnAtMicros": 4000000,
+        "reservationRequired": true
+      },
+      "outputProfile": {
+        "id": "youtube-1080p-30",
+        "width": 1920,
+        "height": 1080,
+        "frameRate": 30
+      },
+      "locale": "en-US"
+    }
+  },
+  "series": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "Series",
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "channelId": "chn_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "slug": "runtime-guides",
+    "title": "Runtime Guides",
+    "format": "A narrated technical explainer with architecture diagrams, source citations, and safe code excerpts."
+  },
+  "seriesSettings": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SeriesSettings",
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "values": {
+      "approvalPolicy": {
+        "mode": "guided",
+        "onPaidAction": "requireApproval",
+        "onBudgetExceeded": "requireApproval",
+        "onMaterialDowngrade": "requireApproval",
+        "onCapabilityUnavailable": "requireApproval",
+        "onValidationFailure": "requireApproval",
+        "onConflict": "requireApproval",
+        "onLicenseOrSafetyBlocker": "requireApproval"
+      },
+      "budget": {
+        "currency": "USD",
+        "limitMicros": 3500000,
+        "warnAtMicros": 3000000,
+        "reservationRequired": true
+      },
+      "outputProfile": {
+        "id": "youtube-1080p-30",
+        "width": 1920,
+        "height": 1080,
+        "frameRate": 30
+      },
+      "locale": "en-US"
+    }
+  },
+  "episode": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "Episode",
+    "episodeId": "ep_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "slug": "pipeline-runtime-tour",
+    "title": "A Tour of the Pipeline Runtime",
+    "settings": {
+      "approvalPolicy": {
+        "mode": "guided",
+        "onPaidAction": "requireApproval",
+        "onBudgetExceeded": "requireApproval",
+        "onMaterialDowngrade": "requireApproval",
+        "onCapabilityUnavailable": "requireApproval",
+        "onValidationFailure": "requireApproval",
+        "onConflict": "requireApproval",
+        "onLicenseOrSafetyBlocker": "requireApproval"
+      },
+      "budget": {
+        "currency": "USD",
+        "limitMicros": 2500000,
+        "warnAtMicros": 2000000,
+        "reservationRequired": true
+      },
+      "outputProfile": {
+        "id": "youtube-1080p-30",
+        "width": 1920,
+        "height": 1080,
+        "frameRate": 30
+      },
+      "locale": "en-US"
+    },
+    "sourceSnapshotRefs": [
+      {
+        "id": "art_01ARZ3NDEKTSV4RRFFQ69G5FEV",
+        "revision": 1,
+        "contentHash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+      }
+    ],
+    "currentDeliverablePath": "output/current.json"
+  },
+  "sourceSnapshot": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "RepositorySourceSnapshot",
+    "artifactId": "art_01ARZ3NDEKTSV4RRFFQ69G5FEV",
+    "originUri": "https://github.com/example/pipeline-runtime.git",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "treeHash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+    "license": {
+      "spdxId": "MIT",
+      "commercialUse": "allowed",
+      "attributionRequired": true,
+      "attributionText": "Copyright example contributors. Licensed under MIT.",
+      "evidencePath": "sources/pipeline-runtime/license.md"
+    },
+    "capturedAt": "2026-07-27T12:00:00Z",
+    "analysisPolicy": {
+      "readOnly": true,
+      "allowRepositoryExecution": false
+    },
+    "revision": 1
+  },
+  "voiceProfile": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "VoiceProfileMetadata",
+    "artifactId": "art_01ARZ3NDEKTSV4RRFFQ69G5FFV",
+    "revision": 1,
+    "name": "Technical Narrator",
+    "voiceMode": "clone",
+    "language": "en-US",
+    "createdAt": "2026-07-27T12:00:00Z",
+    "referenceSource": {
+      "id": "art_01ARZ3NDEKTSV4RRFFQ69G5FEV",
+      "revision": 1,
+      "contentHash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    }
+  },
+  "visualBible": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "VisualBibleMetadata",
+    "artifactId": "art_01ARZ3NDEKTSV4RRFFQ69G5FGV",
+    "revision": 1,
+    "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "themeId": "atlas-blueprint",
+    "createdAt": "2026-07-27T12:00:00Z",
+    "referenceAssets": [
+      {
+        "id": "art_01ARZ3NDEKTSV4RRFFQ69G5FEV",
+        "revision": 1,
+        "contentHash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+      }
+    ]
+  },
+  "currentDeliverable": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "CurrentDeliverable",
+    "episodeId": "ep_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+    "renderAttemptId": "att_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "media": {
+      "path": "output/att_01ARZ3NDEKTSV4RRFFQ69G5FBV.mp4",
+      "hash": {
+        "contentHash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "byteLength": 1048576
+      }
+    },
+    "renderReport": {
+      "id": "art_01ARZ3NDEKTSV4RRFFQ69G5FBV",
+      "revision": 1,
+      "contentHash": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    },
+    "updatedAt": "2026-07-27T12:00:00Z"
+  }
+}
