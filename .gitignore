@@ -4,3 +4,16 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Gateway secrets
+.gateway-token
+*.token
+
+# Test artifacts
+.test-tmp/
