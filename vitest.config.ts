@@ -14,6 +14,7 @@ export default defineConfig({
   },
   test: {
     include: ["test/unit/**/*.test.ts"],
+    exclude: ["test/e2e/**"],
     environment: "node",
   },
 });

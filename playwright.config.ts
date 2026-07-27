@@ -18,7 +18,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npx vite --port 5199",
+    command: "bun --bun vite --port 5199",
     port: 5199,
     reuseExistingServer: true,
   },
