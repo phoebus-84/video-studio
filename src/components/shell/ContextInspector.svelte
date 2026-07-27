@@ -5,6 +5,7 @@
   import AssetPanel from "../assets/AssetPanel.svelte";
   import ReviewInbox from "../review/ReviewInbox.svelte";
   import ProgressPanel from "../status/ProgressPanel.svelte";
+  import StalenessPanel from "../status/StalenessPanel.svelte";
 
   type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
@@ -54,6 +55,7 @@
       <ReviewInbox />
     {:else if tab === "status"}
       <ProgressPanel />
+      <StalenessPanel />
     {:else}
       <div class="inspector-empty">
         <p>Select a scene to inspect assets.</p>
