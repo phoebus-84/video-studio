@@ -6,8 +6,9 @@
   import { NARRATION_FIXTURE, VOICE_FIXTURE } from "$lib/narration-fixtures";
   import Storyboard from "../storyboard/Storyboard.svelte";
   import NarrationPanel from "../narration/NarrationPanel.svelte";
+  import RenderViewer from "../render/RenderViewer.svelte";
 
-  type Tab = "storyboard" | "narration";
+  type Tab = "storyboard" | "narration" | "render";
   let tab = $state<Tab>("storyboard");
 
   $effect(() => {
@@ -36,13 +37,23 @@
     >
       Narration
     </button>
+    <button
+      class="sv-tab"
+      role="tab"
+      aria-selected={tab === "render"}
+      onclick={() => tab = "render"}
+    >
+      Render
+    </button>
   </div>
 
   <div class="sv-content">
     {#if tab === "storyboard"}
       <Storyboard />
-    {:else}
+    {:else if tab === "narration"}
       <NarrationPanel />
+    {:else}
+      <RenderViewer />
     {/if}
   </div>
 </div>
