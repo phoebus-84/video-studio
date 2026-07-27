@@ -66,6 +66,56 @@ machine-readable output (JSON, version strings).
 4. Write unit tests in `test/unit/ports/<name>.test.ts`.
 5. Update `docs/CONTRACTS.md`.
 
+## Adding workspace logic
+
+Workspace code lives in `src/workspace/`.  Follow these patterns:
+
+### Contract adapter boundary
+
+Contract document schemas are owned by `video-workspace-contracts`, not by
+this runtime.  When adding contract-dependent behaviour:
+
+1. Define the contract document type in `src/workspace/contracts.ts`.
+2. Perform **structural validation only** (required fields, correct types).
+3. Expose a `ContractValidator` adapter interface for full schema validation.
+4. Do NOT duplicate schema definitions from the contracts module.
+5. Document the adapter boundary in `docs/CONTRACTS.md`.
+
+### Path safety
+
+Every filesystem path the runtime touches MUST pass through
+`guardPath` or `resolveGuardedPath`.  These perform:
+
+- Lexical escape detection (`../`, absolute paths to other roots).
+- Symlink-aware verification (when a `FileSystem` port is available).
+
+For production wiring with the real Node.js `fs`, the adapter MUST:
+
+```typescript
+// Production path guard (not in this module — lives in the adapter)
+import { realpath } from "node:fs/promises";
+const realRoot = await realpath(allowedRoot);
+const realCandidate = await realpath(candidatePath);
+if (!realCandidate.startsWith(realRoot + path.sep) && realCandidate !== realRoot) {
+  throw new PermissionDeniedError("Symlink escapes allowed root");
+}
+```
+
+### Idempotent initialization
+
+Init operations (`initChannel`, `initSeries`, `initEpisode`) must:
+
+- Never overwrite existing `contract.json` or `metadata.json`.
+- Only create template files when they do not exist.
+- Return `existed: true` on re-init so callers can distinguish creation
+  from no-op.
+
+### Slug conventions
+
+- Use `validateSlug` for all user-provided directory names.
+- Slugs are lowercase, alphanumeric + single hyphens, max 64 chars.
+- The `"default"` slug is reserved for `ensureDefaultChannel`.
+
 ## Test conventions
 
 | Layer | Location | Purpose |

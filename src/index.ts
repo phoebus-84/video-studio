@@ -51,5 +51,51 @@ export { SystemClock } from "./ports/index.js";
 export { ConsoleLogger, NoopLogger } from "./logging.js";
 export type { Logger, LogLevel, ConsoleLoggerOptions } from "./logging.js";
 
+// Workspace (channel / series / episode lifecycle)
+export {
+  // Types
+  WORKSPACE_DIR,
+  CONTRACT_FILE,
+  METADATA_FILE,
+  // Slugs
+  validateSlug,
+  SLUG_MAX_LENGTH,
+  // Path guard
+  guardPath,
+  guardWritePath,
+  validateRootPath,
+  resolveGuardedPath,
+  // Contracts
+  DEFAULT_CONTRACT_SCHEMA,
+  DEFAULT_CONTRACT_VERSION,
+  createContract,
+  validateContractStructure,
+  parseContractJson,
+  serialiseContract,
+  // Init
+  initChannel,
+  initSeries,
+  initEpisode,
+  ensureDefaultChannel,
+  DEFAULT_CHANNEL_SLUG,
+  // Discovery
+  discoverChannels,
+  discoverSeries,
+  discoverEpisodes,
+} from "./workspace/index.js";
+export type {
+  WorkspaceKind,
+  WorkspaceDescriptor,
+  WorkspaceMeta,
+  WorkspaceContract,
+  ContractValidationResult,
+  ContractValidator,
+  InitOptions,
+  InitResult,
+  DiscoveryResult,
+  DiscoveryDiagnostic,
+  DiscoveryDiagnosticCode,
+} from "./workspace/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
