@@ -149,5 +149,24 @@ export type {
   SnapshotStore,
 } from "./pipeline/index.js";
 
+// Artifacts (atomic revisioned storage)
+export {
+  ArtifactStore,
+  ArtifactConflictError,
+  computeRevisionId,
+  diffSummary,
+  InMemoryMutationQueue,
+} from "./artifacts/index.js";
+export type {
+  RevisionId,
+  RevisionMeta,
+  ArtifactRead,
+  ArtifactWriteResult,
+  ConflictDiagnostic,
+  MutationQueueEntry,
+  MutationQueue,
+  ArtifactStoreOptions,
+} from "./artifacts/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
