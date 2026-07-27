@@ -210,7 +210,7 @@ export class ArtifactStore {
     canonicalPath: string,
     content: string,
     message?: string,
-  ): Promise<Result<ArtifactWriteResult, string>> {
+  ): Promise<Result<ArtifactWriteResult, ArtifactConflictError | string>> {
     const exists = await this.fs.exists(canonicalPath);
     if (!exists.ok) return err("Failed to check existence");
     if (exists.value) return err(`Artifact already exists: ${canonicalPath}`);
@@ -225,7 +225,7 @@ class InMemoryMutationQueue implements MutationQueue {
   private entries = new Map<string, MutationQueueEntry[]>();
   private counter = 0;
 
-  enqueue(path: string): MutationQueueEntry["id"] & MutationQueueEntry {
+  enqueue(path: string): MutationQueueEntry {
     const id = `mut-${++this.counter}-${Date.now()}`;
     const entry = {
       id,

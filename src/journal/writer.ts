@@ -166,7 +166,6 @@ export class Journal {
 
     const lines = result.value.split("\n");
     let lastSeq = 0;
-    let prevHash = cursor?.hash ?? "";
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!.trim();
@@ -179,11 +178,9 @@ export class Journal {
         }
         if (cursor && event.sequence <= cursor.sequence) {
           // Already consumed
-          prevHash = await hashLine(line);
           continue;
         }
         lastSeq = event.sequence;
-        prevHash = await hashLine(line);
       } catch {
         return err(
           `Corrupted journal: line ${i + 1} is not valid JSON (truncated write detected)`,

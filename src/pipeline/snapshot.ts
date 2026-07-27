@@ -2,7 +2,7 @@
 // Pipeline snapshot — frozen, content-addressed episode contract
 // ---------------------------------------------------------------------------
 
-import type { ResolvedPipeline, ResolvedStage } from "./types.js";
+import type { ResolvedPipeline } from "./types.js";
 import type { ResolvedSettings } from "../settings/types.js";
 
 // ── Snapshot types ──────────────────────────────────────────────────────────

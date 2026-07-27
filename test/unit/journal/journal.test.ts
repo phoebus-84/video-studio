@@ -52,17 +52,6 @@ const STAGE_COMPLETED: Omit<JournalEvent, "sequence" | "timestamp"> = {
   },
 };
 
-const STAGE_FAILED: Omit<JournalEvent, "sequence" | "timestamp"> = {
-  type: "stage.failed",
-  episodeSlug: "ep-01",
-  payload: {
-    stageId: "script",
-    attemptNumber: 1,
-    leaseId: "lease-2",
-    error: "LLM timeout",
-    retryable: true,
-  },
-};
 
 const ARTIFACT_CREATED: Omit<JournalEvent, "sequence" | "timestamp"> = {
   type: "artifact.created",

@@ -4,7 +4,6 @@
 
 import type {
   JournalEvent,
-  BaseJournalEvent,
 } from "./types.js";
 
 // ── Projection state types ──────────────────────────────────────────────────

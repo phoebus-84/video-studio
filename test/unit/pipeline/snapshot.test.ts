@@ -11,7 +11,6 @@ import {
   InMemorySnapshotStore,
 } from "../../../src/pipeline/index.js";
 import type {
-  PipelineSnapshot,
   SnapshotInput,
 } from "../../../src/pipeline/snapshot.js";
 

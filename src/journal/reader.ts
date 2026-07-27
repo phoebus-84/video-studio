@@ -7,7 +7,6 @@ import { ok, err, type Result } from "../result.js";
 import type {
   EventCursor,
   JournalEvent,
-  BaseJournalEvent,
 } from "./types.js";
 
 /**
