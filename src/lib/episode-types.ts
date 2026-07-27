@@ -21,6 +21,18 @@ export interface EpisodeWorkspace {
   createdAt: string;
   updatedAt: string;
   error?: string;
+  /** Pipeline name (gateway-provided). */
+  pipeline?: string;
+  /** Scene summaries (gateway-provided). */
+  scenes?: any[];
+  /** Budget envelope (gateway-provided). */
+  budget?: { currency: string; limitMicros?: number; consumedMicros?: number; remainingMicros?: number };
+  /** Review threads (gateway-provided). */
+  reviews?: any[];
+  /** Staleness report (gateway-provided). */
+  staleness?: { stale: string[]; affected: string[] };
+  /** Production blockers (gateway-provided). */
+  blockers?: any[];
 }
 
 export interface ResolvedStage extends PipelineStage {

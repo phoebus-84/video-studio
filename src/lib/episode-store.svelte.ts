@@ -23,20 +23,36 @@ class EpisodeStore {
   async loadFromGateway(client: GatewayClient, channel: string, series: string, epSlug: string) {
     this.state = { phase: "loading" };
     try {
-      const detail = await client.getEpisode(channel, series, epSlug);
+      const detail = await client.getEpisode(channel, series, epSlug) as any;
+      const now = new Date().toISOString();
       const workspace: EpisodeWorkspace = {
         slug: epSlug,
         channel,
         series,
         title: detail.title ?? epSlug,
-        pipeline: detail.pipeline ?? "narrated-illustrated-video",
+        status: (detail.status ?? "pending") as any,
+        approvalMode: "guided",
+        budgetLimit: (detail.budget?.limitMicros ?? 0) / 1_000_000,
+        budgetSpent: (detail.budget?.consumedMicros ?? 0) / 1_000_000,
         stages: (detail.stages ?? []).map((s: any) => ({
           id: s.id ?? s,
           name: s.name ?? s.id ?? s,
           status: (s.status ?? s.state ?? "pending") as any,
           blocked: s.blocked ?? false,
+          progress: s.status === "completed" ? 1 : s.status === "running" ? 0.5 : 0,
+          attemptCount: 0,
+          stale: false,
+          dependsOn: [],
         })),
-        budget: detail.budget ?? { currency: "USD", limit: 0, consumed: 0 },
+        currentDeliverable: null,
+        currentDeliverableValidated: false,
+        blocked: false,
+        staleCount: detail.staleness?.stale?.length ?? 0,
+        createdAt: now,
+        updatedAt: now,
+        pipeline: detail.pipeline ?? "narrated-illustrated-video",
+        scenes: detail.scenes ?? [],
+        budget: detail.budget,
         reviews: detail.reviews ?? [],
         staleness: detail.staleness ?? { stale: [], affected: [] },
         blockers: detail.blockers ?? [],

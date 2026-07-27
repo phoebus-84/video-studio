@@ -7,15 +7,26 @@
   import ProgressPanel from "../status/ProgressPanel.svelte";
   import StalenessPanel from "../status/StalenessPanel.svelte";
 
+  import { untrack } from "svelte";
+
   type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
+  // Load fixture assets once when component mounts
+  $effect(() => {
+    if (assets.groups.length === 0) {
+      assets.load(ASSETS_FIXTURE);
+    }
+  });
+
+  // Select the asset group when a scene is selected
   $effect(() => {
     const sceneId = scenes.selectedSceneId;
     if (sceneId) {
-      assets.load(ASSETS_FIXTURE);
-      assets.selectGroup(sceneId);
-      tab = "assets";
+      untrack(() => {
+        assets.selectGroup(sceneId);
+        tab = "assets";
+      });
     }
   });
 </script>

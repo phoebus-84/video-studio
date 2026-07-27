@@ -2,7 +2,6 @@
   import { episode } from "$lib/episode-store.svelte.ts";
   import { scenes } from "$lib/scene-store.svelte.ts";
   import { narration } from "$lib/narration-store.svelte.ts";
-  import { SCENES_FIXTURE } from "$lib/scene-fixtures";
   import { NARRATION_FIXTURE, VOICE_FIXTURE } from "$lib/narration-fixtures";
   import Storyboard from "../storyboard/Storyboard.svelte";
   import NarrationPanel from "../narration/NarrationPanel.svelte";
@@ -10,10 +9,33 @@
 
   type Tab = "storyboard" | "narration" | "render";
   let tab = $state<Tab>("storyboard");
+  let loaded = false;
 
   $effect(() => {
-    if (episode.state.phase === "ready") {
-      scenes.load(SCENES_FIXTURE);
+    if (episode.state.phase === "ready" && !loaded) {
+      loaded = true;
+      const ep = episode.state.episode;
+      if (ep.scenes && ep.scenes.length > 0) {
+        scenes.load(ep.scenes);
+      } else if (ep.pipeline) {
+        scenes.load(ep.stages.map((s, i) => ({
+          id: s.id,
+          index: i,
+          title: s.name,
+          intent: s.status,
+          role: "narrator" as const,
+          durationSeconds: 15,
+          status: s.status === "completed" ? "ready" : s.status === "running" ? "generating" : "idle",
+          stale: false,
+          selectedAssetId: null,
+          attemptCount: s.status === "completed" ? 1 : 0,
+          narrationStatus: s.status === "completed" ? "ready" : "idle",
+          captionsStatus: "idle" as const,
+          transition: "cut" as const,
+        })));
+      } else {
+        scenes.load([]);
+      }
       narration.load(NARRATION_FIXTURE, VOICE_FIXTURE);
     }
   });
