@@ -9,7 +9,7 @@
   "scripts": {
     "check": "npm run check:compatibility && npm run check:schemas && npm test",
     "check:compatibility": "node scripts/check-compatibility-fixtures.mjs",
-    "check:schemas": "node scripts/check-identity-fixtures.mjs",
+    "check:schemas": "node scripts/check-identity-fixtures.mjs && node scripts/check-workspace-fixtures.mjs",
     "test": "node --test"
   },
   "devDependencies": {
