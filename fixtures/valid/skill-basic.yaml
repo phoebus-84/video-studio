@@ -1,0 +1,52 @@
+---
+skill:
+  id: stage-one-producer
+  pipeline: basic-pipeline
+  stage: stage-one
+  version: "1.0.0"
+  kind: producer
+
+progressive_disclosure:
+  summary: >
+    Normalize the source input into a structured intermediate artifact.
+    Validates required fields and applies default values.
+  prerequisites:
+    - contract: source-input
+      version: "1.0.0"
+    - contract: intermediate-artifact
+      version: "1.0.0"
+  knowledge:
+    - ref: docs/glossary.md#normalization
+
+inputs:
+  - contract: source-input
+    version: "1.0.0"
+    required: true
+    description: "Raw source input from upstream"
+
+outputs:
+  - contract: intermediate-artifact
+    version: "1.0.0"
+    required: true
+    description: "Structured intermediate artifact with validated fields"
+
+metadata:
+  author: contributor
+  created: "2026-07-27"
+  tags:
+    - foundation
+    - pipeline:basic-pipeline
+---
+# Stage One: Input Normalization
+
+## Purpose
+
+Normalize the source input into a structured intermediate artifact.
+
+## Instructions
+
+1. Load the source input contract.
+2. Verify all required fields are present.
+3. Apply defaults for optional fields.
+4. Validate field types against the contract schema.
+5. Produce the intermediate artifact.

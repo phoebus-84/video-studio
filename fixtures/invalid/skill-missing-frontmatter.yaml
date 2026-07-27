@@ -1,0 +1,20 @@
+---
+skill:
+  id: bad-skill
+  pipeline: some-pipeline
+  stage: some-stage
+  version: "1.0.0"
+
+# Missing: skill.kind
+# Missing: progressive_disclosure entirely
+# Missing: inputs entirely
+
+run_after: [other-skill]
+retry_count: 3
+timeout_seconds: 300
+gates:
+  autopilot: true
+budget:
+  tokens: 10000
+---
+Do the work however you see fit.
