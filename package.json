@@ -1,0 +1,14 @@
+{
+  "name": "@video-studio/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "npm run check:context && npm test",
+    "check:context": "node scripts/check-design-context.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
