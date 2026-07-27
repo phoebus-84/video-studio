@@ -206,5 +206,24 @@ export type {
   EpisodeProjection,
 } from "./journal/index.js";
 
+// Engine (stage state machine and executor)
+export {
+  StageStateMachine,
+  StageTransitionError,
+  LeaseError,
+  StageExecutor,
+  VALID_TRANSITIONS,
+  DEFAULT_ENGINE_CONFIG,
+} from "./engine/index.js";
+export type {
+  StageStatus,
+  StageAttempt,
+  StageInstance,
+  ExecutionContext,
+  EngineConfig,
+  StageTransition,
+  ExecutionStatus,
+} from "./engine/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
