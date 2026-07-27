@@ -1,6 +1,7 @@
 <script lang="ts">
   import { assets } from "$lib/asset-store.svelte.ts";
   import { ASSETS_FIXTURE } from "$lib/asset-fixtures";
+  import type { AssetGroup } from "$lib/asset-types";
   import { scenes } from "$lib/scene-store.svelte.ts";
   import AssetPanel from "../assets/AssetPanel.svelte";
   import ReviewInbox from "../review/ReviewInbox.svelte";
@@ -12,10 +13,38 @@
   type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
-  // Load fixture assets once when component mounts
+  // Build asset groups from scenes if fixtures don't cover them
   $effect(() => {
-    if (assets.groups.length === 0) {
-      assets.load(ASSETS_FIXTURE);
+    if (scenes.scenes.length > 0) {
+      const fixtureIds = new Set(ASSETS_FIXTURE.map((g) => g.sceneId));
+      const missing = scenes.scenes.filter((s) => !fixtureIds.has(s.id));
+
+      if (missing.length > 0) {
+        // Build lightweight asset groups from scene data
+        const generated: AssetGroup[] = missing.map((scene) => ({
+          sceneId: scene.id,
+          sceneTitle: scene.title,
+          attempts: [{
+            id: `gen-${scene.id}-1`,
+            sceneId: scene.id,
+            prompt: scene.intent ?? `Asset for ${scene.title}`,
+            referenceImages: [],
+            provider: "fal.ai",
+            model: "flux-dev-v1",
+            seed: 42,
+            dimensions: { width: 1920, height: 1080 },
+            cost: 0,
+            license: "pending",
+            createdAt: new Date().toISOString(),
+            selected: true,
+            filePath: null,
+            fileAvailable: false,
+          }],
+        }));
+        assets.load([...ASSETS_FIXTURE, ...generated]);
+      } else if (assets.groups.length === 0) {
+        assets.load(ASSETS_FIXTURE);
+      }
     }
   });
 
