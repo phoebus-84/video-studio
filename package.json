@@ -1,0 +1,61 @@
+{
+  "name": "video-pipeline-runtime",
+  "version": "0.1.0",
+  "description": "Deterministic filesystem runtime for agent-directed video pipelines",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    },
+    "./ports": {
+      "import": "./dist/src/ports/index.js",
+      "types": "./dist/src/ports/index.d.ts"
+    },
+    "./test-fixtures": {
+      "import": "./dist/test/fixtures/index.js",
+      "types": "./dist/test/fixtures/index.d.ts"
+    }
+  },
+  "bin": {
+    "vpr": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "lint": "eslint src/ test/",
+    "lint:fix": "eslint --fix src/ test/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run build && npm run lint && npm run test",
+    "clean": "rm -rf dist/"
+  },
+  "files": [
+    "dist/",
+    "docs/",
+    "README.md"
+  ],
+  "keywords": [
+    "video",
+    "pipeline",
+    "runtime",
+    "deterministic"
+  ],
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  }
+}
