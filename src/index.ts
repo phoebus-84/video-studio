@@ -244,5 +244,27 @@ export type {
   StalenessAcceptance,
 } from "./staleness/index.js";
 
+// Policy (approval gates and budget enforcement)
+export {
+  checkGate,
+  checkGates,
+  detectDowngrade,
+  PolicyError,
+  POLICY_CODES,
+  createLedger,
+  reserveBudget,
+  consumeReserve,
+  releaseReserve,
+  BudgetError,
+  BUDGET_CODES,
+} from "./policy/index.js";
+export type {
+  PolicyGate,
+  GateDecision,
+  GateCheckResult,
+  BudgetReserve,
+  BudgetLedger,
+} from "./policy/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
