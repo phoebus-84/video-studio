@@ -49,7 +49,7 @@ export async function createGateway(
   // ── Plugins ──────────────────────────────────────────────────────────────
   await app.register(fastifyWebsocket);
   await app.register(fastifyCors, {
-    origin: config.allowedOrigins.length > 0 ? config.allowedOrigins : false,
+    origin: config.allowedOrigins.length > 0 ? config.allowedOrigins : ["http://localhost:5199"],
     credentials: false,
   });
 
@@ -64,6 +64,9 @@ export async function createGateway(
   // Global preHandler: all routes require auth except public paths.
   // This is more reliable than onRoute which has ordering issues with plugins.
   app.addHook("preHandler", async (request, reply) => {
+    /* CORS preflight: no auth header sent by browser. */
+    if (request.method === "OPTIONS") return;
+
     const url = request.url.split("?")[0]!;
     if (PUBLIC_PATHS.has(url)) {
       return; // public endpoint

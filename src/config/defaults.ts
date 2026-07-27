@@ -13,7 +13,7 @@ export const DEFAULTS: Partial<Config> & { host: string } = {
   token: {
     file: ".gateway-token",
   },
-  allowedOrigins: [],
+  allowedOrigins: ["http://localhost:5199"],
   libraryRoots: ["."],
   logging: {
     level: "info",
