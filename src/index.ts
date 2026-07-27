@@ -225,5 +225,24 @@ export type {
   ExecutionStatus,
 } from "./engine/index.js";
 
+// Staleness (artifact dependency graph and staleness propagation)
+export {
+  StalenessEngine,
+  propagate,
+  buildDependencyGraph,
+  findDownstream,
+  findUpstream,
+  detectCycles,
+} from "./staleness/index.js";
+export type {
+  DependencyNode,
+  DependencyEdge,
+  DependencyGraph,
+  StalenessReason,
+  AffectedStage,
+  StalenessReport,
+  StalenessAcceptance,
+} from "./staleness/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
