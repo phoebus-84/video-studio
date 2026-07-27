@@ -168,5 +168,43 @@ export type {
   ArtifactStoreOptions,
 } from "./artifacts/index.js";
 
+// Journal (append-only event journal and projections)
+export {
+  Journal,
+  JournalReader,
+  hashLine,
+  JOURNAL_ERRORS,
+  buildProjection,
+  applyEvent,
+  mergeProjections,
+  isJournalEvent,
+} from "./journal/index.js";
+export type {
+  JournalWriteOptions,
+  EventSequence,
+  EventCursor,
+  CorrelationId,
+  CausationId,
+  BaseJournalEvent,
+  JournalEvent,
+  EpisodeCreatedEvent,
+  EpisodeStatusChangedEvent,
+  StageStartedEvent,
+  StageCompletedEvent,
+  StageFailedEvent,
+  ArtifactCreatedEvent,
+  ArtifactUpdatedEvent,
+  BudgetUpdatedEvent,
+  ReviewCreatedEvent,
+  ReviewResolvedEvent,
+  SettingsChangedEvent,
+  SnapshotCreatedEvent,
+  StageState,
+  ArtifactState,
+  BudgetState,
+  ReviewState,
+  EpisodeProjection,
+} from "./journal/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
