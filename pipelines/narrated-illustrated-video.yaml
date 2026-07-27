@@ -1,0 +1,197 @@
+pipeline:
+  id: narrated-illustrated-video
+  version: "1.0.0"
+  description: "Produces a 16:9 1080p narrated explainer with illustrations, captions, and FFmpeg editing. Targets 3-8 minute runtime."
+  capabilities:
+    - id: llm
+      version: "1.0.0"
+    - id: image-generation
+      version: "1.0.0"
+    - id: tts
+      version: "1.0.0"
+    - id: speech-to-text
+      version: "1.0.0"
+    - id: ffmpeg
+      version: "1.0.0"
+  stages:
+    - id: brief
+      name: "Creative Brief"
+      description: "Research and structure the video topic"
+      capability: llm
+      inputs: []
+      outputs:
+        - contract: brief.md
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills:
+        - skill: write-brief
+          version: "0.1.0"
+      depends_on: []
+
+    - id: script
+      name: "Script"
+      description: "Write the narration script with scene directions"
+      capability: llm
+      inputs:
+        - contract: brief.md
+          version: "1.0.0"
+      outputs:
+        - contract: script.md
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+      skills:
+        - skill: write-script
+          version: "0.1.0"
+      depends_on:
+        - brief
+
+    - id: art-direction
+      name: "Art Direction"
+      description: "Design visual style and illustration specs per scene"
+      capability: llm
+      inputs:
+        - contract: script.md
+          version: "1.0.0"
+      outputs:
+        - contract: art-direction.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills:
+        - skill: art-direction
+          version: "0.1.0"
+      depends_on:
+        - script
+
+    - id: illustrations
+      name: "Illustrations"
+      description: "Generate images for each scene based on art direction"
+      capability: image-generation
+      inputs:
+        - contract: art-direction.json
+          version: "1.0.0"
+      outputs:
+        - contract: illustrations/
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - art-direction
+
+    - id: narration
+      name: "Narration"
+      description: "Generate voiceover audio from the script"
+      capability: tts
+      inputs:
+        - contract: script.md
+          version: "1.0.0"
+      outputs:
+        - contract: narration.mp3
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - script
+
+    - id: captions
+      name: "Captions"
+      description: "Generate timed captions from narration audio"
+      capability: speech-to-text
+      inputs:
+        - contract: narration.mp3
+          version: "1.0.0"
+      outputs:
+        - contract: captions.srt
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - narration
+
+    - id: timing
+      name: "Scene Timing"
+      description: "Compute per-scene durations and transition timestamps"
+      capability: llm
+      inputs:
+        - contract: script.md
+          version: "1.0.0"
+        - contract: narration.mp3
+          version: "1.0.0"
+      outputs:
+        - contract: timing.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - script
+        - narration
+
+    - id: compose
+      name: "Compose & Render"
+      description: "Assemble final video from illustrations, narration, captions, and timing"
+      capability: ffmpeg
+      inputs:
+        - contract: illustrations/
+          version: "1.0.0"
+        - contract: narration.mp3
+          version: "1.0.0"
+        - contract: captions.srt
+          version: "1.0.0"
+        - contract: timing.json
+          version: "1.0.0"
+      outputs:
+        - contract: output.mp4
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+        budget:
+          wall_time: "5m"
+          tokens: 0
+      skills:
+        - skill: compose-video
+          version: "0.1.0"
+      depends_on:
+        - illustrations
+        - narration
+        - captions
+        - timing
+
+    - id: qa
+      name: "Quality Assurance"
+      description: "Review rendered video for issues"
+      capability: llm
+      inputs:
+        - contract: output.mp4
+          version: "1.0.0"
+      outputs:
+        - contract: qa-report.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - compose

@@ -1,0 +1,67 @@
+pipeline:
+  id: repository-documentation
+  version: "1.0.0"
+  description: "Analyze a pinned repository and produce a multi-episode Content Plan with documentation episodes"
+  extends:
+    pipeline: narrated-illustrated-video
+    version: "1.0.0"
+  capabilities:
+    - id: llm
+      version: "1.0.0"
+    - id: image-generation
+      version: "1.0.0"
+  stages:
+    - id: repo-analysis
+      name: "Repository Analysis"
+      description: "Scan repository structure, architecture, and key modules"
+      capability: llm
+      inputs: []
+      outputs:
+        - contract: repo-analysis.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills:
+        - skill: repo-analysis
+          version: "0.1.0"
+      depends_on: []
+
+    - id: content-plan
+      name: "Content Plan"
+      description: "Generate multi-episode plan from repository analysis"
+      capability: llm
+      inputs:
+        - contract: repo-analysis.json
+          version: "1.0.0"
+      outputs:
+        - contract: content-plan.json
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+      skills:
+        - skill: content-plan
+          version: "0.1.0"
+      depends_on:
+        - repo-analysis
+
+    - id: architecture-diagram
+      name: "Architecture Diagram"
+      description: "Generate technical architecture diagram for the repository"
+      capability: image-generation
+      inputs:
+        - contract: repo-analysis.json
+          version: "1.0.0"
+      outputs:
+        - contract: architecture-diagram.png
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - repo-analysis
