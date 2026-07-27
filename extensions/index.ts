@@ -15,6 +15,7 @@ import { registerPipelineTools } from "../src/pipeline-tools.js";
 import { registerCapabilityTools } from "../src/capability-tools.js";
 import { registerSkillTools } from "../src/skill-tools.js";
 import { registerSlashCommands } from "../src/slash-commands.js";
+import { registerTuiComponents } from "../src/tui-status.js";
 
 // ---------------------------------------------------------------------------
 // Module metadata
@@ -277,4 +278,8 @@ export default function (pi: ExtensionAPI): void {
   // --- Register slash commands ------------------------------------------
 
   registerSlashCommands(pi);
+
+  // --- Register TUI components ------------------------------------------
+
+  registerTuiComponents(pi);
 }
