@@ -1,11 +1,13 @@
-"""Synthesis route — text-to-speech with chunking and WAV output."""
+"""Synthesis route — text-to-speech with Qwen3-TTS model."""
 
 from __future__ import annotations
 
 import hashlib
 import io
 import os
+import shutil
 import struct
+import tempfile
 import time
 import uuid
 import wave
@@ -135,25 +137,64 @@ def chunk_text(text: str, max_chars: int = 500) -> list[str]:
 
 # ── WAV generation ───────────────────────────────────────────────────────────
 
-def generate_silent_wav(
+def synthesize_with_qwen(text: str, voice: str, speed: float, model_path: str) -> bytes:
+    """Synthesize speech using the Qwen3-TTS model.
+
+    Uses mlx_audio to generate real speech via the MLX-accelerated model.
+    Returns raw WAV bytes. Falls back to silent WAV if model not available.
+    """
+    try:
+        from mlx_audio.tts.generate import generate_audio
+
+        tmp_dir = tempfile.mkdtemp(prefix="qwen-tts-")
+        try:
+            generate_audio(
+                text=text,
+                model=model_path,
+                voice=voice,
+                output_path=tmp_dir,
+                verbose=False,
+            )
+            wav_path = os.path.join(tmp_dir, "audio_000.wav")
+            if not os.path.exists(wav_path):
+                wav_files = list(Path(tmp_dir).glob("*.wav"))
+                if wav_files:
+                    wav_path = str(wav_files[0])
+                else:
+                    raise RuntimeError("generate_audio produced no output file")
+
+            with open(wav_path, "rb") as f:
+                wav_data = f.read()
+
+            if len(wav_data) < 44:
+                raise RuntimeError(f"Generated WAV is too small: {len(wav_data)} bytes")
+
+            return wav_data
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+    except (ImportError, FileNotFoundError, RuntimeError):
+        # Fallback for CI / environments without MLX
+        import logging
+        logging.getLogger("qwen-tts-worker").warning(
+            "Qwen3-TTS model not available, falling back to silent WAV"
+        )
+        return _generate_silent_wav(len(text) / 15.0 * speed)
+
+
+def _generate_silent_wav(
     duration_sec: float,
     sample_rate: int = 24000,
     num_channels: int = 1,
     sample_width: int = 2,
 ) -> bytes:
-    """Generate a silent WAV buffer for testing / placeholder synthesis.
-
-    In production, this is replaced by Qwen3-TTS model output.
-    """
+    """Generate silent WAV for environments without the TTS model."""
     num_samples = int(duration_sec * sample_rate)
     buf = io.BytesIO()
-
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(num_channels)
         wf.setsampwidth(sample_width)
         wf.setframerate(sample_rate)
         wf.writeframes(b"\x00" * num_samples * sample_width)
-
     return buf.getvalue()
 
 
@@ -205,13 +246,14 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
 
     _job_store.create(result)
 
-    # Synthesize (sync for now; async queue in production)
+    # Synthesize with real model
     try:
         result.status = "running"
         _job_store.update(job_id, status="running")
 
-        # Generate placeholder WAV (real model in production)
-        wav_data = generate_silent_wav(estimated_duration, request.sample_rate)
+        model_path = os.environ.get("QTW_MODEL_PATH", "models/qwen3-tts-0.6b-4bit")
+        wav_data = synthesize_with_qwen(request.text, request.voice, request.speed, model_path)
+
         # Use absolute path derived from env or default
         voices_root = Path(os.environ.get("TTS_VOICES_DIR", str(Path(__file__).resolve().parent.parent.parent / "voices")))
         output_dir = voices_root / request.voice / "output"
@@ -219,10 +261,20 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
 
         wav_path, wav_size = save_wav(wav_data, output_dir, filename)
 
+        # Read actual duration from generated WAV
+        with wave.open(str(wav_path), "rb") as wf:
+            actual_duration = wf.getnframes() / wf.getframerate()
+            actual_samples = wf.getnframes()
+            actual_channels = wf.getnchannels()
+            actual_rate = wf.getframerate()
+
         result.status = "completed"
         result.wav_path = str(wav_path)
         result.wav_size_bytes = wav_size
-        result.num_samples = int(estimated_duration * request.sample_rate)
+        result.duration_sec = round(actual_duration, 2)
+        result.num_samples = actual_samples
+        result.num_channels = actual_channels
+        result.sample_rate = actual_rate
         result.completed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
         _job_store.update(

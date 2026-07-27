@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from qwen_tts_worker.app import create_app
-from qwen_tts_worker.routes.synthesis import chunk_text, hash_text, generate_silent_wav
+from qwen_tts_worker.routes.synthesis import chunk_text, hash_text
+from qwen_tts_worker.routes.synthesis import _generate_silent_wav as generate_silent_wav
 
 
 @pytest.fixture
