@@ -1,248 +1,287 @@
-// ─── Contract client ──────────────────────────────────────────────────
-// The primary entry point for callers.  Wires together configuration,
-// transport, clock, sleeper, and versioned contracts into a single
-// `submit()` call that returns a typed `GenerationResult`.
+// ---------------------------------------------------------------------------
+// Real fal.ai production client
+// ---------------------------------------------------------------------------
+// Handles both sync (immediate response) and async (queue-based) endpoints.
+// Sync endpoints return images directly. Async endpoints return a request_id
+// that must be polled via the queue endpoint.
+// ---------------------------------------------------------------------------
 
-import type {
-  GenerationInput,
-  GenerationResult,
-  Transport,
-  Clock,
-  Sleeper,
-  FalAdapterConfig,
-} from "./types.js";
-import type { EndpointContract } from "./contracts/v1.js";
-import {
-  FalUnavailableError,
-  FalTimeoutError,
-  FalCancelledError,
-  FalAdapterError,
-} from "./errors.js";
-import { deprecationDiagnostic } from "./profiles.js";
-import { resolveConfig } from "./config.js";
-import type { Logger } from "./logger.js";
-import { createLogger } from "./logger.js";
 import { FetchTransport } from "./transport.js";
-import { SystemClock } from "./clock.js";
+import { getProfile, requireValidParameters } from "./profiles.js";
+import type { HttpRequest, Transport } from "./types.js";
+import { FalHttpError } from "./errors.js";
 
-// ─── Client ───────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────
 
-export interface FalClient {
-  /** Submit a generation and wait for completion. */
-  submit(
-    input: GenerationInput,
-    signal?: AbortSignal,
-  ): Promise<GenerationResult>;
+export interface FalClientOptions {
+  apiKey: string;
+  baseUrl?: string;
+  queueUrl?: string;
+  transport?: Transport;
 }
 
-export class FalClientImpl implements FalClient {
-  private readonly config: FalAdapterConfig;
-  private readonly transport: Transport;
-  private readonly clock: Clock;
-  private readonly logger: Logger;
-  private readonly contracts: Map<string, EndpointContract>;
+export interface SubmitOptions {
+  profile: string;
+  params: Record<string, unknown>;
+  /** Force async mode even for sync endpoints. */
+  async?: boolean;
+}
 
-  constructor(opts: {
-    config: FalAdapterConfig;
-    transport?: Transport;
-    clock?: Clock;
-    logger?: Logger;
-    contracts: EndpointContract[];
-  }) {
-    if (opts.config instanceof FalUnavailableError) {
-      throw opts.config;
-    }
-    this.config = opts.config;
-    this.transport = opts.transport ?? new FetchTransport();
-    this.clock = opts.clock ?? new SystemClock();
-    this.logger = opts.logger ?? createLogger();
-    this.contracts = new Map();
-    for (const c of opts.contracts) {
-      this.contracts.set(c.version, c);
-    }
+export interface FalJob {
+  requestId?: string;
+  status: "COMPLETED" | "IN_PROGRESS" | "IN_QUEUE" | "FAILED";
+  images?: FalImage[];
+  resultUrl?: string;
+  progress?: number;
+  timings?: { inference?: number };
+  seed?: number;
+  error?: string;
+  raw: Record<string, unknown>;
+}
+
+export interface FalImage {
+  url: string;
+  width: number;
+  height: number;
+  contentType: string;
+}
+
+export interface DownloadResult {
+  data: Buffer;
+  contentType: string;
+  contentLength: number;
+  url: string;
+}
+
+// ── FalClient ───────────────────────────────────────────────────────────────
+
+export class FalClient {
+  private apiKey: string;
+  private baseUrl: string;
+  private queueUrl: string;
+  private transport: Transport;
+
+  constructor(options: FalClientOptions) {
+    this.apiKey = options.apiKey;
+    this.baseUrl = options.baseUrl ?? "https://fal.run";
+    this.queueUrl = options.queueUrl ?? "https://queue.fal.run";
+    this.transport = options.transport ?? new FetchTransport();
   }
 
-  async submit(
-    input: GenerationInput,
-    signal?: AbortSignal,
-  ): Promise<GenerationResult> {
-    const startMs = this.clock.nowMs();
-
-    // Resolve the versioned contract
-    const contract = this.contracts.get(input.binding.contractVersion);
-    if (!contract) {
-      throw new FalAdapterError(
-        `No contract registered for version "${input.binding.contractVersion}"`,
-        "FAL_UNKNOWN_CONTRACT",
-        false,
-        { contractVersion: input.binding.contractVersion },
-      );
-    }
-
-    // Warn if the profile is deprecated
-    if (contract.profile) {
-      const diag = deprecationDiagnostic(contract.profile);
-      if (diag) {
-        this.logger.warn("fal deprecated profile", {
-          profileId: contract.profile.profileId,
-          diagnostic: diag,
-        });
-      }
-    }
-
-    // Build request – validation happens here, before any HTTP call
-    const body = contract.buildRequestBody(input);
-    const url = `${this.config.baseUrl}/${input.binding.endpointId}`;
-
-    const headers: Record<string, string> = {
+  private headers(): Record<string, string> {
+    return {
+      Authorization: `Key ${this.apiKey}`,
       "Content-Type": "application/json",
-      Authorization: `Key ${this.config.falKey}`,
+    };
+  }
+
+  // ── Generate image (sync) ─────────────────────────────────────────────
+
+  /**
+   * Generate an image using a sync endpoint (e.g. flux/dev).
+   * Returns immediately with the generated images.
+   */
+  async generate(options: SubmitOptions): Promise<FalJob> {
+    const profile = getProfile(options.profile);
+    if (!profile) throw new Error(`Unknown profile: ${options.profile}`);
+
+    const params = requireValidParameters(profile, options.params);
+    const url = `${this.baseUrl}/${profile.endpointId}`;
+
+    const req: HttpRequest = {
+      method: "POST",
+      url,
+      headers: this.headers(),
+      body: JSON.stringify({ ...params, sync: !options.async }),
     };
 
-    this.logger.info("fal submit", {
-      endpointId: input.binding.endpointId,
-      idempotencyKey: input.idempotencyKey,
-      contractVersion: input.binding.contractVersion,
-      baseUrl: this.config.baseUrl,
-      falKey: this.config.falKey, // will be redacted by logger
-    });
-
-    // Check for cancellation before sending
-    if (signal?.aborted) {
-      throw new FalCancelledError("submit cancelled before request");
+    const res = await this.transport.request(req);
+    if (res.status >= 400) {
+      const body = safeJson(res.body);
+      throw new Error(`fal API error ${res.status}: ${body?.detail ?? body?.message ?? res.body}`);
     }
 
-    // Race the request against the caller's timeout
-    const deadline = startMs + input.timeoutMs;
+    const data = safeJson(res.body) ?? {};
 
-    // Check if deadline already passed
-    if (this.clock.nowMs() >= deadline) {
-      throw new FalTimeoutError(input.timeoutMs, "submit");
+    // Sync response: has images directly
+    if (data.images) {
+      return {
+        status: "COMPLETED",
+        images: (data.images as any[]).map((img: any) => ({
+          url: img.url as string,
+          width: (img.width ?? 0) as number,
+          height: (img.height ?? 0) as number,
+          contentType: (img.content_type ?? "image/jpeg") as string,
+        })),
+        timings: data.timings as { inference?: number },
+        seed: data.seed as number,
+        raw: data,
+      };
     }
 
-    const internalSignal = createDeadlineSignal(signal, deadline, this.clock);
+    // Async response: has request_id
+    if (data.request_id) {
+      return {
+        requestId: data.request_id as string,
+        status: (data.status as FalJob["status"]) ?? "IN_QUEUE",
+        raw: data,
+      };
+    }
 
+    throw new Error(`Unexpected fal response: ${JSON.stringify(data).substring(0, 200)}`);
+  }
+
+  // ── Submit and wait (for async endpoints) ──────────────────────────────
+
+  /**
+   * Submit a job and poll the queue until completion.
+   */
+  async submitAndWait(
+    options: SubmitOptions,
+    pollMs: number = 2000,
+    maxWaitMs: number = 300_000,
+    signal?: AbortSignal,
+  ): Promise<FalJob> {
+    // Force async
+    const job = await this.generate({ ...options, async: true });
+
+    // If sync (unlikely with async:true), return immediately
+    if (job.status === "COMPLETED") return job;
+    if (!job.requestId) throw new Error("No request_id in async response");
+
+    const profile = getProfile(options.profile)!;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < maxWaitMs) {
+      if (signal?.aborted) throw new Error("Cancelled");
+
+      const status = await this.pollStatus(profile.endpointId, job.requestId);
+
+      if (status.status === "COMPLETED") return status;
+      if (status.status === "FAILED") {
+        throw new Error(`fal job ${job.requestId} failed: ${status.error ?? "Unknown error"}`);
+      }
+
+      await sleep(pollMs);
+      pollMs = Math.min(pollMs * 1.5, 15_000);
+    }
+
+    throw new Error(`fal job ${job.requestId} timed out after ${maxWaitMs}ms`);
+  }
+
+  // ── Poll queue status ──────────────────────────────────────────────────
+
+  private async pollStatus(endpointId: string, requestId: string): Promise<FalJob> {
+    const url = `${this.queueUrl}/${endpointId}/requests/${requestId}`;
+    const req: HttpRequest = {
+      method: "GET",
+      url,
+      headers: this.headers(),
+    };
+
+    const res = await this.transport.request(req);
+    const data = safeJson(res.body) ?? {};
+
+    const status = (data.status as string) ?? "IN_PROGRESS";
+
+    // If completed, extract images if available
+    if (status === "COMPLETED" && data.images) {
+      return {
+        requestId,
+        status: "COMPLETED",
+        images: (data.images as any[])?.map((img: any) => ({
+          url: img.url as string,
+          width: (img.width ?? 0) as number,
+          height: (img.height ?? 0) as number,
+          contentType: (img.content_type ?? "image/jpeg") as string,
+        })),
+        timings: data.timings as { inference?: number },
+        seed: data.seed as number,
+        raw: data,
+      };
+    }
+
+    return {
+      requestId,
+      status: mapStatus(status),
+      resultUrl: (data.response_url ?? data.result_url) as string | undefined,
+      progress: data.progress as number | undefined,
+      error: data.error as string | undefined,
+      raw: data,
+    };
+  }
+
+  // ── Download ───────────────────────────────────────────────────────────
+
+  async download(imageUrl: string): Promise<DownloadResult> {
+    const req: HttpRequest = {
+      method: "GET",
+      url: imageUrl,
+      headers: {},
+    };
+
+    const res = await this.transport.request(req);
+    if (res.status >= 400) {
+      throw new Error(`Failed to download ${imageUrl}: ${res.status}`);
+    }
+
+    const buf = Buffer.from(res.body, "binary");
+    return {
+      data: buf,
+      contentType: res.headers["content-type"] ?? "image/jpeg",
+      contentLength: buf.length,
+      url: imageUrl,
+    };
+  }
+
+  // ── Health ─────────────────────────────────────────────────────────────
+
+  async health(): Promise<{ ok: boolean; detail: string }> {
     try {
-      const response = await this.transport.request(
-        {
-          method: "POST",
-          url,
-          headers,
-          body: JSON.stringify(body),
-        },
-        internalSignal,
-      );
+      // Lightweight: try a sync generation with minimal steps
+      const url = `${this.baseUrl}/fal-ai/flux/dev`;
+      const req: HttpRequest = {
+        method: "POST",
+        url,
+        headers: this.headers(),
+        body: JSON.stringify({
+          prompt: "test",
+          image_size: "square_hd",
+          num_inference_steps: 1,
+        }),
+      };
 
-      const raw = JSON.parse(response.body) as Record<string, unknown>;
-      const result = contract.parseResponse(input, raw);
-
-      this.logger.info("fal completed", {
-        idempotencyKey: input.idempotencyKey,
-        providerRequestId: result.providerRequestId,
-        outputCount: result.outputs.length,
-        elapsedMs: this.clock.nowMs() - startMs,
-      });
-
-      return result;
+      const res = await this.transport.request(req, AbortSignal.timeout(15_000));
+      return { ok: res.status < 400, detail: `Status ${res.status}` };
     } catch (err) {
-      if (err instanceof FalAdapterError) {
-        // Log and rethrow
-        this.logger.error("fal error", (err as FalAdapterError).toJSON());
-        throw err;
-      }
-
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new FalCancelledError("submit aborted");
-      }
-
-      throw err;
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
     }
   }
 }
 
-// ─── Convenience factory ──────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Build a FalClient from the process environment and the given contracts.
- * Returns a {@link FalUnavailableError} when FAL_KEY is missing.
- */
-export function createFalClient(
-  contracts: EndpointContract[],
-  opts?: {
-    transport?: Transport;
-    clock?: Clock;
-    sleeper?: Sleeper;
-    logger?: Logger;
-  },
-): FalClient | FalUnavailableError {
-  const config = resolveConfig();
-  if (config instanceof FalUnavailableError) {
-    return config;
-  }
-
-  return new FalClientImpl({
-    config,
-    contracts,
-    ...opts,
-  });
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────
+function safeJson(body: string): Record<string, unknown> | null {
+  try { return JSON.parse(body); } catch { return null; }
+}
 
-function createDeadlineSignal(
-  parentSignal: AbortSignal | undefined,
-  deadlineMs: number,
-  clock: Clock,
-): AbortSignal | undefined {
-  const remaining = deadlineMs - clock.nowMs();
-  if (remaining <= 0) {
-    // Already timed out – create an already-aborted signal.
-    const ac = new AbortController();
-    ac.abort(new FalTimeoutError(0, "submit"));
-    return ac.signal;
+function mapStatus(s: string): FalJob["status"] {
+  switch (s.toUpperCase()) {
+    case "COMPLETED": return "COMPLETED";
+    case "IN_PROGRESS": return "IN_PROGRESS";
+    case "IN_QUEUE": return "IN_QUEUE";
+    case "FAILED": return "FAILED";
+    default: return "IN_PROGRESS";
   }
+}
 
-  if (!parentSignal) {
-    // No parent signal, just a deadline.
-    const ac = new AbortController();
-    const timeoutId = setTimeout(() => {
-      ac.abort(new FalTimeoutError(deadlineMs - clock.nowMs() + remaining, "submit"));
-    }, remaining);
-    // Clean up timeout if aborted early
-    ac.signal.addEventListener(
-      "abort",
-      () => clearTimeout(timeoutId),
-      { once: true },
-    );
-    return ac.signal;
-  }
-
-  // Combine parent signal with deadline
-  const ac = new AbortController();
-  const timeoutId = setTimeout(() => {
-    ac.abort(new FalTimeoutError(deadlineMs - clock.nowMs() + remaining, "submit"));
-  }, remaining);
-
-  const onParentAbort = () => {
-    clearTimeout(timeoutId);
-    ac.abort(parentSignal.reason ?? new FalCancelledError("parent aborted"));
-  };
-
-  parentSignal.addEventListener("abort", onParentAbort, { once: true });
-  ac.signal.addEventListener(
-    "abort",
-    () => {
-      clearTimeout(timeoutId);
-      parentSignal.removeEventListener("abort", onParentAbort);
-    },
-    { once: true },
-  );
-
-  // If parent is already aborted, trigger immediately
-  if (parentSignal.aborted) {
-    clearTimeout(timeoutId);
-    ac.abort(parentSignal.reason ?? new FalCancelledError("parent aborted"));
-  }
-
-  return ac.signal;
+/** Create a FalClient from environment. */
+export function createFalClient(apiKey?: string): FalClient {
+  const key = apiKey ?? process.env.FAL_KEY ?? process.env.FAL_API_KEY;
+  if (!key) throw new Error("FAL_KEY or FAL_API_KEY required");
+  return new FalClient({ apiKey: key });
 }
