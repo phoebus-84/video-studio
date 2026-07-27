@@ -97,5 +97,25 @@ export type {
   DiscoveryDiagnosticCode,
 } from "./workspace/index.js";
 
+// Settings (inheritance-based resolution)
+export {
+  resolveSettings,
+  SYSTEM_DEFAULTS,
+} from "./settings/index.js";
+export type {
+  ApprovalMode,
+  GateBehaviour,
+  ApprovalPolicy,
+  BudgetEnvelope,
+  OutputProfileRef,
+  SettingsLayer,
+  LayerName,
+  ResolvedValue,
+  ResolvedSettings,
+  ResolutionReport,
+  ResolutionEntry,
+  ResolutionWarning,
+} from "./settings/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
