@@ -13,38 +13,42 @@
   type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
-  // Build asset groups from scenes if fixtures don't cover them
+  // Build asset groups from scenes if fixtures don't cover them.
+  // Guarded by _loaded to prevent re-entry from asset store writes.
+  let _groupsLoaded = false;
   $effect(() => {
-    if (scenes.scenes.length > 0) {
-      const fixtureIds = new Set(ASSETS_FIXTURE.map((g) => g.sceneId));
-      const missing = scenes.scenes.filter((s) => !fixtureIds.has(s.id));
-
-      if (missing.length > 0) {
-        // Build lightweight asset groups from scene data
-        const generated: AssetGroup[] = missing.map((scene) => ({
-          sceneId: scene.id,
-          sceneTitle: scene.title,
-          attempts: [{
-            id: `gen-${scene.id}-1`,
+    const sceneList = scenes.scenes;
+    if (sceneList.length > 0 && !_groupsLoaded) {
+      _groupsLoaded = true;
+      untrack(() => {
+        const fixtureIds = new Set(ASSETS_FIXTURE.map((g) => g.sceneId));
+        const missing = sceneList.filter((s) => !fixtureIds.has(s.id));
+        if (missing.length > 0) {
+          const generated: AssetGroup[] = missing.map((scene) => ({
             sceneId: scene.id,
-            prompt: scene.intent ?? `Asset for ${scene.title}`,
-            referenceImages: [],
-            provider: "fal.ai",
-            model: "flux-dev-v1",
-            seed: 42,
-            dimensions: { width: 1920, height: 1080 },
-            cost: 0,
-            license: "pending",
-            createdAt: new Date().toISOString(),
-            selected: true,
-            filePath: null,
-            fileAvailable: false,
-          }],
-        }));
-        assets.load([...ASSETS_FIXTURE, ...generated]);
-      } else if (assets.groups.length === 0) {
-        assets.load(ASSETS_FIXTURE);
-      }
+            sceneTitle: scene.title,
+            attempts: [{
+              id: `gen-${scene.id}-1`,
+              sceneId: scene.id,
+              prompt: scene.intent ?? `Asset for ${scene.title}`,
+              referenceImages: [],
+              provider: "fal.ai",
+              model: "flux-dev-v1",
+              seed: 42,
+              dimensions: { width: 1920, height: 1080 },
+              cost: 0,
+              license: "pending",
+              createdAt: new Date().toISOString(),
+              selected: true,
+              filePath: null,
+              fileAvailable: false,
+            }],
+          }));
+          assets.load([...ASSETS_FIXTURE, ...generated]);
+        } else {
+          assets.load(ASSETS_FIXTURE);
+        }
+      });
     }
   });
 

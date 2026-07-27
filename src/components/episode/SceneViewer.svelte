@@ -3,6 +3,7 @@
   import { scenes } from "$lib/scene-store.svelte.ts";
   import { narration } from "$lib/narration-store.svelte.ts";
   import { NARRATION_FIXTURE, VOICE_FIXTURE } from "$lib/narration-fixtures";
+  import { untrack } from "svelte";
   import Storyboard from "../storyboard/Storyboard.svelte";
   import NarrationPanel from "../narration/NarrationPanel.svelte";
   import RenderViewer from "../render/RenderViewer.svelte";
@@ -10,6 +11,22 @@
   type Tab = "storyboard" | "narration" | "render";
   let tab = $state<Tab>("storyboard");
   let loaded = false;
+
+  // Auto-switch tab when a pipeline stage is selected
+  $effect(() => {
+    const stageId = episode.selectedStageId;
+    if (stageId && episode.state.phase === "ready") {
+      untrack(() => {
+        if (stageId === "narration") {
+          tab = "narration";
+        } else if (stageId === "render") {
+          tab = "render";
+        } else {
+          tab = "storyboard";
+        }
+      });
+    }
+  });
 
   $effect(() => {
     if (episode.state.phase === "ready" && !loaded) {
