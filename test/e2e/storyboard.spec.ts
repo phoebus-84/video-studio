@@ -7,7 +7,7 @@ test("storyboard appears when an episode is selected", async ({ page }) => {
   await page.getByText("How It Works").click();
   await page.getByText("Memory Hierarchies Explained").click();
 
-  await expect(page.getByText("Storyboard")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Storyboard" })).toBeVisible();
   await expect(page.getByText("6 scenes")).toBeVisible();
 });
 
