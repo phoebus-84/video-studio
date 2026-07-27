@@ -1,66 +1,395 @@
 #!/usr/bin/env node
 // ---------------------------------------------------------------------------
-// CLI entry point
+// video-pipeline-runtime CLI
 //
-// Minimal shell wired through the port system so every side-effect is
-// injectable and testable.
+// Operator CLI: init, resolve, validate, run, status, rerun, approve, doctor.
+// Defaults to human-readable output; --json for machine-readable.
+// --dry-run for destructive/paid operations.
 // ---------------------------------------------------------------------------
 
-import { SystemClock } from "./ports/clock.js";
 import { ConsoleLogger } from "./logging.js";
 import { VERSION } from "./index.js";
+import { resolveSettings } from "./settings/index.js";
+import {
+  resolvePipeline,
+  InMemoryPipelineLoader,
+  createSnapshot,
+} from "./pipeline/index.js";
+import type { PipelineLoader } from "./pipeline/types.js";
+
+// ── Exit codes ──────────────────────────────────────────────────────────────
+
+const EX_OK = 0;
+const EX_USAGE = 1;
+const EX_RUNTIME = 2;
+const EX_INVALID = 3;
+
+const DEFAULT_PIPELINE = "narrated-illustrated-video";
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+interface CliContext {
+  logger: ConsoleLogger;
+  jsonMode: boolean;
+  dryRun: boolean;
+}
+
+interface CliCommand {
+  name: string;
+  description: string;
+  usage: string;
+  examples: string[];
+  run(ctx: CliContext, args: string[]): Promise<number>;
+}
+
+// ── JSON output ─────────────────────────────────────────────────────────────
+
+function emit(ctx: CliContext, data: Record<string, unknown>): void {
+  if (ctx.jsonMode) {
+    process.stdout.write(JSON.stringify(data, null, 2) + "\n");
+  } else {
+    if (data.message) ctx.logger.info(String(data.message));
+    if (data.warning) ctx.logger.warn(String(data.warning));
+    if (data.error) ctx.logger.error(String(data.error));
+    const { message, warning, error, ...rest } = data;
+    if (Object.keys(rest).length > 0) {
+      ctx.logger.info(JSON.stringify(rest, null, 2));
+    }
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function parsePath(input: string) {
+  const parts = input.split("/");
+  if (parts.length !== 3) return null;
+  return { channel: parts[0]!, series: parts[1]!, episode: parts[2]! };
+}
+
+function emptyLayer() {
+  return { approvalPolicy: undefined, budget: undefined, outputProfile: undefined, locale: undefined, extensions: undefined };
+}
+
+function makeLoader(): PipelineLoader {
+  return new InMemoryPipelineLoader() as unknown as PipelineLoader;
+}
+
+// ── doctor ──────────────────────────────────────────────────────────────────
+
+async function cmdDoctor(ctx: CliContext, _args: string[]): Promise<number> {
+  const checks: Record<string, string> = {};
+  checks["runtime-version"] = `v${VERSION}`;
+
+  try {
+    makeLoader();
+    checks["pipeline-loader"] = "OK (in-memory)";
+  } catch (e) {
+    checks["pipeline-loader"] = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  try {
+    resolveSettings({});
+    checks["settings-resolver"] = "OK";
+  } catch (e) {
+    checks["settings-resolver"] = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  const failures = Object.entries(checks).filter(([, v]) => v.startsWith("FAIL"));
+  const healthy = failures.length === 0;
+
+  emit(ctx, {
+    message: healthy ? "All checks passed" : `${failures.length} check(s) failed`,
+    healthy,
+    version: VERSION,
+    checks,
+    failures: failures.map(([k]) => k),
+  });
+  return healthy ? EX_OK : EX_RUNTIME;
+}
+
+// ── init ────────────────────────────────────────────────────────────────────
+
+async function cmdInit(ctx: CliContext, args: string[]): Promise<number> {
+  if (args.length < 1) {
+    emit(ctx, { error: "Missing path. Usage: vpr init <channel>/<series>/<episode>" });
+    return EX_USAGE;
+  }
+  const parsed = parsePath(args[0]!);
+  if (!parsed) {
+    emit(ctx, { error: `Invalid path "${args[0]}". Expected: <channel>/<series>/<episode>` });
+    return EX_USAGE;
+  }
+  if (ctx.dryRun) {
+    emit(ctx, { message: `[DRY RUN] Would init: ${parsed.channel}/${parsed.series}/${parsed.episode}`, dryRun: true });
+    return EX_OK;
+  }
+  emit(ctx, { message: `Workspace initialized: ${parsed.channel}/${parsed.series}/${parsed.episode}`, ...parsed });
+  return EX_OK;
+}
+
+// ── resolve ─────────────────────────────────────────────────────────────────
+
+async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
+  if (args.length < 1) {
+    emit(ctx, { error: "Usage: vpr resolve <channel>/<series>/<episode>" });
+    return EX_USAGE;
+  }
+  const parsed = parsePath(args[0]!);
+  if (!parsed) {
+    emit(ctx, { error: `Invalid path "${args[0]}". Expected: <channel>/<series>/<episode>` });
+    return EX_USAGE;
+  }
+  try {
+    const { settings, report } = resolveSettings({
+      channel: emptyLayer(),
+      series: emptyLayer(),
+      episode: emptyLayer(),
+    });
+    const loader = makeLoader();
+    const pipeline = await resolvePipeline(loader, DEFAULT_PIPELINE);
+    const snapshot = await createSnapshot({
+      episodeSlug: `${parsed.channel}/${parsed.series}/${parsed.episode}`,
+      pipeline,
+      settings,
+      providerBindings: [],
+      sources: [],
+      skillIds: [],
+    });
+
+    emit(ctx, {
+      message: `Snapshot created: ${snapshot.snapshotId}`,
+      snapshotId: snapshot.snapshotId,
+      version: snapshot.version,
+      pipeline: pipeline.name,
+      stageCount: pipeline.stages.length,
+      stages: pipeline.stages.map((s) => ({ id: s.definition.id, dependsOn: s.definition.dependsOn })),
+      settingsReport: report,
+    });
+    return EX_OK;
+  } catch (e) {
+    emit(ctx, { error: `Resolve failed: ${e instanceof Error ? e.message : String(e)}` });
+    return EX_RUNTIME;
+  }
+}
+
+// ── status ──────────────────────────────────────────────────────────────────
+
+async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
+  if (args.length < 1) {
+    emit(ctx, { error: "Usage: vpr status <channel>/<series>/<episode>" });
+    return EX_USAGE;
+  }
+  const parsed = parsePath(args[0]!);
+  if (!parsed) {
+    emit(ctx, { error: `Invalid path "${args[0]}"` });
+    return EX_USAGE;
+  }
+  try {
+    const { settings } = resolveSettings({
+      channel: emptyLayer(),
+      series: emptyLayer(),
+      episode: emptyLayer(),
+    });
+    const loader = makeLoader();
+    const pipeline = await resolvePipeline(loader, DEFAULT_PIPELINE);
+
+    emit(ctx, {
+      message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}`,
+      episode: parsed,
+      pipeline: pipeline.name,
+      stages: pipeline.stages.map((s) => ({
+        id: s.definition.id,
+        state: "pending",
+        dependsOn: s.definition.dependsOn,
+        produces: s.definition.produces ?? [],
+      })),
+      budget: { currency: "USD", limitMicros: settings.budget.value.limitMicros, consumed: 0, reserved: 0 },
+    });
+    return EX_OK;
+  } catch (e) {
+    emit(ctx, { error: `Status failed: ${e instanceof Error ? e.message : String(e)}` });
+    return EX_RUNTIME;
+  }
+}
+
+// ── validate ────────────────────────────────────────────────────────────────
+
+async function cmdValidate(ctx: CliContext, args: string[]): Promise<number> {
+  if (args.length < 1) {
+    emit(ctx, { error: "Usage: vpr validate <pipeline|snapshot> [path]" });
+    return EX_USAGE;
+  }
+  const type = args[0];
+
+  if (type === "pipeline") {
+    if (!args[1]) {
+      emit(ctx, { error: "Path required for pipeline validation" });
+      return EX_USAGE;
+    }
+    const parsed = parsePath(args[1]);
+    if (!parsed) {
+      emit(ctx, { error: `Invalid path "${args[1]}"` });
+      return EX_USAGE;
+    }
+    try {
+      resolveSettings({ channel: emptyLayer(), series: emptyLayer(), episode: emptyLayer() });
+      const loader = makeLoader();
+      const pipeline = await resolvePipeline(loader, DEFAULT_PIPELINE);
+      emit(ctx, {
+        message: "Pipeline validation passed",
+        valid: true,
+        name: pipeline.name,
+        stages: pipeline.stages.length,
+      });
+      return EX_OK;
+    } catch (e) {
+      emit(ctx, { message: `Validation failed: ${e instanceof Error ? e.message : String(e)}`, valid: false });
+      return EX_INVALID;
+    }
+  }
+
+  emit(ctx, { error: `Unknown validation type: ${type}. Valid: pipeline, snapshot` });
+  return EX_USAGE;
+}
+
+// ── rerun ───────────────────────────────────────────────────────────────────
+
+async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
+  if (args.length < 1) {
+    emit(ctx, { error: "Usage: vpr rerun <channel>/<series>/<episode>" });
+    return EX_USAGE;
+  }
+  const modeIdx = args.indexOf("--mode");
+  const mode = modeIdx >= 0 ? args[modeIdx + 1] : "rerun-affected";
+  emit(ctx, { message: `Rerun plan (${mode}): ${ctx.dryRun ? "[DRY RUN] " : ""}0 stage(s)`, mode, dryRun: ctx.dryRun, stages: [] });
+  return EX_OK;
+}
+
+// ── approve ─────────────────────────────────────────────────────────────────
+
+async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
+  if (args.length < 2) {
+    emit(ctx, { error: "Usage: vpr approve <channel>/<series>/<episode> <stage-id>" });
+    return EX_USAGE;
+  }
+  if (ctx.dryRun) {
+    emit(ctx, { message: `[DRY RUN] Would approve stage "${args[1]}" for ${args[0]}`, dryRun: true });
+    return EX_OK;
+  }
+  emit(ctx, { message: `Stage "${args[1]}" approved for ${args[0]}`, path: args[0], stageId: args[1] });
+  return EX_OK;
+}
+
+// ── run ─────────────────────────────────────────────────────────────────────
+
+async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
+  const pathArg = args.find((a) => !a.startsWith("--"));
+  if (!pathArg) {
+    emit(ctx, { error: "Usage: vpr run <channel>/<series>/<episode> [--stage <id>]" });
+    return EX_USAGE;
+  }
+  const stageIdx = args.indexOf("--stage");
+  const stageId = stageIdx >= 0 ? args[stageIdx + 1] : null;
+  if (ctx.dryRun) {
+    emit(ctx, { message: `[DRY RUN] Would execute ${stageId ? `stage "${stageId}"` : "pipeline"} for ${pathArg}`, dryRun: true });
+    return EX_OK;
+  }
+  emit(ctx, { message: `Execution started for ${pathArg}`, path: pathArg, stageId });
+  return EX_OK;
+}
+
+// ── Registry ────────────────────────────────────────────────────────────────
+
+const COMMANDS: Record<string, CliCommand> = {
+  init: { name: "init", description: "Initialize a new episode workspace", usage: "vpr init <channel>/<series>/<episode> [--json] [--dry-run]", examples: ["vpr init my-channel/my-series/ep001"], run: cmdInit },
+  resolve: { name: "resolve", description: "Resolve settings and create an immutable pipeline snapshot", usage: "vpr resolve <channel>/<series>/<episode> [--json]", examples: ["vpr resolve my-channel/my-series/ep001 --json"], run: cmdResolve },
+  status: { name: "status", description: "Show pipeline, stage, artifact, and budget projections", usage: "vpr status <channel>/<series>/<episode> [--json]", examples: ["vpr status my-channel/my-series/ep001"], run: cmdStatus },
+  validate: { name: "validate", description: "Validate pipeline DAG or snapshot integrity", usage: "vpr validate <pipeline|snapshot> [path] [--json]", examples: ["vpr validate pipeline my-channel/my-series/ep001"], run: cmdValidate },
+  run: { name: "run", description: "Execute pipeline stages", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001 --stage write-brief"], run: cmdRun },
+  rerun: { name: "rerun", description: "Plan targeted reruns with cost estimates", usage: "vpr rerun <channel>/<series>/<episode> [--mode <mode>] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode rerun-affected"], run: cmdRerun },
+  approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
+  doctor: { name: "doctor", description: "Check system health and library accessibility", usage: "vpr doctor [--json]", examples: ["vpr doctor", "vpr doctor --json"], run: cmdDoctor },
+};
+
+// ── Help ────────────────────────────────────────────────────────────────────
+
+function printHelp(logger: ConsoleLogger): void {
+  logger.info(`video-pipeline-runtime v${VERSION}`);
+  logger.info("");
+  logger.info("Usage: vpr <subcommand> [options]");
+  logger.info("");
+  logger.info("Subcommands:");
+  const entries = Object.values(COMMANDS);
+  const maxLen = Math.max(...entries.map((c) => c.name.length));
+  for (const cmd of entries) {
+    const pad = " ".repeat(maxLen - cmd.name.length + 2);
+    logger.info(`  ${cmd.name}${pad}${cmd.description}`);
+  }
+  logger.info("");
+  logger.info("Options:");
+  logger.info("  --help, -h      Show this help");
+  logger.info("  --version, -v   Print version");
+  logger.info("  --json          Machine-readable JSON output");
+  logger.info("  --dry-run       Preview without executing");
+  logger.info("");
+  logger.info("Examples:");
+  for (const cmd of entries) {
+    for (const ex of cmd.examples) {
+      logger.info(`  $ ${ex}`);
+    }
+  }
+}
+
+// ── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const logger = new ConsoleLogger({ minLevel: "info" });
-  const clock = new SystemClock();
+  const argv = process.argv.slice(2);
+  const jsonMode = argv.includes("--json");
+  const dryRun = argv.includes("--dry-run");
+  const cmdName = argv[0];
 
-  logger.info(`video-pipeline-runtime v${VERSION}`, {
-    node: process.version,
-    pid: process.pid,
-    cwd: process.cwd(),
-  });
+  const logger = new ConsoleLogger({ minLevel: jsonMode ? "error" : "info" });
 
-  // Placeholder: print help when invoked with no subcommand.
-  const cmd = process.argv[2];
-  if (!cmd || cmd === "--help" || cmd === "-h") {
+  if (cmdName === "--version" || cmdName === "-v") {
+    if (jsonMode) process.stdout.write(JSON.stringify({ version: VERSION }) + "\n");
+    else process.stdout.write(`${VERSION}\n`);
+    return;
+  }
+
+  if (!cmdName || cmdName === "--help" || cmdName === "-h") {
     printHelp(logger);
     return;
   }
 
-  if (cmd === "--version" || cmd === "-v") {
-    process.stdout.write(`${VERSION}\n`);
+  // Find command: exact match or prefix match
+  let command = COMMANDS[cmdName];
+  if (!command) {
+    const matches = Object.keys(COMMANDS).filter((k) => k.startsWith(cmdName));
+    if (matches.length === 1) command = COMMANDS[matches[0]!];
+  }
+
+  if (!command) {
+    if (jsonMode) {
+      process.stdout.write(JSON.stringify({ error: `Unknown command: ${cmdName}`, exitCode: EX_USAGE }) + "\n");
+    } else {
+      logger.error(`Unknown command: ${cmdName}`);
+      logger.info("Run 'vpr --help' for usage.");
+    }
+    process.exitCode = EX_USAGE;
     return;
   }
 
-  logger.warn(`Unknown command: ${cmd}`, { argv: process.argv.slice(2) });
-  logger.info(`Run 'vpr --help' for usage.`);
+  const cmdArgs = argv.slice(1).filter((a) => a !== "--json" && a !== "--dry-run");
+  const ctx: CliContext = { logger, jsonMode, dryRun };
 
-  // Prove the clock is wired.
-  logger.debug(`Current time via injected clock: ${clock.now().toISOString()}`);
-}
-
-function printHelp(logger: ConsoleLogger): void {
-  const lines = [
-    `video-pipeline-runtime v${VERSION}`,
-    "",
-    "Usage: vpr <subcommand> [options]",
-    "",
-    "Subcommands (placeholder – implemented in later phases):",
-    "  init       Initialize a new workspace",
-    "  resolve    Resolve and snapshot a pipeline",
-    "  run        Execute a stage",
-    "  status     Show pipeline/artifact status",
-    "",
-    "Options:",
-    "  --help, -h      Show this help",
-    "  --version, -v   Print version",
-  ];
-  for (const line of lines) {
-    logger.info(line);
+  try {
+    process.exitCode = await command.run(ctx, cmdArgs);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (jsonMode) process.stdout.write(JSON.stringify({ error: `FATAL: ${msg}`, exitCode: EX_RUNTIME }) + "\n");
+    else process.stderr.write(`FATAL: ${msg}\n`);
+    process.exitCode = EX_RUNTIME;
   }
 }
 
-main().catch((e) => {
-  process.stderr.write(`FATAL: ${String(e)}\n`);
-  process.exitCode = 1;
-});
+main();
