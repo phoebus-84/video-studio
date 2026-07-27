@@ -50,6 +50,7 @@
   let { theme }: Props = $props();
 
   let connected = $state(false);
+  let gatewayClient: GatewayClient | null = $state(null);
 
   /* Try gateway first, fall back to fixtures. */
   $effect(() => {
@@ -61,6 +62,7 @@
         baseUrl: gwUrl,
         tokenProvider: () => gwToken,
       });
+      gatewayClient = client;
 
       library.loadFromGateway(client).then(() => {
         connected = true;
@@ -75,8 +77,21 @@
   /* Wire episode selection from library into the episode workspace. */
   $effect(() => {
     const key = library.selectedEpisode;
-    if (key && episodeMap[key]) {
+    if (!key) return;
+
+    if (episodeMap[key]) {
       episode.load(episodeMap[key]!);
+    } else if (gatewayClient) {
+      // Parse channel/episode from the key (format: channel/episode)
+      const parts = key.split("/");
+      if (parts.length >= 2) {
+        // Find the series from the library tree
+        const channel = parts[0]!;
+        const epSlug = parts[1]!;
+        const chEntry = library.tree.channels.find((c) => c.slug === channel);
+        const series = chEntry?.series?.[0]?.slug ?? "unknown";
+        episode.loadFromGateway(gatewayClient, channel, series, epSlug);
+      }
     }
   });
 
