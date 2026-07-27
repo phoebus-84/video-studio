@@ -11,6 +11,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { resolveConfig, checkServiceHealth } from "../src/config.js";
 import { registerWorkspaceTools } from "../src/workspace-tools.js";
+import { registerPipelineTools } from "../src/pipeline-tools.js";
 
 // ---------------------------------------------------------------------------
 // Module metadata
@@ -257,4 +258,8 @@ export default function (pi: ExtensionAPI): void {
   // --- Register workspace tools ----------------------------------------
 
   registerWorkspaceTools(pi);
+
+  // --- Register pipeline tools ------------------------------------------
+
+  registerPipelineTools(pi);
 }

@@ -129,16 +129,24 @@ describe("extensions/index.ts — tool registration", () => {
   });
 
   it("registers the expected suite of production tools", () => {
-    expect(mockPi.tools.length).toBe(8);
+    expect(mockPi.tools.length).toBe(16);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "pva_approve",
+      "pva_budget_status",
       "pva_channels",
+      "pva_check_staleness",
       "pva_config",
       "pva_diagnostics",
       "pva_episode_detail",
       "pva_episodes",
       "pva_health",
+      "pva_journal",
+      "pva_plan_rerun",
+      "pva_run_pipeline",
+      "pva_run_stage",
       "pva_series",
+      "pva_snapshot",
       "pva_version",
     ]);
   });
