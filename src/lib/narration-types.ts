@@ -18,10 +18,11 @@ export interface NarrationSegment {
 }
 
 export interface VoiceProfile {
-  id: string;
+  id?: string;
   name: string;
-  modelSize: "0.6B" | "1.7B";
+  modelSize: "0.6B" | "1.7B" | string;
   installed: boolean;
+  sampleRate?: number;
 }
 
 export const STATUS_SYMBOLS: Record<NarrationSegmentStatus, string> = {

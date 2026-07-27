@@ -58,6 +58,17 @@ class EpisodeStore {
         blockers: detail.blockers ?? [],
       };
       this.load(workspace);
+
+      // Also load narration segments if available
+      if (detail.narration && detail.narration.length > 0) {
+        const { narration } = await import("$lib/narration-store.svelte.ts");
+        narration.load(detail.narration, {
+          name: "Qwen3-TTS",
+          modelSize: "0.6B",
+          installed: true,
+          sampleRate: 24000,
+        });
+      }
     } catch (err) {
       this.loadError(err instanceof Error ? err.message : "Failed to load episode");
     }

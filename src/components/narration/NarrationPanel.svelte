@@ -11,9 +11,10 @@
 
   function togglePlay(segmentId: string) {
     if (narration.playingId === segmentId) {
-      narration.markPlaying(null);
+      narration.stopPlayback();
     } else {
-      narration.markPlaying(segmentId);
+      const seg = narration.segments.find((s) => s.id === segmentId);
+      if (seg) narration.synthesizeAndPlay(seg);
     }
   }
 </script>
@@ -50,7 +51,11 @@
             {formatTime(seg.durationSeconds)}
           </span>
 
-          {#if seg.status === "ready" && seg.fileAvailable}
+          {#if narration.synthesizing && narration.playingId === seg.id}
+            <button class="np-play-btn" aria-label="Synthesizing..." disabled>
+              ⟳
+            </button>
+          {:else}
             <button
               class="np-play-btn"
               aria-label="{narration.playingId === seg.id ? 'Pause' : 'Play'} segment {seg.id}"
