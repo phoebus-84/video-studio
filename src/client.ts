@@ -214,21 +214,16 @@ export class FalClient {
   // ── Download ───────────────────────────────────────────────────────────
 
   async download(imageUrl: string): Promise<DownloadResult> {
-    const req: HttpRequest = {
-      method: "GET",
-      url: imageUrl,
-      headers: {},
-    };
-
-    const res = await this.transport.request(req);
-    if (res.status >= 400) {
+    // Use native fetch for binary downloads (transport corrupts binary)
+    const res = await fetch(imageUrl);
+    if (!res.ok) {
       throw new Error(`Failed to download ${imageUrl}: ${res.status}`);
     }
 
-    const buf = Buffer.from(res.body, "binary");
+    const buf = Buffer.from(await res.arrayBuffer());
     return {
       data: buf,
-      contentType: res.headers["content-type"] ?? "image/jpeg",
+      contentType: res.headers.get("content-type") ?? "image/jpeg",
       contentLength: buf.length,
       url: imageUrl,
     };
