@@ -4,8 +4,9 @@
   import { scenes } from "$lib/scene-store.svelte.ts";
   import AssetPanel from "../assets/AssetPanel.svelte";
   import ReviewInbox from "../review/ReviewInbox.svelte";
+  import ProgressPanel from "../status/ProgressPanel.svelte";
 
-  type Tab = "assets" | "reviews";
+  type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
   $effect(() => {
@@ -36,6 +37,14 @@
     >
       Reviews
     </button>
+    <button
+      class="ci-tab"
+      role="tab"
+      aria-selected={tab === "status"}
+      onclick={() => tab = "status"}
+    >
+      Status
+    </button>
   </div>
 
   <div class="ci-content">
@@ -43,6 +52,8 @@
       <AssetPanel />
     {:else if tab === "reviews"}
       <ReviewInbox />
+    {:else if tab === "status"}
+      <ProgressPanel />
     {:else}
       <div class="inspector-empty">
         <p>Select a scene to inspect assets.</p>
