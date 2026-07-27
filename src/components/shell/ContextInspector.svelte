@@ -51,7 +51,7 @@
     const sceneId = scenes.selectedSceneId;
     if (sceneId) {
       untrack(() => {
-        assets.selectGroup(sceneId);
+        assetStore.selectGroup(sceneId);
         tab = "assets";
       });
     }
@@ -87,7 +87,7 @@
   </div>
 
   <div class="ci-content">
-    {#if tab === "assets" && assets.selectedGroup}
+    {#if tab === "assets" && assetStore.selectedGroup}
       <AssetPanel />
     {:else if tab === "reviews"}
       <ReviewInbox />

@@ -52,26 +52,22 @@
   let connected = $state(false);
   let gatewayClient: GatewayClient | null = $state(null);
 
-  /* Try gateway first, fall back to fixtures. */
+  /* Always try gateway first, fall back to fixtures only on failure. */
   $effect(() => {
     const gwUrl = localStorage.getItem("vs-gateway-url") ?? "http://127.0.0.1:5198";
-    const gwToken = localStorage.getItem("vs-gateway-token") ?? "";
+    const gwToken = localStorage.getItem("vs-gateway-token") ?? "dev-token";
 
-    if (gwToken) {
-      const client = new GatewayClient({
-        baseUrl: gwUrl,
-        tokenProvider: () => gwToken,
-      });
-      gatewayClient = client;
+    const client = new GatewayClient({
+      baseUrl: gwUrl,
+      tokenProvider: () => gwToken,
+    });
+    gatewayClient = client;
 
-      library.loadFromGateway(client).then(() => {
-        connected = true;
-      }).catch(() => {
-        library.loadFixture(buildFixtureTree(DEFAULT_FIXTURE));
-      });
-    } else {
+    library.loadFromGateway(client).then(() => {
+      connected = true;
+    }).catch(() => {
       library.loadFixture(buildFixtureTree(DEFAULT_FIXTURE));
-    }
+    });
   });
 
   /* Wire episode selection from library into the episode workspace. */
