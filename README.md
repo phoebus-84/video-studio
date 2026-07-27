@@ -28,7 +28,7 @@ The GUI is a projection over the canonical workspace. It talks only to the trust
 
 ## Development
 
-This repository currently contains the approved design context and its deterministic validator. The React application scaffold begins in `vsw-pbt.2`.
+This repository currently contains the approved design context and its deterministic validator. The Svelte application scaffold begins in `vsw-pbt.2`.
 
 ```bash
 npm run check
