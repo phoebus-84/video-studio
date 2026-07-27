@@ -3,7 +3,10 @@ import fastifyWebsocket from "@fastify/websocket";
 import fastifyCors from "@fastify/cors";
 import type { Config } from "./config/schema.js";
 import { registerRoutes } from "./routes/index.js";
-import { registerWebSocket, registerSSE } from "./ws/index.js";
+import { EventStreamManager } from "./events/bus.js";
+import { WorkspaceWatcher } from "./events/watcher.js";
+import { registerEditorRoutes } from "./routes/editor.js";
+import { registerReviewRoutes } from "./routes/reviews.js";
 import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
 import { configureLogging, getRedactPaths } from "./logging/index.js";
@@ -15,6 +18,8 @@ export interface GatewayInstance {
   app: ReturnType<typeof Fastify>;
   config: Config;
   token: string;
+  /** Unified event bus for publishing events. */
+  events: EventStreamManager;
   /** Start listening. Returns the assigned address. */
   start: () => Promise<string>;
   /** Gracefully shut down the server. */
@@ -77,10 +82,26 @@ export async function createGateway(
   // ── Global error handler ─────────────────────────────────────────────────
   registerErrorHandler(app);
 
+  // ── Event bus ───────────────────────────────────────────────────────────
+  const events = new EventStreamManager();
+  events.register(app, token);
+
+  // ── Workspace watcher ────────────────────────────────────────────────────
+  const watcher = new WorkspaceWatcher(events.bus, {
+    root: process.env.AVG_LIBRARY_ROOT ?? "./library",
+  });
+  // Start watcher lazily on server start, stop on shutdown
+
   // ── Routes ───────────────────────────────────────────────────────────────
   registerRoutes(app, config, workspace ?? new FixtureWorkspaceService());
-  registerWebSocket(app, token);
-  registerSSE(app);
+  registerEditorRoutes(app, {
+    root: process.env.AVG_LIBRARY_ROOT ?? "./library",
+    bus: events.bus,
+  });
+  registerReviewRoutes(app, {
+    root: process.env.AVG_LIBRARY_ROOT ?? "./library",
+    bus: events.bus,
+  });
   registerOpenApiRoute(app);
 
   // ── Ready ────────────────────────────────────────────────────────────────
@@ -90,14 +111,18 @@ export async function createGateway(
     app,
     config,
     token,
+    events,
     start: async () => {
+      await watcher.start();
       const addr = await app.listen({
         host: config.host,
         port: config.port,
       });
+      app.log.info(`File watcher started on ${process.env.AVG_LIBRARY_ROOT ?? "./library"}`);
       return addr;
     },
     stop: async () => {
+      await watcher.stop();
       await app.close();
     },
   };
