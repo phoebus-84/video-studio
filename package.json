@@ -1,0 +1,31 @@
+{
+  "name": "@video-studio/studio-graphics-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit && npm test",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "test:snapshot": "node --import tsx --test test/harness/*.test.ts"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^26.1.1",
+    "@types/pngjs": "^6.0.5",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./models": "./src/models/index.ts",
+    "./pipeline": "./src/pipeline/index.ts",
+    "./hashing": "./src/hashing/index.ts",
+    "./resolver": "./src/resolver/index.ts"
+  }
+}
