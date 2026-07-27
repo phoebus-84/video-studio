@@ -2,6 +2,7 @@
   import { episode } from "$lib/episode-store.svelte.ts";
   import EpisodeHeader from "./EpisodeHeader.svelte";
   import StageRail from "./StageRail.svelte";
+  import EditorWorkspace from "../editor/EditorWorkspace.svelte";
 
   const ep = $derived(episode.state);
 </script>
@@ -27,6 +28,9 @@
       stages={ep.episode.stages}
       selectedStageId={episode.selectedStageId}
     />
+    <div class="ws-canvas">
+      <EditorWorkspace />
+    </div>
   {/if}
 </div>
 
@@ -63,5 +67,10 @@
 
   .ws-error {
     color: var(--vs-state-blocked);
+  }
+
+  .ws-canvas {
+    flex: 1;
+    overflow: hidden;
   }
 </style>
