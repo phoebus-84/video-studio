@@ -9,6 +9,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { resolveConfig, checkServiceHealth } from "../src/config.js";
+import { registerWorkspaceTools } from "../src/workspace-tools.js";
 
 // ---------------------------------------------------------------------------
 // Module metadata
@@ -190,4 +192,69 @@ export default function (pi: ExtensionAPI): void {
       };
     },
   });
+
+  // --- Tool: pva_config ------------------------------------------------
+
+  pi.registerTool({
+    name: "pva_config",
+    label: "PVA Configuration",
+    description:
+      "Resolve the Agentic Video Studio configuration including library root, gateway URL, and service endpoints. Never logs secret values.",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      const config = await resolveConfig();
+
+      // Strip secrets from output
+      const safe = {
+        libraryRoot: config.libraryRoot,
+        gatewayUrl: config.gatewayUrl,
+        gatewayToken: config.gatewayToken ? "***" : "<not set>",
+        falKeyRef: config.falKeyRef ? "***" : "<not set>",
+        ttsWorkerUrl: config.ttsWorkerUrl,
+        graphicsRendererPath: config.graphicsRendererPath,
+        ffmpegComposerPath: config.ffmpegComposerPath,
+        resolved: config.resolved,
+        diagnostics: config.diagnostics,
+      };
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(safe, null, 2),
+          },
+        ],
+        details: { config: safe },
+      };
+    },
+  });
+
+  // --- Tool: pva_health -------------------------------------------------
+
+  pi.registerTool({
+    name: "pva_health",
+    label: "PVA Health Check",
+    description:
+      "Check the health of all configured studio services (library, gateway, TTS worker).",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      const config = await resolveConfig();
+      const clients = await checkServiceHealth(config);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(clients, null, 2),
+          },
+        ],
+        details: { health: clients },
+        isError: !clients.healthy ? true as unknown as boolean : undefined,
+      };
+    },
+  });
+
+  // --- Register workspace tools ----------------------------------------
+
+  registerWorkspaceTools(pi);
 }

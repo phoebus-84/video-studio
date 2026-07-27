@@ -128,10 +128,19 @@ describe("extensions/index.ts — tool registration", () => {
     expect(diagTool!.description.length).toBeGreaterThan(0);
   });
 
-  it("registers exactly two tools", () => {
-    expect(mockPi.tools.length).toBe(2);
+  it("registers the expected suite of production tools", () => {
+    expect(mockPi.tools.length).toBe(8);
     const names = mockPi.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["pva_diagnostics", "pva_version"]);
+    expect(names).toEqual([
+      "pva_channels",
+      "pva_config",
+      "pva_diagnostics",
+      "pva_episode_detail",
+      "pva_episodes",
+      "pva_health",
+      "pva_series",
+      "pva_version",
+    ]);
   });
 
   it("pva_version parameters is an empty object schema", () => {
