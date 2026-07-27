@@ -1,0 +1,16 @@
+"""Route registration — imported by the FastAPI application factory.
+
+Routes are organised by domain (health, voices, jobs) so that each
+module encapsulates its own path operations and dependencies.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from qwen_tts_worker.routes.health import router as health_router
+from qwen_tts_worker.routes.voices import router as voices_router
+
+api_router = APIRouter()
+api_router.include_router(health_router, tags=["health"])
+api_router.include_router(voices_router, tags=["voices"])

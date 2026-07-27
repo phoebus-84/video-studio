@@ -1,0 +1,180 @@
+# Qwen TTS Worker — Operator Guide
+
+> Target audience: operators, SREs, and anyone deploying or monitoring the worker.
+
+## Prerequisites
+
+- Python 3.10 or later
+- macOS with Apple Silicon (M1/M2/M3/M4) for production; any platform for development/testing
+- pip 23+
+
+## Installation
+
+```bash
+cd qwen-tts-worker
+pip install -e ".[dev]"
+```
+
+For production deployment, install without dev dependencies:
+
+```bash
+pip install .
+```
+
+## Configuration
+
+All settings are read from environment variables with the `QTW_` prefix.
+A `.env` file in the working directory is also supported.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QTW_HOST` | `127.0.0.1` | IP to bind |
+| `QTW_PORT` | `8000` | TCP port |
+| `QTW_UNIX_SOCKET` | *(none)* | Path to Unix socket (takes priority over host/port) |
+| `QTW_LOG_LEVEL` | `info` | `debug`, `info`, `warning`, `error`, or `critical` |
+| `QTW_LOG_FORMAT` | `json` | `json` (machine-readable) or `console` (human-readable) |
+| `QTW_WORKERS` | `1` | Uvicorn worker processes (keep at 1 until the job queue supports concurrency) |
+| `QTW_GRACEFUL_TIMEOUT` | `30.0` | Max seconds to drain in-flight requests on shutdown |
+| `QTW_MODELS_DIR` | `models` | Directory for downloaded model files |
+| `QTW_VOICES_DIR` | `voices` | Directory for voice profiles |
+| `QTW_OUTPUTS_DIR` | `outputs` | Directory for synthesized WAV outputs |
+
+### Unix socket example
+
+```bash
+export QTW_UNIX_SOCKET=/var/run/qtw/worker.sock
+qwen-tts-worker
+```
+
+When a Unix socket is set, the server binds only to the socket — `HOST` and `PORT` are ignored.
+
+## Running
+
+### Direct
+
+```bash
+python -m qwen_tts_worker
+```
+
+### After pip install
+
+```bash
+qwen-tts-worker
+```
+
+The server starts without loading a TTS model. Model readiness is visible via the health endpoint and transitions through `none` → `loading` → `ready` as the model lifecycle manager operates.
+
+## Health monitoring
+
+### Quick liveness check
+
+```bash
+curl -s http://127.0.0.1:8000/health | jq .
+```
+
+A healthy service responds with:
+
+```json
+{
+  "service": "healthy",
+  "model": "none",
+  "dependencies": [...],
+  "uptime_seconds": 123.4,
+  "timestamp": "2026-07-27T12:00:00Z",
+  "version": "0.1.0"
+}
+```
+
+### Interpreting the three tiers
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| `service` | `healthy`, `degraded`, `unhealthy` | Overall service health |
+| `model` | `none`, `loading`, `ready`, `error` | TTS model readiness |
+| `dependencies` | `ok`, `unavailable`, `unknown` | Per-dependency status |
+
+- `service: degraded` — at least one dependency is unavailable but the service itself is running. Investigate the dependency list.
+- `service: unhealthy` — all dependencies are unavailable. The service cannot function.
+- `model: none` — normal when the service starts. Load a model via the API (future) or wait for the lifecycle manager.
+- `model: error` — model loading failed. Check the logs for the specific error.
+
+### Log-based monitoring
+
+When `QTW_LOG_FORMAT=json`, every log line is a JSON object with `timestamp`, `level`, `event`, and `logger` fields. Pipe to your log aggregator:
+
+```bash
+QTW_LOG_FORMAT=json qwen-tts-worker 2>&1 | tee /var/log/qtw/worker.log
+```
+
+## Graceful shutdown
+
+Send `SIGTERM` or `SIGINT` (Ctrl+C) to the worker process. The server will:
+
+1. Stop accepting new connections.
+2. Wait up to `QTW_GRACEFUL_TIMEOUT` seconds for in-flight requests to complete.
+3. Exit.
+
+```bash
+kill -TERM $(pgrep -f qwen_tts_worker)
+```
+
+A forced exit occurs if in-flight requests do not complete within the graceful timeout.
+
+## Filesystem layout
+
+```
+QTW_MODELS_DIR/    # Downloaded model weights, tokenizers, configs
+QTW_VOICES_DIR/    # Voice profile JSON files, reference embeddings
+QTW_OUTPUTS_DIR/   # Synthesized WAV segment files
+```
+
+All directories are created automatically on startup if they do not exist.
+
+## Development mode
+
+```bash
+pip install -e ".[dev]"
+QTW_LOG_LEVEL=debug QTW_LOG_FORMAT=console python -m qwen_tts_worker
+```
+
+The interactive API docs are available at `http://127.0.0.1:8000/docs`.
+
+## Running tests
+
+```bash
+pytest
+```
+
+Tests run without MLX hardware — they use the real application factory with in-memory state and require no GPU.
+
+```bash
+pytest --cov=src/qwen_tts_worker --cov-report=term
+```
+
+## Troubleshooting
+
+### Port already in use
+
+```bash
+QTW_PORT=8001 qwen-tts-worker
+```
+
+### Permission denied on Unix socket
+
+Ensure the socket directory is writable by the worker process:
+
+```bash
+mkdir -p /var/run/qtw
+chown $USER /var/run/qtw
+export QTW_UNIX_SOCKET=/var/run/qtw/worker.sock
+```
+
+### No models directory
+
+The directories are created automatically. If creation fails, check filesystem permissions or set explicit writable paths:
+
+```bash
+export QTW_MODELS_DIR=$HOME/.cache/qtw/models
+export QTW_VOICES_DIR=$HOME/.cache/qtw/voices
+export QTW_OUTPUTS_DIR=$HOME/.cache/qtw/outputs
+```
