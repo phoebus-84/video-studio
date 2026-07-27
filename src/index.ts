@@ -122,6 +122,12 @@ export {
   resolvePipeline,
   PipelineResolutionError,
   InMemoryPipelineLoader,
+  createSnapshot,
+  computeSnapshotHash,
+  validateSnapshot,
+  isSnapshotMutable,
+  SnapshotError,
+  InMemorySnapshotStore,
 } from "./pipeline/index.js";
 export type {
   ResolveOptions,
@@ -136,6 +142,11 @@ export type {
   ResolutionDiag,
   ResolvedPipeline,
   PipelineLoader,
+  SourceSnapshotRef,
+  ProviderBinding,
+  PipelineSnapshot,
+  SnapshotInput,
+  SnapshotStore,
 } from "./pipeline/index.js";
 
 // Package version (kept in sync with package.json by convention)
