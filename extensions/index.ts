@@ -12,6 +12,7 @@ import { Type } from "typebox";
 import { resolveConfig, checkServiceHealth } from "../src/config.js";
 import { registerWorkspaceTools } from "../src/workspace-tools.js";
 import { registerPipelineTools } from "../src/pipeline-tools.js";
+import { registerCapabilityTools } from "../src/capability-tools.js";
 
 // ---------------------------------------------------------------------------
 // Module metadata
@@ -262,4 +263,8 @@ export default function (pi: ExtensionAPI): void {
   // --- Register pipeline tools ------------------------------------------
 
   registerPipelineTools(pi);
+
+  // --- Register capability tools ----------------------------------------
+
+  registerCapabilityTools(pi);
 }
