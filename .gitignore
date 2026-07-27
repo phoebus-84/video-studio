@@ -4,3 +4,10 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Build output
+node_modules/
+dist/
+
+# IDE
+*.tsbuildinfo
