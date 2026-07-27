@@ -117,5 +117,26 @@ export type {
   ResolutionWarning,
 } from "./settings/index.js";
 
+// Pipeline (inheritance and DAG resolution)
+export {
+  resolvePipeline,
+  PipelineResolutionError,
+  InMemoryPipelineLoader,
+} from "./pipeline/index.js";
+export type {
+  ResolveOptions,
+  CapabilityRequest,
+  ArtifactRef,
+  StageDefinition,
+  SkillRef,
+  PipelineExtends,
+  PipelineDefinition,
+  ResolvedStage,
+  ResolutionDiagSeverity,
+  ResolutionDiag,
+  ResolvedPipeline,
+  PipelineLoader,
+} from "./pipeline/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";

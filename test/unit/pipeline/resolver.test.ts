@@ -1,0 +1,445 @@
+// ---------------------------------------------------------------------------
+// Pipeline resolver tests
+// ---------------------------------------------------------------------------
+
+import { describe, it, expect } from "vitest";
+import {
+  resolvePipeline,
+  PipelineResolutionError,
+  InMemoryPipelineLoader,
+} from "../../../src/pipeline/index.js";
+import type {
+  PipelineDefinition,
+  ResolvedStage,
+  ResolutionDiag,
+} from "../../../src/pipeline/types.js";
+
+// ── Fixtures ─────────────────────────────────────────────────────────────────
+
+const SIMPLE_PIPELINE: PipelineDefinition = {
+  name: "simple-video",
+  version: "1.0.0",
+  stages: [
+    {
+      id: "brief",
+      name: "Brief",
+      capabilities: [],
+      dependsOn: [],
+      produces: [{ kind: "text/markdown", label: "brief.md" }],
+      consumes: [],
+    },
+    {
+      id: "script",
+      name: "Script",
+      capabilities: [{ capability: "llm" }],
+      dependsOn: ["brief"],
+      produces: [{ kind: "text/markdown", label: "script.md" }],
+      consumes: [{ kind: "text/markdown", label: "brief.md" }],
+    },
+    {
+      id: "render",
+      name: "Render",
+      capabilities: [{ capability: "ffmpeg" }],
+      dependsOn: ["script"],
+      produces: [{ kind: "video/mp4", label: "output.mp4" }],
+      consumes: [{ kind: "text/markdown", label: "script.md" }],
+    },
+  ],
+  skills: [{ name: "write-brief", path: "skills/write-brief.md" }],
+};
+
+const CHILD_PIPELINE: PipelineDefinition = {
+  name: "my-video",
+  version: "1.0.0",
+  extends: { pipeline: "simple-video", version: "1.0.0" },
+  stages: [
+    {
+      id: "script",
+      name: "Custom Script",
+      capabilities: [{ capability: "llm", prefer: "claude" }],
+      dependsOn: ["brief"],
+      produces: [{ kind: "text/markdown", label: "script.md" }],
+      consumes: [{ kind: "text/markdown", label: "brief.md" }],
+    },
+    {
+      id: "illustrations",
+      name: "Illustrations",
+      capabilities: [{ capability: "image-generation" }],
+      dependsOn: ["script"],
+      produces: [{ kind: "image/png", label: "illustrations/" }],
+      consumes: [{ kind: "text/markdown", label: "script.md" }],
+    },
+  ],
+  skills: [{ name: "custom-script", path: "skills/custom-script.md" }],
+};
+
+const REMOVAL_PIPELINE: PipelineDefinition = {
+  name: "minimal-video",
+  version: "1.0.0",
+  extends: { pipeline: "simple-video" },
+  stages: [
+    {
+      id: "render",
+      name: "Direct Render",
+      capabilities: [{ capability: "ffmpeg" }],
+      dependsOn: ["brief", "!script"],
+      produces: [{ kind: "video/mp4", label: "output.mp4" }],
+      consumes: [{ kind: "text/markdown", label: "brief.md" }],
+    },
+  ],
+  skills: [],
+};
+
+const CYCLIC_PARENT: PipelineDefinition = {
+  name: "cyclic-parent",
+  version: "1.0.0",
+  stages: [
+    {
+      id: "a",
+      name: "A",
+      capabilities: [],
+      dependsOn: ["b"],
+      produces: [],
+      consumes: [],
+    },
+    {
+      id: "b",
+      name: "B",
+      capabilities: [],
+      dependsOn: ["a"],
+      produces: [],
+      consumes: [],
+    },
+  ],
+  skills: [],
+};
+
+const INHERITANCE_CYCLE_A: PipelineDefinition = {
+  name: "cycle-a",
+  version: "1.0.0",
+  extends: { pipeline: "cycle-b" },
+  stages: [],
+  skills: [],
+};
+
+const INHERITANCE_CYCLE_B: PipelineDefinition = {
+  name: "cycle-b",
+  version: "1.0.0",
+  extends: { pipeline: "cycle-a" },
+  stages: [],
+  skills: [],
+};
+
+const MISSING_CONSUMER: PipelineDefinition = {
+  name: "bad-consumer",
+  version: "1.0.0",
+  stages: [
+    {
+      id: "first",
+      name: "First",
+      capabilities: [],
+      dependsOn: [],
+      produces: [{ kind: "text/markdown", label: "output.md" }],
+      consumes: [{ kind: "text/markdown", label: "nonexistent.md" }],
+    },
+  ],
+  skills: [],
+};
+
+const SELF_DEPENDENCY: PipelineDefinition = {
+  name: "self-dep",
+  version: "1.0.0",
+  stages: [
+    {
+      id: "loop",
+      name: "Self Loop",
+      capabilities: [],
+      dependsOn: ["loop"],
+      produces: [],
+      consumes: [],
+    },
+  ],
+  skills: [],
+};
+
+const MISSING_STAGE_DEP: PipelineDefinition = {
+  name: "missing-dep",
+  version: "1.0.0",
+  stages: [
+    {
+      id: "only",
+      name: "Only Stage",
+      capabilities: [],
+      dependsOn: ["ghost"],
+      produces: [],
+      consumes: [],
+    },
+  ],
+  skills: [],
+};
+
+// ── Helper ───────────────────────────────────────────────────────────────────
+
+function makeLoader(...defs: PipelineDefinition[]): InMemoryPipelineLoader {
+  const loader = new InMemoryPipelineLoader();
+  for (const d of defs) loader.register(d);
+  return loader;
+}
+
+function stageIds(stages: ResolvedStage[]): string[] {
+  return stages.map((s) => s.definition.id);
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+describe("resolvePipeline", () => {
+  describe("simple pipeline (no inheritance)", () => {
+    it("resolves a single pipeline with correct topo order", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE);
+      const result = await resolvePipeline(loader, "simple-video");
+
+      expect(result.name).toBe("simple-video");
+      expect(result.version).toBe("1.0.0");
+      expect(result.inheritanceChain).toEqual(["simple-video"]);
+      expect(result.diagnostics).toEqual([]);
+
+      expect(stageIds(result.stages)).toEqual(["brief", "script", "render"]);
+    });
+
+    it("assigns topo indices in order", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE);
+      const result = await resolvePipeline(loader, "simple-video");
+
+      result.stages.forEach((stage: ResolvedStage, idx: number) => {
+        expect(stage.topoIndex).toBe(idx);
+      });
+    });
+
+    it("preserves skills", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE);
+      const result = await resolvePipeline(loader, "simple-video");
+
+      expect(result.skills).toEqual([
+        { name: "write-brief", path: "skills/write-brief.md" },
+      ]);
+    });
+  });
+
+  describe("inheritance", () => {
+    it("resolves child pipeline with parent inheritance", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE, CHILD_PIPELINE);
+      const result = await resolvePipeline(loader, "my-video");
+
+      expect(result.inheritanceChain).toEqual(["simple-video", "my-video"]);
+
+      const ids = stageIds(result.stages);
+      expect(ids).toContain("brief");
+      expect(ids).toContain("script");
+      expect(ids).toContain("illustrations");
+      expect(ids).toContain("render");
+    });
+
+    it("orders stages topologically after merge", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE, CHILD_PIPELINE);
+      const result = await resolvePipeline(loader, "my-video");
+
+      const idx = (id: string) =>
+        result.stages.findIndex((s: ResolvedStage) => s.definition.id === id);
+
+      expect(idx("brief")).toBeLessThan(idx("script"));
+      expect(idx("script")).toBeLessThan(idx("illustrations"));
+      expect(idx("script")).toBeLessThan(idx("render"));
+    });
+
+    it("overrides stage properties from child", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE, CHILD_PIPELINE);
+      const result = await resolvePipeline(loader, "my-video");
+
+      const script = result.stages.find(
+        (s: ResolvedStage) => s.definition.id === "script",
+      )!;
+      expect(script.definition.name).toBe("Custom Script");
+      expect(script.definition.capabilities[0]!.prefer).toBe("claude");
+      expect(script.source).toBe("my-video");
+    });
+
+    it("emits override diagnostic for overridden stages", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE, CHILD_PIPELINE);
+      const result = await resolvePipeline(loader, "my-video");
+
+      const overrideDiags = result.diagnostics.filter(
+        (d: ResolutionDiag) => d.code === "STAGE_OVERRIDE",
+      );
+      expect(overrideDiags.length).toBeGreaterThanOrEqual(1);
+      expect(overrideDiags[0]!.context).toBe("script");
+    });
+
+    it("merges skills from parent and child", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE, CHILD_PIPELINE);
+      const result = await resolvePipeline(loader, "my-video");
+
+      expect(result.skills).toEqual(
+        expect.arrayContaining([
+          { name: "write-brief", path: "skills/write-brief.md" },
+          { name: "custom-script", path: "skills/custom-script.md" },
+        ]),
+      );
+    });
+  });
+
+  describe("stage removal", () => {
+    it("removes a parent stage via !id marker", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE, REMOVAL_PIPELINE);
+      const result = await resolvePipeline(loader, "minimal-video");
+
+      const ids = stageIds(result.stages);
+      expect(ids).toContain("brief");
+      expect(ids).not.toContain("script");
+      expect(ids).toContain("render");
+    });
+
+    it("emits removal diagnostic", async () => {
+      const loader = makeLoader(SIMPLE_PIPELINE, REMOVAL_PIPELINE);
+      const result = await resolvePipeline(loader, "minimal-video");
+
+      const removalDiags = result.diagnostics.filter(
+        (d: ResolutionDiag) => d.code === "STAGE_REMOVED",
+      );
+      expect(removalDiags.length).toBe(1);
+      expect(removalDiags[0]!.context).toBe("render");
+    });
+  });
+
+  describe("error cases", () => {
+    it("throws for missing pipeline", async () => {
+      const loader = makeLoader();
+      await expect(resolvePipeline(loader, "nonexistent")).rejects.toThrow(
+        PipelineResolutionError,
+      );
+    });
+
+    it("detects cycles in stage DAG", async () => {
+      const loader = makeLoader(CYCLIC_PARENT);
+      await expect(
+        resolvePipeline(loader, "cyclic-parent"),
+      ).rejects.toThrow(PipelineResolutionError);
+    });
+
+    it("detects inheritance cycles", async () => {
+      const loader = makeLoader(INHERITANCE_CYCLE_A, INHERITANCE_CYCLE_B);
+      await expect(resolvePipeline(loader, "cycle-a")).rejects.toThrow(
+        PipelineResolutionError,
+      );
+    });
+
+    it("rejects max depth exceeded", async () => {
+      const deepDefs: PipelineDefinition[] = [];
+      for (let i = 0; i < 12; i++) {
+        deepDefs.push({
+          name: `depth-${i}`,
+          version: "1.0.0",
+          extends:
+            i > 0 ? { pipeline: `depth-${i - 1}` } : undefined,
+          stages: [
+            {
+              id: "base",
+              name: "Base",
+              capabilities: [],
+              dependsOn: [],
+              produces: [],
+              consumes: [],
+            },
+          ],
+          skills: [],
+        });
+      }
+      const loader = makeLoader(...deepDefs);
+      await expect(resolvePipeline(loader, "depth-11")).rejects.toThrow(
+        PipelineResolutionError,
+      );
+    });
+
+    it("detects unmet artifact dependency", async () => {
+      const loader = makeLoader(MISSING_CONSUMER);
+      await expect(
+        resolvePipeline(loader, "bad-consumer"),
+      ).rejects.toThrow(PipelineResolutionError);
+    });
+
+    it("detects self-dependency as cycle", async () => {
+      const loader = makeLoader(SELF_DEPENDENCY);
+      await expect(resolvePipeline(loader, "self-dep")).rejects.toThrow(
+        PipelineResolutionError,
+      );
+    });
+
+    it("warns about missing stage in dependsOn", async () => {
+      const loader = makeLoader(MISSING_STAGE_DEP);
+      const result = await resolvePipeline(loader, "missing-dep");
+
+      const diags = result.diagnostics.filter(
+        (d: ResolutionDiag) => d.code === "MISSING_DEPENDENCY",
+      );
+      expect(diags.length).toBe(1);
+      expect(diags[0]!.severity).toBe("warning");
+      expect(diags[0]!.context).toBe("only");
+    });
+  });
+
+  describe("determinism", () => {
+    it("produces identical order regardless of declaration order", async () => {
+      const shuffled: PipelineDefinition = {
+        name: "shuffled",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "render",
+            name: "Render",
+            capabilities: [{ capability: "ffmpeg" }],
+            dependsOn: ["script"],
+            produces: [{ kind: "video/mp4", label: "output.mp4" }],
+            consumes: [{ kind: "text/markdown", label: "script.md" }],
+          },
+          {
+            id: "script",
+            name: "Script",
+            capabilities: [{ capability: "llm" }],
+            dependsOn: ["brief"],
+            produces: [{ kind: "text/markdown", label: "script.md" }],
+            consumes: [{ kind: "text/markdown", label: "brief.md" }],
+          },
+          {
+            id: "brief",
+            name: "Brief",
+            capabilities: [],
+            dependsOn: [],
+            produces: [{ kind: "text/markdown", label: "brief.md" }],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      };
+
+      const loader = makeLoader(shuffled);
+      const result = await resolvePipeline(loader, "shuffled");
+
+      expect(stageIds(result.stages)).toEqual(["brief", "script", "render"]);
+    });
+  });
+
+  describe("load errors", () => {
+    it("includes pipeline name and version in not-found error", async () => {
+      const loader = makeLoader();
+      try {
+        await resolvePipeline(loader, "nope", "2.0.0");
+        expect.fail("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PipelineResolutionError);
+        const diags = (err as PipelineResolutionError).diagnostics;
+        expect(diags[0]!.code).toBe("PIPELINE_NOT_FOUND");
+        expect(diags[0]!.message).toContain("nope");
+        expect(diags[0]!.message).toContain("2.0.0");
+      }
+    });
+  });
+});
