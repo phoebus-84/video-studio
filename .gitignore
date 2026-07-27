@@ -4,3 +4,13 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Node and generated output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local configuration
+.env
+.DS_Store

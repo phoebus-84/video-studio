@@ -1,0 +1,58 @@
+[
+  {
+    "name": "documentation-only correction",
+    "change": "documentation",
+    "before": {"description": "Episode identifer"},
+    "after": {"description": "Episode identifier"},
+    "expected": {"classification": "patch", "minimumPackageBump": "patch", "apiVersionChange": false, "migrationRequired": false}
+  },
+  {
+    "name": "new independent contract kind",
+    "change": "new-kind",
+    "before": {"kinds": ["Episode"]},
+    "after": {"kinds": ["Episode", "VoiceProfile"]},
+    "expected": {"classification": "additive", "minimumPackageBump": "minor", "apiVersionChange": false, "migrationRequired": false}
+  },
+  {
+    "name": "new namespaced extension value",
+    "change": "namespaced-extension",
+    "before": {"extensions": {}},
+    "after": {"extensions": {"com.example.watercolor": {"paper": "cold-press"}}},
+    "expected": {"classification": "compatible-data", "minimumPackageBump": "none", "apiVersionChange": false, "migrationRequired": false}
+  },
+  {
+    "name": "new provider identifier in open vocabulary",
+    "change": "open-vocabulary-value",
+    "before": {"provider": "fal"},
+    "after": {"provider": "another-provider"},
+    "expected": {"classification": "compatible-data", "minimumPackageBump": "none", "apiVersionChange": false, "migrationRequired": false}
+  },
+  {
+    "name": "optional field added to closed record",
+    "change": "closed-record-field-addition",
+    "before": {"apiVersion": "studio.video/v1alpha1", "properties": ["id"], "additionalProperties": false},
+    "after": {"apiVersion": "studio.video/v1alpha2", "properties": ["id", "label"], "additionalProperties": false},
+    "expected": {"classification": "breaking", "minimumPackageBump": "major", "apiVersionChange": true, "migrationRequired": true}
+  },
+  {
+    "name": "required field renamed",
+    "change": "field-rename",
+    "before": {"apiVersion": "studio.video/v1alpha1", "required": ["episodeId"]},
+    "after": {"apiVersion": "studio.video/v1alpha2", "required": ["productionId"]},
+    "expected": {"classification": "breaking", "minimumPackageBump": "major", "apiVersionChange": true, "migrationRequired": true}
+  },
+  {
+    "name": "closed state enum gains value",
+    "change": "closed-enum-change",
+    "before": {"apiVersion": "studio.video/v1alpha1", "enum": ["queued", "running", "succeeded", "failed"]},
+    "after": {"apiVersion": "studio.video/v1alpha2", "enum": ["queued", "running", "paused", "succeeded", "failed"]},
+    "expected": {"classification": "breaking", "minimumPackageBump": "major", "apiVersionChange": true, "migrationRequired": true}
+  },
+  {
+    "name": "duration unit changes",
+    "change": "unit-or-semantics-change",
+    "before": {"apiVersion": "studio.video/v1alpha1", "duration": "milliseconds"},
+    "after": {"apiVersion": "studio.video/v1alpha2", "duration": "microseconds"},
+    "expected": {"classification": "breaking", "minimumPackageBump": "major", "apiVersionChange": true, "migrationRequired": true}
+  }
+]

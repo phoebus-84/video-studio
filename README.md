@@ -16,7 +16,16 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
 
 ## Release rule
 
-Contracts use semantic versions. Readers must tolerate additive fields within a compatible version; breaking changes require migration fixtures and a new major contract version. Generated bindings are tested against the same fixtures to prevent cross-language drift.
+Contracts use semantic package versions and explicit resource `apiVersion` values. Canonical records are closed by default; extensibility uses preserved `metadata`, namespaced `extensions`, and open-vocabulary identifiers. Breaking changes require a new resource version and migration fixtures. Generated bindings are tested against the same fixtures to prevent cross-language drift.
+
+## Contract documentation
+
+- [`docs/contract-catalog.md`](docs/contract-catalog.md)
+- [`docs/compatibility-policy.md`](docs/compatibility-policy.md)
+- [`docs/wire-conventions.md`](docs/wire-conventions.md)
+- [`docs/identity-and-provenance.md`](docs/identity-and-provenance.md)
+
+Run `npm run check` to validate schemas and execute the compatibility examples and policy tests.
 
 ## Plan
 
