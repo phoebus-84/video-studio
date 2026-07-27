@@ -13,6 +13,7 @@ import { configureLogging, getRedactPaths } from "./logging/index.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
 import type { WorkspaceService } from "./workspace/service.js";
 import { FixtureWorkspaceService } from "./workspace/fixture-service.js";
+import { FileSystemWorkspaceService } from "./workspace/filesystem-service.js";
 
 export interface GatewayInstance {
   app: ReturnType<typeof Fastify>;
@@ -93,7 +94,14 @@ export async function createGateway(
   // Start watcher lazily on server start, stop on shutdown
 
   // ── Routes ───────────────────────────────────────────────────────────────
-  registerRoutes(app, config, workspace ?? new FixtureWorkspaceService());
+  // Pick workspace service: real filesystem if roots > 0, otherwise fixture
+  const ws = workspace ?? (
+    config.libraryRoots.length > 0 && config.libraryRoots[0] !== "."
+      ? new FileSystemWorkspaceService(config.libraryRoots)
+      : new FixtureWorkspaceService()
+  );
+
+  registerRoutes(app, config, ws);
   registerEditorRoutes(app, {
     root: process.env.AVG_LIBRARY_ROOT ?? "./library",
     bus: events.bus,
