@@ -140,19 +140,32 @@ def chunk_text(text: str, max_chars: int = 500) -> list[str]:
 
 # ── WAV generation ───────────────────────────────────────────────────────────
 
-# ── Model cache (loaded once, reused across requests) ────────────────────
+# ── Master voice reference for voice cloning ─────────────────────────────
 
-_model_cache: dict = {}
-_loaded_model = None  # Pre-loaded model object for consistent voice
+_master_voice: dict = {"wav": None, "text": None, "path": None}
 
 
-def _get_or_load_model(model_path: str):
-    """Return the model path (MLX handles caching internally).
-    
-    Voice consistency is achieved via use_zero_spk_emb=True
-    in the generate_audio call, not via model object reuse.
-    """
-    return model_path  # MLX caches internally when using the same path
+def _set_master(wav_data: bytes, text: str) -> None:
+    """Save the first synthesis as master voice reference for cloning."""
+    _master_voice["wav"] = wav_data
+    _master_voice["text"] = text
+    path = os.path.join(tempfile.gettempdir(), "qwen-tts-master.wav")
+    with open(path, "wb") as f:
+        f.write(wav_data)
+    _master_voice["path"] = path
+    import logging
+    logging.getLogger("qwen-tts-worker").info(
+        f"Master voice saved ({len(wav_data)} bytes) — subsequent calls will clone this voice"
+    )
+
+
+def _get_master() -> tuple[str | None, str | None]:
+    """Get (audio_path, text) for master voice reference, or (None, None)."""
+    p = _master_voice.get("path")
+    t = _master_voice.get("text")
+    if p and t and os.path.exists(p):
+        return p, t
+    return None, None
 
 
 def synthesize_with_qwen(
@@ -174,22 +187,25 @@ def synthesize_with_qwen(
     try:
         from mlx_audio.tts.generate import generate_audio
 
-        model = _get_or_load_model(model_path)
-
         tmp_dir = tempfile.mkdtemp(prefix="qwen-tts-")
         try:
             kwargs: dict = {
                 "text": text,
-                "model": model,
+                "model": model_path,
                 "voice": voice,
                 "speed": speed,
                 "temperature": temperature,
                 "output_path": tmp_dir,
                 "verbose": False,
-                "use_zero_spk_emb": True,  # Consistent voice across calls
+                "use_zero_spk_emb": True,
             }
             if instruct or voice_description:
                 kwargs["instruct"] = instruct or voice_description
+            # Use master voice as reference for cloning (with ref_text to avoid STT)
+            master_path, master_text = _get_master()
+            if master_path and master_text:
+                kwargs["ref_audio"] = master_path
+                kwargs["ref_text"] = master_text
             if ref_audio_path and os.path.exists(ref_audio_path):
                 kwargs["ref_audio"] = ref_audio_path
 
@@ -207,6 +223,10 @@ def synthesize_with_qwen(
 
             if len(wav_data) < 44:
                 raise RuntimeError(f"Generated WAV is too small: {len(wav_data)} bytes")
+
+            # Capture first synthesis as master voice for cloning subsequent calls
+            if _master_voice["wav"] is None and len(wav_data) > 1000:
+                _set_master(wav_data, text)
 
             return wav_data
         finally:
