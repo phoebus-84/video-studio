@@ -99,6 +99,14 @@ export async function createGateway(
   });
   // Start watcher lazily on server start, stop on shutdown
 
+  // ── Pi RPC health ─────────────────────────────────────────────────────
+  const { PiRpcHealth } = await import("./rpc/health.js");
+  const piHealth = new PiRpcHealth();
+
+  // ── Adapter bridge health ──────────────────────────────────────────────
+  const { AdapterBridge } = await import("./rpc/adapter-bridge.js");
+  const adapterBridge = new AdapterBridge();
+
   // ── Routes ───────────────────────────────────────────────────────────────
   // Pick workspace service: real filesystem if roots > 0, otherwise fixture
   const ws = workspace ?? (
@@ -125,7 +133,7 @@ export async function createGateway(
     maxAge: 0,  // Disable browser caching — assets regenerate frequently
   });
 
-  registerRoutes(app, config, ws, runtime);
+  registerRoutes(app, config, ws, runtime, piHealth, adapterBridge);
   registerEditorRoutes(app, {
     root: process.env.AVG_LIBRARY_ROOT ?? "./library",
     bus: events.bus,

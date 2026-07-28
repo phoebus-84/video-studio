@@ -15,7 +15,11 @@ export type EventChannel =
   | "pipeline"
   | "review"
   | "pi"
-  | "adapter";
+  | "adapter"
+  | "provider";
+
+/** Event category for filtering/subscribing. */
+export type EventCategory = EventChannel | "file" | "connection";
 
 export interface GatewayEvent {
   /** Event schema version. */
@@ -274,4 +278,48 @@ export class EventStreamManager {
       socket.on("error", () => this.bus.unsubscribe(sub));
     });
   }
+}
+
+// ── Standard event type constants ──────────────────────────────────────────
+
+export const EVENTS = {
+  // Pipeline
+  STAGE_STARTED:    "stage.started",
+  STAGE_COMPLETED:  "stage.completed",
+  STAGE_FAILED:     "stage.failed",
+  STALE_DETECTED:   "staleness.detected",
+
+  // Pi session
+  PI_CONNECTED:     "pi.connected",
+  PI_DISCONNECTED:  "pi.disconnected",
+  PI_RESPONSE:      "pi.response",
+
+  // Providers
+  PROVIDER_JOB_STARTED:   "provider.job.started",
+  PROVIDER_JOB_COMPLETED: "provider.job.completed",
+  PROVIDER_JOB_FAILED:    "provider.job.failed",
+
+  // Files
+  FILE_CHANGED:     "file.changed",
+  FILE_DELETED:     "file.deleted",
+
+  // Reviews
+  REVIEW_CREATED:   "review.created",
+  REVIEW_UPDATED:   "review.updated",
+  REVIEW_RESOLVED:  "review.resolved",
+
+  // Connection
+  WS_CONNECTED:     "connection.ws.connected",
+  WS_DISCONNECTED:  "connection.ws.disconnected",
+} as const;
+
+/** Map event type to its category. */
+export function eventCategory(type: string): EventCategory {
+  if (type.startsWith("stage.") || type.startsWith("staleness.")) return "pipeline";
+  if (type.startsWith("pi.")) return "pi";
+  if (type.startsWith("provider.")) return "provider";
+  if (type.startsWith("file.")) return "file";
+  if (type.startsWith("review.")) return "review";
+  if (type.startsWith("connection.")) return "connection";
+  return "workspace";
 }

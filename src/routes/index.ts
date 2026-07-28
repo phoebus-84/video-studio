@@ -7,6 +7,8 @@ import { ErrorCode, GatewayError } from "../errors/index.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
 import { registerRuntimeRoutes } from "./runtime.js";
 import { registerProductionRoutes } from "./production.js";
+import type { PiRpcHealth } from "../rpc/health.js";
+import type { AdapterBridge } from "../rpc/adapter-bridge.js";
 
 /**
  * Register all REST API routes.
@@ -16,6 +18,8 @@ export function registerRoutes(
   _config: Config,
   workspace: WorkspaceService,
   runtime: RuntimeClient,
+  piHealth?: PiRpcHealth,
+  adapterBridge?: AdapterBridge,
 ): void {
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/health", {
@@ -59,8 +63,8 @@ export function registerRoutes(
           lastChecked: new Date().toISOString(),
         };
       },
-      pi: () => ({ status: "unknown" as const, detail: "Pi RPC not yet wired (vsg-e57.6)", lastChecked: new Date().toISOString() }),
-      adapter: () => ({ status: "unknown" as const, detail: "Adapter bridge not yet wired (vsg-e57.9)", lastChecked: new Date().toISOString() }),
+      pi: () => piHealth?.check() ?? { status: "unknown" as const, detail: "Pi RPC not yet wired (vsg-e57.6)", lastChecked: new Date().toISOString() },
+      adapter: () => adapterBridge?.check() ?? { status: "unknown" as const, detail: "Adapter bridge not yet wired (vsg-e57.9)", lastChecked: new Date().toISOString() },
     });
   });
 
