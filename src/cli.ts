@@ -367,10 +367,35 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     const loader = makeLoader();
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
-    // Find the next runnable stage(s)
+    // Reuse artifact detection from cmdStatus
+    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
+    const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const { existsSync } = await import("node:fs");
+    const ArtifactPaths: Record<string, string> = {
+      "brief.md": `${episodeDir}/artifacts/brief.md`,
+      "script.md": `${episodeDir}/artifacts/script.md`,
+      "art-direction.json": `${episodeDir}/artifacts/art-direction.md`,
+      "narration.mp3": `${episodeDir}/artifacts/narration/narration-full.wav`,
+      "safety-report.json": `${episodeDir}/artifacts/safety-report.json`,
+      "illustrations/": `${episodeDir}/artifacts/frames`,
+      "captions.srt": `${episodeDir}/artifacts/captions.srt`,
+      "timing.json": `${episodeDir}/artifacts/timing.json`,
+      "continuity-report.json": `${episodeDir}/artifacts/continuity-report.json`,
+      "output.mp4": `${episodeDir}/artifacts/render/final.mp4`,
+      "qa-report.json": `${episodeDir}/artifacts/qa-report.json`,
+    };
+
+    // Find the first non-completed stage
     const pending = pipeline.stages.filter((s) => {
       if (stageId) return s.definition.id === stageId;
-      return true; // All stages considered
+      return s.definition.produces.some((p) => {
+        const ap = ArtifactPaths[p.label];
+        if (!ap) return true;
+        if (p.label.endsWith("/")) {
+          try { return existsSync(ap) ? require("node:fs").readdirSync(ap).length === 0 : true; } catch { return true; }
+        }
+        return !existsSync(ap);
+      });
     });
 
     if (ctx.dryRun) {
