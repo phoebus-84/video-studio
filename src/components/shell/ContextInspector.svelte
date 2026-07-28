@@ -40,7 +40,7 @@
               prompt: scene.intent ?? `Image for ${scene.title}`,
               referenceImages: [],
               provider: "fal.ai",
-              model: "flux-dev-v1",
+              model: "flux-schnell",
               seed: null,
               dimensions: { width: 1920, height: 1080 },
               cost: null,
