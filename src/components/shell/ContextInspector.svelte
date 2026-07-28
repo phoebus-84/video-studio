@@ -7,12 +7,10 @@
   import ReviewInbox from "../review/ReviewInbox.svelte";
   import ProgressPanel from "../status/ProgressPanel.svelte";
   import StalenessPanel from "../status/StalenessPanel.svelte";
-  import NarrationPanel from "../narration/NarrationPanel.svelte";
-  import RenderViewer from "../render/RenderViewer.svelte";
 
   import { untrack } from "svelte";
 
-  type Tab = "assets" | "reviews" | "status" | "narration" | "render";
+  type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
   // Build asset groups from episode scenes + real image URLs.
@@ -122,22 +120,6 @@
     >
       Status
     </button>
-    <button
-      class="ci-tab"
-      role="tab"
-      aria-selected={tab === "narration"}
-      onclick={() => tab = "narration"}
-    >
-      Narration
-    </button>
-    <button
-      class="ci-tab"
-      role="tab"
-      aria-selected={tab === "render"}
-      onclick={() => tab = "render"}
-    >
-      Render
-    </button>
   </div>
 
   <div class="ci-content">
@@ -148,10 +130,6 @@
     {:else if tab === "status"}
       <ProgressPanel />
       <StalenessPanel />
-    {:else if tab === "narration"}
-      <NarrationPanel />
-    {:else if tab === "render"}
-      <RenderViewer />
     {:else}
       <div class="inspector-empty">
         <p>Select a scene to inspect assets.</p>
