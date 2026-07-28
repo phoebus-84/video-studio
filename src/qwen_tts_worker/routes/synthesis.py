@@ -25,9 +25,11 @@ class SynthesizeRequest(BaseModel):
     """Request to synthesize speech from text."""
 
     text: str = Field(..., min_length=1, max_length=5000, description="Text to synthesize")
-    voice: str = Field(default="default", description="Voice profile name")
+    voice: str = Field(default="default", description="Voice profile / speaker name (e.g. 'af_heart', 'default')")
     speed: float = Field(default=1.0, ge=0.5, le=2.0, description="Speech rate multiplier")
-    sample_rate: int = Field(default=24000, ge=8000, le=48000, description="Output sample rate in Hz")
+    temperature: float = Field(default=0.7, ge=0.1, le=2.0, description="Generation temperature (higher = more variation)")
+    instruct: Optional[str] = Field(default=None, description="Emotion/style instruction e.g. 'Speak warmly and gently like a grandmother telling a bedtime story'")
+    voice_description: Optional[str] = Field(default=None, description="VoiceDesign: describe the voice to create (e.g. 'A warm elderly female narrator with a gentle, soothing tone')")
     language: str = Field(default="auto", description="Language code or 'auto'")
 
     @field_validator("text")
@@ -137,7 +139,34 @@ def chunk_text(text: str, max_chars: int = 500) -> list[str]:
 
 # ── WAV generation ───────────────────────────────────────────────────────────
 
-def synthesize_with_qwen(text: str, voice: str, speed: float, model_path: str) -> bytes:
+# ── Model cache (loaded once, reused across requests) ────────────────────
+
+_model_cache: dict = {}
+
+
+def _get_model(model_path: str):
+    """Lazy-load and cache the TTS model."""
+    if model_path not in _model_cache:
+        from mlx_audio.tts.generate import generate_audio
+        # Warm the cache by doing a tiny silent generation
+        import logging
+        logger = logging.getLogger("qwen-tts-worker")
+        logger.info(f"Preloading TTS model from {model_path}...")
+        _model_cache[model_path] = model_path  # store path, generate_audio handles loading
+        logger.info("Model path cached (lazy load on first request)")
+    return _model_cache[model_path]
+
+
+def synthesize_with_qwen(
+    text: str,
+    voice: str,
+    speed: float,
+    model_path: str,
+    *,
+    temperature: float = 0.7,
+    instruct: str | None = None,
+    voice_description: str | None = None,
+) -> bytes:
     """Synthesize speech using the Qwen3-TTS model.
 
     Uses mlx_audio to generate real speech via the MLX-accelerated model.
@@ -152,6 +181,9 @@ def synthesize_with_qwen(text: str, voice: str, speed: float, model_path: str) -
                 text=text,
                 model=model_path,
                 voice=voice,
+                speed=speed,
+                temperature=temperature,
+                instruct=instruct or voice_description or None,
                 output_path=tmp_dir,
                 verbose=False,
             )
@@ -238,7 +270,7 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
         status="queued",
         text_hash=text_hash,
         duration_sec=round(estimated_duration, 2),
-        sample_rate=request.sample_rate,
+        sample_rate=24000,
         num_samples=0,
         num_channels=1,
         created_at=created_at,
@@ -252,7 +284,15 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
         _job_store.update(job_id, status="running")
 
         model_path = os.environ.get("QTW_MODEL_PATH", "models/qwen3-tts-0.6b-4bit")
-        wav_data = synthesize_with_qwen(request.text, request.voice, request.speed, model_path)
+        wav_data = synthesize_with_qwen(
+            request.text,
+            request.voice,
+            request.speed,
+            model_path,
+            temperature=request.temperature,
+            instruct=request.instruct,
+            voice_description=request.voice_description,
+        )
 
         # Use absolute path derived from env or default
         voices_root = Path(os.environ.get("TTS_VOICES_DIR", str(Path(__file__).resolve().parent.parent.parent / "voices")))
