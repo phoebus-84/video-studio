@@ -17,6 +17,8 @@ class LibraryStore {
   phase = $state<LibraryState["phase"]>("loading");
   message = $state("");
   selectedEpisode = $state<string | null>(null);
+  selectedChannel = $state<string | null>(null);
+  selectedSeries = $state<{ channel: string; series: string } | null>(null);
 
   /** Load from a fixture (test / no-gateway mode). */
   loadFixture(tree: LibraryTree) {
@@ -71,6 +73,29 @@ class LibraryStore {
   /** Mark an episode as selected. */
   select(channel: string, series: string, episode: string) {
     this.selectedEpisode = `${channel}/${series}/${episode}`;
+    this.selectedChannel = null;
+    this.selectedSeries = null;
+  }
+
+  /** Select channel level (no episode). */
+  selectChannel(channel: string) {
+    this.selectedChannel = channel;
+    this.selectedSeries = null;
+    this.selectedEpisode = null;
+  }
+
+  /** Select series level (no episode). */
+  selectSeries(channel: string, series: string) {
+    this.selectedSeries = { channel, series };
+    this.selectedEpisode = null;
+    this.selectedChannel = null;
+  }
+
+  /** Deselect everything. */
+  deselect() {
+    this.selectedEpisode = null;
+    this.selectedChannel = null;
+    this.selectedSeries = null;
   }
 }
 

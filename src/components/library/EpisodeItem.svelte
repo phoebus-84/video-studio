@@ -13,7 +13,7 @@
   const label = $derived(STATUS_LABELS[status]);
 
   const selected = $derived(
-    library.selectedEpisode === `${episode.channel}/${episode.slug}`,
+    library.selectedEpisode === `${episode.channel}/${episode.series}/${episode.slug}`,
   );
 
   function doSelect() {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { library } from "$lib/library-store.svelte.ts";
   import type { ResolvedChannel } from "$lib/library-types";
   import SeriesItem from "./SeriesItem.svelte";
 
@@ -14,54 +15,82 @@
     expanded = !expanded;
   }
 
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      toggle();
-    }
-    if (e.key === "ArrowRight" && !expanded) {
-      e.preventDefault();
-      expanded = true;
-    }
-    if (e.key === "ArrowLeft" && expanded) {
-      e.preventDefault();
-      expanded = false;
-    }
+  function selectChannel() {
+    library.selectChannel(channel.slug);
   }
 </script>
 
 <div class="channel-group">
-  <button
-    class="channel-row"
-    aria-expanded={expanded}
-    onclick={toggle}
-    onkeydown={onKeydown}
-  >
-    <span class="channel-chevron" aria-hidden="true">
-      {expanded ? "▾" : "▸"}
-    </span>
-    <span class="channel-name">{channel.title}</span>
+  <div class="channel-row">
+    <button
+      class="channel-chevron-btn"
+      aria-expanded={expanded}
+      aria-label={expanded ? "Collapse" : "Expand"}
+      onclick={toggle}
+    >
+      <span class="channel-chevron" aria-hidden="true">
+        {expanded ? "▾" : "▸"}
+      </span>
+    </button>
+    <button
+      class="channel-name-btn"
+      class:selected={library.selectedChannel === channel.slug}
+      onclick={selectChannel}
+    >
+      <span class="channel-name">{channel.title}</span>
+    </button>
     {#if channel.error}
       <span class="channel-error-badge" aria-label="Error loading">!</span>
     {/if}
-  </button>
+  </div>
 
   {#if expanded}
     <div class="series-list" role="group" aria-label="{channel.title} series">
       {#each channel.series as series (series.slug)}
-        <SeriesItem {series} />
+        <SeriesItem channelSlug={channel.slug} {series} />
       {/each}
     </div>
   {/if}
 </div>
 
 <style>
+  .channel-group {
+  }
+
   .channel-row {
     display: flex;
     align-items: center;
-    gap: var(--vs-space-1);
-    width: 100%;
-    padding: var(--vs-space-2) var(--vs-space-3);
+    gap: 0;
+    border-radius: var(--vs-radius-sm);
+    overflow: hidden;
+  }
+
+  .channel-chevron-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    padding: var(--vs-space-2) 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .channel-chevron-btn:hover {
+    background: var(--vs-bg-hover);
+  }
+
+  .channel-chevron {
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-tertiary);
+  }
+
+  .channel-name-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: var(--vs-space-2) var(--vs-space-3) var(--vs-space-2) 0;
     background: none;
     border: none;
     color: var(--vs-text-primary);
@@ -70,23 +99,16 @@
     font-weight: var(--vs-font-weight-semibold);
     text-align: left;
     cursor: pointer;
-    border-radius: var(--vs-radius-sm);
+    border-radius: 0;
   }
 
-  .channel-row:hover {
+  .channel-name-btn:hover {
     background: var(--vs-bg-hover);
   }
 
-  .channel-row:focus-visible {
-    outline: 2px solid var(--vs-border-focus);
-    outline-offset: -2px;
-  }
-
-  .channel-chevron {
-    width: 14px;
-    font-size: var(--vs-text-xs);
-    color: var(--vs-text-tertiary);
-    flex-shrink: 0;
+  .channel-name-btn.selected {
+    background: var(--vs-accent-subtle);
+    color: var(--vs-accent);
   }
 
   .channel-name {
@@ -108,6 +130,7 @@
     font-size: 10px;
     font-weight: var(--vs-font-weight-semibold);
     flex-shrink: 0;
+    margin-right: var(--vs-space-2);
   }
 
   .series-list {

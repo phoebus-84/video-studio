@@ -1,17 +1,23 @@
 <script lang="ts">
+  import { library } from "$lib/library-store.svelte.ts";
   import type { ResolvedSeries } from "$lib/library-types";
   import EpisodeItem from "./EpisodeItem.svelte";
 
   interface Props {
+    channelSlug: string;
     series: ResolvedSeries;
   }
 
-  let { series }: Props = $props();
+  let { channelSlug, series }: Props = $props();
 
   let expanded = $state(false);
 
   function toggle() {
     expanded = !expanded;
+  }
+
+  function selectSeries() {
+    library.selectSeries(channelSlug, series.slug);
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -31,23 +37,31 @@
 </script>
 
 <div class="series-group">
-  <button
-    class="series-row"
-    aria-expanded={expanded}
-    onclick={toggle}
-    onkeydown={onKeydown}
-  >
-    <span class="series-chevron" aria-hidden="true">
-      {expanded ? "▾" : "▸"}
-    </span>
-    <span class="series-name">{series.title}</span>
-    <span class="series-count" aria-label="{series.episodes.length} episodes">
-      {series.episodes.length}
-    </span>
+  <div class="series-row">
+    <button
+      class="series-chevron-btn"
+      aria-expanded={expanded}
+      aria-label={expanded ? "Collapse" : "Expand"}
+      onclick={toggle}
+    >
+      <span class="series-chevron" aria-hidden="true">
+        {expanded ? "▾" : "▸"}
+      </span>
+    </button>
+    <button
+      class="series-name-btn"
+      class:selected={library.selectedSeries?.series === series.slug && library.selectedSeries?.channel === channelSlug}
+      onclick={selectSeries}
+    >
+      <span class="series-name">{series.title}</span>
+      <span class="series-count" aria-label="{series.episodes.length} episodes">
+        {series.episodes.length}
+      </span>
+    </button>
     {#if series.error}
       <span class="series-error-badge" aria-label="Error loading series">!</span>
     {/if}
-  </button>
+  </div>
 
   {#if expanded}
     <div
@@ -66,8 +80,38 @@
   .series-row {
     display: flex;
     align-items: center;
-    gap: var(--vs-space-1);
-    width: 100%;
+    border-radius: var(--vs-radius-sm);
+    overflow: hidden;
+  }
+
+  .series-chevron-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    padding: var(--vs-space-1) 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .series-chevron-btn:hover {
+    background: var(--vs-bg-hover);
+  }
+
+  .series-chevron {
+    width: 14px;
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .series-name-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--vs-space-2);
     padding: var(--vs-space-1) var(--vs-space-2);
     background: none;
     border: none;
@@ -77,23 +121,16 @@
     font-weight: var(--vs-font-weight-medium);
     text-align: left;
     cursor: pointer;
-    border-radius: var(--vs-radius-sm);
+    border-radius: 0;
   }
 
-  .series-row:hover {
+  .series-name-btn:hover {
     background: var(--vs-bg-hover);
   }
 
-  .series-row:focus-visible {
-    outline: 2px solid var(--vs-border-focus);
-    outline-offset: -2px;
-  }
-
-  .series-chevron {
-    width: 14px;
-    font-size: var(--vs-text-xs);
-    color: var(--vs-text-tertiary);
-    flex-shrink: 0;
+  .series-name-btn.selected {
+    background: var(--vs-accent-subtle);
+    color: var(--vs-accent);
   }
 
   .series-name {
