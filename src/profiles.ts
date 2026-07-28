@@ -532,11 +532,64 @@ export const deprecationExample: EndpointProfile = defineProfile({
   },
 });
 
+// ─── Nano Banana Pro ─────────────────────────────────────────────────
+
+const nanoBananaPro: EndpointProfile = Object.freeze({
+  profileId: "fal-ai/nano-banana-pro@v1",
+  endpointId: "fal-ai/nano-banana-pro",
+  operation: "text-to-image",
+  contractVersion: "v1",
+  parameterSchema: [
+    {
+      name: "prompt",
+      type: "string",
+      required: true,
+      description: "Text prompt describing the desired image. Supports multi-language text rendering.",
+    },
+    {
+      name: "aspect_ratio",
+      type: "enum",
+      required: false,
+      defaultValue: "16:9",
+      enumValues: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+      description: "Aspect ratio of the output image.",
+    },
+    {
+      name: "resolution",
+      type: "enum",
+      required: false,
+      defaultValue: "1K",
+      enumValues: ["1K", "2K", "4K"],
+      description: "Resolution of the output image. 1K ≈ 1080p, 2K ≈ 1440p, 4K ≈ 2160p.",
+    },
+    {
+      name: "output_format",
+      type: "enum",
+      required: false,
+      defaultValue: "jpeg",
+      enumValues: ["jpeg", "png"],
+      description: "Output image format.",
+    },
+    {
+      name: "num_images",
+      type: "integer",
+      required: false,
+      defaultValue: 1,
+      min: 1,
+      max: 4,
+      description: "Number of images to generate.",
+    },
+  ],
+  capabilities: ["illustration", "diagram", "text-rendering"],
+  tags: ["fast", "text-capable"],
+});
+
 // ─── Registry ─────────────────────────────────────────────────────────
 
 const PROFILES: readonly EndpointProfile[] = Object.freeze([
   fluxDevV1,
   fluxFillV1,
+  nanoBananaPro,
   deprecationExample,
 ]);
 

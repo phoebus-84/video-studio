@@ -185,18 +185,52 @@ export class FalClient {
     const status = (data.status as string) ?? "IN_PROGRESS";
 
     // If completed, extract images if available
-    if (status === "COMPLETED" && data.images) {
+    if (status === "COMPLETED") {
+      // Direct images in poll response (sync-compatible endpoints)
+      if (data.images) {
+        return {
+          requestId,
+          status: "COMPLETED",
+          images: (data.images as any[])?.map((img: any) => ({
+            url: img.url as string,
+            width: (img.width ?? 0) as number,
+            height: (img.height ?? 0) as number,
+            contentType: (img.content_type ?? "image/jpeg") as string,
+          })),
+          timings: data.timings as { inference?: number },
+          seed: data.seed as number,
+          raw: data,
+        };
+      }
+
+      // Async endpoints: fetch the response_url to get images
+      if (data.response_url) {
+        const imgRes = await fetch(data.response_url as string);
+        if (imgRes.ok) {
+          const imgData = await imgRes.json() as any;
+          if (imgData.images) {
+            return {
+              requestId,
+              status: "COMPLETED",
+              images: (imgData.images as any[])?.map((img: any) => ({
+                url: img.url as string,
+                width: (img.width ?? 0) as number,
+                height: (img.height ?? 0) as number,
+                contentType: (img.content_type ?? "image/jpeg") as string,
+              })),
+              timings: data.timings as { inference?: number },
+              seed: data.seed as number,
+              raw: imgData,
+            };
+          }
+        }
+      }
+
+      // Fallback: return with resultUrl
       return {
         requestId,
         status: "COMPLETED",
-        images: (data.images as any[])?.map((img: any) => ({
-          url: img.url as string,
-          width: (img.width ?? 0) as number,
-          height: (img.height ?? 0) as number,
-          contentType: (img.content_type ?? "image/jpeg") as string,
-        })),
-        timings: data.timings as { inference?: number },
-        seed: data.seed as number,
+        resultUrl: (data.response_url ?? data.result_url) as string | undefined,
         raw: data,
       };
     }
