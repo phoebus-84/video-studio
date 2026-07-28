@@ -23,7 +23,7 @@
     loading = true;
     error = null;
     // Common files to try at channel/series level
-    const candidates = ["README.md", "style-guide.md", "pipeline.yaml", "art-direction.md"];
+    const candidates = ["README.md", "pipeline.yaml", "format.yaml", "style-guide.md", "art-direction.md"];
     const found: string[] = [];
     const client = getGatewayClient();
 
