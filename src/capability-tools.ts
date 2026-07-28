@@ -96,13 +96,13 @@ async function generateImage(
 async function synthesizeSpeech(text: string, voice: string, speed: number, instruct?: string): Promise<{ audioPath: string; durationSec: number }> {
   const ttsUrl = process.env.AVG_TTS_WORKER_URL || "http://127.0.0.1:5197";
 
-  const body: Record<string, unknown> = { text, voice, speed };
-  if (instruct) body.instruct = instruct;
+  const reqBody: Record<string, unknown> = { text, voice, speed };
+  if (instruct) reqBody.instruct = instruct;
 
   const res = await fetch(`${ttsUrl}/synthesize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(reqBody),
   });
 
   if (!res.ok) {
