@@ -100,9 +100,11 @@ export class RuntimeClient {
     return this.exec(["resolve", `${ref.channel}/${ref.series}/${ref.episode}`]);
   }
 
-  /** vpr status <channel>/<series>/<episode> */
-  async status(ref: EpisodeRef): Promise<RuntimeCommandResult> {
-    return this.exec(["status", `${ref.channel}/${ref.series}/${ref.episode}`]);
+  /** vpr status <channel>/<series>/<episode> [--pipeline <name>] */
+  async status(ref: EpisodeRef, pipeline?: string): Promise<RuntimeCommandResult> {
+    const args = ["status", `${ref.channel}/${ref.series}/${ref.episode}`];
+    if (pipeline) args.push("--pipeline", pipeline);
+    return this.exec(args);
   }
 
   /** vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] */

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WorkspaceService } from "../workspace/service";
+import type { RuntimeClient } from "../runtime/client.js";
 import {
   channelNotFound,
   WorkspaceError,
@@ -11,6 +12,7 @@ import {
 export function registerWorkspaceRoutes(
   app: FastifyInstance,
   workspace: WorkspaceService,
+  runtime?: RuntimeClient,
 ): void {
   /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -77,13 +79,36 @@ export function registerWorkspaceRoutes(
       },
     } as any,
   }, async (request, reply) => {
-    const { channel, series, episode } = request.params as {
+    const { channel, series, episode: epSlug } = request.params as {
       channel: string;
       series: string;
       episode: string;
     };
     try {
-      return await workspace.getEpisode(channel, series, episode);
+      const epData = await workspace.getEpisode(channel, series, epSlug);
+
+      // ── Enrich with pipeline status from runtime ──────────────────────
+      if (runtime) {
+        try {
+          const pipelineName = (epData as any).pipeline ?? "fairy-tale-adaptation";
+          const status = await runtime.status({ channel, series, episode: epSlug }, pipelineName as string);
+          if (status.ok && status.data) {
+            const data = status.data as Record<string, unknown>;
+            (epData as any).pipeline = data.pipeline ?? (epData as any).pipeline;
+            (epData as any).stages = (data.stages as Array<Record<string, unknown>>)?.map((s: any) => ({
+              id: s.id,
+              name: s.name ?? s.id,
+              status: s.state ?? "pending",
+              dependsOn: s.dependsOn ?? [],
+              produces: s.produces ?? [],
+            })) ?? (epData as any).stages;
+          }
+        } catch {
+          // Runtime unavailable — use static data from workspace
+        }
+      }
+
+      return epData;
     } catch (err) {
       if (err instanceof WorkspaceError) {
         reply.status(err.statusCode).send({

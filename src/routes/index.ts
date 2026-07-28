@@ -83,7 +83,7 @@ export function registerRoutes(
   });
 
   // ── Workspace discovery ──────────────────────────────────────────────────
-  registerWorkspaceRoutes(app, workspace);
+  registerWorkspaceRoutes(app, workspace, runtime);
 
   // ── Runtime endpoints ────────────────────────────────────────────────────
   registerRuntimeRoutes(app, runtime);
