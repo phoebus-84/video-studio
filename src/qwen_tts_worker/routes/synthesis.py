@@ -313,16 +313,30 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
         # Use CustomVoice 1.7B model for character voices (best instruct/voice control).
         # Falls back to 1.7B base if CustomVoice not available.
         default_model = "models/qwen3-tts-0.6b-4bit"
+        voice = request.voice
         if request.instruct or request.voice_description:
             customvoice_path = "models/qwen3-tts-1.7b-customvoice-8bit"
             if os.path.isdir(customvoice_path):
                 default_model = customvoice_path
+                # CustomVoice requires specific speakers — map "default" to "serena"
+                CV_SPEAKERS = {"serena", "vivian", "uncle_fu", "ryan", "aiden", "ono_anna", "sohee", "eric", "dylan"}
+                if voice not in CV_SPEAKERS:
+                    # Map common voice names to CustomVoice speakers
+                    voice_map = {
+                        "default": "serena",
+                        "narrator": "serena",
+                        "girl": "vivian",
+                        "wolf": "uncle_fu",
+                        "woodcutter": "ryan",
+                        "grandmother": "serena",
+                    }
+                    voice = voice_map.get(voice, "serena")
             else:
                 default_model = "models/qwen3-tts-1.7b-4bit"
         model_path = os.environ.get("QTW_MODEL_PATH", default_model)
         wav_data = synthesize_with_qwen(
             request.text,
-            request.voice,
+            voice,
             request.speed,
             model_path,
             temperature=request.temperature,
