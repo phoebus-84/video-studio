@@ -2,6 +2,8 @@
 export interface AssetAttempt {
   id: string;
   sceneId: string;
+  /** Asset type: image or audio narration. */
+  kind: "image" | "audio";
   prompt: string;
   referenceImages: string[];
   provider: string;
@@ -14,12 +16,16 @@ export interface AssetAttempt {
   selected: boolean;
   /** Public URL for the generated image (served by gateway). */
   imageUrl: string | null;
+  /** Public URL for audio narration WAV (served by gateway). */
+  audioUrl: string | null;
   /** Local file path relative to the episode asset directory. */
   filePath: string | null;
   /** Whether the file is available on disk. */
   fileAvailable: boolean;
   /** Asset generation state. */
   state: "ready" | "generating" | "failed" | "idle";
+  /** Review anchor type for regeneration. */
+  anchorType: "assets" | "narration";
 }
 
 export interface AssetGroup {

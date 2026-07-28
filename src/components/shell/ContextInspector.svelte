@@ -21,30 +21,61 @@
     if (sceneList.length === 0) return;
 
     const imgUrls = episode.assets.images;
+    const narUrls = episode.assets.narration;
     untrack(() => {
       const generated: AssetGroup[] = sceneList.map((scene) => {
         const imgUrl = imgUrls[scene.id] ?? null;
+        const narUrl = narUrls[scene.id] ?? null;
+        const hasNarration = narUrl != null;
+
         return {
           sceneId: scene.id,
           sceneTitle: scene.title,
-          attempts: [{
-            id: `gen-${scene.id}-1`,
-            sceneId: scene.id,
-            prompt: scene.intent ?? `Asset for ${scene.title}`,
-            referenceImages: [],
-            provider: "fal.ai",
-            model: "flux-dev-v1",
-            seed: null,
-            dimensions: { width: 1920, height: 1080 },
-            cost: null,
-            license: imgUrl ? "generated" : "pending",
-            createdAt: new Date().toISOString(),
-            selected: true,
-            imageUrl: imgUrl,
-            filePath: imgUrl,
-            fileAvailable: imgUrl != null,
-            state: imgUrl ? "ready" as const : "generating" as const,
-          }],
+          attempts: [
+            // Image attempt
+            {
+              id: `img-${scene.id}`,
+              sceneId: scene.id,
+              kind: "image" as const,
+              prompt: scene.intent ?? `Image for ${scene.title}`,
+              referenceImages: [],
+              provider: "fal.ai",
+              model: "flux-dev-v1",
+              seed: null,
+              dimensions: { width: 1920, height: 1080 },
+              cost: null,
+              license: imgUrl ? "generated" : "pending",
+              createdAt: new Date().toISOString(),
+              selected: true,
+              imageUrl: imgUrl,
+              filePath: imgUrl,
+              fileAvailable: imgUrl != null,
+              state: imgUrl ? "ready" as const : "generating" as const,
+              anchorType: "assets" as const,
+            },
+            // Narration audio attempt
+            {
+              id: `nar-${scene.id}`,
+              sceneId: scene.id,
+              kind: "audio" as const,
+              prompt: `Narration for scene "${scene.title}" (${scene.durationSeconds ?? 10}s)`,
+              referenceImages: [],
+              provider: "Qwen3-TTS",
+              model: "0.6B-4bit",
+              seed: null,
+              dimensions: { width: 0, height: 0 },
+              cost: null,
+              license: hasNarration ? "synthesized" : "pending",
+              createdAt: new Date().toISOString(),
+              selected: false,
+              imageUrl: null,
+              audioUrl: narUrl,
+              filePath: narUrl,
+              fileAvailable: hasNarration,
+              state: hasNarration ? "ready" as const : "generating" as const,
+              anchorType: "narration" as const,
+            },
+          ],
         };
       });
       assetStore.load(generated);

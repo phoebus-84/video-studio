@@ -24,12 +24,13 @@
   let regenerating = $state(false);
   let regenError = $state<string | null>(null);
 
-  async function requestRegenerate() {
+  async function requestRegenerate(attempt: AssetAttempt) {
     if (!group || episode.state.phase !== "ready") return;
     const ep = episode.state.episode;
     const client = getGatewayClient();
     regenerating = true;
     regenError = null;
+    const kindLabel = attempt.kind === "audio" ? "narration" : "image";
     try {
       await client.fetchJSON(
         `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews`,
@@ -37,14 +38,11 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            anchor: `assets/${group.sceneId}`,
-            body: `Regenerate image for scene "${group.sceneTitle}". Original prompt: "${group.attempts[0]?.prompt ?? ""}"`,
+            anchor: `${attempt.anchorType}/${group.sceneId}`,
+            body: `Regenerate ${kindLabel} for scene "${group.sceneTitle}". ${attempt.kind === "audio" ? `Narration text needed.` : `Original prompt: "${attempt.prompt}"`}`,
           }),
         }
       );
-      // Refresh reviews
-      await import("../review/ReviewInbox.svelte");
-      // Refresh reviews to show the new thread
       refresh.refresh();
     } catch (err) {
       regenError = err instanceof Error ? err.message : "Failed to request regeneration";
@@ -65,22 +63,31 @@
           class="ap-card"
           class:selected={attempt.selected}
           class:unavailable={!attempt.fileAvailable}
-          aria-label="Attempt {attempt.id} — {attempt.selected ? 'selected' : ''} — {attempt.fileAvailable ? 'available' : 'file unavailable'}"
+          aria-label="{attempt.kind} {attempt.id} — {attempt.selected ? 'selected' : ''} — {attempt.fileAvailable ? 'available' : 'unavailable'}"
           onclick={() => select(attempt)}
         >
           <div class="ap-card-header">
+            <span class="ap-kind-badge" data-kind={attempt.kind}>
+              {attempt.kind === "image" ? "🖼" : "🔊"}
+            </span>
             <span class="ap-id">{attempt.id}</span>
             {#if attempt.selected}
               <span class="ap-selected-badge">Selected</span>
             {/if}
             {#if !attempt.fileAvailable}
-              <span class="ap-missing-badge">No image</span>
+              <span class="ap-missing-badge">No {attempt.kind === "image" ? "image" : "audio"}</span>
             {/if}
           </div>
 
-          {#if attempt.imageUrl}
+          {#if attempt.kind === "image" && attempt.imageUrl}
             <div class="ap-thumb">
               <img src={attempt.imageUrl} alt={attempt.sceneId} loading="lazy" />
+            </div>
+          {:else if attempt.kind === "audio" && attempt.audioUrl}
+            <div class="ap-audio">
+              <audio controls src={attempt.audioUrl} preload="none">
+                Your browser cannot play audio.
+              </audio>
             </div>
           {/if}
 
@@ -106,10 +113,10 @@
               class:ap-regen-disabled={regenerating}
               role="button"
               tabindex={regenerating ? -1 : 0}
-              onclick={(e) => { e.stopPropagation(); if (!regenerating) requestRegenerate(); }}
-              onkeydown={(e) => { if (!regenerating && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); requestRegenerate(); } }}
+              onclick={(e) => { e.stopPropagation(); if (!regenerating) requestRegenerate(attempt); }}
+              onkeydown={(e) => { if (!regenerating && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); requestRegenerate(attempt); } }}
             >
-              {regenerating ? "Requesting…" : "🔄 Regenerate"}
+              {regenerating ? "Requesting…" : `🔄 Regenerate ${attempt.kind === "audio" ? "Narration" : "Image"}`}
             </span>
           </div>
           {#if regenError}
@@ -195,6 +202,15 @@
     font-weight: var(--vs-font-weight-semibold);
   }
 
+  .ap-kind-badge {
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .ap-kind-badge[data-kind="audio"] {
+    opacity: 0.8;
+  }
+
   .ap-selected-badge {
     font-size: var(--vs-text-xs);
     color: var(--vs-accent);
@@ -237,6 +253,15 @@
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+
+  .ap-audio {
+    margin-bottom: var(--vs-space-2);
+  }
+
+  .ap-audio audio {
+    width: 100%;
+    height: 32px;
   }
 
   .ap-meta {
