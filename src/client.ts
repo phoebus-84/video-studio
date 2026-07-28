@@ -36,6 +36,7 @@ export interface FalJob {
   timings?: { inference?: number };
   seed?: number;
   error?: string;
+  cost?: { amount: number; currency: string };
   raw: Record<string, unknown>;
 }
 
@@ -60,6 +61,14 @@ export class FalClient {
   private baseUrl: string;
   private queueUrl: string;
   private transport: Transport;
+  private _totalSpendUsd = 0;
+  private _submissionCount = 0;
+
+  /** Cumulative spend since client creation (USD). */
+  get totalSpendUsd(): number { return this._totalSpendUsd; }
+  
+  /** Total submissions made. */
+  get submissionCount(): number { return this._submissionCount; }
 
   constructor(options: FalClientOptions) {
     this.apiKey = options.apiKey;
@@ -146,7 +155,12 @@ export class FalClient {
     const job = await this.generate({ ...options, async: true });
 
     // If sync (unlikely with async:true), return immediately
-    if (job.status === "COMPLETED") return job;
+    if (job.status === "COMPLETED") {
+      const cost = estimateCost(options.profile);
+      this._totalSpendUsd += cost.amount;
+      this._submissionCount++;
+      return { ...job, cost };
+    }
     if (!job.requestId) throw new Error("No request_id in async response");
 
     const profile = getProfile(options.profile)!;
@@ -157,7 +171,12 @@ export class FalClient {
 
       const status = await this.pollStatus(profile.endpointId, job.requestId);
 
-      if (status.status === "COMPLETED") return status;
+      if (status.status === "COMPLETED") {
+        const cost = estimateCost(options.profile);
+        this._totalSpendUsd += cost.amount;
+        this._submissionCount++;
+        return { ...status, cost };
+      }
       if (status.status === "FAILED") {
         throw new Error(`fal job ${job.requestId} failed: ${status.error ?? "Unknown error"}`);
       }
@@ -306,6 +325,21 @@ function mapStatus(s: string): FalJob["status"] {
     case "FAILED": return "FAILED";
     default: return "IN_PROGRESS";
   }
+}
+
+/**
+ * Estimate cost for a fal.ai generation based on the model profile.
+ * Uses publicly listed pricing (fal.ai/pricing).
+ */
+function estimateCost(profileId: string): { amount: number; currency: string } {
+  const PRICING: Record<string, number> = {
+    "fal-ai/flux/dev": 0.005,
+    "fal-ai/flux/dev@v1": 0.005,
+    "fal-ai/nano-banana-pro": 0.003,
+    "fal-ai/nano-banana-pro@v1": 0.003,
+  };
+  const amount = PRICING[profileId] ?? PRICING[profileId.replace(/@v\d+$/, "")] ?? 0.005;
+  return { amount, currency: "USD" };
 }
 
 /** Create a FalClient from environment. */
