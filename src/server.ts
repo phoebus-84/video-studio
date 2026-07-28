@@ -110,6 +110,7 @@ export async function createGateway(
     root: path.resolve(libraryRoot),
     prefix: "/library/",
     decorateReply: false,
+    maxAge: 0,  // Disable browser caching — assets regenerate frequently
   });
 
   registerRoutes(app, config, ws);
