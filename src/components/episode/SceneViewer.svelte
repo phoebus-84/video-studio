@@ -31,6 +31,8 @@
     if (episode.state.phase === "ready" && !loaded) {
       loaded = true;
       const ep = episode.state.episode;
+      // Only load scenes from episode data — never fall back to pipeline stages.
+      // The episode store already populated sceneStore via loadFromGateway.
       if (ep.scenes && ep.scenes.length > 0) {
         scenes.load(ep.scenes.map((s: any, i: number) => ({
           id: s.id ?? `s${i + 1}`,
@@ -39,33 +41,16 @@
           intent: s.intent ?? "",
           role: (s.role ?? "narrator") as any,
           durationSeconds: s.durationSeconds ?? 10,
-          status: "idle" as const,
-          stale: false,
+          status: (s.status ?? "idle") as any,
+          stale: s.stale ?? false,
           selectedAssetId: s.id ?? `s${i + 1}`,
-          attemptCount: 0,
-          narrationStatus: "idle" as const,
-          captionsStatus: "idle" as const,
-          transition: "cut" as const,
+          attemptCount: s.attemptCount ?? 0,
+          narrationStatus: (s.narrationStatus ?? "idle") as any,
+          captionsStatus: (s.captionsStatus ?? "idle") as any,
+          transition: (s.transition ?? "cut") as any,
         })));
-      } else if (ep.stages.length > 0) {
-        scenes.load(ep.stages.map((s, i) => ({
-          id: s.id,
-          index: i,
-          title: s.name,
-          intent: s.status,
-          role: "narrator" as const,
-          durationSeconds: 15,
-          status: s.status === "completed" ? "ready" : s.status === "running" ? "generating" : "idle",
-          stale: s.stale,
-          selectedAssetId: null,
-          attemptCount: s.attemptCount,
-          narrationStatus: s.status === "completed" ? "ready" : "idle",
-          captionsStatus: "idle" as const,
-          transition: "cut" as const,
-        })));
-      } else {
-        scenes.load([]);
       }
+      // If no scenes, leave what loadFromGateway already set
     }
   });
 </script>
