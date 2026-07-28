@@ -13,11 +13,43 @@ import { join } from "node:path";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
-async function generateImage(prompt: string): Promise<{ imageUrl: string; data: Buffer; seed: number }> {
+const DEFAULT_MODEL = "fal-ai/flux/dev";
+
+async function resolveModel(channel: string, series: string): Promise<string> {
+  // Try to read pipeline config from series or channel level
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { load } = await import("js-yaml");
+
+  const LIBRARY = process.env.AVG_LIBRARY_ROOT || join(process.cwd(), "library");
+
+  // Check series level first, then channel level
+  for (const yamlPath of [
+    join(LIBRARY, channel, series, "pipeline.yaml"),
+    join(LIBRARY, channel, "pipeline.yaml"),
+  ]) {
+    if (existsSync(yamlPath)) {
+      try {
+        const raw = readFileSync(yamlPath, "utf-8");
+        const config = load(raw) as any;
+        const model = config?.image?.provider || config?.providers?.imageGeneration;
+        if (model && typeof model === "string") return model;
+      } catch { /* skip malformed yaml */ }
+    }
+  }
+  return DEFAULT_MODEL;
+}
+
+async function generateImage(
+  prompt: string,
+  model?: string,
+): Promise<{ imageUrl: string; data: Buffer; seed: number; model: string }> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) throw new Error("FAL_KEY env var not set");
 
-  const res = await fetch("https://fal.run/fal-ai/flux/dev", {
+  const modelName = model || DEFAULT_MODEL;
+
+  const res = await fetch(`https://fal.run/${modelName}`, {
     method: "POST",
     headers: {
       "Authorization": `Key ${apiKey}`,
@@ -26,7 +58,7 @@ async function generateImage(prompt: string): Promise<{ imageUrl: string; data: 
     body: JSON.stringify({
       prompt,
       image_size: "landscape_16_9",
-      num_inference_steps: 28,
+      num_inference_steps: modelName.includes("schnell") ? 4 : 28,
     }),
   });
 
@@ -43,7 +75,7 @@ async function generateImage(prompt: string): Promise<{ imageUrl: string; data: 
   if (!imgRes.ok) throw new Error(`Failed to download image: ${imgRes.status}`);
 
   const data = Buffer.from(await imgRes.arrayBuffer());
-  return { imageUrl: imgUrl, data, seed: result.seed ?? 0 };
+  return { imageUrl: imgUrl, data, seed: result.seed ?? 0, model: modelName };
 }
 
 // ── TTS synthesis ──────────────────────────────────────────────────────────
@@ -182,13 +214,14 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         const imgDir = join(dir, "assets", "images");
         mkdirSync(imgDir, { recursive: true });
 
-        const result = await generateImage(params.prompt);
+        const model = await resolveModel(params.channel, params.series);
+        const result = await generateImage(params.prompt, model);
         const outPath = join(imgDir, `${params.sceneId}.jpg`);
         writeFileSync(outPath, result.data);
 
         return {
-          content: [{ type: "text" as const, text: `✅ ${params.sceneId}.jpg — ${(result.data.length / 1024).toFixed(0)}KB (seed: ${result.seed})` }],
-          details: { path: outPath, size: result.data.length, seed: result.seed },
+          content: [{ type: "text" as const, text: `✅ ${params.sceneId}.jpg — ${(result.data.length / 1024).toFixed(0)}KB (seed: ${result.seed}, model: ${result.model})` }],
+          details: { path: outPath, size: result.data.length, seed: result.seed, model: result.model },
         };
       } catch (err) {
         return {
