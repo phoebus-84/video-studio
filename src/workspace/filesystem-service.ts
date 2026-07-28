@@ -104,12 +104,14 @@ export class FileSystemWorkspaceService implements WorkspaceService {
           updatedAt: new Date().toISOString(),
         };
 
-        // Try to read episode.json for richer data
+        // Try to read episode.json for richer data (in artifacts/ subdir)
         try {
-          const metaPath = path.join(epPath, "episode.json");
+          const metaPath = path.join(epPath, "artifacts", "episode.json");
           const raw = await fs.readFile(metaPath, "utf-8");
           const meta = JSON.parse(raw);
-          return { ...base, ...meta, slug: episode, status, updatedAt: new Date().toISOString() };
+          // episode.json is a scenes array — wrap it
+          const scenes = Array.isArray(meta) ? meta : (meta.scenes ?? []);
+          return { ...base, scenes, slug: episode, status, updatedAt: new Date().toISOString() };
         } catch {
           return base;
         }
