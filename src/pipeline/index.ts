@@ -9,6 +9,7 @@ export {
 export type { ResolveOptions } from "./resolver.js";
 
 export { InMemoryPipelineLoader } from "./fixture-loader.js";
+export { FileSystemPipelineLoader, createDefaultLoader } from "./fs-loader.js";
 
 export { InMemorySnapshotStore } from "./fixture-store.js";
 

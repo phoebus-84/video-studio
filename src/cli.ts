@@ -13,6 +13,7 @@ import { resolveSettings } from "./settings/index.js";
 import {
   resolvePipeline,
   InMemoryPipelineLoader,
+  createDefaultLoader,
   createSnapshot,
 } from "./pipeline/index.js";
 import type { PipelineLoader } from "./pipeline/types.js";
@@ -71,7 +72,24 @@ function emptyLayer() {
 }
 
 function makeLoader(): PipelineLoader {
+  const libraryRoot = process.env.AVG_LIBRARY_ROOT;
+  if (libraryRoot) {
+    return createDefaultLoader(libraryRoot) as unknown as PipelineLoader;
+  }
   return new InMemoryPipelineLoader() as unknown as PipelineLoader;
+}
+
+// ── Argument helpers ───────────────────────────────────────────────────────
+
+function extractPipeline(args: string[]): { pipeline?: string; remaining: string[] } {
+  const idx = args.indexOf("--pipeline");
+  if (idx >= 0 && idx + 1 < args.length) {
+    const pipeline = args[idx + 1];
+    const remaining = [...args];
+    remaining.splice(idx, 2);
+    return { pipeline, remaining };
+  }
+  return { remaining: args };
 }
 
 // ── doctor ──────────────────────────────────────────────────────────────────
@@ -130,13 +148,14 @@ async function cmdInit(ctx: CliContext, args: string[]): Promise<number> {
 // ── resolve ─────────────────────────────────────────────────────────────────
 
 async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
-  if (args.length < 1) {
-    emit(ctx, { error: "Usage: vpr resolve <channel>/<series>/<episode>" });
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  if (remaining.length < 1) {
+    emit(ctx, { error: "Usage: vpr resolve <channel>/<series>/<episode> [--pipeline <name>]" });
     return EX_USAGE;
   }
-  const parsed = parsePath(args[0]!);
+  const parsed = parsePath(remaining[0]!);
   if (!parsed) {
-    emit(ctx, { error: `Invalid path "${args[0]}". Expected: <channel>/<series>/<episode>` });
+    emit(ctx, { error: `Invalid path "${remaining[0]}". Expected: <channel>/<series>/<episode>` });
     return EX_USAGE;
   }
   try {
@@ -146,7 +165,7 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
       episode: emptyLayer(),
     });
     const loader = makeLoader();
-    const pipeline = await resolvePipeline(loader, DEFAULT_PIPELINE);
+    const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
     const snapshot = await createSnapshot({
       episodeSlug: `${parsed.channel}/${parsed.series}/${parsed.episode}`,
       pipeline,
@@ -175,13 +194,14 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
 // ── status ──────────────────────────────────────────────────────────────────
 
 async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
-  if (args.length < 1) {
-    emit(ctx, { error: "Usage: vpr status <channel>/<series>/<episode>" });
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  if (remaining.length < 1) {
+    emit(ctx, { error: "Usage: vpr status <channel>/<series>/<episode> [--pipeline <name>]" });
     return EX_USAGE;
   }
-  const parsed = parsePath(args[0]!);
+  const parsed = parsePath(remaining[0]!);
   if (!parsed) {
-    emit(ctx, { error: `Invalid path "${args[0]}"` });
+    emit(ctx, { error: `Invalid path "${remaining[0]}"` });
     return EX_USAGE;
   }
   try {
@@ -191,7 +211,7 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
       episode: emptyLayer(),
     });
     const loader = makeLoader();
-    const pipeline = await resolvePipeline(loader, DEFAULT_PIPELINE);
+    const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
     emit(ctx, {
       message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}`,
@@ -302,10 +322,10 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
 
 const COMMANDS: Record<string, CliCommand> = {
   init: { name: "init", description: "Initialize a new episode workspace", usage: "vpr init <channel>/<series>/<episode> [--json] [--dry-run]", examples: ["vpr init my-channel/my-series/ep001"], run: cmdInit },
-  resolve: { name: "resolve", description: "Resolve settings and create an immutable pipeline snapshot", usage: "vpr resolve <channel>/<series>/<episode> [--json]", examples: ["vpr resolve my-channel/my-series/ep001 --json"], run: cmdResolve },
-  status: { name: "status", description: "Show pipeline, stage, artifact, and budget projections", usage: "vpr status <channel>/<series>/<episode> [--json]", examples: ["vpr status my-channel/my-series/ep001"], run: cmdStatus },
+  resolve: { name: "resolve", description: "Resolve settings and create an immutable pipeline snapshot", usage: "vpr resolve <channel>/<series>/<episode> [--pipeline <name>] [--json]", examples: ["vpr resolve my-channel/my-series/ep001 --json", "vpr resolve my-channel/my-series/ep001 --pipeline fairy-tale-adaptation"], run: cmdResolve },
+  status: { name: "status", description: "Show pipeline, stage, artifact, and budget projections", usage: "vpr status <channel>/<series>/<episode> [--pipeline <name>] [--json]", examples: ["vpr status my-channel/my-series/ep001", "vpr status my-channel/my-series/ep001 --pipeline fairy-tale-adaptation"], run: cmdStatus },
   validate: { name: "validate", description: "Validate pipeline DAG or snapshot integrity", usage: "vpr validate <pipeline|snapshot> [path] [--json]", examples: ["vpr validate pipeline my-channel/my-series/ep001"], run: cmdValidate },
-  run: { name: "run", description: "Execute pipeline stages", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001 --stage write-brief"], run: cmdRun },
+  run: { name: "run", description: "Execute pipeline stages", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001 --stage write-brief", "vpr run my-channel/my-series/ep001 --pipeline fairy-tale-adaptation"], run: cmdRun },
   rerun: { name: "rerun", description: "Plan targeted reruns with cost estimates", usage: "vpr rerun <channel>/<series>/<episode> [--mode <mode>] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode rerun-affected"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   doctor: { name: "doctor", description: "Check system health and library accessibility", usage: "vpr doctor [--json]", examples: ["vpr doctor", "vpr doctor --json"], run: cmdDoctor },
