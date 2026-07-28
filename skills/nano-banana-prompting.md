@@ -49,9 +49,27 @@ Toothbrush holder with "FRESH" on sink counter (actual scene, not reflection)
 ```
 
 ### 5. Aspect Ratios & Resolution
-- Social media: 1:1 (feed), 9:16 (Stories/TikTok), 16:9 (YouTube)
-- Resolution: 1K (fast prototype), 2K (production), 4K (print)
-- Output: PNG for text/diagrams, JPEG for photorealistic
+
+**API parameter**: Use `aspect_ratio` (NOT `image_size` — that's Flux's parameter and will be ignored, defaulting to square).
+
+Valid values:
+- `"1:1"` — square (feed)
+- `"16:9"` — landscape (YouTube)
+- `"9:16"` — portrait (Stories/TikTok)
+- `"4:3"` — classic landscape
+- `"3:4"` — classic portrait
+
+Resolution: 1K (fast prototype), 2K (production), 4K (print)
+
+Output: PNG for text/diagrams, JPEG for photorealistic
+
+```python
+# Correct:
+{"aspect_ratio": "16:9", "num_images": 1}
+
+# Wrong — silently defaults to 1:1:
+{"image_size": "landscape_16_9", "num_images": 1}
+```
 
 ### 6. Cost Optimization
 1. Generate 2-4 variations at 1K (fast, cheap)
