@@ -10,9 +10,14 @@
   let { channel }: Props = $props();
 
   let expanded = $state(false);
+  let autoExpandedSeries = $state(false);
 
   function toggle() {
     expanded = !expanded;
+    // Auto-expand the first (and typically only) series when opening a channel
+    if (expanded && !autoExpandedSeries && channel.series.length === 1) {
+      autoExpandedSeries = true;
+    }
   }
 
   function selectChannel() {
@@ -47,7 +52,7 @@
   {#if expanded}
     <div class="series-list" role="group" aria-label="{channel.title} series">
       {#each channel.series as series (series.slug)}
-        <SeriesItem channelSlug={channel.slug} {series} />
+        <SeriesItem channelSlug={channel.slug} {series} autoExpand={autoExpandedSeries && channel.series.length === 1} />
       {/each}
     </div>
   {/if}

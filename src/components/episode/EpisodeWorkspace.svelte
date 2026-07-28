@@ -18,6 +18,7 @@
     </div>
   {:else if ep.phase === "loading"}
     <div class="ws-empty" role="status">
+      <span class="ws-spinner" aria-hidden="true"></span>
       <p>Loading episode…</p>
     </div>
   {:else if ep.phase === "error"}
@@ -68,6 +69,20 @@
     text-align: center;
     padding: var(--vs-space-6);
     color: var(--vs-text-secondary);
+  }
+
+  .ws-spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--vs-border);
+    border-top-color: var(--vs-accent);
+    border-radius: 50%;
+    animation: ws-spin 0.8s linear infinite;
+    margin-bottom: var(--vs-space-3);
+  }
+
+  @keyframes ws-spin {
+    to { transform: rotate(360deg); }
   }
 
   .ws-empty h2 {

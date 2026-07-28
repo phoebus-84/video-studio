@@ -6,11 +6,12 @@
   interface Props {
     channelSlug: string;
     series: ResolvedSeries;
+    autoExpand?: boolean;
   }
 
-  let { channelSlug, series }: Props = $props();
+  let { channelSlug, series, autoExpand = false }: Props = $props();
 
-  let expanded = $state(false);
+  let expanded = $state(autoExpand);
 
   function toggle() {
     expanded = !expanded;
@@ -55,7 +56,7 @@
     >
       <span class="series-name">{series.title}</span>
       <span class="series-count" aria-label="{series.episodes.length} episodes">
-        {series.episodes.length}
+        {series.episodes.length === 0 ? "empty" : `${series.episodes.length} ep`}
       </span>
     </button>
     {#if series.error}
