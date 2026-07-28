@@ -48,6 +48,23 @@ async function generateImage(
   if (!apiKey) throw new Error("FAL_KEY env var not set");
 
   const modelName = model || DEFAULT_MODEL;
+  const isNanoBanana = modelName.includes("nano-banana");
+
+  const body: any = {
+    prompt,
+    ...(isNanoBanana
+      ? {
+          aspect_ratio: "16:9",
+          resolution: "2K",
+          output_format: "png",
+          num_images: 1,
+        }
+      : {
+          image_size: "landscape_16_9",
+          num_inference_steps: modelName.includes("schnell") ? 4 : 28,
+        }
+    ),
+  };
 
   const res = await fetch(`https://fal.run/${modelName}`, {
     method: "POST",
@@ -55,11 +72,7 @@ async function generateImage(
       "Authorization": `Key ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      prompt,
-      image_size: "landscape_16_9",
-      num_inference_steps: modelName.includes("schnell") ? 4 : 28,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
