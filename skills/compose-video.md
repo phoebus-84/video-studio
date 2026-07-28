@@ -35,6 +35,29 @@ Assemble the final video using FFmpeg.
 5. Add transitions between scenes
 6. Encode at 1080p 30fps H.264
 
+## Asset Paths
+
+The GUI expects assets at the episode root, NOT inside `artifacts/`:
+
+```
+episode/
+├── assets/
+│   └── images/       ← GUI reads from here
+│       ├── s1.jpg
+│       └── ...
+├── artifacts/
+│   ├── narration/    ← audio files
+│   ├── final.mp4     ← composed video
+│   └── ...
+```
+
+When generating illustrations, save directly to `assets/images/`, not
+`artifacts/assets/images/`. If you accidentally save in the wrong place:
+
+```bash
+mv artifacts/assets/images/*.jpg assets/images/
+```
+
 ## Output Naming
 
 The final video **must** be named `final.mp4`. The GUI only detects files
