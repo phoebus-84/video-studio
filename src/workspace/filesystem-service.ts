@@ -5,7 +5,9 @@
 // ---------------------------------------------------------------------------
 
 import { promises as fs } from "node:fs";
+import { readFileSync } from "node:fs";
 import * as path from "node:path";
+import * as yaml from "yaml";
 import type { WorkspaceService, ChannelSummary, SeriesSummary, EpisodeSummary } from "./service.js";
 
 export class FileSystemWorkspaceService implements WorkspaceService {
@@ -76,11 +78,12 @@ export class FileSystemWorkspaceService implements WorkspaceService {
 
           const epPath = path.join(seriesPath, entry.name);
 
+          const pipeline = this.resolvePipeline(root, channel, series, entry.name);
           episodes.push({
             slug: entry.name,
             title: this.titleFromSlug(entry.name),
             status: await this.detectStatus(epPath),
-            pipeline: "narrated-illustrated-video",
+            pipeline,
             updatedAt: new Date().toISOString(),
           });
         }
@@ -96,11 +99,12 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       try {
         await fs.access(epPath);
         const status = await this.detectStatus(epPath);
+        const pipeline = this.resolvePipeline(root, channel, series, episode);
         const base: EpisodeSummary = {
           slug: episode,
           title: this.titleFromSlug(episode),
           status,
-          pipeline: "narrated-illustrated-video",
+          pipeline,
           updatedAt: new Date().toISOString(),
         };
 
@@ -110,7 +114,74 @@ export class FileSystemWorkspaceService implements WorkspaceService {
           const raw = await fs.readFile(metaPath, "utf-8");
           const meta = JSON.parse(raw);
           // episode.json is a scenes array — wrap it
-          const scenes = Array.isArray(meta) ? meta : (meta.scenes ?? []);
+          const rawScenes = Array.isArray(meta) ? meta : (meta.scenes ?? []);
+
+          // ── Enrich each scene with narration, asset, captions, and transition data ──
+          const scenes = await Promise.all(rawScenes.map(async (scene: Record<string, unknown>, i: number) => {
+            const sid = (scene.id as string) || `s${i + 1}`;
+            const enriched: Record<string, unknown> = { ...scene };
+
+            // Narration: check artifacts/narration/sN.json and .wav
+            try {
+              const narJsonPath = path.join(epPath, "artifacts", "narration", `${sid}.json`);
+              const narRaw = await fs.readFile(narJsonPath, "utf-8");
+              const narMeta = JSON.parse(narRaw);
+              const wavPath = path.join(epPath, "artifacts", "narration", `${sid}.wav`);
+              let wavExists = false;
+              try { await fs.access(wavPath); wavExists = true; } catch {}
+              enriched.narration = {
+                file: `${sid}.wav`,
+                url: `/library/${channel}/${series}/${episode}/artifacts/narration/${sid}.wav`,
+                durationSeconds: (narMeta.duration_sec as number) ?? scene.durationSeconds ?? 0,
+                voice: (narMeta.voice as string) || "default",
+                jobId: narMeta.job_id as string,
+                status: wavExists ? "completed" : "missing",
+              };
+            } catch {
+              enriched.narration = null;
+            }
+
+            // Asset: check for image files named after scene
+            try {
+              const assetsDir = path.join(epPath, "artifacts");
+              const imgFiles = ["jpg", "jpeg", "png", "webp"].flatMap(ext => [
+                path.join(assetsDir, `${sid}.${ext}`),
+                path.join(assetsDir, `scene-${sid}.${ext}`),
+              ]);
+              let foundAsset: Record<string, unknown> | null = null;
+              for (const imgPath of imgFiles) {
+                try {
+                  const stat = await fs.stat(imgPath);
+                  foundAsset = {
+                    file: path.basename(imgPath),
+                    url: `/library/${channel}/${series}/${episode}/artifacts/${path.basename(imgPath)}`,
+                    size: stat.size,
+                    generatedAt: stat.mtime.toISOString(),
+                  };
+                  break;
+                } catch {}
+              }
+              enriched.asset = foundAsset;
+            } catch {
+              enriched.asset = null;
+            }
+
+            // Captions: parse SRT for this scene's segments
+            try {
+              const srtPath = path.join(epPath, "artifacts", "captions.srt");
+              const srtRaw = await fs.readFile(srtPath, "utf-8");
+              const captions = parseSrtForScene(srtRaw, sid, scene.durationSeconds as number || 0);
+              enriched.captions = captions.length > 0 ? { segments: captions, count: captions.length } : null;
+            } catch {
+              enriched.captions = null;
+            }
+
+            // Transition: from scene definition
+            enriched.transition = (scene as any).transition ?? null;
+
+            return enriched;
+          }));
+
           return { ...base, scenes, slug: episode, status, updatedAt: new Date().toISOString() };
         } catch {
           return base;
@@ -121,6 +192,35 @@ export class FileSystemWorkspaceService implements WorkspaceService {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────
+
+  /** Resolve the pipeline name for an episode by reading series pipeline.yaml. */
+  private resolvePipeline(root: string, channel: string, series: string, episode: string): string {
+    // 1. Try episode-level pipeline.yaml
+    const epPipeline = path.join(root, channel, series, episode, "pipeline.yaml");
+    try {
+      const raw = readFileSync(epPipeline, "utf-8");
+      const doc = yaml.parse(raw) as Record<string, unknown> | null;
+      if (doc?.pipeline) return String(doc.pipeline);
+    } catch { /* no episode pipeline */ }
+
+    // 2. Try series-level pipeline.yaml
+    const seriesPipeline = path.join(root, channel, series, "pipeline.yaml");
+    try {
+      const raw = readFileSync(seriesPipeline, "utf-8");
+      const doc = yaml.parse(raw) as Record<string, unknown> | null;
+      if (doc?.pipeline) return String(doc.pipeline);
+    } catch { /* no series pipeline */ }
+
+    // 3. Try channel-level pipeline.yaml
+    const chPipeline = path.join(root, channel, "pipeline.yaml");
+    try {
+      const raw = readFileSync(chPipeline, "utf-8");
+      const doc = yaml.parse(raw) as Record<string, unknown> | null;
+      if (doc?.pipeline) return String(doc.pipeline);
+    } catch { /* no channel pipeline */ }
+
+    return "narrated-illustrated-video"; // default fallback
+  }
 
   private async countSeries(channelPath: string): Promise<any[]> {
     try {
@@ -174,4 +274,62 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     } catch { /* skip */ }
     return events;
   }
+}
+
+// ── SRT Parser ────────────────────────────────────────────────────────────
+
+interface SrtSegment {
+  index: number;
+  start: string;
+  end: string;
+  text: string;
+}
+
+/** Parse an SRT file and filter segments for a specific scene prefix. */
+function parseSrtForScene(
+  srt: string,
+  sceneId: string,
+  sceneDuration: number,
+): Array<{ time: string; text: string }> {
+  const segments: SrtSegment[] = [];
+  const blocks = srt.trim().split(/\n\n+/);
+
+  for (const block of blocks) {
+    const lines = block.trim().split("\n");
+    if (lines.length < 3) continue;
+    const index = parseInt(lines[0]!, 10);
+    if (isNaN(index)) continue;
+    const timeMatch = lines[1]?.match(/(\d{2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[.,]\d{3})/);
+    if (!timeMatch) continue;
+    const text = lines.slice(2).join(" ").trim();
+    segments.push({ index, start: timeMatch[1]!, end: timeMatch[2]!, text });
+  }
+
+  // Heuristic: match captions to scene by checking if the text references
+  // scene-related content or simply return all for now (SRT spans entire video)
+  // For SRT files keyed to scene, return segments whose start time falls within
+  // the scene's duration window.
+  
+  // For now, return segments proportioned to scene index
+  if (segments.length === 0) return [];
+  
+  // Simple approach: if sceneId is like s1, s2 etc, estimate time window
+  const sceneNum = parseInt(sceneId.replace(/^s/, ""), 10);
+  if (isNaN(sceneNum) || segments.length < 8) {
+    // Return all segments — whole-video SRT
+    return segments.filter(s => s.index > 0).map(s => ({
+      time: s.start,
+      text: s.text,
+    }));
+  }
+
+  // Distribute SRT segments across scenes by index proportion
+  const perScene = Math.ceil(segments.length / 8); // assume 8 scenes
+  const startIdx = (sceneNum - 1) * perScene;
+  const endIdx = sceneNum * perScene;
+
+  return segments.slice(startIdx, endIdx).map(s => ({
+    time: s.start,
+    text: s.text,
+  }));
 }

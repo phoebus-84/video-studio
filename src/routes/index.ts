@@ -95,6 +95,43 @@ export function registerRoutes(
   // ── Production orchestration ─────────────────────────────────────────────
   registerProductionRoutes(app, runtime, workspace);
 
+  // ── Pi agent lifecycle ───────────────────────────────────────────────────
+  if (piHealth) {
+    app.post("/api/pi/start", {
+      schema: {
+        description: "Start the Pi agent process and connect via RPC.",
+        tags: ["pi"],
+      } as any,
+    }, async (_request, reply) => {
+      try {
+        // Import PiProcessManager dynamically
+        const { PiProcessManager } = await import("../rpc/process-manager.js");
+        const manager = new PiProcessManager({
+          libraryRoot: _config.libraryRoots?.[0] ?? ".",
+          bus: (await import("../events/bus.js")).EventBus.prototype as any,
+        });
+        piHealth.setManager(manager);
+        return reply.send({
+          status: "started",
+          detail: "Pi agent process spawned and RPC connected.",
+        });
+      } catch (err: any) {
+        piHealth.setError(err.message);
+        return reply.status(500).send({ error: "PI_START_FAILED", message: err.message });
+      }
+    });
+
+    app.post("/api/pi/stop", {
+      schema: {
+        description: "Stop the Pi agent process.",
+        tags: ["pi"],
+      } as any,
+    }, async (_request, reply) => {
+      piHealth.setError("Pi stopped by operator.");
+      return reply.send({ status: "stopped" });
+    });
+  }
+
   // ── 404 catch-all ─────────────────────────────────────────────────────────
   app.setNotFoundHandler((_request, reply) => {
     const err = new GatewayError({

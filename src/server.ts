@@ -99,6 +99,10 @@ export async function createGateway(
   });
   // Start watcher lazily on server start, stop on shutdown
 
+  // ── Event publisher (poll-based stage transitions) ─────────────────────
+  const { EventPublisher } = await import("./events/publisher.js");
+  const publisher = new EventPublisher({ bus: events.bus });
+
   // ── Pi RPC health ─────────────────────────────────────────────────────
   const { PiRpcHealth } = await import("./rpc/health.js");
   const piHealth = new PiRpcHealth();
@@ -123,6 +127,9 @@ export async function createGateway(
       defaultTimeoutMs: 120_000,
     },
   );
+
+  // ── Start event publisher ─────────────────────────────────────────────
+  publisher.start(runtime, watcher);
 
   // ── Serve library assets as static files ─────────────────────────────
   const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
@@ -165,6 +172,7 @@ export async function createGateway(
       return addr;
     },
     stop: async () => {
+      publisher.stop();
       await watcher.stop();
       await app.close();
     },

@@ -100,9 +100,45 @@ export function registerEditorRoutes(
     }
 
     try {
+      const stat = await fs.stat(absPath);
+
+      // ── Directory listing ────────────────────────────────────────────
+      if (stat.isDirectory()) {
+        const entries = await fs.readdir(absPath, { withFileTypes: true });
+        const listing = await Promise.all(
+          entries
+            .filter((e) => !e.name.startsWith("."))
+            .map(async (e) => {
+              const ep = path.join(absPath, e.name);
+              let size: number | undefined;
+              let mtime: string | undefined;
+              try {
+                const st = await fs.stat(ep);
+                size = st.isFile() ? st.size : undefined;
+                mtime = st.mtime.toISOString();
+              } catch {}
+              return {
+                name: e.name,
+                type: e.isDirectory() ? "directory" : "file",
+                size,
+                mtime,
+              };
+            })
+        );
+        listing.sort((a, b) => {
+          if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        return reply.send({
+          path: filePath,
+          entries: listing,
+        });
+      }
+
+      // ── File read ───────────────────────────────────────────────────
       const content = await fs.readFile(absPath);
       const revision = computeRevision(content);
-      const stat = await fs.stat(absPath);
+      // stat is already available from the isDirectory check above
 
       return reply
         .header("X-Content-Revision", revision)

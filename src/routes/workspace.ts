@@ -120,4 +120,39 @@ export function registerWorkspaceRoutes(
       throw err;
     }
   });
+
+  // ── Narrations: list/regenerate per-scene audio ────────────────────────
+  app.get("/api/channels/:channel/series/:series/episodes/:episode/narrations", {
+    schema: {
+      params: {
+        type: "object",
+        required: ["channel", "series", "episode"],
+        properties: {
+          channel: { type: "string" },
+          series: { type: "string" },
+          episode: { type: "string" },
+        },
+      },
+    } as any,
+  }, async (request, reply) => {
+    const { channel, series, episode } = request.params as any;
+    try {
+      const epData = await workspace.getEpisode(channel, series, episode);
+      if (!epData) {
+        reply.status(404).send({ error: "NOT_FOUND", message: "Episode not found" });
+        return;
+      }
+      // Return narrations from enriched scenes
+      const narrations = ((epData as any).scenes ?? [])
+        .filter((s: any) => s.narration)
+        .map((s: any) => ({
+          sceneId: s.id,
+          title: s.title,
+          ...s.narration,
+        }));
+      return reply.send({ narrations, count: narrations.length });
+    } catch (err: any) {
+      reply.status(500).send({ error: "UNEXPECTED", message: err.message });
+    }
+  });
 }
