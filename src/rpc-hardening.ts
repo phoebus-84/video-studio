@@ -10,6 +10,7 @@ import { Type } from "typebox";
 import { WebSocket } from "ws";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -110,11 +111,15 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   /** Resolve the gateway token from env or gateway config file. */
   function resolveToken(): string {
     if (process.env.AVG_GATEWAY_TOKEN) return process.env.AVG_GATEWAY_TOKEN;
-    const cwd = process.cwd();
-    const candidates = [
-      resolvePath(cwd, "video-studio-gateway", ".gateway-token"),
-      resolvePath(cwd, "..", "video-studio-gateway", ".gateway-token"),
-      resolvePath(cwd, ".gateway-token"),
+    // Try reading .gateway-token relative to the extension's own location
+    // and common project layout patterns.
+    const bases = [
+      // Extension's own directory (pi-video-agent/src/ → ../video-studio-gateway/)
+      resolvePath(fileURLToPath(import.meta.url), "..", "..", "..", "video-studio-gateway", ".gateway-token"),
+      // Project root (if Pi runs from the avg/ directory)
+      resolvePath(process.cwd(), "video-studio-gateway", ".gateway-token"),
+      // Directly in cwd
+      resolvePath(process.cwd(), ".gateway-token"),
     ];
     for (const p of candidates) {
       try {
