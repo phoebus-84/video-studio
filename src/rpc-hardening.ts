@@ -137,15 +137,14 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   function notify(update: { type: string; message: string }): void {
     // Use stderr for logging (Pi shows this in agent output)
     process.stderr.write(`[pva-gateway] ${update.type}: ${update.message}\n`);
-    // For review events, notify Pi's agent via appendEntry so it sees the review
-    // without triggering a full turn
+    // For review events, trigger a turn so Pi reads the journal and responds
     if (update.type === "review-new" || update.type === "review-reply") {
       try {
-        pi.appendEntry?.("pva:gateway-review", {
-          type: update.type,
-          message: update.message,
-          timestamp: new Date().toISOString(),
-        });
+        pi.sendMessage?.({
+          customType: "pva:gateway-review",
+          content: `New review activity: ${update.message}. Read the journal with pva_journal to see the full review and respond.`,
+          display: { mode: "inline" as const, label: "review" },
+        }, { deliverAs: "nextTurn" });
       } catch { /* best-effort */ }
     }
     // For stage completions, notify Pi via sendMessage (triggers a context-aware turn)
