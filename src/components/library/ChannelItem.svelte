@@ -22,6 +22,13 @@
 
   function selectChannel() {
     library.selectChannel(channel.slug);
+    // Also expand the tree when clicking the channel label
+    if (!expanded) {
+      expanded = true;
+      if (!autoExpandedSeries && channel.series.length === 1) {
+        autoExpandedSeries = true;
+      }
+    }
   }
 </script>
 

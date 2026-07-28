@@ -65,16 +65,13 @@
               <span class="sb-scene-title">{scene.title}</span>
               <span class="sb-intent">{scene.intent}</span>
             </td>
-            <td class="sb-cell sb-role">{ROLE_LABELS[scene.role]}</td>
-            <td class="sb-cell sb-time">{formatTime(scene.durationSeconds)}</td>
+            <td class="sb-cell sb-role">{ROLE_LABELS[scene.role] ?? scene.role}</td>
+            <td class="sb-cell sb-time">{formatTime(scene.narrationDuration ?? scene.durationSeconds)}</td>
             <td class="sb-cell">
-              {#if scene.selectedAssetId}
+              {#if scene.assetUrl}
+                <span class="sb-asset-selected">✓</span>
+              {:else if scene.selectedAssetId}
                 <span class="sb-asset-selected">{scene.selectedAssetId.slice(0, 8)}</span>
-                <span class="sb-attempt-count">{scene.attemptCount}</span>
-              {:else if scene.attemptCount > 0}
-                <span class="sb-asset-unselected">
-                  {scene.attemptCount} attempt{scene.attemptCount > 1 ? "s" : ""}
-                </span>
               {:else}
                 <span class="sb-asset-missing">—</span>
               {/if}
@@ -85,13 +82,13 @@
               </span>
             </td>
             <td class="sb-cell">
-              <span class="sb-badge" data-status={scene.captionStatus}>
-                {statusSymbol(scene.captionStatus)}
+              <span class="sb-badge" data-status={scene.captionsStatus}>
+                {statusSymbol(scene.captionsStatus)}
               </span>
             </td>
             <td class="sb-cell sb-transition">
-              {#if scene.transitionFrom}
-                {TRANSITION_LABELS[scene.transitionFrom]}
+              {#if scene.transition}
+                {TRANSITION_LABELS[scene.transition] ?? scene.transition}
               {/if}
             </td>
           </tr>

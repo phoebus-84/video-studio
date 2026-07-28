@@ -4,16 +4,22 @@ export interface SceneSummary {
   index: number;
   title: string;
   durationSeconds: number;
-  role: SceneRole;
+  role: SceneRole | string;
   intent: string;
   /** Selected asset identity, or null if none. */
   selectedAssetId: string | null;
   /** Total immutable attempts for this scene. */
   attemptCount: number;
-  narrationStatus: "ready" | "missing" | "stale" | "generating";
-  captionStatus: "ready" | "missing" | "stale";
-  transitionFrom: TransitionType | null;
+  /** Current scene status. */
+  status: "idle" | "completed" | "in-progress";
+  narrationStatus: "idle" | "ready" | "completed" | "missing" | "stale" | "generating";
+  captionsStatus: "idle" | "ready" | "completed" | "missing" | "stale";
+  transition: TransitionType | string | null;
   stale: boolean;
+  /** Enriched fields from gateway Phase 1 */
+  assetUrl?: string | null;
+  narrationUrl?: string | null;
+  narrationDuration?: number;
 }
 
 export type SceneRole =
@@ -22,7 +28,12 @@ export type SceneRole =
   | "demonstration"
   | "comparison"
   | "summary"
-  | "outro";
+  | "outro"
+  | "narrator"
+  | "girl"
+  | "wolf"
+  | "woodcutter"
+  | "grandmother";
 
 export type TransitionType = "cut" | "dissolve" | "wipe" | "slide";
 

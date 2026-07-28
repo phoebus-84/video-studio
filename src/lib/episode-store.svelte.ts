@@ -57,6 +57,22 @@ class EpisodeStore {
         imageUrl: imgUrls[s.id] ?? null,
       }));
 
+      // Build stages with staleness from API
+      const enrichedStages = (detail.stages ?? []).map((s: any) => {
+        const state = s.status ?? s.state ?? "pending";
+        const isStale = state === "pending" || state === "runnable";
+        return {
+          id: s.id ?? s,
+          name: s.name ?? s.id ?? s,
+          status: state as any,
+          blocked: s.blocked ?? false,
+          progress: state === "completed" ? 1 : state === "running" ? 0.5 : 0,
+          attemptCount: 0,
+          stale: isStale,
+          dependsOn: s.dependsOn ?? [],
+        };
+      });
+
       const workspace: EpisodeWorkspace = {
         slug: epSlug,
         channel,
@@ -66,20 +82,11 @@ class EpisodeStore {
         approvalMode: "guided",
         budgetLimit: (detail.budget?.limitMicros ?? 0) / 1_000_000,
         budgetSpent: (detail.budget?.consumedMicros ?? 0) / 1_000_000,
-        stages: (detail.stages ?? []).map((s: any) => ({
-          id: s.id ?? s,
-          name: s.name ?? s.id ?? s,
-          status: (s.status ?? s.state ?? "pending") as any,
-          blocked: s.blocked ?? false,
-          progress: s.status === "completed" ? 1 : s.status === "running" ? 0.5 : 0,
-          attemptCount: 0,
-          stale: false,
-          dependsOn: [],
-        })),
+        stages: enrichedStages,
         currentDeliverable: null,
         currentDeliverableValidated: false,
         blocked: false,
-        staleCount: detail.staleness?.stale?.length ?? 0,
+        staleCount: enrichedStages.filter((s: any) => s.stale).length,
         createdAt: now,
         updatedAt: now,
         pipeline: detail.pipeline ?? "narrated-illustrated-video",
@@ -139,7 +146,7 @@ class EpisodeStore {
         sampleRate: 24000,
       });
 
-      // Load scenes into scene store
+      // Load scenes into scene store with enriched fields from gateway
       const { scenes: sceneStore } = await import("$lib/scene-store.svelte.ts");
       if (detail.scenes && detail.scenes.length > 0) {
         sceneStore.load(detail.scenes.map((s: any, i: number) => ({
@@ -149,13 +156,18 @@ class EpisodeStore {
           intent: s.intent ?? "",
           role: (s.role ?? "narrator") as any,
           durationSeconds: s.durationSeconds ?? 10,
-          status: "idle" as const,
-          stale: false,
+          status: (s.narration?.status === "completed" ? "completed" : "idle") as any,
+          stale: s.stale ?? false,
           selectedAssetId: s.id ?? `s${i + 1}`,
-          attemptCount: 0,
-          narrationStatus: "idle" as const,
-          captionsStatus: "idle" as const,
-          transition: "cut" as const,
+          attemptCount: s.attemptCount ?? 0,
+          // Enriched fields from gateway Phase 1
+          narrationStatus: (s.narration?.status ?? "idle") as any,
+          captionsStatus: (s.captions?.count > 0 ? "completed" : "idle") as any,
+          transition: (s.transition ?? "cut") as any,
+          // Asset info
+          assetUrl: s.asset?.url ?? imgUrls[s.id] ?? null,
+          narrationUrl: s.narration?.url ?? narUrls[s.id] ?? null,
+          narrationDuration: s.narration?.durationSeconds ?? s.durationSeconds ?? 10,
         })));
       }
     } catch (err) {

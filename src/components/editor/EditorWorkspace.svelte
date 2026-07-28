@@ -17,12 +17,15 @@
     if (!stageId || episode.state.phase !== "ready") return;
     const ep = episode.state.episode;
 
-    // Map stage IDs to likely file paths
+    // Map stage IDs to artifact file paths
     const fileMap: Record<string, string> = {
+      "brief": "artifacts/brief.md",
       "write-brief": "artifacts/brief.md",
-      "write-script": "artifacts/script.md",
-      "generate-art": "artifacts/art-direction.md",
-      "narration": "artifacts/narration.md",
+      "script": "artifacts/narration-script.json",
+      "write-script": "artifacts/narration-script.json",
+      "art-direction": "artifacts/art-direction.json",
+      "narration": "artifacts/narration-script.json",
+      "safety-review": "artifacts/safety-review.json",
     };
 
     const filePath = fileMap[stageId];

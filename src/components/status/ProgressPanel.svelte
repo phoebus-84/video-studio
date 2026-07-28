@@ -27,6 +27,23 @@
 
 {#if ep.phase === "ready"}
   <div class="pb-panel" aria-label="Production status">
+    <!-- Pipeline stages table -->
+    <div class="pb-stages">
+      <h5 class="pb-section-title">Pipeline</h5>
+      <div class="pb-stages-list">
+        {#each ep.episode.stages as stage (stage.id)}
+          <div class="pb-stage-row">
+            <span class="pb-stage-indicator" data-status={stage.status} class:stale={stage.stale}></span>
+            <span class="pb-stage-name">{stage.name}</span>
+            <span class="pb-stage-state" data-status={stage.status}>{stage.status}</span>
+            {#if stage.stale}
+              <span class="pb-stage-stale-badge">stale</span>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+
     <!-- Budget bar -->
     {#if ep.episode.budgetLimit}
       <div class="pb-budget" aria-label="Budget: ${ep.episode.budgetSpent?.toFixed(2)} of ${ep.episode.budgetLimit.toFixed(2)}">
@@ -249,5 +266,91 @@
 
   .pb-render-qa[data-overall="fail"] {
     color: var(--vs-state-blocked);
+  }
+
+  /* Pipeline stages list */
+  .pb-stages {
+    margin-bottom: var(--vs-space-3);
+  }
+
+  .pb-section-title {
+    font-size: var(--vs-text-xs);
+    font-weight: var(--vs-font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--vs-text-tertiary);
+    margin: 0 0 var(--vs-space-1);
+  }
+
+  .pb-stages-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .pb-stage-row {
+    display: flex;
+    align-items: center;
+    gap: var(--vs-space-2);
+    padding: 3px var(--vs-space-2);
+    border-radius: var(--vs-radius-sm);
+    font-size: var(--vs-text-xs);
+  }
+
+  .pb-stage-row:hover {
+    background: var(--vs-bg-hover);
+  }
+
+  .pb-stage-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--vs-text-disabled);
+    flex-shrink: 0;
+  }
+
+  .pb-stage-indicator[data-status="completed"] {
+    background: var(--vs-state-current);
+  }
+
+  .pb-stage-indicator[data-status="running"] {
+    background: var(--vs-state-running);
+  }
+
+  .pb-stage-indicator[data-status="failed"] {
+    background: var(--vs-state-blocked);
+  }
+
+  .pb-stage-indicator.stale {
+    background: var(--vs-state-stale);
+  }
+
+  .pb-stage-name {
+    flex: 1;
+    color: var(--vs-text-primary);
+  }
+
+  .pb-stage-state {
+    font-family: var(--vs-font-mono);
+    font-size: 10px;
+    color: var(--vs-text-tertiary);
+  }
+
+  .pb-stage-state[data-status="completed"] {
+    color: var(--vs-state-current);
+  }
+
+  .pb-stage-state[data-status="running"] {
+    color: var(--vs-state-running);
+  }
+
+  .pb-stage-stale-badge {
+    font-size: 9px;
+    background: var(--vs-state-stale);
+    color: oklch(100% 0 0);
+    padding: 0 var(--vs-space-1);
+    border-radius: var(--vs-radius-sm);
   }
 </style>
