@@ -15,6 +15,12 @@ export interface NarrationSegment {
   attemptCount: number;
   /** Whether the local audio file exists. */
   fileAvailable: boolean;
+  /** Per-segment voice override (e.g. 'default', 'af_heart'). */
+  voice: string;
+  /** Per-segment instruction for emotion/style control. */
+  instruct: string | null;
+  /** Character role for automatic voice assignment. */
+  role: string;
 }
 
 export interface VoiceProfile {

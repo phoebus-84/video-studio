@@ -42,10 +42,10 @@ class NarrationStore {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          voice: (this.voice?.name ?? this.narratorVoice),
+          voice: segment.voice || this.narratorVoice,
           speed: 1.0,
           temperature: this.temperature,
-          ...(this.instruct ? { instruct: this.instruct } : {}),
+          ...(segment.instruct || this.instruct ? { instruct: segment.instruct || this.instruct } : {}),
         }),
       });
 

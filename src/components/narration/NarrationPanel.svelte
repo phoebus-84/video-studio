@@ -3,6 +3,7 @@
   import { STATUS_SYMBOLS } from "$lib/narration-types";
 
   let showSettings = $state(false);
+  let editSegmentId = $state<string | null>(null);
 
   function formatTime(sec: number | null): string {
     if (sec === null) return "--:--";
@@ -113,6 +114,48 @@
         </div>
 
         <p class="np-text">{seg.text}</p>
+
+        <!-- Per-segment voice controls -->
+        <div class="np-seg-controls">
+          <button
+            class="np-seg-edit-btn"
+            onclick={() => editSegmentId = editSegmentId === seg.id ? null : seg.id}
+          >
+            {editSegmentId === seg.id ? "▼" : "▶"} Voice
+          </button>
+        </div>
+
+        {#if editSegmentId === seg.id}
+          <div class="np-seg-voice-settings">
+            <label class="np-seg-setting">
+              <span>Voice</span>
+              <input
+                type="text"
+                value={seg.voice}
+                oninput={(e) => seg.voice = (e.target as HTMLInputElement).value}
+                placeholder="default"
+              />
+            </label>
+            <label class="np-seg-setting np-seg-setting-instruct">
+              <span>Role</span>
+              <input
+                type="text"
+                value={seg.role}
+                oninput={(e) => seg.role = (e.target as HTMLInputElement).value}
+                placeholder="narrator"
+              />
+            </label>
+            <label class="np-seg-setting np-seg-setting-instruct">
+              <span>Instruction</span>
+              <textarea
+                rows={2}
+                value={seg.instruct ?? ""}
+                oninput={(e) => seg.instruct = (e.target as HTMLTextAreaElement).value || null}
+                placeholder="e.g. Speak slyly like a cunning wolf"
+              ></textarea>
+            </label>
+          </div>
+        {/if}
       </li>
     {/each}
   </ol>
@@ -340,5 +383,70 @@
     color: var(--vs-text-secondary);
     line-height: 1.4;
     margin: 0;
+  }
+
+  .np-seg-controls {
+    margin-top: var(--vs-space-1);
+  }
+
+  .np-seg-edit-btn {
+    background: none;
+    border: none;
+    font-family: var(--vs-font-sans);
+    font-size: 10px;
+    color: var(--vs-text-tertiary);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .np-seg-voice-settings {
+    margin-top: var(--vs-space-1);
+    padding: var(--vs-space-2);
+    background: var(--vs-bg-inset);
+    border-radius: var(--vs-radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--vs-space-1);
+  }
+
+  .np-seg-setting {
+    display: flex;
+    align-items: center;
+    gap: var(--vs-space-1);
+    font-size: 10px;
+    color: var(--vs-text-tertiary);
+  }
+
+  .np-seg-setting span:first-child {
+    min-width: 50px;
+    font-size: 10px;
+  }
+
+  .np-seg-setting input[type="text"] {
+    flex: 1;
+    padding: 1px 4px;
+    border: 1px solid var(--vs-border);
+    border-radius: var(--vs-radius-sm);
+    font-family: var(--vs-font-sans);
+    font-size: 10px;
+    background: var(--vs-bg-canvas);
+    color: var(--vs-text-primary);
+  }
+
+  .np-seg-setting-instruct {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .np-seg-setting-instruct textarea {
+    width: 100%;
+    padding: 2px 4px;
+    border: 1px solid var(--vs-border);
+    border-radius: var(--vs-radius-sm);
+    font-family: var(--vs-font-sans);
+    font-size: 10px;
+    background: var(--vs-bg-canvas);
+    color: var(--vs-text-primary);
+    resize: vertical;
   }
 </style>

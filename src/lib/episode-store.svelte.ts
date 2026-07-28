@@ -91,14 +91,30 @@ class EpisodeStore {
       };
       this.load(workspace);
       // Build narration segments from scenes (each scene = one narration segment)
-      const segments = (detail.scenes ?? []).map((s: any, i: number) => ({
-        id: s.id ?? `n${i + 1}`,
-        index: i,
-        text: `Scene ${i + 1}: ${s.title ?? ""}`,
-        status: "idle" as const,
-        durationSeconds: s.durationSeconds ?? 10,
-        wavPath: narUrls[s.id ?? `n${i + 1}`],
-      }));
+      const segments = (detail.scenes ?? []).map((s: any, i: number) => {
+        const role = s.role ?? "narrator";
+        // Character-specific voice and instruction mappings
+        const charVoices: Record<string, { voice: string; instruct: string | null }> = {
+          narrator: { voice: "default", instruct: "Speak warmly and gently like a grandmother telling a bedtime story to a child. Soft, soothing, and full of love." },
+          wolf: { voice: "default", instruct: "Speak with a sly, smooth, cunning voice. Charming but dangerous. A wolf in sheep's clothing." },
+          woodcutter: { voice: "default", instruct: "Speak with a deep, strong, heroic voice. Brave and reassuring." },
+          grandmother: { voice: "default", instruct: "Speak with a frail, elderly female voice. Kind, gentle, and loving." },
+          girl: { voice: "default", instruct: "Speak with a young, innocent, sweet little girl's voice. Curious and trusting." },
+        };
+        const charConfig = charVoices[role] || charVoices["narrator"]!;
+
+        return {
+          id: s.id ?? `n${i + 1}`,
+          index: i,
+          text: `Scene ${i + 1}: ${s.title ?? ""}`,
+          status: "idle" as const,
+          durationSeconds: s.durationSeconds ?? 10,
+          wavPath: narUrls[s.id ?? `n${i + 1}`],
+          voice: charConfig.voice,
+          instruct: charConfig.instruct,
+          role,
+        };
+      });
 
       // Read TTS model from series pipeline config
       let ttsModelSize = "0.6B";
