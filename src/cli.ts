@@ -216,7 +216,7 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     // ── Detect completed stages by checking for output artifacts ──────────
     const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
     const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
-    const { existsSync } = await import("node:fs");
+    const { existsSync, readdirSync } = await import("node:fs");
 
     const artifactPaths: Record<string, string> = {
       "brief.md": `${episodeDir}/artifacts/brief.md`,
@@ -239,7 +239,7 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
         if (label.endsWith("/")) {
           // Directory artifact — check if it has files
           if (existsSync(p)) {
-            const entries = require("node:fs").readdirSync(p);
+            const entries = readdirSync(p);
             return entries.length > 0 ? "completed" : "pending";
           }
         }
@@ -370,7 +370,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     // Reuse artifact detection from cmdStatus
     const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
     const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
-    const { existsSync } = await import("node:fs");
+    const { existsSync, readdirSync } = await import("node:fs");
     const ArtifactPaths: Record<string, string> = {
       "brief.md": `${episodeDir}/artifacts/brief.md`,
       "script.md": `${episodeDir}/artifacts/script.md`,
@@ -388,15 +388,21 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     // Find the first non-completed stage
     const pending = pipeline.stages.filter((s) => {
       if (stageId) return s.definition.id === stageId;
-      return s.definition.produces.some((p) => {
+      const produces = s.definition.produces;
+      return produces.some((p) => {
         const ap = ArtifactPaths[p.label];
         if (!ap) return true;
         if (p.label.endsWith("/")) {
-          try { return existsSync(ap) ? require("node:fs").readdirSync(ap).length === 0 : true; } catch { return true; }
+          const ex = existsSync(ap);
+          if (!ex) return true;
+          const len = readdirSync(ap).length;
+          return len === 0;
         }
-        return !existsSync(ap);
+        const ex = existsSync(ap);
+        return !ex;
       });
     });
+
 
     if (ctx.dryRun) {
       emit(ctx, {
