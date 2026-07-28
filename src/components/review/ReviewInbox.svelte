@@ -31,7 +31,7 @@
       threads = (data.threads ?? []).map((t: RawThread) => ({
         id: t.id,
         anchor: { kind: t.anchor.split("/")[0] ?? "general", targetId: t.anchor },
-        status: (t.status ?? "open") as ReviewThread["status"],
+        status: deriveThreadStatus(t),
         author: (t.messages[0]?.author ?? "operator") as ReviewThread["author"],
         body: t.messages[0]?.body ?? "",
         messages: (t.messages ?? []).map((m: any) => ({
@@ -68,28 +68,28 @@
     expandedId = expandedId === id ? null : id;
   }
 
+  /** Derive thread status from its messages. Thread is resolved if last message has status "resolved". */
+  function deriveThreadStatus(t: RawThread): ReviewThread["status"] {
+    const lastMsg = t.messages?.[t.messages.length - 1];
+    if (lastMsg?.status === "resolved") return "resolved";
+    if (lastMsg?.status === "wont-fix") return "resolved";
+    return "open";
+  }
+
   async function resolve(id: string) {
     const ep = episode.state.phase === "ready" ? episode.state.episode : null;
     if (!ep) return;
     const client = getGatewayClient();
-    // Find the last message in the thread
-    const thread = threads.find(t => t.id === id);
-    const lastMsg = thread?.messages[thread.messages.length - 1];
-    if (!lastMsg) return;
 
     try {
       await client.fetchJSON(
-        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews/${id}/messages/${lastMsg.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "resolved" }),
-        }
+        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews/${id}/resolve`,
+        { method: "PATCH" }
       );
       threads = threads.map((t) =>
         t.id === id ? { ...t, status: "resolved" as const } : t,
       );
-      refresh.refresh(); // background re-fetch to reconcile
+      refresh.refresh();
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to resolve";
     }
