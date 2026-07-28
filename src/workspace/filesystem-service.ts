@@ -147,4 +147,29 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       .replace(/-/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
   }
+
+  async findEvents(
+    ref: { channel: string; series: string; episode: string },
+    _query: Record<string, unknown>,
+  ): Promise<Array<Record<string, unknown>>> {
+    const episodeDir = path.join(
+      this.roots[0]!,
+      ref.channel,
+      ref.series,
+      ref.episode,
+    );
+    const events: Array<Record<string, unknown>> = [];
+    // Read review files
+    const reviewsDir = path.join(episodeDir, "reviews");
+    try {
+      const files = await fs.readdir(reviewsDir);
+      for (const f of files.slice(0, 50)) {
+        if (f.endsWith(".json")) {
+          const content = await fs.readFile(path.join(reviewsDir, f), "utf-8");
+          events.push(JSON.parse(content));
+        }
+      }
+    } catch { /* skip */ }
+    return events;
+  }
 }

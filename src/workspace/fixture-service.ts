@@ -153,4 +153,11 @@ export class FixtureWorkspaceService implements WorkspaceService {
       }
     );
   }
+
+  async findEvents(
+    _ref: { channel: string; series: string; episode: string },
+    _query: Record<string, unknown>,
+  ): Promise<Array<Record<string, unknown>>> {
+    return [];
+  }
 }

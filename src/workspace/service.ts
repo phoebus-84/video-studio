@@ -42,4 +42,8 @@ export interface WorkspaceService {
     seriesSlug: string,
     episodeSlug: string,
   ): Promise<EpisodeDetail>;
+  findEvents(
+    ref: { channel: string; series: string; episode: string },
+    query: Record<string, unknown>,
+  ): Promise<Array<Record<string, unknown>>>;
 }

@@ -6,6 +6,7 @@ import { collectHealth, gatewayHealth } from "../health/index.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
 import { registerRuntimeRoutes } from "./runtime.js";
+import { registerProductionRoutes } from "./production.js";
 
 /**
  * Register all REST API routes.
@@ -86,6 +87,9 @@ export function registerRoutes(
 
   // ── Runtime endpoints ────────────────────────────────────────────────────
   registerRuntimeRoutes(app, runtime);
+
+  // ── Production orchestration ─────────────────────────────────────────────
+  registerProductionRoutes(app, runtime, workspace);
 
   // ── 404 catch-all ─────────────────────────────────────────────────────────
   app.setNotFoundHandler((_request, reply) => {
