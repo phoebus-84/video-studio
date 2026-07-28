@@ -41,6 +41,8 @@ export interface ComposeOptions {
   fps?: number;
   /** Background color for padding. */
   background?: string;
+  /** Path to ffmpeg binary (default: ffmpeg). */
+  ffmpegPath?: string;
   /** Narration audio file to overlay. */
   audioPath?: string;
   /** Caption segments with timing (rendered as subtitles). */
@@ -121,14 +123,15 @@ export async function composeVideo(
 
   args.push("-y", options.output);
 
-  const cmd = ["ffmpeg", ...args.map((a) => `'${a}'`)].join(" ");
+  const ffmpegBin = options.ffmpegPath ?? "ffmpeg";
+  const cmd = [ffmpegBin, ...args.map((a) => `'${a}'`)].join(" ");
   console.log("Composing:", cmd.substring(0, 200) + "...");
 
   // Execute
   await fs.mkdir(path.dirname(options.output), { recursive: true });
 
   return new Promise((resolve, reject) => {
-    const proc = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "ignore"] });
+    const proc = spawn(ffmpegBin, args, { stdio: ["ignore", "pipe", "ignore"] });
 
     proc.on("close", async (code) => {
       // Clean up temp SRT file
