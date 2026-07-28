@@ -197,49 +197,55 @@ async function handleContinuityCheck(ctx: StageContext): Promise<string[]> {
 
 async function handleQa(ctx: StageContext): Promise<string[]> {
   const mp4Path = path.join(ctx.episodeDir, "artifacts", "render", "final.mp4");
-  let fileSize = 0;
-  let durationSec = 0;
+  const captionsPath = path.join(ctx.episodeDir, "artifacts", "captions.srt");
+  const narrationPath = path.join(ctx.episodeDir, "artifacts", "narration", "narration-full.wav");
+
+  // Run the full QA suite from ffmpeg-video-composer
+  let report: Record<string, unknown>;
 
   try {
-    const stat = await fs.stat(mp4Path);
-    fileSize = stat.size;
-    // Probe duration with ffprobe
-    try {
-      const out = execSync(
-        `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${mp4Path}"`,
-        { encoding: "utf-8", timeout: 5000 },
-      );
-      durationSec = parseFloat(out.trim()) || 0;
-    } catch { /* ffprobe not available */ }
-  } catch {
-    // MP4 doesn't exist
-  }
+    // Dynamically import QA from composer
+    const composerQaPath = path.resolve(ctx.episodeDir, "../../../ffmpeg-video-composer/src/qa.ts");
+    const { runQa } = await import(composerQaPath);
 
-  const report = {
-    stage: "qa",
-    checkedAt: new Date().toISOString(),
-    output: {
-      path: mp4Path,
-      sizeBytes: fileSize,
-      sizeMB: (fileSize / 1024 / 1024).toFixed(1),
-      durationSec,
-      resolution: "1920x1080",
-      codec: "H.264",
-      fps: 30,
-    },
-    checks: [
-      { check: "resolution", expected: "1920x1080", actual: "1920x1080", status: "pass" },
-      { check: "duration", expected: "3-8 minutes", actual: `${(durationSec / 60).toFixed(1)}m`, status: durationSec >= 180 && durationSec <= 480 ? "pass" : "warn" },
-      { check: "file-size", expected: "< 500MB", actual: `${(fileSize / 1024 / 1024).toFixed(1)}MB`, status: "pass" },
-      { check: "audio-present", expected: "yes", actual: durationSec > 0 ? "yes" : "unknown", status: "pass" },
-    ],
-    overall: "pass",
-    recommendation: "Ready for delivery",
-  };
+    const qaReport = runQa(mp4Path, {
+      ffprobePath: process.env.QA_FFPROBE ??
+        require("node:child_process").execSync("ls -d /opt/homebrew/Cellar/ffmpeg-full/*/bin/ffprobe | head -1", { encoding: "utf-8" }).trim(),
+      ffmpegPath: process.env.QA_FFMPEG ??
+        require("node:child_process").execSync("ls -d /opt/homebrew/Cellar/ffmpeg-full/*/bin/ffmpeg | head -1", { encoding: "utf-8" }).trim(),
+      captionsPath,
+      narrationPath,
+      minDurationSec: 30,
+      maxDurationSec: 480,
+    });
+
+    report = {
+      verdict: qaReport.verdict,
+      summary: qaReport.summary,
+      checks: qaReport.checks.map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        expected: c.expected,
+        actual: c.actual,
+      })),
+      timestamp: qaReport.timestamp,
+    };
+
+    ctx.log(`  qa: verdict=${qaReport.verdict} (${qaReport.checks.filter((c) => c.status === "fail").length} failures, ${qaReport.checks.filter((c) => c.status === "warn").length} warnings)`);
+  } catch (err) {
+    // Fallback to basic check
+    ctx.log(`  qa: composer QA unavailable — ${err instanceof Error ? err.message : String(err)}`);
+    report = {
+      verdict: "warn",
+      summary: "Could not run full QA suite",
+      checks: [],
+      timestamp: new Date().toISOString(),
+    };
+  }
 
   const outPath = path.join(ctx.episodeDir, "artifacts", "qa-report.json");
   await fs.writeFile(outPath, JSON.stringify(report, null, 2));
-  ctx.log(`  qa: ${report.checks.length} checks, ${report.checks.filter((c) => c.status === "warn").length} warnings`);
   return [outPath];
 }
 
