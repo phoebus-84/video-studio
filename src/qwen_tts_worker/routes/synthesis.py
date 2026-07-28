@@ -310,11 +310,15 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
         result.status = "running"
         _job_store.update(job_id, status="running")
 
-        # Use 1.7B model for character voices (supports instruct better than 0.6B).
-        # The CustomVoice variant would be ideal but needs separate download.
+        # Use CustomVoice 1.7B model for character voices (best instruct/voice control).
+        # Falls back to 1.7B base if CustomVoice not available.
         default_model = "models/qwen3-tts-0.6b-4bit"
         if request.instruct or request.voice_description:
-            default_model = "models/qwen3-tts-1.7b-4bit"
+            customvoice_path = "models/qwen3-tts-1.7b-customvoice-8bit"
+            if os.path.isdir(customvoice_path):
+                default_model = customvoice_path
+            else:
+                default_model = "models/qwen3-tts-1.7b-4bit"
         model_path = os.environ.get("QTW_MODEL_PATH", default_model)
         wav_data = synthesize_with_qwen(
             request.text,
