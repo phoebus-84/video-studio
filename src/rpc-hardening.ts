@@ -7,6 +7,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { WebSocket } from "ws";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,14 +100,159 @@ function validateRpcMessage(msg: unknown): { valid: boolean; reason?: string } {
 export function registerRpcHardening(pi: ExtensionAPI): void {
   const monitor = new RpcMonitor();
 
+  // ── WebSocket client state ──────────────────────────────────────────
+  let ws: WebSocket | null = null;
+  let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let currentEpisodeSlug: string | null = null;
+  const gatewayUrl = process.env.AVG_GATEWAY_URL ?? "ws://127.0.0.1:5198/ws";
+  const gatewayToken = process.env.AVG_GATEWAY_TOKEN ?? "dev-token";
+
+  /** Emit an update that can notify Pi of gateway events. */
+  function notify(update: { type: string; message: string }): void {
+    // Use stderr for logging (Pi shows this in agent output)
+    process.stderr.write(`[pva-gateway] ${update.type}: ${update.message}\n`);
+    // For review events, notify Pi's agent via appendEntry so it sees the review
+    // without triggering a full turn
+    if (update.type === "review-new" || update.type === "review-reply") {
+      try {
+        pi.appendEntry?.("pva:gateway-review", {
+          type: update.type,
+          message: update.message,
+          timestamp: new Date().toISOString(),
+        });
+      } catch { /* best-effort */ }
+    }
+    // For stage completions, notify Pi via sendMessage (triggers a context-aware turn)
+    if (update.type === "stage-done" || update.type === "stage-fail") {
+      try {
+        pi.sendMessage?.({
+          customType: "pva:stage-update",
+          content: update.message,
+          display: { mode: "inline" as const, label: update.type },
+        }, { triggerTurn: false });
+      } catch { /* best-effort */ }
+    }
+  }
+
+  /** Connect WebSocket to the gateway. */
+  function connectWs(): void {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+    const url = `${gatewayUrl}?token=${encodeURIComponent(gatewayToken)}`;
+    try {
+      ws = new WebSocket(url);
+
+      ws.on("open", () => {
+        monitor.markConnected();
+        // Subscribe to relevant channels
+        const subMsg: Record<string, unknown> = {
+          type: "subscribe",
+          channels: ["pipeline", "review", "workspace", "pi"],
+        };
+        if (currentEpisodeSlug) {
+          subMsg.episodeSlug = currentEpisodeSlug;
+        }
+        ws?.send(JSON.stringify(subMsg));
+        notify({ type: "gateway:connected", message: `Connected to ${url}` });
+      });
+
+      ws.on("message", (data: Buffer) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          // The gateway sends events in GatewayEvent format
+          if (msg.channel && msg.type) {
+            monitor.markEvent();
+            processGatewayEvent(
+              {
+                channel: msg.channel as string,
+                type: msg.type as string,
+                data: (msg.data as Record<string, unknown>) ?? {},
+                episodeSlug: (msg.episodeSlug as string) ?? currentEpisodeSlug ?? undefined,
+              },
+              (update) => {
+                notify(update);
+              }
+            );
+          }
+          // Also handle SSE-style events
+          if (msg.data) {
+            const sseData = typeof msg.data === "string" ? msg.data : null;
+            if (sseData) {
+              try {
+                const parsed = JSON.parse(sseData);
+                if (parsed.channel && parsed.type) {
+                  monitor.markEvent();
+                  processGatewayEvent(
+                    {
+                      channel: parsed.channel as string,
+                      type: parsed.type as string,
+                      data: (parsed.data as Record<string, unknown>) ?? {},
+                      episodeSlug: (parsed.episodeSlug as string) ?? currentEpisodeSlug ?? undefined,
+                    },
+                    (update) => { notify(update); }
+                  );
+                }
+              } catch { /* not SSE JSON */ }
+            }
+          }
+        } catch {
+          monitor.markError();
+        }
+      });
+
+      ws.on("close", () => {
+        monitor.markDisconnected();
+        ws = null;
+        notify({ type: "gateway:disconnected", message: "WebSocket closed" });
+        // Reconnect after 5s with backoff
+        if (!wsReconnectTimer) {
+          wsReconnectTimer = setTimeout(() => {
+            wsReconnectTimer = null;
+            connectWs();
+          }, 5000);
+        }
+      });
+
+      ws.on("error", (err: Error) => {
+        monitor.markError();
+        // ws.on('close') will fire after this, triggering reconnect
+        process.stderr.write(`[pva-gateway] WS error: ${err.message}\n`);
+      });
+    } catch (err) {
+      monitor.markError();
+      // Retry after backoff
+      wsReconnectTimer = setTimeout(() => {
+        wsReconnectTimer = null;
+        connectWs();
+      }, 5000);
+    }
+  }
+
+  /** Disconnect WebSocket and cancel retry. */
+  function disconnectWs(): void {
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+    if (ws) {
+      ws.onclose = null; // prevent reconnect
+      ws.close();
+      ws = null;
+    }
+  }
+
   pi.on("session_start", (_event, ctx) => {
     monitor.markConnected();
     ctx.ui.setStatus("pva-rpc", "rpc: connected");
+    // ── Connect to gateway WebSocket ─────────────────────────────────
+    connectWs();
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
     monitor.markDisconnected();
     ctx.ui.setStatus("pva-rpc", "");
+    // ── Disconnect gateway WebSocket ─────────────────────────────────
+    disconnectWs();
   });
 
   // Register an RPC health tool
