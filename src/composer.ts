@@ -21,6 +21,15 @@ export interface SceneInput {
   transition?: "cut" | "fade" | "dissolve";
 }
 
+export interface CaptionSegment {
+  /** Caption text (one or two lines). */
+  text: string;
+  /** Start time in seconds. */
+  startSec: number;
+  /** End time in seconds. */
+  endSec: number;
+}
+
 export interface ComposeOptions {
   /** Output file path. */
   output: string;
@@ -34,6 +43,10 @@ export interface ComposeOptions {
   background?: string;
   /** Narration audio file to overlay. */
   audioPath?: string;
+  /** Caption segments with timing (rendered as subtitles). */
+  captions?: CaptionSegment[];
+  /** Font file path for captions (system default if omitted). */
+  captionFont?: string;
   /** Whether to add text overlays from scene titles. */
   showTitles?: boolean;
   /** Preview mode: lower quality, faster encode. */
@@ -68,15 +81,31 @@ export async function composeVideo(
     inputs.push("-loop", "1", "-t", String(scene.durationSec), "-i", scene.imagePath);
   }
 
-  // Build concat filter
+  let filterComplex = scenes.map((_, i) => `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:${bg},setsar=1[v${i}]`).join(";");
+
+  // ── Captions as SRT subtitle overlay ───────────────────────────────────
+  let srtPath: string | null = null;
   const concatInputs = scenes.map((_, i) => `[v${i}]`).join("");
-  const filterComplex = `${[...Array(scenes.length).keys()].map(i => `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:${bg},setsar=1[v${i}]`).join(";")};${concatInputs}concat=n=${scenes.length}:v=1:a=0[outv]`;
+  let videoLabel = "[outv]";
+
+  if (options.captions && options.captions.length > 0) {
+    const srt = buildSrt(options.captions);
+    srtPath = path.join(path.dirname(options.output), ".captions-tmp.srt");
+    await fs.writeFile(srtPath, srt, "utf-8");
+    const fontOpt = options.captionFont
+      ? `:fontfile='${options.captionFont}'`
+      : "";
+    videoLabel = "[subtitled]";
+    filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0[voutraw];[voutraw]subtitles='${srtPath}':force_style='FontSize=36,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,BorderStyle=1,Alignment=2,MarginV=80'${fontOpt}${videoLabel}`;
+  } else {
+    filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0${videoLabel}`;
+  }
 
   // FFmpeg command
   const args: string[] = [
     ...inputs,
     "-filter_complex", filterComplex,
-    "-map", "[outv]",
+    "-map", videoLabel,
     "-c:v", options.preview ? "libx264" : "libx264",
     "-preset", options.preview ? "ultrafast" : "medium",
     "-crf", options.preview ? "28" : "18",
@@ -102,6 +131,11 @@ export async function composeVideo(
     const proc = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "ignore"] });
 
     proc.on("close", async (code) => {
+      // Clean up temp SRT file
+      if (srtPath) {
+        await fs.unlink(srtPath).catch(() => {});
+      }
+
       if (code !== 0) {
         reject(new Error(`FFmpeg exited with code ${code}`));
         return;
@@ -127,6 +161,34 @@ export async function composeVideo(
       reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
     });
   });
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Format seconds to SRT timestamp: HH:MM:SS,mmm */
+function formatSrtTime(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  const ms = Math.round((sec % 1) * 1000);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+}
+
+/** Build an SRT subtitle file from caption segments. */
+function buildSrt(captions: CaptionSegment[]): string {
+  return captions
+    .map((c, i) => {
+      // Split long text into two lines if needed
+      let text = c.text;
+      if (text.length > 60 && !text.includes("\n")) {
+        const mid = Math.floor(text.length / 2);
+        const space = text.lastIndexOf(" ", mid);
+        const split = space > 0 ? space : mid;
+        text = text.slice(0, split).trim() + "\n" + text.slice(split).trim();
+      }
+      return `${i + 1}\n${formatSrtTime(c.startSec)} --> ${formatSrtTime(c.endSec)}\n${text}\n`;
+    })
+    .join("\n");
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
