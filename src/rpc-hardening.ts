@@ -121,7 +121,7 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
       // Directly in cwd
       resolvePath(process.cwd(), ".gateway-token"),
     ];
-    for (const p of candidates) {
+    for (const p of bases) {
       try {
         const tok = readFileSync(p, "utf-8").trim();
         if (tok) return tok;
