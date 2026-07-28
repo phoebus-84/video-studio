@@ -106,15 +106,15 @@ export function registerEditorRoutes(
 
       return reply
         .header("X-Content-Revision", revision)
-        .header("Content-Type", inferContentType(filePath))
+        .header("Content-Type", "application/json")
         .header("X-Last-Modified", stat.mtime.toISOString())
-        .send({
+        .send(JSON.stringify({
           path: filePath,
           revision,
           size: stat.size,
           mtime: stat.mtime.toISOString(),
           content: content.toString("utf-8"),
-        });
+        }));
     } catch (e: any) {
       if (e.code === "ENOENT") {
         return reply.status(404).send({ error: "File not found", path: filePath });
