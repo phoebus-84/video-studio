@@ -93,13 +93,16 @@ async function generateImage(
 
 // ── TTS synthesis ──────────────────────────────────────────────────────────
 
-async function synthesizeSpeech(text: string, voice: string, speed: number): Promise<{ audioPath: string; durationSec: number }> {
+async function synthesizeSpeech(text: string, voice: string, speed: number, instruct?: string): Promise<{ audioPath: string; durationSec: number }> {
   const ttsUrl = process.env.AVG_TTS_WORKER_URL || "http://127.0.0.1:5197";
+
+  const body: Record<string, unknown> = { text, voice, speed };
+  if (instruct) body.instruct = instruct;
 
   const res = await fetch(`${ttsUrl}/synthesize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, voice, speed }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -258,12 +261,13 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       episode: Type.String({ description: "Episode slug" }),
       sceneId: Type.String({ description: "Scene ID (e.g. n1, n2)" }),
       text: Type.String({ description: "Text to synthesize as speech" }),
-      voice: Type.Optional(Type.String({ default: "default" })),
+      voice: Type.Optional(Type.String({ default: "default", description: "Voice name (e.g. 'default', 'af_heart')" })),
       speed: Type.Optional(Type.Number({ default: 1.0 })),
+      instruct: Type.Optional(Type.String({ description: "Emotion/character instruction. Use for multi-character scenes: 'Speak with a sly, cunning voice like a wolf', 'Speak warmly like a grandmother', 'Speak with a young innocent girl voice'" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
-        const result = await synthesizeSpeech(params.text, params.voice ?? "default", params.speed ?? 1.0);
+        const result = await synthesizeSpeech(params.text, params.voice ?? "default", params.speed ?? 1.0, (params as any).instruct);
 
         // Copy audio to episode artifacts/narration/
         const dir = episodeDir(params.channel, params.series, params.episode);
