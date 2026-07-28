@@ -100,10 +100,25 @@ class EpisodeStore {
         wavPath: narUrls[s.id ?? `n${i + 1}`],
       }));
 
+      // Read TTS model from series pipeline config
+      let ttsModelSize = "0.6B";
+      try {
+        const pipelineData = await client.fetchJSON(
+          `/api/channels/${channel}/series/${series}/file/pipeline.yaml`
+        ) as { content?: string };
+        if (pipelineData.content) {
+          const match = pipelineData.content.match(/model:\s*(\S+)/);
+          if (match) {
+            const modelName = match[1]!;
+            ttsModelSize = modelName.includes("1.7") ? "1.7B" : modelName.includes("0.6") ? "0.6B" : "0.6B";
+          }
+        }
+      } catch { /* use default */ }
+
       const { narration } = await import("$lib/narration-store.svelte.ts");
       narration.load(segments, {
         name: "Qwen3-TTS",
-        modelSize: "0.6B",
+        modelSize: ttsModelSize,
         installed: true,
         sampleRate: 24000,
       });
