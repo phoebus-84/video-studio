@@ -98,13 +98,16 @@
           </div>
 
           <div class="ap-actions">
-            <button
+            <span
               class="ap-regen-btn"
-              disabled={regenerating}
-              onclick={() => requestRegenerate()}
+              class:ap-regen-disabled={regenerating}
+              role="button"
+              tabindex={regenerating ? -1 : 0}
+              onclick={(e) => { e.stopPropagation(); if (!regenerating) requestRegenerate(); }}
+              onkeydown={(e) => { if (!regenerating && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); requestRegenerate(); } }}
             >
               {regenerating ? "Requesting…" : "🔄 Regenerate"}
-            </button>
+            </span>
           </div>
           {#if regenError}
             <div class="ap-error">{regenError}</div>
@@ -264,6 +267,8 @@
   }
 
   .ap-regen-btn {
+    display: block;
+    text-align: center;
     width: 100%;
     padding: var(--vs-space-1) var(--vs-space-2);
     border: 1px solid var(--vs-accent);
@@ -274,13 +279,14 @@
     font-size: var(--vs-text-xs);
     cursor: pointer;
     transition: background var(--vs-duration-fast);
+    box-sizing: border-box;
   }
 
-  .ap-regen-btn:hover:not(:disabled) {
+  .ap-regen-btn:hover:not(.ap-regen-disabled) {
     background: var(--vs-accent-subtle);
   }
 
-  .ap-regen-btn:disabled {
+  .ap-regen-disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
