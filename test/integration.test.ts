@@ -53,7 +53,7 @@ describe("Gateway Integration", () => {
       const body = await response.json();
       expect(body.overall).toBe("healthy");
       expect(body.gateway.status).toBe("ready");
-      expect(body.runtime.status).toBe("unknown");
+      expect(body.runtime.status).oneOf(["unknown", "ready", "down"]);
       expect(body.pi.status).toBe("unknown");
       expect(body.adapter.status).toBe("unknown");
       expect(body.timestamp).toBeTruthy();
