@@ -40,7 +40,7 @@
               prompt: scene.intent ?? `Image for ${scene.title}`,
               referenceImages: [],
               provider: "fal.ai",
-              model: "flux-schnell",
+              model: "nano-banana-pro",
               seed: null,
               dimensions: { width: 1920, height: 1080 },
               cost: null,
