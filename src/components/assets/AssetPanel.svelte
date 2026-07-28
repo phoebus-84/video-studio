@@ -2,6 +2,7 @@
   import { assets } from "$lib/asset-store.svelte.ts";
   import { episode } from "$lib/episode-store.svelte.ts";
   import { getGatewayClient } from "$lib/gateway.svelte.ts";
+  import { reviews as refresh } from "$lib/refresh.svelte.ts";
   import type { AssetAttempt } from "$lib/asset-types";
 
   const group = $derived(assets.selectedGroup);
@@ -43,6 +44,8 @@
       );
       // Refresh reviews
       await import("../review/ReviewInbox.svelte");
+      // Refresh reviews to show the new thread
+      refresh.refresh();
     } catch (err) {
       regenError = err instanceof Error ? err.message : "Failed to request regeneration";
     } finally {

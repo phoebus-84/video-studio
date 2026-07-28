@@ -1,6 +1,7 @@
 <script lang="ts">
   import { episode } from "$lib/episode-store.svelte.ts";
   import { getGatewayClient } from "$lib/gateway.svelte.ts";
+  import { reviews as refresh } from "$lib/refresh.svelte.ts";
   import type { ReviewThread } from "$lib/review-types";
   import { THREAD_STATUS_LABELS, AGENT_STATUS_LABELS } from "$lib/review-types";
 
@@ -50,9 +51,10 @@
     }
   }
 
-  // Fetch threads when episode changes
+  // Fetch threads when episode changes or refresh is triggered
   $effect(() => {
     if (episode.state.phase === "ready") {
+      void refresh.tick; // track the tick
       fetchThreads();
     } else {
       threads = [];
@@ -87,6 +89,7 @@
       threads = threads.map((t) =>
         t.id === id ? { ...t, status: "resolved" as const } : t,
       );
+      refresh.refresh(); // background re-fetch to reconcile
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to resolve";
     }
@@ -125,6 +128,7 @@
         };
       });
       replyText = "";
+      refresh.refresh(); // background re-fetch to reconcile
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to send reply";
     }
