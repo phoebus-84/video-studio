@@ -7,6 +7,7 @@
 import type { FastifyInstance } from "fastify";
 import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
 import type { WorkspaceService } from "../workspace/service.js";
+import { runAutopilot } from "../runtime/executor.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
 
 interface EpisodeParams {
@@ -94,7 +95,7 @@ export function registerProductionRoutes(
   // ── Execute full pipeline ─────────────────────────────────────────────────
   app.post("/api/channels/:channel/series/:series/episodes/:episode/execute", {
     schema: {
-      description: "Execute all pending pipeline stages in topological order.",
+      description: "Execute all pending pipeline stages in topological order using autopilot.",
       tags: ["production"],
       params: {
         type: "object",
@@ -108,15 +109,33 @@ export function registerProductionRoutes(
       body: {
         type: "object",
         properties: {
+          pipeline: { type: "string" },
           dryRun: { type: "boolean", default: false },
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const ref = parseEpisode(request.params as Record<string, string>);
-    const { dryRun } = request.body as { dryRun?: boolean };
-    const result = await runtime.run(ref, undefined, dryRun);
-    return { ok: result.ok, data: result.data, error: result.error };
+    const { pipeline, dryRun } = request.body as { pipeline?: string; dryRun?: boolean };
+
+    if (dryRun) {
+      const result = await runtime.run(ref, undefined, true);
+      return { ok: result.ok, data: result.data, dryRun: true };
+    }
+
+    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
+    const report = await runAutopilot(
+      runtime,
+      ref,
+      pipeline ?? "fairy-tale-adaptation",
+      libraryRoot,
+      (msg) => request.log.info(msg),
+    );
+
+    return {
+      ok: report.stages.filter((s) => s.status === "failed").length === 0,
+      report,
+    };
   });
 
   // ── Status ────────────────────────────────────────────────────────────────

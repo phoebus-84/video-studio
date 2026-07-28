@@ -105,10 +105,11 @@ export class RuntimeClient {
     return this.exec(["status", `${ref.channel}/${ref.series}/${ref.episode}`]);
   }
 
-  /** vpr run <channel>/<series>/<episode> [--stage <id>] */
-  async run(ref: EpisodeRef, stageId?: string, dryRun = false): Promise<RuntimeCommandResult> {
+  /** vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] */
+  async run(ref: EpisodeRef, stageId?: string, dryRun = false, pipeline?: string): Promise<RuntimeCommandResult> {
     const args = ["run", `${ref.channel}/${ref.series}/${ref.episode}`];
     if (stageId) args.push("--stage", stageId);
+    if (pipeline) args.push("--pipeline", pipeline);
     if (dryRun) args.push("--dry-run");
     return this.exec(args, { timeoutMs: 300_000 }); // 5 min for runs
   }
@@ -235,23 +236,27 @@ export class RuntimeClient {
           return;
         }
 
-        // Parse JSON output
+        // Parse JSON output — prefer full document over line-by-line
         let data: Record<string, unknown> | undefined;
         try {
           const trimmed = stdout.trim();
           if (trimmed) {
-            // Handle multiple JSON objects (newline-delimited)
-            const lines = trimmed.split("\n");
-            for (const line of lines) {
-              try {
-                data = JSON.parse(line);
-                // Use the last parseable object
-              } catch {
-                // skip non-JSON lines
-              }
-            }
-            if (!data) {
+            // Try full document first (multi-line JSON objects)
+            try {
               data = JSON.parse(trimmed);
+            } catch {
+              // Fall back to newline-delimited JSON objects
+              const lines = trimmed.split("\n");
+              for (const line of lines) {
+                try {
+                  const parsed = JSON.parse(line);
+                  if (typeof parsed === "object" && parsed !== null) {
+                    data = parsed as Record<string, unknown>;
+                  }
+                } catch {
+                  // skip non-JSON lines
+                }
+              }
             }
           }
         } catch {
