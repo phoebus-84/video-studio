@@ -23,6 +23,61 @@
 
   let regenerating = $state(false);
   let regenError = $state<string | null>(null);
+  let editingPrompt = $state<string | null>(null);
+  let editedText = $state("");
+  let savingPrompt = $state(false);
+
+  async function savePrompt(attempt: AssetAttempt) {
+    const newText = editedText.trim();
+    if (!newText || newText === attempt.prompt) {
+      editingPrompt = null;
+      return;
+    }
+    if (episode.state.phase !== "ready") return;
+    const ep = episode.state.episode;
+    const client = getGatewayClient();
+    savingPrompt = true;
+
+    try {
+      // Fetch current episode.json
+      const data = await client.fetchJSON(
+        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/file/episode.json`
+      ) as { content?: string };
+
+      const epJson = JSON.parse(data.content ?? "{}");
+
+      // Update the scene's intent (image prompt) or add narration text
+      const scene = (epJson.scenes ?? []).find((s: any) => s.id === attempt.sceneId);
+      if (scene) {
+        if (attempt.kind === "image") {
+          scene.intent = newText;
+        } else {
+          scene.narration = newText;
+        }
+      }
+
+      // Save back
+      await client.fetchJSON(
+        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/file/episode.json`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: JSON.stringify(epJson, null, 2) }),
+        }
+      );
+
+      // Update local state
+      attempt.prompt = newText;
+      editingPrompt = null;
+
+      // Trigger refresh to reload assets
+      refresh.refresh();
+    } catch (err) {
+      regenError = err instanceof Error ? err.message : "Failed to save prompt";
+    } finally {
+      savingPrompt = false;
+    }
+  }
 
   async function requestRegenerate(attempt: AssetAttempt) {
     if (!group || episode.state.phase !== "ready") return;
@@ -91,7 +146,20 @@
             </div>
           {/if}
 
-          <div class="ap-prompt">{attempt.prompt}</div>
+          <div class="ap-prompt" ondblclick={() => { editingPrompt = attempt.id; editedText = attempt.prompt; }}>
+            {#if editingPrompt === attempt.id}
+              <textarea
+                class="ap-prompt-edit"
+                bind:value={editedText}
+                rows={3}
+                onblur={() => savePrompt(attempt)}
+                onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); savePrompt(attempt); } }}
+              ></textarea>
+            {:else}
+              {attempt.prompt}
+              <span class="ap-edit-hint">double-click to edit</span>
+            {/if}
+          </div>
 
           <div class="ap-meta">
             <span>{attempt.model}</span>
@@ -237,6 +305,36 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    cursor: text;
+    position: relative;
+  }
+
+  .ap-prompt-edit {
+    width: 100%;
+    padding: var(--vs-space-1);
+    border: 1px solid var(--vs-accent);
+    border-radius: var(--vs-radius-sm);
+    font-family: var(--vs-font-sans);
+    font-size: var(--vs-text-xs);
+    background: var(--vs-bg-canvas);
+    color: var(--vs-text-primary);
+    resize: vertical;
+    line-height: 1.4;
+  }
+
+  .ap-edit-hint {
+    display: none;
+    position: absolute;
+    top: 0;
+    right: 0;
+    font-size: 9px;
+    color: var(--vs-text-disabled);
+    background: var(--vs-bg-surface);
+    padding: 0 var(--vs-space-1);
+  }
+
+  .ap-prompt:hover .ap-edit-hint {
+    display: inline;
   }
 
   .ap-thumb {
