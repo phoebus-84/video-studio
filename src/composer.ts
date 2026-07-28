@@ -98,7 +98,7 @@ export async function composeVideo(
       ? `:fontfile='${options.captionFont}'`
       : "";
     videoLabel = "[subtitled]";
-    filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0[voutraw];[voutraw]subtitles='${srtPath}':force_style='FontSize=36,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,BorderStyle=1,Alignment=2,MarginV=80'${fontOpt}${videoLabel}`;
+    filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0[voutraw];[voutraw]subtitles='${srtPath}':fps=fps=30,format=yuv420p,force_style='FontSize=36,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,BorderStyle=1,Alignment=2,MarginV=80'${fontOpt}${videoLabel}`;
   } else {
     filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0${videoLabel}`;
   }
