@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import type { Config } from "../config/schema.js";
 import type { WorkspaceService } from "../workspace/service.js";
-import { collectHealth, gatewayHealth, unknownHealth } from "../health/index.js";
+import type { RuntimeClient } from "../runtime/client.js";
+import { collectHealth, gatewayHealth } from "../health/index.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
+import { registerRuntimeRoutes } from "./runtime.js";
 
 /**
  * Register all REST API routes.
@@ -12,6 +14,7 @@ export function registerRoutes(
   app: FastifyInstance,
   _config: Config,
   workspace: WorkspaceService,
+  runtime: RuntimeClient,
 ): void {
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/health", {
@@ -45,9 +48,18 @@ export function registerRoutes(
   }, async (_request, _reply) => {
     return collectHealth({
       gateway: gatewayHealth,
-      runtime: () => unknownHealth("Runtime connection not yet wired (vsg-e57.7)"),
-      pi: () => unknownHealth("Pi RPC not yet wired (vsg-e57.6)"),
-      adapter: () => unknownHealth("Adapter bridge not yet wired (vsg-e57.9)"),
+      runtime: async () => {
+        const h = await runtime.health();
+        return {
+          status: h.reachable ? "ready" as const : "down" as const,
+          detail: h.reachable
+            ? `vpr ${h.version ?? "unknown"}`
+            : (h.error ?? "Runtime not reachable"),
+          lastChecked: new Date().toISOString(),
+        };
+      },
+      pi: () => ({ status: "unknown" as const, detail: "Pi RPC not yet wired (vsg-e57.6)", lastChecked: new Date().toISOString() }),
+      adapter: () => ({ status: "unknown" as const, detail: "Adapter bridge not yet wired (vsg-e57.9)", lastChecked: new Date().toISOString() }),
     });
   });
 
@@ -71,6 +83,9 @@ export function registerRoutes(
 
   // ── Workspace discovery ──────────────────────────────────────────────────
   registerWorkspaceRoutes(app, workspace);
+
+  // ── Runtime endpoints ────────────────────────────────────────────────────
+  registerRuntimeRoutes(app, runtime);
 
   // ── 404 catch-all ─────────────────────────────────────────────────────────
   app.setNotFoundHandler((_request, reply) => {

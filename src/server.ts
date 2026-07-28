@@ -13,6 +13,7 @@ import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
 import { configureLogging, getRedactPaths } from "./logging/index.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
+import { createRuntimeClient, type RuntimeClient } from "./runtime/client.js";
 import type { WorkspaceService } from "./workspace/service.js";
 import { FixtureWorkspaceService } from "./workspace/fixture-service.js";
 import { FileSystemWorkspaceService } from "./workspace/filesystem-service.js";
@@ -23,6 +24,8 @@ export interface GatewayInstance {
   token: string;
   /** Unified event bus for publishing events. */
   events: EventStreamManager;
+  /** Pipeline runtime client. */
+  runtime: RuntimeClient;
   /** Start listening. Returns the assigned address. */
   start: () => Promise<string>;
   /** Gracefully shut down the server. */
@@ -67,7 +70,7 @@ export async function createGateway(
   // ── Auth ─────────────────────────────────────────────────────────────────
   const authMiddleware = createAuthMiddleware(token);
 
-  const PUBLIC_PATHS = new Set(["/health", "/openapi.json"]);
+  const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/runtime/health"]);
   const PUBLIC_PREFIXES = ["/library/"];
 
   // Global preHandler: all routes require auth except public paths.
@@ -104,6 +107,15 @@ export async function createGateway(
       : new FixtureWorkspaceService()
   );
 
+  // ── Pipeline runtime client ──────────────────────────────────────────────
+  const runtime: RuntimeClient = createRuntimeClient(
+    process.env.AVG_LIBRARY_ROOT ?? "./library",
+    {
+      log: (msg) => app.log.debug(msg),
+      defaultTimeoutMs: 120_000,
+    },
+  );
+
   // ── Serve library assets as static files ─────────────────────────────
   const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
   await app.register(fastifyStatic, {
@@ -113,7 +125,7 @@ export async function createGateway(
     maxAge: 0,  // Disable browser caching — assets regenerate frequently
   });
 
-  registerRoutes(app, config, ws);
+  registerRoutes(app, config, ws, runtime);
   registerEditorRoutes(app, {
     root: process.env.AVG_LIBRARY_ROOT ?? "./library",
     bus: events.bus,
@@ -134,6 +146,7 @@ export async function createGateway(
     config,
     token,
     events,
+    runtime,
     start: async () => {
       await watcher.start();
       const addr = await app.listen({
