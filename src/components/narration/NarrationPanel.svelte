@@ -2,6 +2,8 @@
   import { narration } from "$lib/narration-store.svelte.ts";
   import { STATUS_SYMBOLS } from "$lib/narration-types";
 
+  let showSettings = $state(false);
+
   function formatTime(sec: number | null): string {
     if (sec === null) return "--:--";
     const m = Math.floor(sec / 60);
@@ -34,7 +36,45 @@
       {#if !narration.voice.installed}
         <span class="np-voice-missing">Not installed</span>
       {/if}
+      <button class="np-voice-toggle" onclick={() => showSettings = !showSettings}>
+        {showSettings ? "▼" : "▶"} Settings
+      </button>
     </div>
+
+    {#if showSettings}
+      <div class="np-voice-settings">
+        <label class="np-setting">
+          <span>Voice</span>
+          <input
+            type="text"
+            value={narration.narratorVoice}
+            oninput={(e) => narration.narratorVoice = (e.target as HTMLInputElement).value}
+            placeholder="default"
+          />
+        </label>
+        <label class="np-setting">
+          <span>Temperature</span>
+          <input
+            type="range"
+            min="0.1"
+            max="2.0"
+            step="0.1"
+            value={narration.temperature}
+            oninput={(e) => narration.temperature = parseFloat((e.target as HTMLInputElement).value)}
+          />
+          <span class="np-setting-val">{narration.temperature}</span>
+        </label>
+        <label class="np-setting np-setting-instruct">
+          <span>Instruction</span>
+          <textarea
+            rows={2}
+            value={narration.instruct ?? ""}
+            oninput={(e) => narration.instruct = (e.target as HTMLTextAreaElement).value || null}
+            placeholder="e.g. Speak warmly and gently like a grandmother telling a bedtime story"
+          ></textarea>
+        </label>
+      </div>
+    {/if}
   {/if}
 
   <ol class="np-list">
@@ -125,6 +165,74 @@
 
   .np-voice-missing {
     color: var(--vs-state-blocked);
+  }
+
+  .np-voice-toggle {
+    margin-left: auto;
+    background: none;
+    border: none;
+    font-family: var(--vs-font-sans);
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-secondary);
+    cursor: pointer;
+  }
+
+  .np-voice-settings {
+    padding: var(--vs-space-2) var(--vs-space-3);
+    background: var(--vs-bg-inset);
+    border-radius: var(--vs-radius-sm);
+    margin-bottom: var(--vs-space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--vs-space-2);
+  }
+
+  .np-setting {
+    display: flex;
+    align-items: center;
+    gap: var(--vs-space-2);
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-secondary);
+  }
+
+  .np-setting span:first-child {
+    min-width: 80px;
+    color: var(--vs-text-tertiary);
+  }
+
+  .np-setting input[type="text"] {
+    flex: 1;
+    padding: 2px var(--vs-space-1);
+    border: 1px solid var(--vs-border);
+    border-radius: var(--vs-radius-sm);
+    font-family: var(--vs-font-sans);
+    font-size: var(--vs-text-xs);
+    background: var(--vs-bg-canvas);
+    color: var(--vs-text-primary);
+  }
+
+  .np-setting-val {
+    font-family: var(--vs-font-mono);
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-primary);
+    min-width: 24px;
+  }
+
+  .np-setting-instruct {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .np-setting-instruct textarea {
+    width: 100%;
+    padding: var(--vs-space-1);
+    border: 1px solid var(--vs-border);
+    border-radius: var(--vs-radius-sm);
+    font-family: var(--vs-font-sans);
+    font-size: var(--vs-text-xs);
+    background: var(--vs-bg-canvas);
+    color: var(--vs-text-primary);
+    resize: vertical;
   }
 
   .np-list {

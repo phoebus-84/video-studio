@@ -8,6 +8,11 @@ class NarrationStore {
   synthesizing = $state(false);
   error = $state<string | null>(null);
 
+  // Voice control settings (editable)
+  instruct = $state<string | null>(null);
+  temperature = $state<number>(0.7);
+  narratorVoice = $state<string>("default");
+
   private ttsUrl: string = localStorage.getItem("vs-tts-url") ?? "http://127.0.0.1:5197";
   private audioEl: HTMLAudioElement | null = null;
 
@@ -37,8 +42,10 @@ class NarrationStore {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          voice: (this.voice?.name ?? "default"),
+          voice: (this.voice?.name ?? this.narratorVoice),
           speed: 1.0,
+          temperature: this.temperature,
+          ...(this.instruct ? { instruct: this.instruct } : {}),
         }),
       });
 
