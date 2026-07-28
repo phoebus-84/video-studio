@@ -213,13 +213,59 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     const loader = makeLoader();
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
+    // ── Detect completed stages by checking for output artifacts ──────────
+    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
+    const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const { existsSync } = await import("node:fs");
+
+    const artifactPaths: Record<string, string> = {
+      "brief.md": `${episodeDir}/artifacts/brief.md`,
+      "script.md": `${episodeDir}/artifacts/script.md`,
+      "art-direction.json": `${episodeDir}/artifacts/art-direction.md`,
+      "narration.mp3": `${episodeDir}/artifacts/narration/narration-full.wav`,
+      "safety-report.json": `${episodeDir}/artifacts/safety-report.json`,
+      "illustrations/": `${episodeDir}/artifacts/frames`,
+      "captions.srt": `${episodeDir}/artifacts/captions.srt`,
+      "timing.json": `${episodeDir}/artifacts/timing.json`,
+      "continuity-report.json": `${episodeDir}/artifacts/continuity-report.json`,
+      "output.mp4": `${episodeDir}/artifacts/render/final.mp4`,
+      "qa-report.json": `${episodeDir}/artifacts/qa-report.json`,
+    };
+
+    function checkArtifact(label: string): string {
+      const p = artifactPaths[label];
+      if (!p) return "pending";
+      try {
+        if (label.endsWith("/")) {
+          // Directory artifact — check if it has files
+          if (existsSync(p)) {
+            const entries = require("node:fs").readdirSync(p);
+            return entries.length > 0 ? "completed" : "pending";
+          }
+        }
+        return existsSync(p) ? "completed" : "pending";
+      } catch {
+        return "pending";
+      }
+    }
+
+    function stageState(s: typeof pipeline.stages[0]): string {
+      // If ALL outputs exist, stage is completed
+      const states = s.definition.produces.map((p) => checkArtifact(p.label));
+      if (states.every((st) => st === "completed")) return "completed";
+      // If inputs are all done but outputs missing, it's runnable
+      const inputStates = s.definition.consumes.map((c) => checkArtifact(c.label));
+      if (inputStates.every((st) => st === "completed")) return "runnable";
+      return "pending";
+    }
+
     emit(ctx, {
       message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}`,
       episode: parsed,
       pipeline: pipeline.name,
       stages: pipeline.stages.map((s) => ({
         id: s.definition.id,
-        state: "pending",
+        state: stageState(s),
         dependsOn: s.definition.dependsOn,
         produces: s.definition.produces ?? [],
       })),
@@ -303,19 +349,65 @@ async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
 // ── run ─────────────────────────────────────────────────────────────────────
 
 async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
-  const pathArg = args.find((a) => !a.startsWith("--"));
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  const pathArg = remaining.find((a: string) => !a.startsWith("--"));
   if (!pathArg) {
-    emit(ctx, { error: "Usage: vpr run <channel>/<series>/<episode> [--stage <id>]" });
+    emit(ctx, { error: "Usage: vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--dry-run]" });
     return EX_USAGE;
   }
-  const stageIdx = args.indexOf("--stage");
-  const stageId = stageIdx >= 0 ? args[stageIdx + 1] : null;
-  if (ctx.dryRun) {
-    emit(ctx, { message: `[DRY RUN] Would execute ${stageId ? `stage "${stageId}"` : "pipeline"} for ${pathArg}`, dryRun: true });
-    return EX_OK;
+  const parsed = parsePath(pathArg);
+  if (!parsed) {
+    emit(ctx, { error: `Invalid path "${pathArg}"` });
+    return EX_USAGE;
   }
-  emit(ctx, { message: `Execution started for ${pathArg}`, path: pathArg, stageId });
-  return EX_OK;
+  const stageIdx = remaining.indexOf("--stage");
+  const stageId: string | null = stageIdx >= 0 ? remaining[stageIdx + 1] ?? null : null;
+
+  try {
+    const loader = makeLoader();
+    const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
+
+    // Find the next runnable stage(s)
+    const pending = pipeline.stages.filter((s) => {
+      if (stageId) return s.definition.id === stageId;
+      return true; // All stages considered
+    });
+
+    if (ctx.dryRun) {
+      emit(ctx, {
+        message: `[DRY RUN] Would execute ${pending.length} stage(s)`,
+        stages: pending.map((s) => s.definition.id),
+        dryRun: true,
+      });
+      return EX_OK;
+    }
+
+    // For MVP: report which stage is ready to execute next
+    // Actual execution is handled by the Pi agent calling capability tools
+    const nextStage = pending[0];
+    if (!nextStage) {
+      emit(ctx, { message: "All stages complete", completed: true });
+      return EX_OK;
+    }
+
+    emit(ctx, {
+      message: `Ready to execute: ${nextStage.definition.id}`,
+      stage: {
+        id: nextStage.definition.id,
+        name: nextStage.definition.name,
+        capabilities: nextStage.definition.capabilities,
+        dependsOn: nextStage.definition.dependsOn,
+        produces: nextStage.definition.produces,
+      },
+      instruction: `Pi agent: read skill for stage "${nextStage.definition.id}", ` +
+        `call capability tools (${nextStage.definition.capabilities.map((c) => c.capability).join(", ") || "none"}), ` +
+        `write outputs to ${parsed.channel}/${parsed.series}/${parsed.episode}/artifacts/`,
+    });
+    return EX_OK;
+  } catch (e) {
+    emit(ctx, { error: `Run failed: ${e instanceof Error ? e.message : String(e)}` });
+    return EX_RUNTIME;
+  }
 }
 
 // ── Registry ────────────────────────────────────────────────────────────────
