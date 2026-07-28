@@ -343,6 +343,9 @@ export function registerReviewRoutes(
       ));
     }
 
+    return reply.send(thread);
+  });
+
   // ── PATCH thread-level resolve ─────────────────────────────────────
 
   app.patch("/api/channels/:channel/series/:series/episodes/:episode/reviews/:threadId/resolve", {
