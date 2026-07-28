@@ -281,3 +281,101 @@ function inferContentType(filePath: string): string {
   };
   return map[ext] ?? "application/octet-stream";
 }
+
+// ── Shared file-serving helper for any level ────────────────────────────
+
+async function serveFile(
+  absPath: string,
+  filePath: string,
+  reply: FastifyReply,
+): Promise<void> {
+  const content = await fs.readFile(absPath);
+  const revision = computeRevision(content);
+  const stat = await fs.stat(absPath);
+
+  return reply
+    .header("X-Content-Revision", revision)
+    .header("Content-Type", "application/json")
+    .header("X-Last-Modified", stat.mtime.toISOString())
+    .send(JSON.stringify({
+      path: filePath,
+      revision,
+      size: stat.size,
+      mtime: stat.mtime.toISOString(),
+      content: content.toString("utf-8"),
+    }));
+}
+
+// ── Channel-level file routes ──────────────────────────────────────────
+
+export function registerChannelFileRoutes(
+  app: FastifyInstance,
+  root: string,
+): void {
+  // GET /api/channels/:channel/file/*
+  app.get("/api/channels/:channel/file/*", {
+    schema: {
+      description: "Read a file at the channel level.",
+      tags: ["editor"],
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { channel } = request.params as { channel: string };
+    const filePath = (request.params as any)["*"] ?? "";
+    const absPath = await resolveArtifactPath(root, channel, "", "", filePath);
+    if (!absPath) return reply.status(403).send({ error: "Path traversal not allowed" });
+    try { await serveFile(absPath, filePath, reply); }
+    catch (e: any) { reply.status(e.code === "ENOENT" ? 404 : 500).send({ error: e.message }); }
+  });
+
+  // PUT /api/channels/:channel/file/*
+  app.put("/api/channels/:channel/file/*", {
+    schema: { description: "Write a file at the channel level.", tags: ["editor"] },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { channel } = request.params as { channel: string };
+    const filePath = (request.params as any)["*"] ?? "";
+    const absPath = await resolveArtifactPath(root, channel, "", "", filePath);
+    if (!absPath) return reply.status(403).send({ error: "Path traversal not allowed" });
+    const content = (request.body as any)?.content ?? (request.body as string);
+    await fs.mkdir(path.dirname(absPath), { recursive: true });
+    await fs.writeFile(absPath, content);
+    const revision = computeRevision(Buffer.from(content));
+    return reply.send(JSON.stringify({ ok: true, revision, path: filePath }));
+  });
+}
+
+// ── Series-level file routes ───────────────────────────────────────────
+
+export function registerSeriesFileRoutes(
+  app: FastifyInstance,
+  root: string,
+): void {
+  // GET /api/channels/:channel/series/:series/file/*
+  app.get("/api/channels/:channel/series/:series/file/*", {
+    schema: {
+      description: "Read a file at the series level.",
+      tags: ["editor"],
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { channel, series } = request.params as { channel: string; series: string };
+    const filePath = (request.params as any)["*"] ?? "";
+    const absPath = await resolveArtifactPath(root, channel, series, "", filePath);
+    if (!absPath) return reply.status(403).send({ error: "Path traversal not allowed" });
+    try { await serveFile(absPath, filePath, reply); }
+    catch (e: any) { reply.status(e.code === "ENOENT" ? 404 : 500).send({ error: e.message }); }
+  });
+
+  // PUT /api/channels/:channel/series/:series/file/*
+  app.put("/api/channels/:channel/series/:series/file/*", {
+    schema: { description: "Write a file at the series level.", tags: ["editor"] },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { channel, series } = request.params as { channel: string; series: string };
+    const filePath = (request.params as any)["*"] ?? "";
+    const absPath = await resolveArtifactPath(root, channel, series, "", filePath);
+    if (!absPath) return reply.status(403).send({ error: "Path traversal not allowed" });
+    const content = (request.body as any)?.content ?? (request.body as string);
+    await fs.mkdir(path.dirname(absPath), { recursive: true });
+    await fs.writeFile(absPath, content);
+    const revision = computeRevision(Buffer.from(content));
+    return reply.send(JSON.stringify({ ok: true, revision, path: filePath }));
+  });
+}

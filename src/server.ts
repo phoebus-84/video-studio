@@ -5,7 +5,7 @@ import type { Config } from "./config/schema.js";
 import { registerRoutes } from "./routes/index.js";
 import { EventStreamManager } from "./events/bus.js";
 import { WorkspaceWatcher } from "./events/watcher.js";
-import { registerEditorRoutes } from "./routes/editor.js";
+import { registerEditorRoutes, registerChannelFileRoutes, registerSeriesFileRoutes } from "./routes/editor.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
 import fastifyStatic from "@fastify/static";
 import * as path from "node:path";
@@ -117,6 +117,8 @@ export async function createGateway(
     root: process.env.AVG_LIBRARY_ROOT ?? "./library",
     bus: events.bus,
   });
+  registerChannelFileRoutes(app, process.env.AVG_LIBRARY_ROOT ?? "./library");
+  registerSeriesFileRoutes(app, process.env.AVG_LIBRARY_ROOT ?? "./library");
   registerReviewRoutes(app, {
     root: process.env.AVG_LIBRARY_ROOT ?? "./library",
     bus: events.bus,
