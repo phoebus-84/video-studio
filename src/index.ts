@@ -61,6 +61,8 @@ export { HttpDownloader } from "./downloader.js";
 
 // Contracts
 export type { EndpointContract } from "./contracts/v1.js";
+export { createFalServer } from "./server.js";
+export type { FalServerHandle } from "./server.js";
 export { V1BaseContract, ProfileContract } from "./contracts/v1.js";
 
 // Profiles
