@@ -1,25 +1,63 @@
 <script lang="ts">
   import { episode } from "$lib/episode-store.svelte.ts";
+  import { getGatewayClient } from "$lib/gateway.svelte.ts";
   import type { ReviewThread } from "$lib/review-types";
   import { THREAD_STATUS_LABELS, AGENT_STATUS_LABELS } from "$lib/review-types";
 
-  // Threads from episode store (live) — fall back to empty
-  const threads = $derived(
-    episode.state.phase === "ready"
-      ? (episode.state.episode.reviews ?? []).map((r: any) => ({
-          id: r.id ?? `thread-${Date.now()}`,
-          anchor: r.anchor ?? "",
-          status: (r.status ?? "open") as ReviewThread["status"],
-          author: r.author ?? "unknown",
-          body: r.body ?? "",
-          agentStatus: (r.agentStatus ?? "idle") as ReviewThread["agentStatus"],
-          createdAt: r.createdAt ?? new Date().toISOString(),
-        })) as ReviewThread[]
-      : [] as ReviewThread[]
-  );
+  // Real threads from gateway API
+  let threads = $state<ReviewThread[]>([]);
+  let loading = $state(false);
+  let error = $state<string | null>(null);
 
-  let mutableThreads = $state<ReviewThread[]>([]);
-  $effect(() => { mutableThreads = [...threads]; });
+  interface RawThread {
+    id: string; anchor: string; status: string;
+    messages: Array<{ id: string; author: string; body: string;
+      timestamp: string; status?: string; agentStatus?: string }>;
+    createdAt: string;
+  }
+
+  async function fetchThreads() {
+    if (episode.state.phase !== "ready") return;
+    const ep = episode.state.episode;
+    const client = getGatewayClient();
+    loading = true;
+    error = null;
+    try {
+      const data = await client.fetchJSON(
+        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews`
+      ) as { threads: RawThread[] };
+
+      threads = (data.threads ?? []).map((t: RawThread) => ({
+        id: t.id,
+        anchor: { kind: t.anchor.split("/")[0] ?? "general", targetId: t.anchor },
+        status: (t.status ?? "open") as ReviewThread["status"],
+        author: (t.messages[0]?.author ?? "operator") as ReviewThread["author"],
+        body: t.messages[0]?.body ?? "",
+        messages: (t.messages ?? []).map((m: any) => ({
+          id: m.id,
+          author: (m.author ?? "operator") as "operator" | "pi",
+          text: m.body ?? "",
+          createdAt: m.timestamp ?? new Date().toISOString(),
+          agentStatus: (m.agentStatus ?? "idle") as any,
+        })),
+        agentStatus: (t.messages[t.messages.length - 1]?.agentStatus ?? "idle") as any,
+        createdAt: t.createdAt ?? new Date().toISOString(),
+      }));
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to load reviews";
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Fetch threads when episode changes
+  $effect(() => {
+    if (episode.state.phase === "ready") {
+      fetchThreads();
+    } else {
+      threads = [];
+    }
+  });
 
   let expandedId = $state<string | null>(null);
   let replyText = $state("");
@@ -28,37 +66,73 @@
     expandedId = expandedId === id ? null : id;
   }
 
-  function resolve(id: string) {
-    mutableThreads = mutableThreads.map((t) =>
-      t.id === id ? { ...t, status: "resolved" as const } : t,
-    );
+  async function resolve(id: string) {
+    const ep = episode.state.phase === "ready" ? episode.state.episode : null;
+    if (!ep) return;
+    const client = getGatewayClient();
+    // Find the last message in the thread
+    const thread = threads.find(t => t.id === id);
+    const lastMsg = thread?.messages[thread.messages.length - 1];
+    if (!lastMsg) return;
+
+    try {
+      await client.fetchJSON(
+        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews/${id}/messages/${lastMsg.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "resolved" }),
+        }
+      );
+      threads = threads.map((t) =>
+        t.id === id ? { ...t, status: "resolved" as const } : t,
+      );
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to resolve";
+    }
   }
 
-  function sendReply(threadId: string) {
+  async function sendReply(threadId: string) {
     if (!replyText.trim()) return;
-    mutableThreads = mutableThreads.map((t) => {
-      if (t.id !== threadId) return t;
-      return {
-        ...t,
-        messages: [
-          ...t.messages,
-          {
-            id: `msg-${crypto.randomUUID().slice(0, 8)}`,
-            author: "operator" as const,
-            text: replyText,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-        status: "open" as const,
+    const ep = episode.state.phase === "ready" ? episode.state.episode : null;
+    if (!ep) return;
+    const client = getGatewayClient();
+
+    try {
+      const data = await client.fetchJSON(
+        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews/${threadId}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ author: "operator", body: replyText }),
+        }
+      ) as any;
+
+      const newMsg = {
+        id: data.message?.id ?? `msg-${Date.now()}`,
+        author: "operator" as const,
+        text: replyText,
+        createdAt: new Date().toISOString(),
+        agentStatus: undefined as any,
       };
-    });
-    replyText = "";
+
+      threads = threads.map((t) => {
+        if (t.id !== threadId) return t;
+        return {
+          ...t,
+          messages: [...t.messages, newMsg],
+          status: "open" as const,
+        };
+      });
+      replyText = "";
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to send reply";
+    }
   }
 
   function sortedThreads(): ReviewThread[] {
-    return [...mutableThreads].sort((a, b) => {
-      /* Open/reopened first, then by recency. */
-      const order = { open: 0, reopened: 1, resolved: 2 };
+    return [...threads].sort((a, b) => {
+      const order: Record<string, number> = { open: 0, reopened: 1, resolved: 2 };
       return (
         (order[a.status] ?? 0) - (order[b.status] ?? 0) ||
         b.createdAt.localeCompare(a.createdAt)
@@ -66,14 +140,28 @@
     });
   }
 
-  const openCount = $derived(mutableThreads.filter((t) => t.status !== "resolved").length);
+  const openCount = $derived(threads.filter((t) => t.status !== "resolved").length);
 </script>
 
 <div class="inbox" aria-label="Review inbox">
   <div class="inbox-header">
     <h4 class="inbox-title">Reviews</h4>
-    <span class="inbox-count">{openCount} open</span>
+    {#if loading}
+      <span class="inbox-count">loading…</span>
+    {:else}
+      <span class="inbox-count">{openCount} open</span>
+    {/if}
   </div>
+
+  {#if error}
+    <div class="inbox-error">{error}</div>
+  {/if}
+
+  {#if !loading && threads.length === 0}
+    <div class="inbox-empty">
+      <p>No reviews yet. Select a scene and click "Request Review" to start a thread.</p>
+    </div>
+  {/if}
 
   <ol class="inbox-list">
     {#each sortedThreads() as thread (thread.id)}
@@ -97,15 +185,12 @@
                   <span class="inbox-msg-author">
                     {msg.author === "operator" ? "You" : "Pi"}
                   </span>
-                  {#if msg.action}
-                    <span class="inbox-msg-action">{msg.action}</span>
-                  {/if}
                   {#if msg.agentStatus}
                     <span
                       class="inbox-msg-agent"
                       data-status={msg.agentStatus}
                     >
-                      {AGENT_STATUS_LABELS[msg.agentStatus]}
+                      {AGENT_STATUS_LABELS[msg.agentStatus] ?? msg.agentStatus}
                     </span>
                   {/if}
                 </div>
@@ -167,6 +252,22 @@
   .inbox-count {
     font-size: var(--vs-text-xs);
     color: var(--vs-text-tertiary);
+  }
+
+  .inbox-error {
+    padding: var(--vs-space-2);
+    background: var(--vs-state-blocked-bg);
+    color: var(--vs-state-blocked);
+    border-radius: var(--vs-radius-sm);
+    font-size: var(--vs-text-xs);
+    margin-bottom: var(--vs-space-2);
+  }
+
+  .inbox-empty {
+    text-align: center;
+    color: var(--vs-text-tertiary);
+    font-size: var(--vs-text-xs);
+    padding: var(--vs-space-4);
   }
 
   .inbox-list {
@@ -265,15 +366,6 @@
 
   .inbox-msg[data-author="pi"] .inbox-msg-author {
     color: var(--vs-state-running);
-  }
-
-  .inbox-msg-action {
-    font-size: 10px;
-    text-transform: uppercase;
-    color: var(--vs-text-tertiary);
-    background: var(--vs-bg-inset);
-    padding: 0 var(--vs-space-1);
-    border-radius: var(--vs-radius-sm);
   }
 
   .inbox-msg-agent {

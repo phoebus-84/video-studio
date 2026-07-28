@@ -1,5 +1,7 @@
 <script lang="ts">
   import { assets } from "$lib/asset-store.svelte.ts";
+  import { episode } from "$lib/episode-store.svelte.ts";
+  import { getGatewayClient } from "$lib/gateway.svelte.ts";
   import type { AssetAttempt } from "$lib/asset-types";
 
   const group = $derived(assets.selectedGroup);
@@ -16,6 +18,36 @@
 
   function formatDate(iso: string): string {
     return new Date(iso).toLocaleString();
+  }
+
+  let regenerating = $state(false);
+  let regenError = $state<string | null>(null);
+
+  async function requestRegenerate() {
+    if (!group || episode.state.phase !== "ready") return;
+    const ep = episode.state.episode;
+    const client = getGatewayClient();
+    regenerating = true;
+    regenError = null;
+    try {
+      await client.fetchJSON(
+        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            anchor: `assets/${group.sceneId}`,
+            body: `Regenerate image for scene "${group.sceneTitle}". Original prompt: "${group.attempts[0]?.prompt ?? ""}"`,
+          }),
+        }
+      );
+      // Refresh reviews
+      await import("../review/ReviewInbox.svelte");
+    } catch (err) {
+      regenError = err instanceof Error ? err.message : "Failed to request regeneration";
+    } finally {
+      regenerating = false;
+    }
   }
 </script>
 
@@ -64,6 +96,19 @@
             <span class="ap-date">{formatDate(attempt.createdAt)}</span>
             <span class="ap-license">{attempt.license}</span>
           </div>
+
+          <div class="ap-actions">
+            <button
+              class="ap-regen-btn"
+              disabled={regenerating}
+              onclick={() => requestRegenerate()}
+            >
+              {regenerating ? "Requesting…" : "🔄 Regenerate"}
+            </button>
+          </div>
+          {#if regenError}
+            <div class="ap-error">{regenError}</div>
+          {/if}
         </button>
         </li>
       {/each}
@@ -210,5 +255,42 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .ap-actions {
+    margin-top: var(--vs-space-2);
+    padding-top: var(--vs-space-2);
+    border-top: 1px solid var(--vs-border);
+  }
+
+  .ap-regen-btn {
+    width: 100%;
+    padding: var(--vs-space-1) var(--vs-space-2);
+    border: 1px solid var(--vs-accent);
+    border-radius: var(--vs-radius-sm);
+    background: transparent;
+    color: var(--vs-accent);
+    font-family: var(--vs-font-sans);
+    font-size: var(--vs-text-xs);
+    cursor: pointer;
+    transition: background var(--vs-duration-fast);
+  }
+
+  .ap-regen-btn:hover:not(:disabled) {
+    background: var(--vs-accent-subtle);
+  }
+
+  .ap-regen-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .ap-error {
+    margin-top: var(--vs-space-1);
+    padding: var(--vs-space-1);
+    background: var(--vs-state-blocked-bg);
+    color: var(--vs-state-blocked);
+    border-radius: var(--vs-radius-sm);
+    font-size: 11px;
   }
 </style>

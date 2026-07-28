@@ -90,6 +90,39 @@ export class GatewayClient {
 
   /* ── internal ── */
 
+  /**
+   * Low-level fetch for endpoints not yet covered by typed methods
+   * (reviews, capabilities, etc.). Use this for POST/PATCH/DELETE.
+   */
+  async fetchJSON<T = any>(path: string, init?: RequestInit): Promise<T> {
+    const token = this.#tokenProvider();
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      ...(init?.headers as Record<string, string> ?? {}),
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
+      ...init,
+      headers,
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const err = body as ErrorResponse;
+      throw new GatewayClientError(
+        response.status,
+        err.error ?? "unknown",
+        err.message ?? response.statusText,
+        err.correlationId ?? "",
+      );
+    }
+
+    return response.json() as Promise<T>;
+  }
+
   async #get<T>(
     path: string,
     options?: { authenticated?: boolean },
