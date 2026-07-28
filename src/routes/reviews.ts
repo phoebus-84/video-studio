@@ -343,6 +343,49 @@ export function registerReviewRoutes(
       ));
     }
 
+  // ── PATCH thread-level resolve ─────────────────────────────────────
+
+  app.patch("/api/channels/:channel/series/:series/episodes/:episode/reviews/:threadId/resolve", {
+    schema: {
+      description: "Resolve an entire review thread.",
+      tags: ["reviews"],
+      params: {
+        type: "object",
+        properties: {
+          channel: { type: "string" },
+          series: { type: "string" },
+          episode: { type: "string" },
+          threadId: { type: "string" },
+        },
+        required: ["channel", "series", "episode", "threadId"],
+      },
+    },
+  }, async (request: FastifyRequest<{
+    Params: { channel: string; series: string; episode: string; threadId: string };
+  }>, reply: FastifyReply) => {
+    const { channel, series, episode, threadId } = request.params;
+    const filePath = threadFilePath(root, channel!, series!, episode!, threadId!);
+
+    let thread: ReviewThread;
+    try {
+      const raw = await fs.readFile(filePath, "utf-8");
+      thread = JSON.parse(raw);
+    } catch (e: any) {
+      if (e.code === "ENOENT") return reply.status(404).send({ error: "Thread not found", threadId });
+      return reply.status(500).send({ error: `Failed to read: ${e.message}` });
+    }
+
+    // Mark all messages as resolved
+    for (const msg of thread.messages) {
+      msg.status = "resolved";
+    }
+    thread.updatedAt = new Date().toISOString();
+    await fs.writeFile(filePath, JSON.stringify(thread, null, 2), "utf-8");
+
+    if (bus) {
+      bus.publish(createEvent("review", "thread-resolved", { threadId }, `${channel}/${series}/${episode}`));
+    }
+
     return reply.send(thread);
   });
 }
