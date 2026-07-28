@@ -16,9 +16,9 @@ inputs:
     type: application/json
     description: Per-scene timing data
 outputs:
-  - output.mp4:
+  - final.mp4:
       kind: video/mp4
-      description: Final rendered video
+      description: Final rendered video (must be named final.mp4 for GUI visibility)
 capabilities:
   - ffmpeg
 ---
@@ -34,6 +34,16 @@ Assemble the final video using FFmpeg.
 4. Burn in captions
 5. Add transitions between scenes
 6. Encode at 1080p 30fps H.264
+
+## Output Naming
+
+The final video **must** be named `final.mp4`. The GUI only detects files
+with this exact name. Create a copy if the compose step produces a different
+filename:
+
+```bash
+cp artifacts/output.mp4 artifacts/final.mp4
+```
 
 ## Quality Checks
 - All scenes match duration from timing.json
