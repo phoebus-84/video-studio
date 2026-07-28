@@ -8,6 +8,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { WebSocket } from "ws";
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -104,8 +106,27 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   let ws: WebSocket | null = null;
   let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let currentEpisodeSlug: string | null = null;
+
+  /** Resolve the gateway token from env or gateway config file. */
+  function resolveToken(): string {
+    if (process.env.AVG_GATEWAY_TOKEN) return process.env.AVG_GATEWAY_TOKEN;
+    const cwd = process.cwd();
+    const candidates = [
+      resolvePath(cwd, "video-studio-gateway", ".gateway-token"),
+      resolvePath(cwd, "..", "video-studio-gateway", ".gateway-token"),
+      resolvePath(cwd, ".gateway-token"),
+    ];
+    for (const p of candidates) {
+      try {
+        const tok = readFileSync(p, "utf-8").trim();
+        if (tok) return tok;
+      } catch { /* not found */ }
+    }
+    return "dev-token";
+  }
+
   const gatewayUrl = process.env.AVG_GATEWAY_URL ?? "ws://127.0.0.1:5198/ws";
-  const gatewayToken = process.env.AVG_GATEWAY_TOKEN ?? "dev-token";
+  const gatewayToken = resolveToken();
 
   /** Emit an update that can notify Pi of gateway events. */
   function notify(update: { type: string; message: string }): void {
