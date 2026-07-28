@@ -25,8 +25,17 @@ class EditorStore {
     this.artifact !== null && this.buffer !== this.artifact.text,
   );
 
-  /** Open an artifact for editing. */
-  open(artifact: ArtifactContent) {
+  /** Open an artifact for editing, or close the editor (null). */
+  open(artifact: ArtifactContent | null) {
+    if (artifact === null) {
+      this.artifact = null;
+      this.buffer = "";
+      this.saveState = "clean";
+      this.diagnostics = [];
+      this.conflict = null;
+      this.errorMessage = "";
+      return;
+    }
     this.artifact = artifact;
     this.buffer = artifact.text;
     this.saveState = "clean";

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { editor } from "$lib/editor-store.svelte.ts";
+  import { getGatewayClient } from "$lib/gateway.svelte.ts";
   import { SAVE_LABELS } from "$lib/editor-types";
 
   const label = $derived(SAVE_LABELS[editor.saveState]);
@@ -10,17 +11,49 @@
   );
 
   function onSave() {
-    /* Production wiring: editor.save(gatewaySaveFn) */
-    editor.save(async (_text, _rev) => {
-      /* Mock: always succeed with a new revision. */
-      await new Promise((r) => setTimeout(r, 50));
-      return {
-        ok: true,
-        revision: {
-          etag: crypto.randomUUID(),
-          updatedAt: new Date().toISOString(),
-        },
-      };
+    const artifact = editor.artifact;
+    if (!artifact) return;
+    const extra = artifact as any;
+    const client = getGatewayClient();
+
+    editor.save(async (text, _rev) => {
+      try {
+        const result = await client.fetchJSON(
+          `/api/channels/${extra.channel}/series/${extra.series}/episodes/${extra.episode}/file/${extra.filePath}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "text/plain" },
+            body: text,
+          }
+        ) as any;
+        return {
+          ok: true,
+          revision: {
+            etag: result.etag ?? crypto.randomUUID(),
+            updatedAt: result.updatedAt ?? new Date().toISOString(),
+          },
+        };
+      } catch (err: any) {
+        if (err?.status === 409) {
+          // Conflict — fetch current and show resolver
+          const current = await client.fetchJSON(
+            `/api/channels/${extra.channel}/series/${extra.series}/episodes/${extra.episode}/file/${extra.filePath}`
+          ) as any;
+          return {
+            ok: false,
+            conflict: {
+              ours: text,
+              theirs: current.text ?? "",
+              base: artifact.text,
+              serverRevision: {
+                etag: current.etag ?? "",
+                updatedAt: current.updatedAt ?? new Date().toISOString(),
+              },
+            },
+          };
+        }
+        return { ok: false, error: err?.message ?? "Save failed" };
+      }
     });
   }
 
