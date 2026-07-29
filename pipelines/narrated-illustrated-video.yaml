@@ -13,6 +13,8 @@ pipeline:
       version: "1.0.0"
     - id: ffmpeg
       version: "1.0.0"
+    - id: terminal-recording
+      version: "1.0.0"
   stages:
     - id: brief
       name: "Creative Brief"
@@ -70,6 +72,28 @@ pipeline:
           version: "0.1.0"
       depends_on:
         - script
+
+    - id: terminal-recordings
+      name: "Terminal Recordings"
+      description: "Render VHS terminal recordings for code walkthrough and CLI demo scenes"
+      capability: terminal-recording
+      inputs:
+        - contract: art-direction.json
+          version: "1.0.0"
+        - contract: script.md
+          version: "1.0.0"
+      outputs:
+        - contract: tapes/
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 2
+      skills:
+        - skill: vhs-terminal-recording
+          version: "0.1.0"
+      depends_on:
+        - art-direction
 
     - id: illustrations
       name: "Illustrations"
@@ -153,6 +177,9 @@ pipeline:
       inputs:
         - contract: illustrations/
           version: "1.0.0"
+        - contract: tapes/
+          version: "1.0.0"
+          optional: true
         - contract: narration.mp3
           version: "1.0.0"
         - contract: captions.srt
@@ -174,6 +201,7 @@ pipeline:
           version: "0.1.0"
       depends_on:
         - illustrations
+        - terminal-recordings
         - narration
         - captions
         - timing
