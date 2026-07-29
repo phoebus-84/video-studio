@@ -1,0 +1,55 @@
+{
+  "briefArtifact": {
+    "apiVersion": "studio.video/v1alpha1",
+    "artifactId": "art_VALID01EXAMPLE000000000000",
+    "kind": "brief",
+    "revision": 1,
+    "path": "artifacts/brief.md",
+    "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "provenance": {
+      "createdAt": "2026-07-29T09:00:00Z",
+      "generator": { "provider": "pi-agent", "model": "claude" }
+    }
+  },
+  "scriptArtifact": {
+    "apiVersion": "studio.video/v1alpha1",
+    "artifactId": "art_VALID02EXAMPLE000000000000",
+    "kind": "script",
+    "revision": 3,
+    "path": "artifacts/script.md",
+    "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "provenance": {
+      "createdAt": "2026-07-29T09:30:00Z",
+      "generator": { "provider": "pi-agent", "model": "claude" },
+      "inputs": [
+        { "id": "art_VALID01EXAMPLE000000000000", "revision": 1 }
+      ]
+    }
+  },
+  "tapeArtifact": {
+    "apiVersion": "studio.video/v1alpha1",
+    "artifactId": "art_VALID03EXAMPLE000000000000",
+    "kind": "tape",
+    "revision": 2,
+    "path": "artifacts/tapes/s5.tape",
+    "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "tape": {
+      "sceneId": "s5",
+      "outputFormat": "mp4",
+      "vhsVersion": "0.11.0",
+      "themeId": "dyne",
+      "estimatedDurationSeconds": 37
+    },
+    "provenance": {
+      "createdAt": "2026-07-29T10:00:00Z",
+      "generator": { "provider": "pi-agent", "model": "claude" },
+      "inputs": [
+        { "id": "art_VALID02EXAMPLE000000000000", "revision": 3 }
+      ]
+    }
+  },
+  "catalog": {
+    "artifacts": [],
+    "updatedAt": "2026-07-29T10:00:00Z"
+  }
+}

@@ -9,9 +9,9 @@ This catalog assigns every durable wire or workspace concept to one contract fam
 | `identity` | Stable IDs, revisions, content hashes, provenance, relative paths, timestamps, money | contracts library | every module | `vwc-5q0.2` |
 | `workspace` | Channel, Series, Episode, settings layers, Source Snapshot, Voice Profile, Visual Bible, Current Deliverable pointer | runtime and editors | runtime, gateway, Pi, web | `vwc-5q0.3` |
 | `pipeline` | Pipeline, Stage Definition, Pipeline Patch, Provider Binding, Pipeline Snapshot | pipeline authors and runtime | runtime, Pi, gateway, web | `vwc-5q0.4` |
-| `editorial-artifact` | Editorial Artifact envelope, brief, adapted story, script, TTS script, Art Direction Pack | Pi and editors | runtime, Pi, web, render tools | `vwc-5q0.5` |
+| `editorial-artifact` | Editorial Artifact envelope, brief, adapted story, script, TTS script, Art Direction Pack, Tape file | Pi and editors | runtime, Pi, web, render tools | `vwc-5q0.5`, `vwc-5q0.16` |
 | `production-plan` | Scene Plan, Narration Segment, prompt record, Edit Timeline source references | Pi | runtime, adapters, composer, web | `vwc-5q0.5`, `vwc-5q0.6` |
-| `asset` | Asset Attempt, Asset Manifest, Selected Asset, media probe summary | provider adapters and renderers | runtime, Pi, composer, gateway, web | `vwc-5q0.5` |
+| `asset` | Asset Attempt, Asset Manifest, Selected Asset, VideoAttempt, media probe summary | provider adapters and renderers | runtime, Pi, composer, gateway, web | `vwc-5q0.5`, `vwc-5q0.15` |
 | `provider-job` | Capability request, persisted provider job, progress, cancellation, normalized result | provider adapters and TTS worker | Pi, runtime, gateway, web | `vwc-5q0.7` |
 | `timeline` | Canvas, scene placements, visual primitives, overlays, captions, audio mix, output profile | Pi and editors | FFmpeg composer, runtime, web | `vwc-5q0.6` |
 | `event` | Journal Event envelope, correlation and causation, typed lifecycle payloads, cursor | runtime and services | gateway, projections, web, Pi | `vwc-5q0.7` |
