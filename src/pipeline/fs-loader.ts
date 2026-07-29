@@ -57,9 +57,10 @@ function toArtifactRefs(
       : item.contract.endsWith(".json") ? "json"
       : item.contract.endsWith(".mp3") || item.contract.endsWith(".wav") ? "audio"
       : item.contract.endsWith(".mp4") ? "video"
+      : item.contract.endsWith(".tape") ? "tape"
       : item.contract.endsWith(".srt") ? "captions"
       : item.contract.endsWith(".png") || item.contract.endsWith(".jpg") ? "image"
-      : item.contract.endsWith("/") ? "directory"
+      : item.contract.endsWith("/") || item.contract.endsWith(".tape") ? "directory"
       : "unknown",
     label: item.contract,
   }));
