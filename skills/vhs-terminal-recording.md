@@ -270,6 +270,53 @@ Show a reusable .tape snippet here
 ```
 ```
 
+### 2026-07-29 — tomb: s4a/s4b/s4c/s5 — Iteration Zero: Full VHS rebuild
+
+**Context**: Rebuilt the Tomb episode using real VHS terminal recordings instead of PIL-generated static code screenshots. First end-to-end test of the VHS integration.
+
+**What worked**:
+- VHS renders clean terminal text with antialiasing at any resolution
+- The Dyne theme (purple cursor, orange keywords on black) looks professional
+- Freeze-frame padding (`tpad=stop_mode=clone`) works perfectly for matching narration duration
+- Image → video → image transitions are seamless when normalized to same format
+- The `.tape` DSL is expressive enough for realistic terminal demos
+
+**What didn't**:
+- VHS renders are 13-36s but narration is 30-43s — padding is always needed
+- The `ffmpeg-video-composer` module's new video mode had a filter error; worked around with manual concat
+- `pva_render_terminal` tool not available without Pi restart — used raw `vhs` CLI directly
+- The compose command needs per-segment normalization (image loop → mp4, video freeze → mp4) before concat
+
+**Durations**:
+| Scene | VHS | Narration | Pad |
+|-------|-----|-----------|-----|
+| s4a (validation) | 13.6s | 30.0s | +16.4s |
+| s4b (dig/forge/lock) | 18.8s | 35.0s | +16.2s |
+| s4c (FIDO2) | 16.0s | 31.0s | +15.0s |
+| s5 (lifecycle demo) | 36.5s | 42.8s | +6.3s |
+
+**Decision**: Generate longer `.tape` files that better match narration duration. Add more `Sleep` commands, show more code context, and include commentary in terminal. Aim for tape duration at ~80% of narration length.
+
+**Tape patterns for future episodes**:
+```
+# For code walkthrough: show source, pause, show next section
+Type "cat -n /path/to/source | sed -n 'START,ENDp'"
+Enter
+Sleep 5s
+# Repeat for each code section
+
+# For terminal demos: realistic pacing with pauses
+Type "$ command"
+Sleep 300ms
+Enter
+Sleep 500ms
+Type "# Comment on the output"
+Enter
+Sleep 2s
+```
+
+---
+
 ### 2026-07-29 — tomb: s4a/s4b/s4c — First VHS integration attempt
 
 **Context**: Replacing PIL-generated static code screenshots with real terminal recordings for Tomb episode code walkthrough.
