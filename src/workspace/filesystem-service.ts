@@ -141,25 +141,53 @@ export class FileSystemWorkspaceService implements WorkspaceService {
               enriched.narration = null;
             }
 
-            // Asset: check for image files named after scene
+            // Asset: check for image files in assets/images/ and video files in assets/tapes/
             try {
-              const assetsDir = path.join(epPath, "artifacts");
-              const imgFiles = ["jpg", "jpeg", "png", "webp"].flatMap(ext => [
-                path.join(assetsDir, `${sid}.${ext}`),
-                path.join(assetsDir, `scene-${sid}.${ext}`),
-              ]);
+              const imageDirs = [
+                path.join(epPath, "assets", "images"),
+                path.join(epPath, "artifacts"), // backward compat
+              ];
+              const tapeDir = path.join(epPath, "assets", "tapes");
+              const imageExts = ["jpg", "jpeg", "png", "webp"];
+              const videoExts = ["mp4", "webm"];
+
               let foundAsset: Record<string, unknown> | null = null;
-              for (const imgPath of imgFiles) {
+
+              // Check video first (preferred for terminal demo scenes)
+              for (const ext of videoExts) {
+                const videoPath = path.join(tapeDir, `${sid}.${ext}`);
                 try {
-                  const stat = await fs.stat(imgPath);
+                  const stat = await fs.stat(videoPath);
                   foundAsset = {
-                    file: path.basename(imgPath),
-                    url: `/library/${channel}/${series}/${episode}/artifacts/${path.basename(imgPath)}`,
+                    file: `${sid}.${ext}`,
+                    url: `/library/${channel}/${series}/${episode}/assets/tapes/${sid}.${ext}`,
                     size: stat.size,
                     generatedAt: stat.mtime.toISOString(),
+                    kind: "video",
                   };
                   break;
                 } catch {}
+              }
+
+              // Fall back to image
+              if (!foundAsset) {
+                for (const dir of imageDirs) {
+                  for (const ext of imageExts) {
+                    const imgPath = path.join(dir, `${sid}.${ext}`);
+                    try {
+                      const stat = await fs.stat(imgPath);
+                      foundAsset = {
+                        file: `${sid}.${ext}`,
+                        url: `/library/${channel}/${series}/${episode}/${path.relative(epPath, path.dirname(imgPath))}/${sid}.${ext}`,
+                        size: stat.size,
+                        generatedAt: stat.mtime.toISOString(),
+                        kind: "image",
+                      };
+                      break;
+                    } catch {}
+                  }
+                  if (foundAsset) break;
+                }
               }
               enriched.asset = foundAsset;
             } catch {
