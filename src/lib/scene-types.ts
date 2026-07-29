@@ -16,6 +16,8 @@ export interface SceneSummary {
   captionsStatus: "idle" | "ready" | "completed" | "missing" | "stale";
   transition: TransitionType | string | null;
   stale: boolean;
+  /** Scene kind for preview component selection. */
+  kind?: SceneKind | string;
   /** Enriched fields from gateway Phase 1 */
   assetUrl?: string | null;
   narrationUrl?: string | null;
@@ -34,6 +36,24 @@ export type SceneRole =
   | "wolf"
   | "woodcutter"
   | "grandmother";
+
+export type SceneKind = "title-card" | "illustration" | "diagram" | "terminal-demo" | "end-card";
+
+export const SCENE_KIND_ICONS: Record<SceneKind, string> = {
+  "title-card": "🎬",
+  "illustration": "🎨",
+  "diagram": "📊",
+  "terminal-demo": "▸",
+  "end-card": "🏁",
+};
+
+export const SCENE_KIND_LABELS: Record<SceneKind, string> = {
+  "title-card": "Title Card",
+  "illustration": "Illustration",
+  "diagram": "Diagram",
+  "terminal-demo": "Terminal Demo",
+  "end-card": "End Card",
+};
 
 export type TransitionType = "cut" | "dissolve" | "wipe" | "slide";
 

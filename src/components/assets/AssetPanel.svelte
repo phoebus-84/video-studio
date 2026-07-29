@@ -123,20 +123,26 @@
         >
           <div class="ap-card-header">
             <span class="ap-kind-badge" data-kind={attempt.kind}>
-              {attempt.kind === "image" ? "🖼" : "🔊"}
+              {attempt.kind === "image" ? "🖼" : attempt.kind === "video" ? "▶" : "🔊"}
             </span>
             <span class="ap-id">{attempt.id}</span>
             {#if attempt.selected}
               <span class="ap-selected-badge">Selected</span>
             {/if}
             {#if !attempt.fileAvailable}
-              <span class="ap-missing-badge">No {attempt.kind === "image" ? "image" : "audio"}</span>
+              <span class="ap-missing-badge">No {attempt.kind === "image" ? "image" : attempt.kind === "video" ? "video" : "audio"}</span>
             {/if}
           </div>
 
           {#if attempt.kind === "image" && attempt.imageUrl}
             <div class="ap-thumb">
               <img src={attempt.imageUrl} alt={attempt.sceneId} loading="lazy" />
+            </div>
+          {:else if attempt.kind === "video" && attempt.videoUrl}
+            <div class="ap-thumb">
+              <video src={attempt.videoUrl} muted loop playsinline controls preload="metadata"
+                style="width:100%;height:100%;object-fit:contain;background:#0D0D0D;">
+              </video>
             </div>
           {:else if attempt.kind === "audio" && attempt.audioUrl}
             <div class="ap-audio">

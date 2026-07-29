@@ -1,7 +1,7 @@
 <script lang="ts">
   import { scenes } from "$lib/scene-store.svelte.ts";
   import { assets as assetStore } from "$lib/asset-store.svelte.ts";
-  import { ROLE_LABELS, TRANSITION_LABELS } from "$lib/scene-types";
+  import { TRANSITION_LABELS, SCENE_KIND_LABELS, type SceneKind } from "$lib/scene-types";
 
   function formatTime(sec: number): string {
     const m = Math.floor(sec / 60);
@@ -20,6 +20,26 @@
     if (status === "generating") return "◎";
     return "—";
   }
+
+  function assetIcon(scene: (typeof scenes.scenes)[number]): string {
+    if (scene.assetUrl) {
+      // Determine from scene kind or URL extension
+      if (scene.kind === "terminal-demo" || scene.assetUrl.endsWith(".mp4")) return "▶";
+      return "🖼";
+    }
+    return "—";
+  }
+
+  function detectSceneKind(scene: (typeof scenes.scenes)[number]): SceneKind | undefined {
+    if (scene.kind && (scene.kind as string) in SCENE_KIND_LABELS) return scene.kind as SceneKind;
+    // Heuristic detection from intent keywords
+    const intent = (scene.intent ?? "").toLowerCase();
+    if (/terminal|shell|cli|command|code walkthrough|screencast/.test(intent)) return "terminal-demo";
+    if (/title card|opener/.test(intent)) return "title-card";
+    if (/end card|outro/.test(intent)) return "end-card";
+    if (/diagram|architecture|layered/.test(intent)) return "diagram";
+    return "illustration";
+  }
 </script>
 
 <div class="storyboard" aria-label="Scene storyboard">
@@ -36,7 +56,7 @@
         <tr>
           <th aria-label="Scene number">#</th>
           <th>Scene</th>
-          <th>Role</th>
+          <th>Kind</th>
           <th>Duration</th>
           <th>Asset</th>
           <th>Narration</th>
@@ -65,11 +85,11 @@
               <span class="sb-scene-title">{scene.title}</span>
               <span class="sb-intent">{scene.intent}</span>
             </td>
-            <td class="sb-cell sb-role">{ROLE_LABELS[scene.role] ?? scene.role}</td>
+            <td class="sb-cell sb-kind">{SCENE_KIND_LABELS[detectSceneKind(scene)] ?? detectSceneKind(scene)}</td>
             <td class="sb-cell sb-time">{formatTime(scene.narrationDuration ?? scene.durationSeconds)}</td>
             <td class="sb-cell">
               {#if scene.assetUrl}
-                <span class="sb-asset-selected">✓</span>
+                <span class="sb-asset-selected">{assetIcon(scene)}</span>
               {:else if scene.selectedAssetId}
                 <span class="sb-asset-selected">{scene.selectedAssetId.slice(0, 8)}</span>
               {:else}
