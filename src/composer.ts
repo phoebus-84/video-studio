@@ -127,7 +127,7 @@ export async function composeVideo(
       ? `:fontfile='${options.captionFont}'`
       : "";
     videoLabel = "[subtitled]";
-    filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0[voutraw];[voutraw]subtitles='${srtPath}':fps=fps=30,format=yuv420p,force_style='FontSize=36,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,BorderStyle=1,Alignment=2,MarginV=80'${fontOpt}${videoLabel}`;
+    filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0[voutraw];[voutraw]subtitles='${srtPath}':force_style='FontSize=36,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,BorderStyle=1,Alignment=2,MarginV=80'${fontOpt},fps=${fps},format=yuv420p${videoLabel}`;
   } else {
     filterComplex += `;${concatInputs}concat=n=${scenes.length}:v=1:a=0${videoLabel}`;
   }
@@ -135,6 +135,15 @@ export async function composeVideo(
   // FFmpeg command
   const args: string[] = [
     ...inputs,
+  ];
+
+  // Audio input must come before output options (per-input option scoping)
+  const audioInputIndex = scenes.length;
+  if (options.audioPath) {
+    args.push("-i", options.audioPath);
+  }
+
+  args.push(
     "-filter_complex", filterComplex,
     "-map", videoLabel,
     "-c:v", options.preview ? "libx264" : "libx264",
@@ -143,11 +152,10 @@ export async function composeVideo(
     "-pix_fmt", "yuv420p",
     "-r", String(fps),
     "-movflags", "+faststart",
-  ];
+  );
 
-  // Add audio if provided
   if (options.audioPath) {
-    args.push("-i", options.audioPath, "-shortest", "-map", "1:a");
+    args.push("-map", `${audioInputIndex}:a`, "-c:a", "aac", "-b:a", "128k", "-shortest");
   }
 
   args.push("-y", options.output);
@@ -160,7 +168,11 @@ export async function composeVideo(
   await fs.mkdir(path.dirname(options.output), { recursive: true });
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegBin, args, { stdio: ["ignore", "pipe", "ignore"] });
+    const proc = spawn(ffmpegBin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stderrTail = "";
+    proc.stderr?.on("data", (chunk) => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-4000);
+    });
 
     proc.on("close", async (code) => {
       // Clean up temp SRT file
@@ -169,7 +181,7 @@ export async function composeVideo(
       }
 
       if (code !== 0) {
-        reject(new Error(`FFmpeg exited with code ${code}`));
+        reject(new Error(`FFmpeg exited with code ${code}${stderrTail ? `:\n${stderrTail}` : ""}`));
         return;
       }
 
