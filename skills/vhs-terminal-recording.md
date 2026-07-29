@@ -397,3 +397,20 @@ vhs --version      # >= 0.11.0
 ttyd --version     # any recent version
 fc-list | grep JetBrains  # JetBrains Mono installed
 ```
+
+---
+
+## Key Production Learnings (Tomb Iteration Zero)
+
+**Voice Model**: The 1.7B 8-bit TTS model only activates when `instruct` is passed. Without it, silently falls back to 0.6B 4-bit. Always pass `instruct` on every synthesis call.
+
+**VHS Mock Verification**: Mock executables must match the command name exactly (`tomb` not `tomb-mock.sh`) and be in a directory on PATH. Verify by running commands in shell before creating tapes.
+
+**VHS Output Verification**: Extract frames with `ffmpeg -i tape.mp4 -ss N -vframes 1 frame.jpg` and OCR with `tesseract` to verify terminal content before audio sync.
+
+**Duration Workflow**: 1) Narration first → measure exact durations. 2) Design VHS tapes to fit. 3) Freeze-frame for shorter VHS. 4) Accept trim for longer VHS.
+
+**VHS Syntax**: `Output` takes bare filename; `Clear` not a command (use `Type "clear"`+`Enter`); `Set Theme` JSON must be single-line inline.
+
+**TTS Worker**: Health shows `none` even when model loaded. Verify real audio with `max_amp > 100` check on WAV samples.
+
