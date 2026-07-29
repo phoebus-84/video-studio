@@ -326,6 +326,82 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     },
   });
 
+  // --- Tool: pva_render_terminal (via VHS) -----------------------------
+
+  pi.registerTool({
+    name: "pva_render_terminal",
+    label: "Render Terminal Recording",
+    description: "Render a VHS terminal recording from a .tape file. Saves MP4 to episode assets/tapes/.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      sceneId: Type.String({ description: "Scene ID (e.g. s4a, s5)" }),
+      tapeContent: Type.Optional(Type.String({ description: "Inline .tape file content (alternative to tapePath)" })),
+      tapePath: Type.Optional(Type.String({ description: "Path to existing .tape file relative to episode" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const dir = episodeDir(params.channel, params.series, params.episode);
+        const tapesDir = join(dir, "artifacts", "tapes");
+        mkdirSync(tapesDir, { recursive: true });
+
+        // Determine tape content
+        let tapeContent: string;
+        if (params.tapeContent) {
+          tapeContent = params.tapeContent;
+        } else if (params.tapePath) {
+          const { readFileSync } = await import("node:fs");
+          tapeContent = readFileSync(join(dir, params.tapePath), "utf-8");
+        } else {
+          throw new Error("Either tapeContent or tapePath is required");
+        }
+
+        // Write .tape file
+        const tapeFile = join(tapesDir, `${params.sceneId}.tape`);
+        writeFileSync(tapeFile, tapeContent, "utf-8");
+
+        // Run VHS from within the tapes directory
+        const { execSync } = await import("node:child_process");
+        const cwd = tapesDir;
+        execSync(`vhs ${params.sceneId}.tape`, { cwd, stdio: "pipe", timeout: 120_000 });
+
+        // Move output to assets/tapes/
+        const assetsTapesDir = join(dir, "assets", "tapes");
+        mkdirSync(assetsTapesDir, { recursive: true });
+        const srcMp4 = join(tapesDir, `${params.sceneId}.mp4`);
+        const destMp4 = join(assetsTapesDir, `${params.sceneId}.mp4`);
+
+        if (!existsSync(srcMp4)) {
+          throw new Error(`VHS render did not produce ${params.sceneId}.mp4`);
+        }
+
+        const { copyFileSync, statSync } = await import("node:fs");
+        copyFileSync(srcMp4, destMp4);
+
+        // Probe duration
+        const probeOut = execSync(
+          `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1 "${destMp4}"`,
+          { encoding: "utf-8" },
+        ).toString();
+        const durMatch = probeOut.match(/duration=([\d.]+)/);
+        const durationSec = durMatch ? parseFloat(durMatch[1]!) : 0;
+        const fileSize = statSync(destMp4).size;
+
+        return {
+          content: [{ type: "text" as const, text: `✅ ${params.sceneId} — ${durationSec.toFixed(1)}s, ${(fileSize / 1024).toFixed(0)}KB → assets/tapes/${params.sceneId}.mp4` }],
+          details: { outputPath: destMp4, tapePath: tapeFile, durationSec, fileSize },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
   // --- Tool: pva_render_graphics (via studio-graphics-renderer) -----------
 
   pi.registerTool({
@@ -470,6 +546,15 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         caps["video-composition"] = { available: true, detail: ver || "ffmpeg available" };
       } catch {
         caps["video-composition"] = { available: false, detail: "ffmpeg not found" };
+      }
+
+      // VHS terminal recording
+      try {
+        const { execSync } = await import("node:child_process");
+        const vhsVer = execSync("vhs --version 2>&1", { encoding: "utf-8" }).toString().trim();
+        caps["terminal-recording"] = { available: true, detail: vhsVer || "vhs available" };
+      } catch {
+        caps["terminal-recording"] = { available: false, detail: "vhs not installed (brew install vhs ttyd)" };
       }
 
       // Graphics
