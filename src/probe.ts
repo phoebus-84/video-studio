@@ -16,6 +16,8 @@ export interface MediaProbe {
   channels: number | null;
   codec: string | null;
   fileSize: number;
+  /** Whether the video can be seamlessly looped (first and last frames identical). */
+  loopable: boolean | null;
   raw: Record<string, unknown> | null;
 }
 
@@ -51,10 +53,11 @@ export async function probeMedia(
     "-show_format", "-show_streams", filePath,
   ]);
 
-  const empty = {
+  const empty: MediaProbe = {
     path: filePath, type: "unknown" as const, format: "unknown",
     durationSec: null, width: null, height: null, fps: null,
-    sampleRate: null, channels: null, codec: null, fileSize, raw: null,
+    sampleRate: null, channels: null, codec: null, fileSize,
+    loopable: null, raw: null,
   };
 
   if (result.exitCode !== 0) return empty;
@@ -102,7 +105,9 @@ export async function probeMedia(
 
   return {
     path: filePath, type, format: formatName, durationSec,
-    width, height, fps, sampleRate, channels, codec, fileSize, raw,
+    width, height, fps, sampleRate, channels, codec, fileSize,
+    loopable: type === "video" ? null : null, // Set by caller: requires frame comparison
+    raw,
   };
 }
 

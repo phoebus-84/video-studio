@@ -15,10 +15,15 @@ import { createHash } from "node:crypto";
 
 export interface SceneInput {
   id: string;
-  imagePath: string;
+  /** Path to static image (jpg/png). Mutually exclusive with videoPath. */
+  imagePath?: string;
+  /** Path to video file (mp4). Mutually exclusive with imagePath. */
+  videoPath?: string;
   durationSec: number;
   title?: string;
   transition?: "cut" | "fade" | "dissolve";
+  /** If true and video is shorter than duration, freeze on last frame. Default: true. */
+  freezeOnEnd?: boolean;
 }
 
 export interface CaptionSegment {
@@ -78,12 +83,36 @@ export async function composeVideo(
   const inputs: string[] = [];
 
   // Each scene: scale to target, add title text, then concat
+  // Image scenes: loop static image for duration
+  // Video scenes: use video directly, trim or freeze-frame to match duration
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i]!;
-    inputs.push("-loop", "1", "-t", String(scene.durationSec), "-i", scene.imagePath);
+    if (scene.videoPath) {
+      // Video scene: input the mp4 directly
+      inputs.push("-i", scene.videoPath);
+    } else if (scene.imagePath) {
+      // Image scene: loop static image
+      inputs.push("-loop", "1", "-t", String(scene.durationSec), "-i", scene.imagePath);
+    } else {
+      throw new Error(`Scene ${scene.id}: either imagePath or videoPath is required`);
+    }
   }
 
-  let filterComplex = scenes.map((_, i) => `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:${bg},setsar=1[v${i}]`).join(";");
+  let filterComplex = scenes.map((scene, i) => {
+    if (scene.videoPath) {
+      // Video: trim to duration, then freeze on last frame if shorter
+      const freezeOnEnd = scene.freezeOnEnd !== false;
+      if (freezeOnEnd) {
+        // Trim to duration: play video, freeze last frame for remaining time
+        return `[${i}:v]trim=duration=${scene.durationSec},setpts=PTS-STARTPTS,fps=${fps},format=yuv420p,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:${bg},setsar=1,tpad=stop_mode=clone:stop_duration=9999:start_duration=0,trim=duration=${scene.durationSec},setpts=PTS-STARTPTS[v${i}]`;
+      } else {
+        return `[${i}:v]trim=duration=${scene.durationSec},setpts=PTS-STARTPTS,fps=${fps},format=yuv420p,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:${bg},setsar=1[v${i}]`;
+      }
+    } else {
+      // Image: scale and pad
+      return `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:${bg},setsar=1[v${i}]`;
+    }
+  }).join(";");
 
   // ── Captions as SRT subtitle overlay ───────────────────────────────────
   let srtPath: string | null = null;
@@ -203,7 +232,7 @@ async function main() {
   const scenes: SceneInput[] = [
     { id: "s1", imagePath: `${imageDir}/s1.jpg`, durationSec: 10, title: "Opening Hook" },
     { id: "s2", imagePath: `${imageDir}/s2.jpg`, durationSec: 10, title: "Superposition" },
-    { id: "s3", imagePath: `${imageDir}/s3.jpg`, durationSec: 10, title: "Entanglement" },
+    { id: "s3", videoPath: `${imageDir}/s3.mp4`, durationSec: 15, title: "Terminal Demo" },
     { id: "s4", imagePath: `${imageDir}/s4.jpg`, durationSec: 10, title: "Quantum vs Classical" },
     { id: "s5", imagePath: `${imageDir}/s5.jpg`, durationSec: 10, title: "Applications" },
     { id: "s6", imagePath: `${imageDir}/s6.jpg`, durationSec: 10, title: "Challenges" },
