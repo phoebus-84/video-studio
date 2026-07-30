@@ -9,7 +9,9 @@
     "lint:pipeline": "node lint/validate-pipeline.js",
     "lint:skill": "node lint/validate-skill.js",
     "lint": "npm run lint:pipeline -- pipelines/narrated-illustrated-video.yaml pipelines/fairy-tale-adaptation.yaml pipelines/repository-documentation.yaml fixtures/valid/pipeline-basic.yaml && npm run lint:skill -- fixtures/valid/skill-basic.yaml",
-    "lint:check-anti-patterns": "npm run lint:pipeline -- fixtures/invalid/pipeline-leaked-orchestration.yaml fixtures/invalid/pipeline-empty-stages.yaml; npm run lint:skill -- fixtures/invalid/skill-missing-frontmatter.yaml"
+    "lint:check-anti-patterns": "npm run lint:pipeline -- fixtures/invalid/pipeline-leaked-orchestration.yaml fixtures/invalid/pipeline-empty-stages.yaml; npm run lint:skill -- fixtures/invalid/skill-missing-frontmatter.yaml",
+    "skills:sync": "node scripts/sync-skills.mjs",
+    "skills:check": "node scripts/sync-skills.mjs --check"
   },
   "dependencies": {
     "ajv": "^8.20.0",
