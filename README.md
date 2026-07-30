@@ -65,7 +65,9 @@ Contracts use semantic package versions and explicit resource `apiVersion` value
 - [`docs/identity-and-provenance.md`](docs/identity-and-provenance.md)
 - [`docs/workspace-and-policy.md`](docs/workspace-and-policy.md)
 
-Run `npm run check` to validate schemas and execute the compatibility examples and policy tests.
+Run `bun run check` (or `npm run check`) to validate schemas, execute compatibility fixtures, verify bindings, and run tests.
+
+Install with `bun install`.
 
 ## Plan
 
