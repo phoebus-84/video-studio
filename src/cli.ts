@@ -233,7 +233,7 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     const artifactPaths: Record<string, string> = {
       "brief.md": `${episodeDir}/artifacts/brief.md`,
       "script.md": `${episodeDir}/artifacts/script.md`,
-      "art-direction.json": `${episodeDir}/artifacts/art-direction.md`,
+      "art-direction.json": `${episodeDir}/artifacts/art-direction.json`,
       "narration.mp3": `${episodeDir}/artifacts/narration/narration-full.wav`,
       "safety-report.json": `${episodeDir}/artifacts/safety-report.json`,
       "illustrations/": `${episodeDir}/artifacts/frames`,
@@ -386,7 +386,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     const ArtifactPaths: Record<string, string> = {
       "brief.md": `${episodeDir}/artifacts/brief.md`,
       "script.md": `${episodeDir}/artifacts/script.md`,
-      "art-direction.json": `${episodeDir}/artifacts/art-direction.md`,
+      "art-direction.json": `${episodeDir}/artifacts/art-direction.json`,
       "narration.mp3": `${episodeDir}/artifacts/narration/narration-full.wav`,
       "safety-report.json": `${episodeDir}/artifacts/safety-report.json`,
       "illustrations/": `${episodeDir}/artifacts/frames`,
