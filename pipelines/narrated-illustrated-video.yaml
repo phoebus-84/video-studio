@@ -11,7 +11,7 @@ pipeline:
       version: "1.0.0"
     - id: video.compose
       version: "1.0.0"
-    - id: media.record.terminal
+    - id: terminal.record
       version: "1.0.0"
   stages:
     - id: brief
@@ -75,7 +75,7 @@ pipeline:
       name: "Terminal Recordings"
       type: capability
       description: "Render VHS terminal recordings for code walkthrough and CLI demo scenes"
-      capability: media.record.terminal
+      capability: terminal.record
       inputs:
         - contract: art-direction.json
           version: "1.0.0"

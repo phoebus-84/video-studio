@@ -106,6 +106,19 @@ describe('Pipeline manifest lint — failure paths', () => {
     );
   });
 
+  it('detects unknown capability — non-canonical vocabulary', () => {
+    const result = lintPipeline('invalid/unknown-capability.yaml');
+    assert.equal(result.exitCode, 1, `Expected exit 1, got ${result.exitCode}`);
+    assert.ok(
+      result.stderr.includes('unknown-capability'),
+      `Expected "unknown-capability" error. stderr: ${result.stderr}`
+    );
+    assert.ok(
+      result.stderr.includes('legacy-llm'),
+      `Expected mention of "legacy-llm". stderr: ${result.stderr}`
+    );
+  });
+
   it('detects unstable stage ID (underscore) — AP-003', () => {
     const result = lintPipeline('invalid/pipeline-leaked-orchestration.yaml');
     assert.ok(

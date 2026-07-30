@@ -1,0 +1,23 @@
+pipeline:
+  id: unknown-capability-pipeline
+  version: "1.0.0"
+  description: "A pipeline that declares capabilities outside the canonical vocabulary"
+  capabilities:
+    - id: unknown-fake-cap
+      version: "1.0.0"
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      type: capability
+      description: "Uses a non-canonical capability"
+      capability: legacy-llm
+      inputs: []
+      outputs:
+        - contract: output.txt
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 0
+      skills: []
+      depends_on: []

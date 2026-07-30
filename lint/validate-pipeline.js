@@ -28,8 +28,24 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+
+// Canonical capability vocabulary — single source of truth from contracts.
+// Fallback to hard-coded set if the contracts package is not installed.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+let CANONICAL_CAPABILITIES;
+try {
+  const contractsDir = resolve(__dirname, '../../video-workspace-contracts');
+  const vocab = await import(`${contractsDir}/src/vocabulary.mjs`);
+  CANONICAL_CAPABILITIES = new Set(vocab.CAPABILITIES);
+} catch {
+  CANONICAL_CAPABILITIES = new Set([
+    'image.generate', 'image.edit', 'speech.synthesize',
+    'graphics.render', 'terminal.record', 'video.compose', 'media.probe',
+  ]);
+}
 
 // ---------------------------------------------------------------------------
 // Rule helpers
@@ -380,6 +396,34 @@ function checkStageTypes(stages, file) {
 }
 
 // ---------------------------------------------------------------------------
+// Capability vocabulary validation (ADR-0025)
+// ---------------------------------------------------------------------------
+
+function checkCapabilityVocabulary(pipeline, stages, file) {
+  const diags = [];
+
+  // Check pipeline-level capabilities
+  if (Array.isArray(pipeline.capabilities)) {
+    for (const cap of pipeline.capabilities) {
+      if (cap.id && !CANONICAL_CAPABILITIES.has(cap.id)) {
+        diags.push(error('unknown-capability',
+          `Pipeline capability "${cap.id}" is not in the canonical vocabulary: ${[...CANONICAL_CAPABILITIES].join(', ')}`, file));
+      }
+    }
+  }
+
+  // Check per-stage capabilities
+  for (const stage of stages) {
+    if (stage.capability && !CANONICAL_CAPABILITIES.has(stage.capability)) {
+      diags.push(error('unknown-capability',
+        `Stage "${stage.id}" capability "${stage.capability}" is not in the canonical vocabulary: ${[...CANONICAL_CAPABILITIES].join(', ')}`, file));
+    }
+  }
+
+  return diags;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -417,6 +461,7 @@ function lintPipeline(filePath) {
   diags = diags.concat(checkContentConditionals(pipeline, stages, file));
   diags = diags.concat(checkCircularDeps(stages, file));
   diags = diags.concat(checkDependsOnValidity(stages, file));
+  diags = diags.concat(checkCapabilityVocabulary(pipeline, stages, file));
 
   return diags;
 }
