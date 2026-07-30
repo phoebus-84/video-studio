@@ -1,0 +1,11 @@
+{
+  "bindings": [
+    { "capability": "image.generate", "provider": "fal-ai", "model": "nano-banana-pro" },
+    { "capability": "image.edit", "provider": "fal-ai", "model": "nano-banana-pro" },
+    { "capability": "speech.synthesize", "provider": "qwen-tts", "model": "qwen-tts-v1" },
+    { "capability": "graphics.render", "provider": "studio-graphics-renderer", "model": "v1" },
+    { "capability": "terminal.record", "provider": "vhs", "model": "vhs-v0.11" },
+    { "capability": "video.compose", "provider": "ffmpeg-video-composer", "model": "v1" },
+    { "capability": "media.probe", "provider": "ffmpeg-video-composer", "model": "ffprobe-v1" }
+  ]
+}
