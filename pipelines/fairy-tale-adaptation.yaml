@@ -15,6 +15,7 @@ pipeline:
   stages:
     - id: safety-review
       name: "Safety Review"
+      type: capability
       description: "Check script content for age-appropriate safety"
       capability: llm
       inputs:
@@ -35,6 +36,7 @@ pipeline:
 
     - id: continuity-check
       name: "Continuity Check"
+      type: capability
       description: "Verify visual continuity across scenes after illustration generation"
       capability: llm
       inputs:

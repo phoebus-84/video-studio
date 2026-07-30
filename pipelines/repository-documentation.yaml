@@ -13,6 +13,7 @@ pipeline:
   stages:
     - id: repo-analysis
       name: "Repository Analysis"
+      type: capability
       description: "Scan repository structure, architecture, and key modules"
       capability: llm
       inputs: []
@@ -30,6 +31,7 @@ pipeline:
 
     - id: content-plan
       name: "Content Plan"
+      type: capability
       description: "Generate multi-episode plan from repository analysis"
       capability: llm
       inputs:
@@ -50,6 +52,7 @@ pipeline:
 
     - id: architecture-diagram
       name: "Architecture Diagram"
+      type: capability
       description: "Generate technical architecture diagram for the repository"
       capability: image-generation
       inputs:

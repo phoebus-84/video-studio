@@ -18,6 +18,7 @@ pipeline:
   stages:
     - id: brief
       name: "Creative Brief"
+      type: capability
       description: "Research and structure the video topic"
       capability: llm
       inputs: []
@@ -35,6 +36,7 @@ pipeline:
 
     - id: script
       name: "Script"
+      type: capability
       description: "Write the narration script with scene directions"
       capability: llm
       inputs:
@@ -55,6 +57,7 @@ pipeline:
 
     - id: art-direction
       name: "Art Direction"
+      type: capability
       description: "Design visual style and illustration specs per scene"
       capability: llm
       inputs:
@@ -75,6 +78,7 @@ pipeline:
 
     - id: terminal-recordings
       name: "Terminal Recordings"
+      type: capability
       description: "Render VHS terminal recordings for code walkthrough and CLI demo scenes"
       capability: terminal-recording
       inputs:
@@ -97,6 +101,7 @@ pipeline:
 
     - id: illustrations
       name: "Illustrations"
+      type: capability
       description: "Generate images for each scene based on art direction"
       capability: image-generation
       inputs:
@@ -115,6 +120,7 @@ pipeline:
 
     - id: narration
       name: "Narration"
+      type: capability
       description: "Generate voiceover audio from the script"
       capability: tts
       inputs:
@@ -133,6 +139,7 @@ pipeline:
 
     - id: captions
       name: "Captions"
+      type: capability
       description: "Generate timed captions from narration audio"
       capability: speech-to-text
       inputs:
@@ -151,6 +158,7 @@ pipeline:
 
     - id: timing
       name: "Scene Timing"
+      type: capability
       description: "Compute per-scene durations and transition timestamps"
       capability: llm
       inputs:
@@ -172,6 +180,7 @@ pipeline:
 
     - id: compose
       name: "Compose & Render"
+      type: capability
       description: "Assemble final video from illustrations, narration, captions, and timing"
       capability: ffmpeg
       inputs:
@@ -208,6 +217,7 @@ pipeline:
 
     - id: qa
       name: "Quality Assurance"
+      type: capability
       description: "Review rendered video for issues"
       capability: llm
       inputs:
