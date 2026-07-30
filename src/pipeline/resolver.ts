@@ -9,6 +9,9 @@ import type {
   ResolutionDiag,
   StageDefinition,
 } from "./types.js";
+import { CAPABILITIES } from "@video-studio/workspace-contracts/src/vocabulary.mjs";
+
+const VALID_CAPABILITIES = new Set(CAPABILITIES as readonly string[]);
 
 /** Error class for pipeline resolution failures. */
 export class PipelineResolutionError extends Error {
@@ -61,6 +64,9 @@ export async function resolvePipeline(
   const diagnostics: ResolutionDiag[] = [];
 
   const resolved = await resolveChain(loader, name, version, maxDepth, diagnostics, []);
+
+  // Validate capabilities against canonical vocabulary
+  validateCapabilities(resolved.stages, diagnostics, name);
 
   // Topological sort
   const sorted = topoSort(resolved.stages, diagnostics);
@@ -272,6 +278,37 @@ function mergeSkills(
   for (const s of parent) map.set(s.name, s);
   for (const s of child) map.set(s.name, s);
   return [...map.values()];
+}
+
+// ── Capability validation ───────────────────────────────────────────────────
+
+function validateCapabilities(
+  stages: StageDefinition[],
+  diagnostics: ResolutionDiag[],
+  pipelineName: string,
+): void {
+  for (const stage of stages) {
+    for (const cap of stage.capabilities) {
+      if (!VALID_CAPABILITIES.has(cap.capability)) {
+        diagnostics.push({
+          severity: "error",
+          code: "stage.unknown-capability",
+          message: `Stage "${stage.id}" requests unknown capability "${cap.capability}"`,
+          context: `pipeline=${pipelineName} stage=${stage.id}`,
+        });
+      }
+    }
+
+    // Editorial stages must not have capability requests
+    if (stage.type === "editorial" && stage.capabilities.length > 0) {
+      diagnostics.push({
+        severity: "error",
+        code: "stage.editorial-with-capability",
+        message: `Editorial stage "${stage.id}" must not request capabilities`,
+        context: `pipeline=${pipelineName} stage=${stage.id}`,
+      });
+    }
+  }
 }
 
 // ── Topological sort (Kahn's algorithm) ─────────────────────────────────────

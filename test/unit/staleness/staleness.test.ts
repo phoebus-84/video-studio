@@ -31,7 +31,8 @@ function makeVideoPipeline(): ResolvedPipeline {
         definition: {
           id: "script",
           name: "Script",
-          capabilities: [{ capability: "llm" }],
+          type: "capability",
+          capabilities: [{ capability: "image.generate" }],
           dependsOn: [],
           produces: [{ kind: "text/markdown", label: "script.md" }],
           consumes: [],
@@ -43,7 +44,8 @@ function makeVideoPipeline(): ResolvedPipeline {
         definition: {
           id: "narration",
           name: "Narration",
-          capabilities: [{ capability: "tts" }],
+          type: "capability",
+          capabilities: [{ capability: "speech.synthesize" }],
           dependsOn: ["script"],
           produces: [{ kind: "audio/mp3", label: "narration.mp3" }],
           consumes: [{ kind: "text/markdown", label: "script.md" }],
@@ -55,6 +57,7 @@ function makeVideoPipeline(): ResolvedPipeline {
         definition: {
           id: "captions",
           name: "Captions",
+          type: "capability",
           capabilities: [{ capability: "transcription" }],
           dependsOn: ["narration"],
           produces: [{ kind: "text/srt", label: "captions.srt" }],
@@ -67,6 +70,7 @@ function makeVideoPipeline(): ResolvedPipeline {
         definition: {
           id: "timing",
           name: "Timing",
+          type: "capability",
           capabilities: [{ capability: "analysis" }],
           dependsOn: ["script"],
           produces: [{ kind: "application/json", label: "timing.json" }],
@@ -79,7 +83,8 @@ function makeVideoPipeline(): ResolvedPipeline {
         definition: {
           id: "illustrations",
           name: "Illustrations",
-          capabilities: [{ capability: "image-generation" }],
+          type: "capability",
+          capabilities: [{ capability: "image.generate" }],
           dependsOn: ["script"],
           produces: [{ kind: "image/png", label: "illustrations/" }],
           consumes: [{ kind: "text/markdown", label: "script.md" }],
@@ -91,7 +96,8 @@ function makeVideoPipeline(): ResolvedPipeline {
         definition: {
           id: "render",
           name: "Render",
-          capabilities: [{ capability: "ffmpeg" }],
+          type: "capability",
+          capabilities: [{ capability: "video.compose" }],
           dependsOn: ["illustrations", "narration", "captions", "timing"],
           produces: [{ kind: "video/mp4", label: "output.mp4" }],
           consumes: [
@@ -123,6 +129,7 @@ function makeChainPipeline(): ResolvedPipeline {
         definition: {
           id: "a",
           name: "A",
+          type: "capability",
           capabilities: [],
           dependsOn: [],
           produces: [{ kind: "text", label: "a.txt" }],
@@ -135,6 +142,7 @@ function makeChainPipeline(): ResolvedPipeline {
         definition: {
           id: "b",
           name: "B",
+          type: "capability",
           capabilities: [],
           dependsOn: ["a"],
           produces: [{ kind: "text", label: "b.txt" }],
@@ -147,6 +155,7 @@ function makeChainPipeline(): ResolvedPipeline {
         definition: {
           id: "c",
           name: "C",
+          type: "capability",
           capabilities: [],
           dependsOn: ["b"],
           produces: [{ kind: "text", label: "c.txt" }],
@@ -223,6 +232,7 @@ describe("detectCycles", () => {
           definition: {
             id: "x",
             name: "X",
+            type: "capability",
             capabilities: [],
             dependsOn: [],
             produces: [{ kind: "text", label: "x.txt" }],
@@ -235,6 +245,7 @@ describe("detectCycles", () => {
           definition: {
             id: "y",
             name: "Y",
+            type: "capability",
             capabilities: [],
             dependsOn: [],
             produces: [{ kind: "text", label: "y.txt" }],

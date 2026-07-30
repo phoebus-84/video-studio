@@ -26,6 +26,8 @@ export interface StageDefinition {
   id: string;
   /** Human-readable name. */
   name: string;
+  /** Stage type: editorial (no provider binding) or capability (needs binding). */
+  type: "editorial" | "capability";
   /** Capabilities this stage requests. */
   capabilities: CapabilityRequest[];
   /** Stage IDs this stage depends on (DAG edges). */

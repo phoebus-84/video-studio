@@ -24,6 +24,7 @@ function makePipeline(): ResolvedPipeline {
         definition: {
           id: "brief",
           name: "Brief",
+          type: "capability",
           capabilities: [],
           dependsOn: [],
           produces: [{ kind: "text", label: "brief.md" }],
@@ -36,7 +37,8 @@ function makePipeline(): ResolvedPipeline {
         definition: {
           id: "script",
           name: "Script",
-          capabilities: [{ capability: "llm" }],
+          type: "capability",
+          capabilities: [{ capability: "image.generate" }],
           dependsOn: ["brief"],
           produces: [{ kind: "text", label: "script.md" }],
           consumes: [{ kind: "text", label: "brief.md" }],
@@ -48,7 +50,8 @@ function makePipeline(): ResolvedPipeline {
         definition: {
           id: "render",
           name: "Render",
-          capabilities: [{ capability: "ffmpeg" }],
+          type: "capability",
+          capabilities: [{ capability: "video.compose" }],
           dependsOn: ["script"],
           produces: [{ kind: "video/mp4", label: "output.mp4" }],
           consumes: [{ kind: "text", label: "script.md" }],

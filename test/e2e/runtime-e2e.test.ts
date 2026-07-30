@@ -17,6 +17,7 @@ const TEST_PIPELINE: PipelineDefinition = {
     {
       id: "write-brief",
       name: "Write Brief",
+      type: "capability",
       capabilities: [],
       dependsOn: [],
       produces: [{ kind: "text/markdown", label: "brief.md" }],
@@ -25,7 +26,8 @@ const TEST_PIPELINE: PipelineDefinition = {
     {
       id: "write-script",
       name: "Write Script",
-      capabilities: [{ capability: "llm" }],
+      type: "capability",
+      capabilities: [{ capability: "image.generate" }],
       dependsOn: ["write-brief"],
       produces: [{ kind: "text/markdown", label: "script.md" }],
       consumes: [{ kind: "text/markdown", label: "brief.md" }],
@@ -33,7 +35,8 @@ const TEST_PIPELINE: PipelineDefinition = {
     {
       id: "narration",
       name: "Narration",
-      capabilities: [{ capability: "text-to-speech" }],
+      type: "capability",
+      capabilities: [{ capability: "speech.synthesize" }],
       dependsOn: ["write-script"],
       produces: [{ kind: "audio/wav", label: "narration.wav" }],
       consumes: [{ kind: "text/markdown", label: "script.md" }],
@@ -41,7 +44,8 @@ const TEST_PIPELINE: PipelineDefinition = {
     {
       id: "render",
       name: "Render",
-      capabilities: [{ capability: "ffmpeg" }],
+      type: "capability",
+      capabilities: [{ capability: "video.compose" }],
       dependsOn: ["narration"],
       produces: [{ kind: "video/mp4", label: "output.mp4" }],
       consumes: [

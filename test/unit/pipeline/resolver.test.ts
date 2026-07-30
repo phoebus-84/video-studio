@@ -23,6 +23,7 @@ const SIMPLE_PIPELINE: PipelineDefinition = {
     {
       id: "brief",
       name: "Brief",
+      type: "capability",
       capabilities: [],
       dependsOn: [],
       produces: [{ kind: "text/markdown", label: "brief.md" }],
@@ -31,7 +32,8 @@ const SIMPLE_PIPELINE: PipelineDefinition = {
     {
       id: "script",
       name: "Script",
-      capabilities: [{ capability: "llm" }],
+      type: "capability",
+      capabilities: [{ capability: "image.generate" }],
       dependsOn: ["brief"],
       produces: [{ kind: "text/markdown", label: "script.md" }],
       consumes: [{ kind: "text/markdown", label: "brief.md" }],
@@ -39,7 +41,8 @@ const SIMPLE_PIPELINE: PipelineDefinition = {
     {
       id: "render",
       name: "Render",
-      capabilities: [{ capability: "ffmpeg" }],
+      type: "capability",
+      capabilities: [{ capability: "video.compose" }],
       dependsOn: ["script"],
       produces: [{ kind: "video/mp4", label: "output.mp4" }],
       consumes: [{ kind: "text/markdown", label: "script.md" }],
@@ -56,7 +59,8 @@ const CHILD_PIPELINE: PipelineDefinition = {
     {
       id: "script",
       name: "Custom Script",
-      capabilities: [{ capability: "llm", prefer: "claude" }],
+      type: "capability",
+      capabilities: [{ capability: "image.generate", prefer: "claude" }],
       dependsOn: ["brief"],
       produces: [{ kind: "text/markdown", label: "script.md" }],
       consumes: [{ kind: "text/markdown", label: "brief.md" }],
@@ -64,7 +68,8 @@ const CHILD_PIPELINE: PipelineDefinition = {
     {
       id: "illustrations",
       name: "Illustrations",
-      capabilities: [{ capability: "image-generation" }],
+      type: "capability",
+      capabilities: [{ capability: "image.generate" }],
       dependsOn: ["script"],
       produces: [{ kind: "image/png", label: "illustrations/" }],
       consumes: [{ kind: "text/markdown", label: "script.md" }],
@@ -81,7 +86,8 @@ const REMOVAL_PIPELINE: PipelineDefinition = {
     {
       id: "render",
       name: "Direct Render",
-      capabilities: [{ capability: "ffmpeg" }],
+      type: "capability",
+      capabilities: [{ capability: "video.compose" }],
       dependsOn: ["brief", "!script"],
       produces: [{ kind: "video/mp4", label: "output.mp4" }],
       consumes: [{ kind: "text/markdown", label: "brief.md" }],
@@ -97,6 +103,7 @@ const CYCLIC_PARENT: PipelineDefinition = {
     {
       id: "a",
       name: "A",
+      type: "capability",
       capabilities: [],
       dependsOn: ["b"],
       produces: [],
@@ -105,6 +112,7 @@ const CYCLIC_PARENT: PipelineDefinition = {
     {
       id: "b",
       name: "B",
+      type: "capability",
       capabilities: [],
       dependsOn: ["a"],
       produces: [],
@@ -137,6 +145,7 @@ const MISSING_CONSUMER: PipelineDefinition = {
     {
       id: "first",
       name: "First",
+      type: "capability",
       capabilities: [],
       dependsOn: [],
       produces: [{ kind: "text/markdown", label: "output.md" }],
@@ -153,6 +162,7 @@ const SELF_DEPENDENCY: PipelineDefinition = {
     {
       id: "loop",
       name: "Self Loop",
+      type: "capability",
       capabilities: [],
       dependsOn: ["loop"],
       produces: [],
@@ -169,6 +179,7 @@ const MISSING_STAGE_DEP: PipelineDefinition = {
     {
       id: "only",
       name: "Only Stage",
+      type: "capability",
       capabilities: [],
       dependsOn: ["ghost"],
       produces: [],
@@ -344,6 +355,7 @@ describe("resolvePipeline", () => {
             {
               id: "base",
               name: "Base",
+              type: "capability",
               capabilities: [],
               dependsOn: [],
               produces: [],
@@ -395,7 +407,8 @@ describe("resolvePipeline", () => {
           {
             id: "render",
             name: "Render",
-            capabilities: [{ capability: "ffmpeg" }],
+            type: "capability",
+            capabilities: [{ capability: "video.compose" }],
             dependsOn: ["script"],
             produces: [{ kind: "video/mp4", label: "output.mp4" }],
             consumes: [{ kind: "text/markdown", label: "script.md" }],
@@ -403,7 +416,8 @@ describe("resolvePipeline", () => {
           {
             id: "script",
             name: "Script",
-            capabilities: [{ capability: "llm" }],
+            type: "capability",
+            capabilities: [{ capability: "image.generate" }],
             dependsOn: ["brief"],
             produces: [{ kind: "text/markdown", label: "script.md" }],
             consumes: [{ kind: "text/markdown", label: "brief.md" }],
@@ -411,6 +425,7 @@ describe("resolvePipeline", () => {
           {
             id: "brief",
             name: "Brief",
+            type: "capability",
             capabilities: [],
             dependsOn: [],
             produces: [{ kind: "text/markdown", label: "brief.md" }],
@@ -439,6 +454,142 @@ describe("resolvePipeline", () => {
         expect(diags[0]!.code).toBe("PIPELINE_NOT_FOUND");
         expect(diags[0]!.message).toContain("nope");
         expect(diags[0]!.message).toContain("2.0.0");
+      }
+    });
+  });
+
+  describe("capability validation", () => {
+    it("accepts an all-editorial pipeline (no capabilities)", async () => {
+      const loader = makeLoader({
+        name: "editorial-only",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "review",
+            name: "Review",
+            type: "editorial",
+            capabilities: [],
+            dependsOn: [],
+            produces: [],
+            consumes: [],
+          },
+          {
+            id: "publish",
+            name: "Publish",
+            type: "editorial",
+            capabilities: [],
+            dependsOn: ["review"],
+            produces: [],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      });
+      const result = await resolvePipeline(loader, "editorial-only");
+      expect(result.stages.length).toBe(2);
+      expect(result.diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
+    });
+
+    it("accepts a pipeline with canonical capability image.generate", async () => {
+      const loader = makeLoader({
+        name: "image-pipeline",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "generate",
+            name: "Generate",
+            type: "capability",
+            capabilities: [{ capability: "image.generate" }],
+            dependsOn: [],
+            produces: [{ kind: "image", label: "output.png" }],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      });
+      const result = await resolvePipeline(loader, "image-pipeline");
+      expect(result.diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
+    });
+
+    it("rejects llm as unknown capability", async () => {
+      const loader = makeLoader({
+        name: "llm-pipeline",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "script",
+            name: "Script",
+            type: "capability",
+            capabilities: [{ capability: "llm" }],
+            dependsOn: [],
+            produces: [],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      });
+      try {
+        await resolvePipeline(loader, "llm-pipeline");
+        expect.fail("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PipelineResolutionError);
+        const diags = (err as PipelineResolutionError).diagnostics;
+        expect(diags.some((d) => d.code === "stage.unknown-capability")).toBe(true);
+        expect(diags.some((d) => d.message.includes("llm"))).toBe(true);
+      }
+    });
+
+    it("rejects an unknown capability name", async () => {
+      const loader = makeLoader({
+        name: "unknown-cap",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "magic",
+            name: "Magic",
+            type: "capability",
+            capabilities: [{ capability: "magic.wand" }],
+            dependsOn: [],
+            produces: [],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      });
+      try {
+        await resolvePipeline(loader, "unknown-cap");
+        expect.fail("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PipelineResolutionError);
+        const diags = (err as PipelineResolutionError).diagnostics;
+        expect(diags.some((d) => d.code === "stage.unknown-capability")).toBe(true);
+      }
+    });
+
+    it("rejects editorial stage with capability requests", async () => {
+      const loader = makeLoader({
+        name: "bad-editorial",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "draft",
+            name: "Draft",
+            type: "editorial",
+            capabilities: [{ capability: "image.generate" }],
+            dependsOn: [],
+            produces: [],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      });
+      try {
+        await resolvePipeline(loader, "bad-editorial");
+        expect.fail("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PipelineResolutionError);
+        const diags = (err as PipelineResolutionError).diagnostics;
+        expect(diags.some((d) => d.code === "stage.editorial-with-capability")).toBe(true);
       }
     });
   });

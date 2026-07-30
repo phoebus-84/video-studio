@@ -51,6 +51,7 @@ interface YamlStage {
   };
   skills?: { skill: string; version: string }[];
   depends_on?: string[];
+  type?: string;
 }
 
 // ── Conversion helpers ──────────────────────────────────────────────────────
@@ -90,6 +91,7 @@ function toStageDef(yaml: YamlStage, pipelineCaps: YamlPipeline["pipeline"]["cap
   return {
     id: yaml.id,
     name: yaml.name,
+    type: (yaml.type === "editorial" || yaml.type === "capability") ? yaml.type as "editorial" | "capability" : "editorial",
     capabilities: toCapabilityRequest(yaml.capability, pipelineCaps),
     dependsOn: yaml.depends_on ?? [],
     produces: toArtifactRefs(yaml.outputs),

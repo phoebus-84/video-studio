@@ -28,6 +28,7 @@ function makeInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
           definition: {
             id: "brief",
             name: "Brief",
+            type: "capability",
             capabilities: [],
             dependsOn: [],
             produces: [{ kind: "text/markdown", label: "brief.md" }],
@@ -40,7 +41,8 @@ function makeInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
           definition: {
             id: "script",
             name: "Script",
-            capabilities: [{ capability: "llm" }],
+            type: "capability",
+            capabilities: [{ capability: "image.generate" }],
             dependsOn: ["brief"],
             produces: [{ kind: "text/markdown", label: "script.md" }],
             consumes: [{ kind: "text/markdown", label: "brief.md" }],
@@ -84,7 +86,7 @@ function makeInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
       },
     },
     providerBindings: [
-      { capability: "llm", provider: "openai/gpt-4o", config: {} },
+      { capability: "image.generate", provider: "openai/gpt-4o", config: {} },
     ],
     sources: [
       {
