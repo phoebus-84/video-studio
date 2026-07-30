@@ -11,7 +11,7 @@ outputs:
       kind: application/json
       description: Per-scene illustration specifications
 capabilities:
-  - llm
+  - image.generate
 ---
 
 # Art Direction
@@ -42,47 +42,4 @@ You are a visual designer for animated explainer videos.
 - Clear subject focus in each scene
 - Color contrast for readability
 - Avoid text-heavy illustrations (narration carries the words)
-
-## Image Generation: Always Use Prompt, Not Intent
-
-**CRITICAL**: When generating images, always use the `prompt` field from
-`art-direction.json`, NEVER the `intent` field from `episode.json`.
-
-- `art-direction.json` scenes contain a **`prompt`** field — this is the
-  carefully crafted, model-optimized prompt with style references, character
-  naming conventions (e.g. `"THREE ADORABLE PIGLETS"`), composition details,
-  and artist/style guidance.
-- `episode.json` scenes contain an **`intent`** field — this is a
-  human-readable visual summary for editors, NOT optimized for any model.
-
-Using `intent` instead of `prompt` causes:
-- Loss of character consistency (no character name anchors like `THE WOLF`)
-- Missing style directives (no `"Watercolor and ink on textured paper"`)
-- Missing composition rules and palette instructions
-- Weaker spatial layout (the `prompt` field includes positional cues)
-
-### Correct usage in generation scripts:
-
-```typescript
-// ✅ CORRECT: use art-direction.json prompts
-const artDirection = JSON.parse(readFileSync("artifacts/art-direction.json"));
-for (const scene of artDirection.scenes) {
-  const job = await client.submitAndWait({
-    params: {
-      prompt: scene.prompt,  // ← art-direction prompt
-      resolution: "2K",
-    },
-  });
-}
-
-// ❌ WRONG: using episode.json intent
-const episode = JSON.parse(readFileSync("artifacts/episode.json"));
-for (const scene of episode) {
-  const job = await client.submitAndWait({
-    params: {
-      prompt: scene.intent,  // ← NOT optimized for generation
-      resolution: "1K",
-    },
-  });
-}
-```
+- Create model-optimized prompts in the `prompt` field of each scene

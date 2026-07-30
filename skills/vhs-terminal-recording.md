@@ -237,8 +237,8 @@ VHS renders to MP4. The compose stage can use these MP4s directly:
 ### 10. Test Render Before Committing
 Always render and visually inspect:
 ```bash
-vhs artifacts/tapes/tomb/s4a.tap
-# Check: artifacts/tapes/tomb/s4a.mp4
+vhs artifacts/tapes/my-tool/s4a.tap
+# Check: artifacts/tapes/my-tool/s4a.mp4
 # Verify: timing, readability, colors, cursor position
 ```
 
@@ -270,9 +270,9 @@ Show a reusable .tape snippet here
 ```
 ```
 
-### 2026-07-29 — tomb: s4a/s4b/s4c/s5 — Iteration Zero: Full VHS rebuild
+### 2026-07-29 — my-tool: s4a/s4b/s4c/s5 — Iteration Zero: Full VHS rebuild
 
-**Context**: Rebuilt the Tomb episode using real VHS terminal recordings instead of PIL-generated static code screenshots. First end-to-end test of the VHS integration.
+**Context**: Rebuilt the terminal-recording episode using real VHS terminal recordings instead of PIL-generated static code screenshots. First end-to-end test of the VHS integration.
 
 **What worked**:
 - VHS renders clean terminal text with antialiasing at any resolution
@@ -317,9 +317,9 @@ Sleep 2s
 
 ---
 
-### 2026-07-29 — tomb: s4a/s4b/s4c — First VHS integration attempt
+### 2026-07-29 — my-tool: s4a/s4b/s4c — First VHS integration attempt
 
-**Context**: Replacing PIL-generated static code screenshots with real terminal recordings for Tomb episode code walkthrough.
+**Context**: Replacing PIL-generated static code screenshots with real terminal recordings for terminal-recording episode code walkthrough.
 
 **What worked**:
 - VHS renders clean, antialiased terminal text at any size
@@ -364,7 +364,7 @@ For code walkthrough scenes, generate the `.tape` file from the episode's source
 
 ```
 # Generated from episode.json scene s4a
-Output assets/tapes/tomb/s4a.mp4
+Output assets/tapes/my-tool/s4a.mp4
 
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -378,7 +378,7 @@ Set Framerate 30
 Set Theme "library/dyne/vhs-theme.json"
 
 Hide
-Type "cat -n /usr/local/bin/tomb | sed -n '589,620p'"
+Type "cat -n /usr/local/bin/my-tool | sed -n '589,620p'"
 Enter
 Sleep 1s
 Show
@@ -400,11 +400,11 @@ fc-list | grep JetBrains  # JetBrains Mono installed
 
 ---
 
-## Key Production Learnings (Tomb Iteration Zero)
+## Key Production Learnings (VHS Iteration Zero)
 
 **Voice Model**: The 1.7B 8-bit TTS model only activates when `instruct` is passed. Without it, silently falls back to 0.6B 4-bit. Always pass `instruct` on every synthesis call.
 
-**VHS Mock Verification**: Mock executables must match the command name exactly (`tomb` not `tomb-mock.sh`) and be in a directory on PATH. Verify by running commands in shell before creating tapes.
+**VHS Mock Verification**: Mock executables must match the command name exactly (`my-tool` not `my-tool-mock.sh`) and be in a directory on PATH. Verify by running commands in shell before creating tapes.
 
 **VHS Output Verification**: Extract frames with `ffmpeg -i tape.mp4 -ss N -vframes 1 frame.jpg` and OCR with `tesseract` to verify terminal content before audio sync.
 

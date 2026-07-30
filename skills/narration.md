@@ -11,8 +11,7 @@ outputs:
       kind: audio/wav
       description: Per-scene WAV files in artifacts/narration/
 capabilities:
-  - llm
-  - tts-worker
+  - speech.synthesize
 ---
 
 # Narration
@@ -47,13 +46,13 @@ API: `POST http://127.0.0.1:5197/synthesize`
 
 ## CustomVoice Preset Speakers
 
-| Speaker | Character | Notes |
-|---------|-----------|-------|
-| `serena` | Narrator, Fairy Godmother | Warm, gentle female voice. Default narrator. |
-| `vivian` | Young girl, Little Red, Cinderella | Young, innocent, sweet voice. |
-| `uncle_fu` | Wolf, villain, gruff characters | Male voice. Can go from smooth-charming to deep-growling via instruct. |
-| `ryan` | Woodcutter, male hero | Strong, kind male voice. |
-| `ono_anna` | Grandmother, older female | Elderly female voice. |
+| Speaker | Use for | Notes |
+|---------|---------|-------|
+| `serena` | Narrator, warm female | Warm, gentle female voice. Default narrator. |
+| `vivian` | Young female character | Young, innocent, sweet voice. |
+| `uncle_fu` | Villain, gruff characters | Male voice. Can go from smooth-charming to deep-growling via instruct. |
+| `ryan` | Male hero | Strong, kind male voice. |
+| `ono_anna` | Older female | Elderly female voice. |
 | `aiden` | Young male | Boy/young man voice. |
 | `sohee` | Female (alt) | Alternative female voice. |
 | `eric` | Male (alt) | Alternative male voice. |
@@ -67,18 +66,7 @@ unknown names are silently mapped to `serena`.
 Use **split-and-concatenate**: split the text at dialogue boundaries, synthesize
 each segment with the character's preset speaker, then concatenate WAVs with `wave`.
 
-### Example: Little Red s4
-
-```python
-segments = [
-    ("uncle_fu", "Good day, Little Red Riding Hood,", wolf_instruct),
-    ("serena",  " said the wolf in his smoothest voice. ", narrator_instruct),
-    ("uncle_fu", "Where are you going on this fine morning? ", wolf_instruct),
-    ("serena",  "Little Red, forgetting her mother's warning...", narrator_instruct),
-]
-```
-
-**Attribution text** ("said the wolf", "she whispered") belongs to the narrator,
+**Attribution text** ("she said", "he whispered") belongs to the narrator,
 not the character. Split accordingly.
 
 ### Anti-pattern: Inline Character Tags
@@ -90,39 +78,39 @@ The `mlx_audio` `generate_audio` function does not expose multi-character taggin
 
 ### Narrator (serena)
 ```
-Speak warmly and gently, like a storyteller reading a fairy tale to a young child.
+Speak warmly and gently, like a storyteller reading to a young child.
 Soft, calm, and full of wonder.
 ```
 
-### Young Girl (vivian)
+### Young Female (vivian)
 ```
-Speak with a young, innocent, sweet girl voice. Curious and trusting.
+Speak with a young, innocent, sweet voice. Curious and trusting.
 ```
 
-### Wolf — Charming (uncle_fu)
+### Villain — Charming (uncle_fu)
 ```
-Speak with a sly, smooth, charming voice like a clever wolf. Polite but cunning.
+Speak with a sly, smooth, charming voice. Polite but cunning.
 Keep it concise and natural, no unnecessary pauses.
 ```
 
-### Wolf — Disguised as Grandmother (uncle_fu)
+### Villain — Disguised (uncle_fu)
 ```
-Speak with a raspy, hoarse voice, trying to sound like an old grandmother
-but clearly a wolf in disguise. Strained and creaky.
-```
-
-### Wolf — Growl (uncle_fu)
-```
-Speak with a deep, growling, menacing wolf voice. Fierce, sudden, and hungry.
+Speak with a raspy, hoarse voice, trying to sound like a different
+character. Strained and creaky.
 ```
 
-### Fairy Godmother (serena or ono_anna)
+### Villain — Menacing (uncle_fu)
 ```
-Speak with a warm, magical, grandmotherly voice. Kind and twinkling,
-like a fairy godmother. Soft and full of gentle wonder.
+Speak with a deep, growling, menacing voice. Fierce, sudden, and hungry.
 ```
 
-### Woodcutter (ryan)
+### Wise Older Character (serena or ono_anna)
+```
+Speak with a warm, magical, grandmotherly voice. Kind and twinkling.
+Soft and full of gentle wonder.
+```
+
+### Hero (ryan)
 ```
 Speak with a strong, kind, heroic voice. Determined and brave.
 ```

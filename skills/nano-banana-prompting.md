@@ -153,7 +153,7 @@ children's book illustration, [ARTIST REFERENCE].
 
 ### Example prompt:
 ```
-"Little Red Riding Hood" storybook illustration: A cheerful little girl
+"The Curious Explorer" storybook illustration: A cheerful young character
 in a bright red hooded cloak standing at the door of a cozy cottage,
 her mother handing her a wicker basket. Morning sunlight streaming
 through the doorway, flowers in window boxes. Warm gold and cream
