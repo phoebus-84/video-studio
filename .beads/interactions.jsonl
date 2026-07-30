@@ -14,3 +14,5 @@
 {"id":"int-262c4ecdaccc9d6817fb0e405b2ccd2a","kind":"field_change","created_at":"2026-07-30T15:36:39.966305Z","actor":"phoebus-84","issue_id":"vbp-cxm.5","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
 {"id":"int-03943c1064f021cdfd38979ab482f56e","kind":"field_change","created_at":"2026-07-30T15:38:35.014224Z","actor":"phoebus-84","issue_id":"vbp-cxm.5","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-f5d2bddc60a992936690b592cdeb2154","kind":"field_change","created_at":"2026-07-30T15:39:19.568817Z","actor":"phoebus-84","issue_id":"vbp-cxm.6","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-104cbca17d9527c09fd727830df70b0d","kind":"field_change","created_at":"2026-07-30T15:40:09.877689Z","actor":"phoebus-84","issue_id":"vbp-cxm.6","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-84e2e2b8660aab267309da5be6ecfe1c","kind":"field_change","created_at":"2026-07-30T15:40:14.97954Z","actor":"phoebus-84","issue_id":"vbp-cxm.7","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
