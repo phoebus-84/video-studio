@@ -2,8 +2,6 @@
 // Policy types — approval gates and budget enforcement
 // ---------------------------------------------------------------------------
 
-import type { ApprovalMode } from "../settings/types.js";
-
 /** A gate declared by a pipeline stage that requires approval. */
 export interface PolicyGate {
   /** Unique gate identifier (stageId + gate name). */

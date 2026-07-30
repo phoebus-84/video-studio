@@ -194,9 +194,9 @@ describe("Runtime E2E", () => {
 
     it("handles null layers", () => {
       const { settings } = resolveSettings({
-        channel: null as any,
-        series: null as any,
-        episode: null as any,
+        channel: null,
+        series: null,
+        episode: null,
       });
       expect(settings).toBeDefined();
       expect(settings.locale.value).toBe(SYSTEM_DEFAULTS.locale);

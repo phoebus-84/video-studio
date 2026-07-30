@@ -53,29 +53,34 @@ function makeInput(overrides?: Partial<SnapshotInput>): SnapshotInput {
       diagnostics: [],
     },
     settings: {
-      approvalMode: {
-        value: "autopilot",
-        source: { layer: "system" },
+      approvalPolicy: {
+        value: {
+          mode: "autopilot",
+          onPaidAction: "continue",
+          onBudgetExceeded: "block",
+          onMaterialDowngrade: "pause",
+          onCapabilityUnavailable: "pause",
+          onValidationFailure: "pause",
+          onConflict: "pause",
+          onLicenseOrSafetyBlocker: "block",
+        },
+        source: "system",
       },
-      gateBehaviour: {
-        value: "skip",
-        source: { layer: "system" },
-      },
-      budgetLimit: {
-        value: 5,
-        source: { layer: "system" },
+      budget: {
+        value: { currency: "USD", limitMicros: 5000000, warnAtMicros: 4000000, reservationRequired: false },
+        source: "system",
       },
       outputProfile: {
-        value: "youtube-1080p",
-        source: { layer: "system" },
+        value: { profileId: "youtube-1080p", version: "^1" },
+        source: "system",
       },
-      narrationVoice: {
-        value: "en-US-neutral",
-        source: { layer: "system" },
-      },
-      narrationLanguage: {
+      locale: {
         value: "en-US",
-        source: { layer: "system" },
+        source: "system",
+      },
+      extensions: {
+        value: {},
+        source: "system",
       },
     },
     providerBindings: [

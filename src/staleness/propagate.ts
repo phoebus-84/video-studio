@@ -107,7 +107,6 @@ export class StalenessEngine {
    * After acceptance, these stages won't appear in the "stale" list.
    */
   accept(acceptance: StalenessAcceptance): void {
-    const now = new Date().toISOString();
     for (const stageId of acceptance.stageIds) {
       this.acceptances.set(stageId, {
         stageIds: [stageId],

@@ -14,8 +14,7 @@ import {
   releaseReserve,
   BudgetError,
 } from "../../../src/policy/index.js";
-import type { PolicyGate, BudgetLedger } from "../../../src/policy/types.js";
-import type { ApprovalMode } from "../../../src/settings/types.js";
+import type { PolicyGate } from "../../../src/policy/types.js";
 
 // ── Gate fixtures ────────────────────────────────────────────────────────────
 

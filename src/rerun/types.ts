@@ -2,9 +2,6 @@
 // Rerun planner types
 // ---------------------------------------------------------------------------
 
-import type { StalenessReport } from "../staleness/types.js";
-import type { StageInstance } from "../engine/types.js";
-
 /** Supported rerun modes. */
 export type RerunMode =
   | "retry-current"

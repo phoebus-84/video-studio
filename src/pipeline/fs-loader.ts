@@ -25,7 +25,7 @@ interface YamlPipeline {
     version: string;
     description?: string;
     extends?: { pipeline: string; version?: string };
-    capabilities?: Array<{ id: string; version: string }>;
+    capabilities?: { id: string; version: string }[];
     stages?: YamlStage[];
   };
 }
@@ -35,21 +35,21 @@ interface YamlStage {
   name: string;
   description?: string;
   capability?: string;
-  inputs?: Array<{ contract: string; version: string }>;
-  outputs?: Array<{ contract: string; version: string }>;
+  inputs?: { contract: string; version: string }[];
+  outputs?: { contract: string; version: string }[];
   gates?: {
     autopilot?: boolean;
     review?: string;
     retry_on_failure?: number;
   };
-  skills?: Array<{ skill: string; version: string }>;
+  skills?: { skill: string; version: string }[];
   depends_on?: string[];
 }
 
 // ── Conversion helpers ──────────────────────────────────────────────────────
 
 function toArtifactRefs(
-  items: Array<{ contract: string; version: string }> | undefined,
+  items: { contract: string; version: string }[] | undefined,
 ): ArtifactRef[] {
   if (!items) return [];
   return items.map((item) => ({

@@ -11,10 +11,6 @@ import {
   StalenessEngine,
   propagate,
 } from "../../../src/staleness/index.js";
-import type {
-  DependencyGraph,
-  StalenessReport,
-} from "../../../src/staleness/types.js";
 import type { ResolvedPipeline } from "../../../src/pipeline/types.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -163,10 +159,6 @@ function makeChainPipeline(): ResolvedPipeline {
     skills: [],
     diagnostics: [],
   };
-}
-
-function stageIds(report: StalenessReport): string[] {
-  return report.stages.map((s) => s.stageId);
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

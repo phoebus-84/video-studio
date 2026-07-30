@@ -10,12 +10,14 @@
 export interface Ok<T> {
   readonly ok: true;
   readonly value: T;
+  readonly error?: undefined;
 }
 
 /** Discriminated error variant. */
 export interface Err<E> {
   readonly ok: false;
   readonly error: E;
+  readonly value?: undefined;
 }
 
 /** Monadic result type inspired by Rust's `Result`. */

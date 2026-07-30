@@ -8,7 +8,6 @@ import {
   analyzeRecovery,
   canResumeWithoutDuplicate,
 } from "../../../src/rerun/index.js";
-import type { RerunMode, RerunPlan } from "../../../src/rerun/types.js";
 import type { StalenessReport } from "../../../src/staleness/types.js";
 import type { StageInstance } from "../../../src/engine/types.js";
 import type { ResolvedPipeline } from "../../../src/pipeline/types.js";

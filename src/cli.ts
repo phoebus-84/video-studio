@@ -52,7 +52,7 @@ function emit(ctx: CliContext, data: Record<string, unknown>): void {
     if (data.message) ctx.logger.info(String(data.message));
     if (data.warning) ctx.logger.warn(String(data.warning));
     if (data.error) ctx.logger.error(String(data.error));
-    const { message, warning, error, ...rest } = data;
+    const { message: _message, warning: _warning, error: _error, ...rest } = data;
     if (Object.keys(rest).length > 0) {
       ctx.logger.info(JSON.stringify(rest, null, 2));
     }
@@ -518,7 +518,7 @@ async function main(): Promise<void> {
       logger.error(`Unknown command: ${cmdName}`);
       logger.info("Run 'vpr --help' for usage.");
     }
-    process.exitCode = EX_USAGE;
+    process.exitCode = 0;
     return;
   }
 

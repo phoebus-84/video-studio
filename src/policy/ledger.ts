@@ -99,8 +99,6 @@ export function consumeReserve(
   reserve.consumed = true;
   reserve.actualCost = actualCost;
 
-  const diff = actualCost - reserve.estimatedCost;
-
   return {
     ...ledger,
     reserved: ledger.reserved - reserve.estimatedCost,

@@ -6,11 +6,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   StageStateMachine,
   StageTransitionError,
-  LeaseError,
   StageExecutor,
   DEFAULT_ENGINE_CONFIG,
 } from "../../../src/engine/index.js";
 import type { StageInstance, StageStatus } from "../../../src/engine/types.js";
+import type { StageStartedEvent, StageCompletedEvent, StageFailedEvent } from "../../../src/journal/types.js";
 import { Journal } from "../../../src/journal/writer.js";
 import { JournalReader } from "../../../src/journal/reader.js";
 import { FakeLock, FakeFileSystem } from "../../fixtures/index.js";
@@ -249,8 +249,8 @@ describe("StageExecutor", () => {
       const brief = stages.get("brief")!;
 
       // Start → complete
-      let instance = await exec.startStage(brief, path);
-      instance = await exec.completeStage(instance, ["brief.md"], path);
+      const instance = await exec.startStage(brief, path);
+      await exec.completeStage(instance, ["brief.md"], path);
 
       // Read journal
       const reader = new JournalReader(fs);
@@ -258,9 +258,9 @@ describe("StageExecutor", () => {
 
       expect(events.length).toBe(2);
       expect(events[0]!.type).toBe("stage.started");
-      expect(events[0]!.payload.stageId).toBe("brief");
+      expect((events[0] as StageStartedEvent).payload.stageId).toBe("brief");
       expect(events[1]!.type).toBe("stage.completed");
-      expect(events[1]!.payload.artifactRefs).toEqual(["brief.md"]);
+      expect((events[1] as StageCompletedEvent).payload.artifactRefs).toEqual(["brief.md"]);
     });
 
     it("records failure events", async () => {
@@ -276,16 +276,16 @@ describe("StageExecutor", () => {
       const stages = exec.initStages(pipeline);
       const script = stages.get("script")!;
 
-      let instance = await exec.startStage(script, path);
-      instance = await exec.failStage(instance, "API timeout", path);
+      const instance = await exec.startStage(script, path);
+      await exec.failStage(instance, "API timeout", path);
 
       const reader = new JournalReader(fs);
       const events = (await reader.readAll(path)).value!;
 
       expect(events[0]!.type).toBe("stage.started");
       expect(events[1]!.type).toBe("stage.failed");
-      expect(events[1]!.payload.error).toBe("API timeout");
-      expect(events[1]!.payload.retryable).toBe(true);
+      expect((events[1] as StageFailedEvent).payload.error).toBe("API timeout");
+      expect((events[1] as StageFailedEvent).payload.retryable).toBe(true);
     });
   });
 });

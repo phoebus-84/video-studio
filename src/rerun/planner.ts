@@ -2,9 +2,9 @@
 // Rerun planner — from staleness to execution plan
 // ---------------------------------------------------------------------------
 
-import type { StalenessReport } from "../staleness/types.js";
 import type { StageInstance } from "../engine/types.js";
 import type { ResolvedPipeline } from "../pipeline/types.js";
+import type { StalenessReport } from "../staleness/types.js";
 import type {
   RerunMode,
   RerunPlan,
@@ -25,7 +25,6 @@ export function planRerun(
   selectedStages?: string[],
 ): RerunPlan {
   const stageIds = pipeline.stages.map((s) => s.definition.id);
-  const staleSet = new Set(report.stale);
   const entries: RerunStageEntry[] = [];
   let totalCost = 0;
   const preserved: string[] = [];
@@ -61,7 +60,7 @@ export function planRerun(
   for (const id of stageIds) {
     const inst = stages.get(id);
     const isRerun = rerunSet.has(id);
-    const cost = estimateCost(inst, id);
+    const cost = estimateCost(inst);
 
     if (isRerun) {
       totalCost += cost;
@@ -109,7 +108,7 @@ export function planRerun(
 /**
  * Estimate cost for a stage based on prior attempts.
  */
-function estimateCost(inst: StageInstance | undefined, stageId: string): number {
+function estimateCost(inst: StageInstance | undefined): number {
   if (!inst || inst.attempts.length === 0) return DEFAULT_STAGE_COST;
 
   // Average of prior attempt costs, or default

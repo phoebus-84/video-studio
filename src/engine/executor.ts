@@ -2,9 +2,9 @@
 // Stage executor — processes stages in topological order
 // ---------------------------------------------------------------------------
 
+import type { StageStateMachine } from "./state-machine.js";
 import type { Journal } from "../journal/writer.js";
 import type { StageInstance, EngineConfig } from "./types.js";
-import { StageStateMachine } from "./state-machine.js";
 import type { ResolvedPipeline } from "../pipeline/types.js";
 
 /** Callback for executing an individual stage. */
