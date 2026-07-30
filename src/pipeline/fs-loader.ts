@@ -6,7 +6,14 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { load as loadYaml } from "js-yaml";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv";
+
+const require = createRequire(import.meta.url);
+const addFormats = require("ajv-formats") as (ajv: Ajv2020) => Ajv2020;
 import type {
   PipelineDefinition,
   PipelineLoader,
@@ -123,6 +130,27 @@ function toPipelineDef(_fullPath: string, yaml: YamlPipeline): PipelineDefinitio
   };
 }
 
+// ── Schema validation ───────────────────────────────────────────────────────
+
+const schemaPath = require.resolve(
+  "@video-studio/workspace-contracts/schemas/v1alpha1/pipeline-manifest.schema.json",
+);
+const pipelineManifestSchema = JSON.parse(readFileSync(schemaPath, "utf-8"));
+
+const ajv = new Ajv2020({ strict: true, allErrors: true });
+addFormats(ajv);
+ajv.addSchema(pipelineManifestSchema);
+const validateManifest = ajv.getSchema(`${pipelineManifestSchema.$id}#/$defs/PipelineManifest`)!;
+
+function validateYamlPipeline(raw: unknown): string[] | null {
+  if (!validateManifest(raw)) {
+    return (validateManifest.errors ?? []).map(
+      (err: ErrorObject) => `${err.instancePath || "/"} ${err.message}`,
+    );
+  }
+  return null;
+}
+
 // ── Loader implementation ───────────────────────────────────────────────────
 
 export class FileSystemPipelineLoader implements PipelineLoader {
@@ -190,6 +218,17 @@ export class FileSystemPipelineLoader implements PipelineLoader {
 
       if (!raw?.pipeline?.id) {
         // Not a pipeline file — skip (could be format.yaml, config, etc.)
+        return;
+      }
+
+      // Validate against canonical schema
+      const schemaErrors = validateYamlPipeline(raw);
+      if (schemaErrors) {
+        this.log?.(
+          `  WARNING: ${path.basename(fullPath)} failed schema validation:` +
+            `\n    ${schemaErrors.join("\n    ")}`,
+        );
+        // Do not load invalid pipelines
         return;
       }
 
