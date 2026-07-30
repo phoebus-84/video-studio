@@ -45,6 +45,13 @@ export async function createGateway(
   token: string,
   workspace?: WorkspaceService,
 ): Promise<GatewayInstance> {
+  // Resolve the library root once, to an absolute path. A relative default
+  // breaks downstream consumers (e.g. the pipeline runtime resolves
+  // "<root>/../video-built-in-pipelines" and the watcher).
+  const libraryRoot = path.resolve(
+    process.env.AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library",
+  );
+
   const app = Fastify({
     logger: {
       level: config.logging.level,
@@ -95,7 +102,7 @@ export async function createGateway(
 
   // ── Workspace watcher ────────────────────────────────────────────────────
   const watcher = new WorkspaceWatcher(events.bus, {
-    root: process.env.AVG_LIBRARY_ROOT ?? "./library",
+    root: libraryRoot,
   });
   // Start watcher lazily on server start, stop on shutdown
 
@@ -121,7 +128,7 @@ export async function createGateway(
 
   // ── Pipeline runtime client ──────────────────────────────────────────────
   const runtime: RuntimeClient = createRuntimeClient(
-    process.env.AVG_LIBRARY_ROOT ?? "./library",
+    libraryRoot,
     {
       log: (msg) => app.log.debug(msg),
       defaultTimeoutMs: 120_000,
@@ -132,9 +139,8 @@ export async function createGateway(
   publisher.start(runtime, watcher);
 
   // ── Serve library assets as static files ─────────────────────────────
-  const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
   await app.register(fastifyStatic, {
-    root: path.resolve(libraryRoot),
+    root: libraryRoot,
     prefix: "/library/",
     decorateReply: false,
     maxAge: 0,  // Disable browser caching — assets regenerate frequently
@@ -142,13 +148,13 @@ export async function createGateway(
 
   registerRoutes(app, config, ws, runtime, piHealth, adapterBridge);
   registerEditorRoutes(app, {
-    root: process.env.AVG_LIBRARY_ROOT ?? "./library",
+    root: libraryRoot,
     bus: events.bus,
   });
-  registerChannelFileRoutes(app, process.env.AVG_LIBRARY_ROOT ?? "./library");
-  registerSeriesFileRoutes(app, process.env.AVG_LIBRARY_ROOT ?? "./library");
+  registerChannelFileRoutes(app, libraryRoot);
+  registerSeriesFileRoutes(app, libraryRoot);
   registerReviewRoutes(app, {
-    root: process.env.AVG_LIBRARY_ROOT ?? "./library",
+    root: libraryRoot,
     bus: events.bus,
   });
   registerOpenApiRoute(app);
@@ -168,7 +174,7 @@ export async function createGateway(
         host: config.host,
         port: config.port,
       });
-      app.log.info(`File watcher started on ${process.env.AVG_LIBRARY_ROOT ?? "./library"}`);
+      app.log.info(`File watcher started on ${libraryRoot}`);
       return addr;
     },
     stop: async () => {
