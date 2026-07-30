@@ -1,0 +1,35 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ProviderJob",
+  "id": "job_AAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "capability": "image.generate",
+  "provider": "fal",
+  "profile": "fal-ai/nano-banana-pro@v1",
+  "requestId": "fal-req-abc123xyz",
+  "submittedAt": "2026-07-30T14:00:00Z",
+  "completedAt": "2026-07-30T14:00:15Z",
+  "status": "completed",
+  "params": {
+    "prompt": "A cozy cottage in an enchanted forest, storybook illustration style, warm colors",
+    "image_size": "landscape_16_9",
+    "num_images": 1,
+    "seed": 42
+  },
+  "outputs": [
+    {
+      "path": "assets/images/scene-01-woods.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 245760,
+      "contentType": "image/png"
+    }
+  ],
+  "cost": {
+    "amount": 0.004,
+    "currency": "USD"
+  },
+  "sourceRevisions": {
+    "artifacts/art-direction.json": "3",
+    "artifacts/script.md": "5"
+  },
+  "idempotencyKey": "ep_red-riding-hood__scene-01-woods__attempt-2"
+}

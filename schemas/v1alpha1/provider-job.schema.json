@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/provider-job.schema.json",
+  "title": "Video Studio provider job schema",
+  "description": "Canonical schema for provider jobs — a record of every capability invocation sent to an external provider (fal, TTS, etc.). Owned by video-workspace-contracts per ADR-0028. Must be persisted before polling so request IDs survive restarts.",
+  "$defs": {
+    "JobStatus": {
+      "type": "string",
+      "enum": ["submitted", "polling", "completed", "failed", "cancelled"]
+    },
+    "OutputAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "contentType"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "contentType": { "type": "string", "minLength": 1 }
+      }
+    },
+    "CostBreakdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+      }
+    },
+    "ProviderJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "id", "capability", "provider", "profile", "requestId", "submittedAt", "status", "idempotencyKey"],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "studio.video/v1alpha1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ProviderJob"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^job_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "capability": {
+          "type": "string",
+          "enum": [
+            "image.generate",
+            "image.edit",
+            "speech.synthesize",
+            "graphics.render",
+            "terminal.record",
+            "video.compose",
+            "media.probe"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "examples": ["fal", "qwen3-tts", "vhs", "studio-graphics-renderer", "ffmpeg-video-composer"]
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "examples": ["fal-ai/nano-banana-pro@v1", "qwen3-tts/v1"]
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Provider-side request identifier. Persisted before polling so the job survives restarts."
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": { "$ref": "#/$defs/JobStatus" },
+        "params": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Endpoint-specific parameters validated by the versioned contract before submission."
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OutputAsset" }
+        },
+        "cost": { "$ref": "#/$defs/CostBreakdown" },
+        "sourceRevisions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Map of artifact path to revision at submission time."
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Caller-chosen key surviving restarts. Duplicate submissions with the same key return the recorded result."
+        }
+      }
+    }
+  }
+}
