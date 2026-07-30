@@ -246,6 +246,9 @@ async function initWorkspace(
 
   log?.info(`Created ${kind} workspace at ${wsPath}`, { slug, kind, contractPath });
 
+  // 6. Create canonical skeleton files and directories.
+  await createSkeleton(kind, wsPath, slug, now, opts);
+
   return ok({
     path: wsPath,
     slug,
@@ -323,4 +326,153 @@ async function verifyWorkspaceKind(
   }
 
   return ok(wsPath);
+}
+
+// ---- Canonical skeleton creation -------------------------------------------
+
+async function createSkeleton(
+  kind: WorkspaceKind,
+  wsPath: string,
+  slug: string,
+  now: string,
+  opts: InitOptions,
+): Promise<void> {
+  switch (kind) {
+    case "channel":
+      await createChannelSkeleton(wsPath, slug, now, opts);
+      break;
+    case "series":
+      await createSeriesSkeleton(wsPath, slug, now, opts);
+      break;
+    case "episode":
+      await createEpisodeSkeleton(wsPath, slug, now, opts);
+      break;
+  }
+}
+
+async function createChannelSkeleton(
+  wsPath: string,
+  slug: string,
+  now: string,
+  opts: InitOptions,
+): Promise<void> {
+  // channel.md with frontmatter
+  await writeIfMissing(
+    opts, `${wsPath}/channel.md`,
+    `---
+channelId: ${slug}
+title: ${slug}
+createdAt: ${now}
+---\n`,
+  );
+
+  // settings.yaml
+  await writeIfMissing(
+    opts, `${wsPath}/settings.yaml`,
+    `# Channel settings for ${slug}\n`,
+  );
+}
+
+async function createSeriesSkeleton(
+  wsPath: string,
+  slug: string,
+  now: string,
+  opts: InitOptions,
+): Promise<void> {
+  // series.md with frontmatter
+  await writeIfMissing(
+    opts, `${wsPath}/series.md`,
+    `---
+seriesId: ${slug}
+title: ${slug}
+createdAt: ${now}
+---\n`,
+  );
+
+  // settings.yaml
+  await writeIfMissing(
+    opts, `${wsPath}/settings.yaml`,
+    `# Series settings for ${slug}\n`,
+  );
+
+  // visual-bible.md
+  await writeIfMissing(
+    opts, `${wsPath}/visual-bible.md`,
+    `# Visual Bible for ${slug}\n`,
+  );
+
+  // Directories
+  await opts.fs.mkdir(`${wsPath}/voice-profiles`, true).catch(() => { /* idempotent — directory may exist */ });
+  await opts.fs.mkdir(`${wsPath}/pipelines`, true).catch(() => { /* idempotent */ });
+  await opts.fs.mkdir(`${wsPath}/skills`, true).catch(() => { /* idempotent */ });
+  await opts.fs.mkdir(`${wsPath}/sources`, true).catch(() => { /* idempotent */ });
+}
+
+async function createEpisodeSkeleton(
+  wsPath: string,
+  slug: string,
+  now: string,
+  opts: InitOptions,
+): Promise<void> {
+  // episode.yaml
+  await writeIfMissing(
+    opts, `${wsPath}/episode.yaml`,
+    `# Episode ${slug}\nslug: ${slug}\ncreatedAt: ${now}\n`,
+  );
+
+  // Directories
+  const dirs = [
+    `${wsPath}/source`,
+    `${wsPath}/artifacts`,
+    `${wsPath}/prompts`,
+    `${wsPath}/assets/images`,
+    `${wsPath}/assets/graphics`,
+    `${wsPath}/assets/audio`,
+    `${wsPath}/attempts`,
+    `${wsPath}/reviews`,
+    `${wsPath}/journal`,
+    `${wsPath}/output`,
+  ];
+  for (const dir of dirs) {
+    await opts.fs.mkdir(dir, true).catch(() => { /* idempotent — directory may exist */ });
+  }
+
+  // assets/manifest.json
+  const manifest = {
+    apiVersion: "v1alpha1",
+    kind: "AssetManifest",
+    assets: [] as unknown[],
+  };
+  await writeIfMissing(
+    opts, `${wsPath}/assets/manifest.json`,
+    JSON.stringify(manifest, null, 2) + "\n",
+  );
+
+  // reviews/threads.jsonl (empty)
+  await writeIfMissing(opts, `${wsPath}/reviews/threads.jsonl`, "");
+
+  // journal/events.jsonl (empty)
+  await writeIfMissing(opts, `${wsPath}/journal/events.jsonl`, "");
+
+  // output/current.json
+  const current = {
+    apiVersion: "v1alpha1",
+    kind: "CurrentDeliverable",
+    renderId: null,
+  };
+  await writeIfMissing(
+    opts, `${wsPath}/output/current.json`,
+    JSON.stringify(current, null, 2) + "\n",
+  );
+}
+
+/** Write a file only if it does not already exist (idempotent). */
+async function writeIfMissing(
+  opts: InitOptions,
+  filePath: string,
+  content: string,
+): Promise<void> {
+  const existsR = await opts.fs.exists(filePath);
+  if (existsR.ok && existsR.value) return; // already exists, skip
+  await opts.fs.writeText(filePath, content);
 }

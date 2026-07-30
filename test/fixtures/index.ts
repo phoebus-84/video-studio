@@ -216,6 +216,22 @@ export class FakeFileSystem implements FileSystem {
     }
     return err(this.error("ENOENT", `File not found: ${np}`, np, "stat"));
   }
+
+  /** List all stored paths (files and directories) for test assertions. */
+  listAll(): string[] {
+    const paths = new Set<string>();
+    for (const key of this.store.keys()) paths.add(key);
+    for (const dir of this.dirs) paths.add(dir);
+    return [...paths].sort();
+  }
+
+  /** Synchronous read for test assertions. */
+  readTextSync(path: string): string {
+    const np = this.normalise(path);
+    const val = this.store.get(np);
+    if (val === undefined) throw new Error(`File not found: ${np}`);
+    return val;
+  }
 }
 
 // ---- FakeLock --------------------------------------------------------------
