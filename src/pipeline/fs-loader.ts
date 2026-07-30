@@ -23,6 +23,7 @@ import type {
   SkillRef,
   PipelineExtends,
 } from "./types.js";
+import { contractToKind } from "../artifacts/kinds.js";
 
 // ── YAML schema types ───────────────────────────────────────────────────────
 
@@ -61,15 +62,7 @@ function toArtifactRefs(
 ): ArtifactRef[] {
   if (!items) return [];
   return items.map((item) => ({
-    kind: item.contract.endsWith(".md") ? "markdown"
-      : item.contract.endsWith(".json") ? "json"
-      : item.contract.endsWith(".mp3") || item.contract.endsWith(".wav") ? "audio"
-      : item.contract.endsWith(".mp4") ? "video"
-      : item.contract.endsWith(".tape") ? "tape"
-      : item.contract.endsWith(".srt") ? "captions"
-      : item.contract.endsWith(".png") || item.contract.endsWith(".jpg") ? "image"
-      : item.contract.endsWith("/") || item.contract.endsWith(".tape") ? "directory"
-      : "unknown",
+    kind: contractToKind(item.contract),
     label: item.contract,
   }));
 }

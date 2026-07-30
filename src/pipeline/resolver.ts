@@ -83,6 +83,9 @@ export async function resolvePipeline(
   // Validate artifact flows
   validateArtifactFlow(stages, diagnostics);
 
+  // Validate artifact kinds against canonical vocabulary
+  validateArtifactKinds(resolved.stages, diagnostics, name);
+
   // Error if any error-level diagnostics
   if (diagnostics.some((d) => d.severity === "error")) {
     throw new PipelineResolutionError(
@@ -307,6 +310,37 @@ function validateCapabilities(
         message: `Editorial stage "${stage.id}" must not request capabilities`,
         context: `pipeline=${pipelineName} stage=${stage.id}`,
       });
+    }
+  }
+}
+
+// ── Artifact kind validation ────────────────────────────────────────────────
+
+function validateArtifactKinds(
+  stages: StageDefinition[],
+  diagnostics: ResolutionDiag[],
+  pipelineName: string,
+): void {
+  for (const stage of stages) {
+    for (const ref of stage.produces) {
+      if (ref.kind === "unknown") {
+        diagnostics.push({
+          severity: "warning",
+          code: "artifact.unknown-kind",
+          message: `Stage "${stage.id}" produces artifact "${ref.label}" with unknown kind`,
+          context: `pipeline=${pipelineName} stage=${stage.id}`,
+        });
+      }
+    }
+    for (const ref of stage.consumes) {
+      if (ref.kind === "unknown") {
+        diagnostics.push({
+          severity: "warning",
+          code: "artifact.unknown-kind",
+          message: `Stage "${stage.id}" consumes artifact "${ref.label}" with unknown kind`,
+          context: `pipeline=${pipelineName} stage=${stage.id}`,
+        });
+      }
     }
   }
 }

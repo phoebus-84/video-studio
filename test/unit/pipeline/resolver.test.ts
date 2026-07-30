@@ -593,4 +593,56 @@ describe("resolvePipeline", () => {
       }
     });
   });
+
+  describe("artifact kind validation", () => {
+    it("maps .md to markdown, .json to json, .wav to audio", async () => {
+      const loader = makeLoader({
+        name: "kind-test",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "producer",
+            name: "Producer",
+            type: "capability",
+            capabilities: [{ capability: "image.generate" }],
+            dependsOn: [],
+            produces: [
+              { kind: "markdown", label: "script.md" },
+              { kind: "json", label: "data.json" },
+              { kind: "audio", label: "voice.wav" },
+            ],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      });
+      const result = await resolvePipeline(loader, "kind-test");
+      expect(result.diagnostics.filter((d) => d.code === "artifact.unknown-kind"))
+        .toHaveLength(0);
+    });
+
+    it("emits warning for unknown artifact kind", async () => {
+      const loader = makeLoader({
+        name: "unknown-kind-test",
+        version: "1.0.0",
+        stages: [
+          {
+            id: "weird",
+            name: "Weird",
+            type: "capability",
+            capabilities: [{ capability: "image.generate" }],
+            dependsOn: [],
+            produces: [{ kind: "unknown", label: "output.xyz" }],
+            consumes: [],
+          },
+        ],
+        skills: [],
+      });
+      const result = await resolvePipeline(loader, "unknown-kind-test");
+      const warnings = result.diagnostics.filter(
+        (d) => d.code === "artifact.unknown-kind" && d.severity === "warning",
+      );
+      expect(warnings.length).toBe(1);
+    });
+  });
 });
