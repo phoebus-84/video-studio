@@ -115,11 +115,13 @@ Sleep 2s
 
 ---
 
-## Dyne Visual Identity
+## Visual Identity
 
-Use the Dyne theme for all Dyne channel recordings. The theme file is at `library/dyne/vhs-theme.json`.
+The channel's visual identity comes from `<episode-root>/../../vhs-theme.json`
+(channel workspace). The skill includes a default theme for when no channel
+theme is present.
 
-### Dyne VHS Theme
+### Default VHS Theme (fallback)
 
 ```json
 {
@@ -147,7 +149,7 @@ Use the Dyne theme for all Dyne channel recordings. The theme file is at `librar
 }
 ```
 
-### Recommended Dyne Settings
+### Recommended VHS Settings
 
 ```
 Set FontFamily "JetBrains Mono"
@@ -162,7 +164,7 @@ Set Framerate 30
 Set PlaybackSpeed 1.0
 Set CursorBlink false
 Set WindowBar Colorful
-Set Theme "library/dyne/vhs-theme.json"
+Set Theme "<channel>/vhs-theme.json"
 ```
 
 ---
@@ -232,7 +234,7 @@ artifacts/tapes/
 VHS renders to MP4. The compose stage can use these MP4s directly:
 - Trim or loop VHS clips to match narration duration
 - Crossfade between VHS clips and static illustrations
-- Overlay VHS output on Dyne-branded backgrounds
+- Overlay VHS output on channel-branded backgrounds
 
 ### 10. Test Render Before Committing
 Always render and visually inspect:
@@ -276,7 +278,7 @@ Show a reusable .tape snippet here
 
 **What worked**:
 - VHS renders clean terminal text with antialiasing at any resolution
-- The Dyne theme (purple cursor, orange keywords on black) looks professional
+- The channel theme (purple cursor, orange keywords on black) looks professional
 - Freeze-frame padding (`tpad=stop_mode=clone`) works perfectly for matching narration duration
 - Image → video → image transitions are seamless when normalized to same format
 - The `.tape` DSL is expressive enough for realistic terminal demos
@@ -324,7 +326,7 @@ Sleep 2s
 **What worked**:
 - VHS renders clean, antialiased terminal text at any size
 - The `.tape` format is simple enough to generate programmatically
-- Theme integration with Dyne colors works perfectly
+- Theme integration with channel colors works perfectly
 
 **What didn't**:
 - Font must be installed on the rendering machine — JetBrains Mono needs `brew install font-jetbrains-mono`
@@ -333,7 +335,7 @@ Sleep 2s
 - `Set Theme` with a file path doesn't work; must inline the theme JSON directly in the `.tape` file
 - VHS renders are short (13-36s) — need to loop or pad for longer narration scenes
 
-**Decision**: Use VHS for ALL code/terminal scenes in Dyne episodes. Keep PIL for title cards, diagrams, and end cards. For scenes where VHS output is shorter than narration, pad the video with freeze-frame or loop at the end.
+**Decision**: Use VHS for ALL code/terminal scenes in terminal-recording episodes. Keep PIL for title cards, diagrams, and end cards. For scenes where VHS output is shorter than narration, pad the video with freeze-frame or loop at the end.
 
 ---
 
@@ -375,7 +377,7 @@ Set Margin 40
 Set MarginFill "#0D0D0D"
 Set BorderRadius 8
 Set Framerate 30
-Set Theme "library/dyne/vhs-theme.json"
+Set Theme "<channel>/vhs-theme.json"
 
 Hide
 Type "cat -n /usr/local/bin/my-tool | sed -n '589,620p'"
