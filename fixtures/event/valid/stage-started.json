@@ -1,0 +1,20 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "JournalEvent",
+  "id": "evt_AAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "episodeRef": {
+    "channel": "childrens",
+    "series": "fairy-tales",
+    "episode": "red-riding-hood"
+  },
+  "at": "2026-07-30T10:00:00Z",
+  "actor": "pi",
+  "type": "stage.started",
+  "data": {
+    "stageId": "ingest",
+    "attemptNumber": 1,
+    "leaseId": "lease_01"
+  },
+  "correlationId": "corr_abc123",
+  "causationId": "evt_BBBBBBBBBBBBBBBBBBBBBBBBBB"
+}

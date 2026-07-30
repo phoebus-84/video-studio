@@ -1,0 +1,18 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "JournalEvent",
+  "id": "evt_CCCCCCCCCCCCCCCCCCCCCCCCCC",
+  "episodeRef": {
+    "channel": "childrens",
+    "series": "fairy-tales",
+    "episode": "red-riding-hood"
+  },
+  "at": "2026-07-30T11:00:00Z",
+  "actor": "runtime",
+  "type": "artifact.created",
+  "data": {
+    "path": "artifacts/brief.md",
+    "revisionId": "art_REV01EXAMPLE0000000000000",
+    "size": 4096
+  }
+}

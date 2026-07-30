@@ -1,0 +1,18 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "JournalEvent",
+  "id": "evt_DDDDDDDDDDDDDDDDDDDDDDDDDD",
+  "episodeRef": {
+    "channel": "childrens",
+    "series": "fairy-tales",
+    "episode": "red-riding-hood"
+  },
+  "at": "2026-07-30T11:30:00Z",
+  "actor": "human",
+  "type": "approval-requested",
+  "data": {
+    "stageId": "illustrate",
+    "attemptNumber": 2,
+    "reason": "Generated illustrations need review — two scenes show incorrect character colors"
+  }
+}
