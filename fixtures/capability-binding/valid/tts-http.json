@@ -1,0 +1,16 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "CapabilityBinding",
+  "capability": "speech.synthesize",
+  "provider": "qwen-tts",
+  "adapter": {
+    "package": "qwen-tts-worker",
+    "version": "0.1.0",
+    "transport": "http",
+    "endpoint": "http://localhost:8765/v1/synthesize"
+  },
+  "profile": "qwen3-tts/v1",
+  "decidedBy": "user",
+  "decidedAt": "2026-07-30T14:05:00Z",
+  "approvalRef": "rth_REVIEWTHREAD00000000000000"
+}
