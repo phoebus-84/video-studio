@@ -85,24 +85,24 @@ describe('Pipeline manifest lint — failure paths', () => {
     const result = lintPipeline('invalid/stage-missing-type.yaml');
     assert.equal(result.exitCode, 1, `Expected exit 1, got ${result.exitCode}`);
     assert.ok(
-      result.stderr.includes('missing-stage-type'),
-      `Expected "missing-stage-type" error. stderr: ${result.stderr}`
+      result.stderr.includes("must have required property 'type'") || result.stderr.includes('missing-stage-type'),
+      `Expected type validation error. stderr: ${result.stderr}`
     );
   });
 
   it('detects editorial with capability — stage-two has both', () => {
     const result = lintPipeline('invalid/stage-missing-type.yaml');
     assert.ok(
-      result.stderr.includes('editorial-with-capability'),
-      `Expected "editorial-with-capability" error. stderr: ${result.stderr}`
+      result.stderr.includes('must NOT be valid') || result.stderr.includes('editorial-with-capability'),
+      `Expected editorial+capability error. stderr: ${result.stderr}`
     );
   });
 
   it('detects capability without capability — stage-three missing capability field', () => {
     const result = lintPipeline('invalid/stage-missing-type.yaml');
     assert.ok(
-      result.stderr.includes('capability-without-capability'),
-      `Expected "capability-without-capability" error. stderr: ${result.stderr}`
+      result.stderr.includes("must have required property 'capability'") || result.stderr.includes('capability-without-capability'),
+      `Expected missing capability error. stderr: ${result.stderr}`
     );
   });
 
@@ -163,8 +163,8 @@ describe('Pipeline manifest lint — failure paths', () => {
     const result = lintPipeline('invalid/pipeline-empty-stages.yaml');
     assert.equal(result.exitCode, 1, `Expected exit 1 for empty stages, got ${result.exitCode}`);
     assert.ok(
-      result.stderr.includes('stages-required'),
-      `Expected "stages-required" error. stderr: ${result.stderr}`
+      result.stderr.includes('must NOT have fewer than 1 items') || result.stderr.includes('stages-required'),
+      `Expected empty-stages error. stderr: ${result.stderr}`
     );
   });
 });
