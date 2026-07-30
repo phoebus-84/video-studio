@@ -81,6 +81,31 @@ describe('Pipeline manifest lint — failure paths', () => {
     assert.equal(result.exitCode, 1, `Expected exit 1, got ${result.exitCode}`);
   });
 
+  it('detects missing stage type — stage-one lacks type field', () => {
+    const result = lintPipeline('invalid/stage-missing-type.yaml');
+    assert.equal(result.exitCode, 1, `Expected exit 1, got ${result.exitCode}`);
+    assert.ok(
+      result.stderr.includes('missing-stage-type'),
+      `Expected "missing-stage-type" error. stderr: ${result.stderr}`
+    );
+  });
+
+  it('detects editorial with capability — stage-two has both', () => {
+    const result = lintPipeline('invalid/stage-missing-type.yaml');
+    assert.ok(
+      result.stderr.includes('editorial-with-capability'),
+      `Expected "editorial-with-capability" error. stderr: ${result.stderr}`
+    );
+  });
+
+  it('detects capability without capability — stage-three missing capability field', () => {
+    const result = lintPipeline('invalid/stage-missing-type.yaml');
+    assert.ok(
+      result.stderr.includes('capability-without-capability'),
+      `Expected "capability-without-capability" error. stderr: ${result.stderr}`
+    );
+  });
+
   it('detects unstable stage ID (underscore) — AP-003', () => {
     const result = lintPipeline('invalid/pipeline-leaked-orchestration.yaml');
     assert.ok(

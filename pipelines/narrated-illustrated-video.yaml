@@ -3,24 +3,21 @@ pipeline:
   version: "1.0.0"
   description: "Produces a 16:9 1080p narrated explainer with illustrations, captions, and FFmpeg editing. Targets 3-8 minute runtime."
   capabilities:
-    - id: llm
+    - id: image.generate
       version: "1.0.0"
-    - id: image-generation
+    - id: speech.synthesize
       version: "1.0.0"
-    - id: tts
+    - id: media.probe
       version: "1.0.0"
-    - id: speech-to-text
+    - id: video.compose
       version: "1.0.0"
-    - id: ffmpeg
-      version: "1.0.0"
-    - id: terminal-recording
+    - id: media.record.terminal
       version: "1.0.0"
   stages:
     - id: brief
       name: "Creative Brief"
-      type: capability
+      type: editorial
       description: "Research and structure the video topic"
-      capability: llm
       inputs: []
       outputs:
         - contract: brief.md
@@ -36,9 +33,8 @@ pipeline:
 
     - id: script
       name: "Script"
-      type: capability
+      type: editorial
       description: "Write the narration script with scene directions"
-      capability: llm
       inputs:
         - contract: brief.md
           version: "1.0.0"
@@ -57,9 +53,8 @@ pipeline:
 
     - id: art-direction
       name: "Art Direction"
-      type: capability
+      type: editorial
       description: "Design visual style and illustration specs per scene"
-      capability: llm
       inputs:
         - contract: script.md
           version: "1.0.0"
@@ -80,7 +75,7 @@ pipeline:
       name: "Terminal Recordings"
       type: capability
       description: "Render VHS terminal recordings for code walkthrough and CLI demo scenes"
-      capability: terminal-recording
+      capability: media.record.terminal
       inputs:
         - contract: art-direction.json
           version: "1.0.0"
@@ -103,7 +98,7 @@ pipeline:
       name: "Illustrations"
       type: capability
       description: "Generate images for each scene based on art direction"
-      capability: image-generation
+      capability: image.generate
       inputs:
         - contract: art-direction.json
           version: "1.0.0"
@@ -122,7 +117,7 @@ pipeline:
       name: "Narration"
       type: capability
       description: "Generate voiceover audio from the script"
-      capability: tts
+      capability: speech.synthesize
       inputs:
         - contract: script.md
           version: "1.0.0"
@@ -141,7 +136,7 @@ pipeline:
       name: "Captions"
       type: capability
       description: "Generate timed captions from narration audio"
-      capability: speech-to-text
+      capability: media.probe
       inputs:
         - contract: narration.mp3
           version: "1.0.0"
@@ -158,9 +153,8 @@ pipeline:
 
     - id: timing
       name: "Scene Timing"
-      type: capability
+      type: editorial
       description: "Compute per-scene durations and transition timestamps"
-      capability: llm
       inputs:
         - contract: script.md
           version: "1.0.0"
@@ -182,7 +176,7 @@ pipeline:
       name: "Compose & Render"
       type: capability
       description: "Assemble final video from illustrations, narration, captions, and timing"
-      capability: ffmpeg
+      capability: video.compose
       inputs:
         - contract: illustrations/
           version: "1.0.0"
@@ -217,9 +211,8 @@ pipeline:
 
     - id: qa
       name: "Quality Assurance"
-      type: capability
+      type: editorial
       description: "Review rendered video for issues"
-      capability: llm
       inputs:
         - contract: output.mp4
           version: "1.0.0"

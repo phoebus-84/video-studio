@@ -151,13 +151,18 @@ function checkStageIds(stages, file) {
 
 function checkRequiredStageFields(stages, file) {
   const diags = [];
-  const required = ['name', 'capability', 'inputs', 'outputs', 'gates', 'depends_on'];
+  const required = ['name', 'inputs', 'outputs', 'gates', 'depends_on'];
   for (const stage of stages) {
     for (const field of required) {
       if (stage[field] === undefined || stage[field] === null) {
         diags.push(error('missing-stage-field',
           `Stage "${stage.id || 'unknown'}" is missing required field "${field}"`, file));
       }
+    }
+    // capability is required for capability stages, forbidden on editorial
+    if (stage.type === 'capability' && (stage.capability === undefined || stage.capability === null)) {
+      diags.push(error('missing-stage-field',
+        `Stage "${stage.id || 'unknown'}" type=capability must have a "capability" field`, file));
     }
     if (stage.gates && typeof stage.gates === 'object') {
       if (stage.gates.review !== undefined && !VALID_REVIEW_VALUES.has(stage.gates.review)) {
@@ -344,6 +349,37 @@ function checkDependsOnValidity(stages, file) {
 }
 
 // ---------------------------------------------------------------------------
+// Type validation (ADR-0025)
+// ---------------------------------------------------------------------------
+
+const VALID_STAGE_TYPES = new Set(['editorial', 'capability']);
+
+function checkStageTypes(stages, file) {
+  const diags = [];
+  for (const stage of stages) {
+    if (stage.type === undefined || stage.type === null) {
+      diags.push(error('missing-stage-type',
+        `Stage "${stage.id || 'unknown'}" is missing required "type" field (editorial | capability)`, file));
+      continue;
+    }
+    if (!VALID_STAGE_TYPES.has(stage.type)) {
+      diags.push(error('invalid-stage-type',
+        `Stage "${stage.id}" type "${stage.type}" must be one of: editorial, capability`, file));
+      continue;
+    }
+    if (stage.type === 'editorial' && stage.capability !== undefined && stage.capability !== null) {
+      diags.push(error('editorial-with-capability',
+        `Stage "${stage.id}" is type=editorial but has a capability field — editorial stages do not own capabilities`, file));
+    }
+    if (stage.type === 'capability' && (stage.capability === undefined || stage.capability === null)) {
+      diags.push(error('capability-without-capability',
+        `Stage "${stage.id}" is type=capability but has no capability field`, file));
+    }
+  }
+  return diags;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -374,6 +410,7 @@ function lintPipeline(filePath) {
   if (stages.length === 0) return diags;
 
   diags = diags.concat(checkStageIds(stages, file));
+  diags = diags.concat(checkStageTypes(stages, file));
   diags = diags.concat(checkRequiredStageFields(stages, file));
   diags = diags.concat(checkDuplicateProducers(stages, file));
   diags = diags.concat(checkOrphanContracts(stages, file));

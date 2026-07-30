@@ -5,6 +5,7 @@ pipeline:
   stages:
     - id: stage-one
       name: "Stage One"
+      type: capability
       capability: basic-processing
       inputs:
         - contract: source-input
@@ -22,6 +23,7 @@ pipeline:
 
     - id: stage-two
       name: "Stage Two"
+      type: capability
       description: >
         If the input is a fairy tale, adapt it for children. If it is a repository,
         extract code. Content-type branching in manifest is forbidden by AP-006.
@@ -46,6 +48,7 @@ pipeline:
 
     - id: stage_3
       name: "Stage Three"
+      type: capability
       description: "Has an unstable stage ID using underscore"
       capability: basic-processing
       inputs:

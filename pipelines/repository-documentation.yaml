@@ -6,16 +6,13 @@ pipeline:
     pipeline: narrated-illustrated-video
     version: "1.0.0"
   capabilities:
-    - id: llm
-      version: "1.0.0"
-    - id: image-generation
+    - id: image.generate
       version: "1.0.0"
   stages:
     - id: repo-analysis
       name: "Repository Analysis"
-      type: capability
+      type: editorial
       description: "Scan repository structure, architecture, and key modules"
-      capability: llm
       inputs: []
       outputs:
         - contract: repo-analysis.json
@@ -31,9 +28,8 @@ pipeline:
 
     - id: content-plan
       name: "Content Plan"
-      type: capability
+      type: editorial
       description: "Generate multi-episode plan from repository analysis"
-      capability: llm
       inputs:
         - contract: repo-analysis.json
           version: "1.0.0"
@@ -54,7 +50,7 @@ pipeline:
       name: "Architecture Diagram"
       type: capability
       description: "Generate technical architecture diagram for the repository"
-      capability: image-generation
+      capability: image.generate
       inputs:
         - contract: repo-analysis.json
           version: "1.0.0"

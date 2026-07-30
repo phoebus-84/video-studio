@@ -1,0 +1,63 @@
+pipeline:
+  id: missing-stage-type
+  version: "1.0.0"
+  description: "A pipeline where a stage lacks the required type field"
+  capabilities:
+    - id: basic-processing
+      version: "1.0.0"
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      capability: basic-processing
+      inputs:
+        - contract: source-input
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: intermediate-artifact
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 0
+      skills: []
+      depends_on: []
+
+    - id: stage-two
+      name: "Stage Two"
+      description: "Editorial stage with capability mistakenly set"
+      type: editorial
+      capability: basic-processing
+      inputs:
+        - contract: intermediate-artifact
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: final-artifact
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - stage-one
+
+    - id: stage-three
+      name: "Stage Three"
+      description: "Capability stage missing capability field"
+      type: capability
+      inputs:
+        - contract: final-artifact
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: processed-artifact
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 0
+      skills: []
+      depends_on:
+        - stage-two

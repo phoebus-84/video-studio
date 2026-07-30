@@ -8,6 +8,7 @@ pipeline:
   stages:
     - id: stage-one
       name: "Stage One"
+      type: capability
       description: "First stage: normalizes inputs"
       capability: basic-processing
       inputs:
@@ -29,6 +30,7 @@ pipeline:
 
     - id: stage-two
       name: "Stage Two"
+      type: capability
       description: "Second stage: processes intermediate artifact"
       capability: basic-processing
       inputs:

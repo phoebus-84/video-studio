@@ -6,18 +6,15 @@ pipeline:
     pipeline: narrated-illustrated-video
     version: "1.0.0"
   capabilities:
-    - id: llm
+    - id: image.generate
       version: "1.0.0"
-    - id: image-generation
-      version: "1.0.0"
-    - id: tts
+    - id: speech.synthesize
       version: "1.0.0"
   stages:
     - id: safety-review
       name: "Safety Review"
-      type: capability
+      type: editorial
       description: "Check script content for age-appropriate safety"
-      capability: llm
       inputs:
         - contract: script.md
           version: "1.0.0"
@@ -36,9 +33,8 @@ pipeline:
 
     - id: continuity-check
       name: "Continuity Check"
-      type: capability
+      type: editorial
       description: "Verify visual continuity across scenes after illustration generation"
-      capability: llm
       inputs:
         - contract: illustrations/
           version: "1.0.0"
