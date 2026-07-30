@@ -1,0 +1,17 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ErrorEnvelope",
+  "error": {
+    "code": "WORKSPACE_CHANNEL_MISMATCH",
+    "message": "Episode references a series from a different channel",
+    "retryable": false,
+    "details": {
+      "episodeChannel": "childrens",
+      "seriesChannel": "tech",
+      "episodeId": "ep_VALID01EXAMPLE000000000000",
+      "seriesId": "ser_01ARZ3NDEKTSV4RRFFQ69G5FBV"
+    }
+  },
+  "correlationId": "corr-def456",
+  "at": "2026-07-30T14:30:00Z"
+}

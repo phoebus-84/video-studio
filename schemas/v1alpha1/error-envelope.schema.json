@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/error-envelope.schema.json",
+  "title": "Video Studio error envelope schema",
+  "description": "Canonical error envelope for all cross-process error boundaries (gateway HTTP, runtime CLI, adapter jobs). Owned by video-workspace-contracts per ADR-0028.",
+  "$defs": {
+    "ErrorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9]*(?:[_.][A-Z][A-Z0-9]*)*$|^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)*$",
+          "description": "Machine-readable error code. SCREAMING_SNAKE_CASE or dotted.namespace style (e.g. 'WORKSPACE_CHANNEL_MISMATCH' or 'workspace.channel-mismatch')."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable error description."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Whether the caller should retry this operation."
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Optional structured details (field paths, values, context)."
+        }
+      }
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "error", "correlationId", "at"],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "studio.video/v1alpha1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ErrorEnvelope"
+        },
+        "error": { "$ref": "#/$defs/ErrorBody" },
+        "correlationId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Correlation ID linking the error to the originating request or event."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the error was generated."
+        }
+      }
+    }
+  }
+}
