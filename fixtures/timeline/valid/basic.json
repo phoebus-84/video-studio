@@ -1,0 +1,83 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "EditTimeline",
+  "episodeRef": {
+    "channel": "childrens",
+    "series": "fairy-tales",
+    "episode": "red-riding-hood"
+  },
+  "revision": 1,
+  "fps": 30,
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "segments": [
+    {
+      "id": "scene-01-woods",
+      "sourceAsset": "assets/images/scene-01-woods.png",
+      "sourceKind": "image",
+      "startSec": 0,
+      "durationSec": 8.5,
+      "transition": {
+        "type": "dissolve",
+        "duration": 0.5
+      },
+      "caption": {
+        "text": "Once upon a time, in a village by the woods...",
+        "start": 0.5,
+        "duration": 7.5,
+        "position": "bottom"
+      },
+      "audio": {
+        "volume": 1.0,
+        "fadeIn": 0.5,
+        "fadeOut": 1.0
+      }
+    },
+    {
+      "id": "scene-02-grandma",
+      "sourceAsset": "assets/images/scene-02-grandma.png",
+      "sourceKind": "image",
+      "startSec": 8.5,
+      "durationSec": 10.0,
+      "transition": {
+        "type": "fade",
+        "duration": 0.8
+      },
+      "caption": {
+        "text": "Little Red Riding Hood knocked at the door.",
+        "start": 0.5,
+        "duration": 9.0,
+        "position": "bottom"
+      },
+      "audio": {
+        "volume": 0.9,
+        "fadeIn": 0.3,
+        "fadeOut": 0.5
+      },
+      "transform": {
+        "fit": "cover",
+        "scale": 1.1
+      }
+    },
+    {
+      "id": "scene-03-ending",
+      "sourceAsset": "assets/images/scene-03-ending.png",
+      "sourceKind": "image",
+      "startSec": 18.5,
+      "durationSec": 7.0,
+      "caption": {
+        "text": "And they all lived happily ever after.",
+        "start": 1.0,
+        "duration": 5.5,
+        "position": "center",
+        "fontSize": 48
+      },
+      "audio": {
+        "volume": 1.0,
+        "fadeOut": 2.0
+      }
+    }
+  ]
+}
