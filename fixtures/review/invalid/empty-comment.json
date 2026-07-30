@@ -1,0 +1,19 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ReviewThread",
+  "id": "rth_FFFFFFFFFFFFFFFFFFFFFFFFFF",
+  "createdAt": "2026-07-30T14:00:00Z",
+  "status": "open",
+  "anchor": {
+    "targetType": "scene",
+    "targetPath": "timeline/edit.yaml"
+  },
+  "comments": [
+    {
+      "id": "cmt_GGGGGGGGGGGGGGGGGGGGGGGGGG",
+      "at": "2026-07-30T14:05:00Z",
+      "author": "human",
+      "body": ""
+    }
+  ]
+}
