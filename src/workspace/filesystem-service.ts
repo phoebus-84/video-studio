@@ -127,15 +127,17 @@ export class FileSystemWorkspaceService implements WorkspaceService {
               const narRaw = await fs.readFile(narJsonPath, "utf-8");
               const narMeta = JSON.parse(narRaw);
               const wavPath = path.join(epPath, "artifacts", "narration", `${sid}.wav`);
-              let wavExists = false;
-              try { await fs.access(wavPath); wavExists = true; } catch {}
+              let wavStat: import("node:fs").Stats | null = null;
+              try { wavStat = await fs.stat(wavPath); } catch {}
               enriched.narration = {
                 file: `${sid}.wav`,
                 url: `/library/${channel}/${series}/${episode}/artifacts/narration/${sid}.wav`,
                 durationSeconds: (narMeta.duration_sec as number) ?? scene.durationSeconds ?? 0,
                 voice: (narMeta.voice as string) || "default",
                 jobId: narMeta.job_id as string,
-                status: wavExists ? "completed" : "missing",
+                status: wavStat ? "completed" : "missing",
+                generatedAt: wavStat ? wavStat.mtime.toISOString() : null,
+                size: wavStat ? wavStat.size : null,
               };
             } catch {
               enriched.narration = null;
@@ -210,7 +212,39 @@ export class FileSystemWorkspaceService implements WorkspaceService {
             return enriched;
           }));
 
-          return { ...base, scenes, slug: episode, status, updatedAt: new Date().toISOString() };
+          // ── Render deliverable: output/<render-id>.mp4 (canonical) or artifacts/final.mp4 (legacy) ──
+          let render: Record<string, unknown> | null = null;
+          try {
+            const candidates: Array<{ p: string; url: string; mtime: number }> = [];
+            try {
+              const outDir = path.join(epPath, "output");
+              for (const f of (await fs.readdir(outDir)).filter((f) => f.endsWith(".mp4"))) {
+                const p = path.join(outDir, f);
+                candidates.push({ p, url: `/library/${channel}/${series}/${episode}/output/${f}`, mtime: (await fs.stat(p)).mtimeMs });
+              }
+            } catch { /* no output dir */ }
+            try {
+              const p = path.join(epPath, "artifacts", "final.mp4");
+              candidates.push({ p, url: `/library/${channel}/${series}/${episode}/artifacts/final.mp4`, mtime: (await fs.stat(p)).mtimeMs });
+            } catch { /* no legacy render */ }
+            const latest = candidates.sort((a, b) => b.mtime - a.mtime)[0];
+            if (latest) {
+              const stat = await fs.stat(latest.p);
+              render = { url: latest.url, file: path.basename(latest.p), size: stat.size, generatedAt: stat.mtime.toISOString() };
+            }
+          } catch { /* discovery failed */ }
+
+          // ── QA report (only if a real report file exists on disk) ──
+          let qaReport: unknown = null;
+          const reportPaths = [path.join(epPath, "artifacts", "qa-report.json")];
+          if (render) {
+            reportPaths.unshift(path.join(epPath, "output", `${path.basename(render.file as string, ".mp4")}.report.json`));
+          }
+          for (const rp of reportPaths) {
+            try { qaReport = JSON.parse(await fs.readFile(rp, "utf-8")); break; } catch { /* try next */ }
+          }
+
+          return { ...base, scenes, render, qaReport, slug: episode, status, updatedAt: new Date().toISOString() };
         } catch {
           return base;
         }
