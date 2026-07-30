@@ -75,6 +75,11 @@
     background: var(--vs-bg-surface);
   }
 
+  .ep-textarea:focus-visible {
+    outline: 2px solid var(--vs-border-focus);
+    outline-offset: -2px;
+  }
+
   .ep-diagnostics {
     padding: var(--vs-space-3) var(--vs-space-4);
     background: var(--vs-bg-surface);

@@ -17,13 +17,26 @@
       ? `${ep.staleCount} stage${ep.staleCount === 1 ? "" : "s"} stale`
       : null,
   );
+
+  const progressSummary = $derived.by(() => {
+    const done = ep.stages.filter((s) => s.status === "completed").length;
+    return `${done} of ${ep.stages.length} stages completed`;
+  });
 </script>
 
 <div class="episode-header" aria-label="Episode identity">
   <div class="eh-identity">
     <h2 class="eh-title">{ep.title}</h2>
     <div class="eh-meta">
-      <span class="eh-approval" aria-label="Approval mode: {APPROVAL_LABELS[ep.approvalMode]}">
+      <span
+        class="eh-approval"
+        aria-label="Approval mode: {APPROVAL_LABELS[ep.approvalMode]}"
+        title={ep.approvalMode === "autopilot"
+          ? "Autopilot: Pi runs stages without asking, within budget and gates"
+          : ep.approvalMode === "guided"
+            ? "Guided: Pi asks before consequential stages"
+            : "Manual: every stage requires your approval"}
+      >
         {APPROVAL_LABELS[ep.approvalMode]}
       </span>
       {#if ep.budgetLimit}
@@ -44,6 +57,7 @@
     {#if !ep.currentDeliverableValidated && ep.currentDeliverable}
       <span class="eh-unvalidated">Unvalidated deliverable</span>
     {/if}
+    <span class="eh-progress">{progressSummary}</span>
   </div>
 </div>
 
@@ -106,5 +120,14 @@
     background: var(--vs-state-attention-bg);
     padding: 1px var(--vs-space-2);
     border-radius: var(--vs-radius-sm);
+  }
+
+  .eh-progress {
+    color: var(--vs-text-tertiary);
+    padding: 1px 0;
+  }
+
+  .eh-approval {
+    cursor: help;
   }
 </style>

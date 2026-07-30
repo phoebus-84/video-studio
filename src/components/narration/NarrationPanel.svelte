@@ -71,7 +71,7 @@
             rows={2}
             value={narration.instruct ?? ""}
             oninput={(e) => narration.instruct = (e.target as HTMLTextAreaElement).value || null}
-            placeholder="e.g. Speak warmly and gently like a grandmother telling a bedtime story"
+            placeholder="e.g. Warm, unhurried narrator voice"
           ></textarea>
         </label>
       </div>
@@ -151,7 +151,7 @@
                 rows={2}
                 value={seg.instruct ?? ""}
                 oninput={(e) => seg.instruct = (e.target as HTMLTextAreaElement).value || null}
-                placeholder="e.g. Speak slyly like a cunning wolf"
+                placeholder="e.g. Character voice direction for this segment"
               ></textarea>
             </label>
           </div>

@@ -8,8 +8,6 @@
   const group = $derived(assets.selectedGroup);
 
   function select(attempt: AssetAttempt) {
-    /* In production: call gateway to update the selected pointer.
-       Here we just visually reflect the choice. */
     if (group) {
       for (const a of group.attempts) {
         a.selected = a.id === attempt.id;
@@ -17,75 +15,162 @@
     }
   }
 
-  function formatDate(iso: string): string {
+  function formatDate(iso: string | null): string | null {
+    if (!iso) return null;
     return new Date(iso).toLocaleString();
   }
 
-  let regenerating = $state(false);
-  let regenError = $state<string | null>(null);
-  let editingPrompt = $state<string | null>(null);
-  let editedText = $state("");
-  let savingPrompt = $state(false);
+  function formatBytes(bytes: number | null): string | null {
+    if (bytes === null) return null;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
 
-  async function savePrompt(attempt: AssetAttempt) {
-    const newText = editedText.trim();
-    if (!newText || newText === attempt.prompt) {
-      editingPrompt = null;
-      return;
-    }
-    if (episode.state.phase !== "ready") return;
-    const ep = episode.state.episode;
+  function formatDuration(sec: number | null): string | null {
+    if (sec === null) return null;
+    const m = Math.floor(sec / 60);
+    const s = Math.round(sec % 60);
+    return m > 0 ? `${m}:${s.toString().padStart(2, "0")}` : `${s}s`;
+  }
+
+  const KIND_LABELS: Record<AssetAttempt["kind"], string> = {
+    image: "Image",
+    video: "Video",
+    audio: "Narration",
+  };
+
+  /* ── prompt / text / instruct editing ─────────────────────────────── */
+
+  let saving = $state(false);
+  let saveError = $state<string | null>(null);
+
+  function episodeRef() {
+    if (episode.state.phase !== "ready") return null;
+    return episode.state.episode;
+  }
+
+  /** Persist the image intent prompt into episode.json (scene.intent). */
+  async function saveImagePrompt(attempt: AssetAttempt, newText: string) {
+    const ep = episodeRef();
+    const text = newText.trim();
+    if (!ep || text === attempt.prompt) return;
     const client = getGatewayClient();
-    savingPrompt = true;
-
+    saving = true;
+    saveError = null;
     try {
-      // Fetch current episode.json
-      const data = await client.fetchJSON(
-        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/file/episode.json`
-      ) as { content?: string };
-
-      const epJson = JSON.parse(data.content ?? "{}");
-
-      // Update the scene's intent (image prompt) or add narration text
-      const scene = (epJson.scenes ?? []).find((s: any) => s.id === attempt.sceneId);
-      if (scene) {
-        if (attempt.kind === "image") {
-          scene.intent = newText;
-        } else {
-          scene.narration = newText;
-        }
-      }
-
-      // Save back
-      await client.fetchJSON(
-        `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/file/episode.json`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: JSON.stringify(epJson, null, 2) }),
-        }
-      );
-
-      // Update local state
-      attempt.prompt = newText;
-      editingPrompt = null;
-
-      // Trigger refresh to reload assets
+      const path = `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/file/artifacts/episode.json`;
+      const data = await client.fetchJSON(path) as { content?: string };
+      const epJson = JSON.parse(data.content ?? "[]");
+      const scenes = Array.isArray(epJson) ? epJson : (epJson.scenes ?? []);
+      const scene = scenes.find((s: any) => s.id === attempt.sceneId);
+      if (scene) scene.intent = text;
+      const body = Array.isArray(epJson) ? scenes : { ...epJson, scenes };
+      await client.fetchJSON(path, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: JSON.stringify(body, null, 2) }),
+      });
+      attempt.prompt = text;
       refresh.refresh();
     } catch (err) {
-      regenError = err instanceof Error ? err.message : "Failed to save prompt";
+      saveError = err instanceof Error ? err.message : "Failed to save prompt";
     } finally {
-      savingPrompt = false;
+      saving = false;
     }
   }
 
-  async function requestRegenerate(attempt: AssetAttempt) {
+  /** Persist narration text into artifacts/narration-script.json. */
+  async function saveNarrationText(attempt: AssetAttempt, newText: string) {
+    const ep = episodeRef();
+    const text = newText.trim();
+    if (!ep || text === attempt.prompt) return;
+    const client = getGatewayClient();
+    saving = true;
+    saveError = null;
+    try {
+      const path = `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/file/artifacts/narration-script.json`;
+      const data = await client.fetchJSON(path) as { content?: string };
+      const entries = JSON.parse(data.content ?? "[]") as Array<{ id: string; text: string }>;
+      const entry = entries.find((e) => e.id === attempt.sceneId);
+      if (entry) entry.text = text;
+      else entries.push({ id: attempt.sceneId, text });
+      await client.fetchJSON(path, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: JSON.stringify(entries, null, 2) }),
+      });
+      attempt.prompt = text;
+      episode.narrationTexts[attempt.sceneId] = text;
+      refresh.refresh();
+    } catch (err) {
+      saveError = err instanceof Error ? err.message : "Failed to save narration text";
+    } finally {
+      saving = false;
+    }
+  }
+
+  /** Persist the TTS instruct into episode.json (scene.instruct). */
+  async function saveInstruct(attempt: AssetAttempt, newText: string) {
+    const ep = episodeRef();
+    const text = newText.trim();
+    if (!ep || text === (attempt.instruct ?? "")) return;
+    const client = getGatewayClient();
+    saving = true;
+    saveError = null;
+    try {
+      const path = `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/file/artifacts/episode.json`;
+      const data = await client.fetchJSON(path) as { content?: string };
+      const epJson = JSON.parse(data.content ?? "[]");
+      const scenes = Array.isArray(epJson) ? epJson : (epJson.scenes ?? []);
+      const scene = scenes.find((s: any) => s.id === attempt.sceneId);
+      if (scene) scene.instruct = text || null;
+      const body = Array.isArray(epJson) ? scenes : { ...epJson, scenes };
+      await client.fetchJSON(path, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: JSON.stringify(body, null, 2) }),
+      });
+      attempt.instruct = text || null;
+      refresh.refresh();
+    } catch (err) {
+      saveError = err instanceof Error ? err.message : "Failed to save instruct";
+    } finally {
+      saving = false;
+    }
+  }
+
+  /* ── regeneration request with consequence preview ────────────────── */
+
+  let confirmFor = $state<string | null>(null);
+  let requesting = $state(false);
+  let requestError = $state<string | null>(null);
+  let requestedFor = $state<string | null>(null);
+
+  const CONSEQUENCES: Record<AssetAttempt["kind"], string[]> = {
+    image: [
+      "Pi generates a new image attempt for this scene.",
+      "The current file is preserved on disk as an earlier attempt.",
+      "The edit timeline keeps the selected attempt until you pick the new one.",
+    ],
+    video: [
+      "Pi re-records the terminal/video asset for this scene.",
+      "The current file is preserved on disk as an earlier attempt.",
+      "Compose becomes stale until the new recording is selected.",
+    ],
+    audio: [
+      "Pi synthesizes new narration using the saved text and instruct.",
+      "The current WAV is preserved on disk as an earlier attempt.",
+      "Captions and timing for this scene become stale.",
+    ],
+  };
+
+  async function confirmRegenerate(attempt: AssetAttempt) {
     if (!group || episode.state.phase !== "ready") return;
     const ep = episode.state.episode;
     const client = getGatewayClient();
-    regenerating = true;
-    regenError = null;
-    const kindLabel = attempt.kind === "audio" ? "narration" : "image";
+    requesting = true;
+    requestError = null;
+    const kindLabel = KIND_LABELS[attempt.kind].toLowerCase();
     try {
       await client.fetchJSON(
         `/api/channels/${ep.channel}/series/${ep.series}/episodes/${ep.slug}/reviews`,
@@ -94,15 +179,17 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             anchor: `${attempt.anchorType}/${group.sceneId}`,
-            body: `Regenerate ${kindLabel} for scene "${group.sceneTitle}". ${attempt.kind === "audio" ? `Narration text needed.` : `Original prompt: "${attempt.prompt}"`}`,
+            body: `Regenerate ${kindLabel} for scene "${group.sceneTitle}".${attempt.kind === "audio" && attempt.prompt ? ` Text: "${attempt.prompt.slice(0, 200)}${attempt.prompt.length > 200 ? "…" : ""}"` : ""}${attempt.kind === "audio" && attempt.instruct ? ` Instruct: "${attempt.instruct}"` : ""}${attempt.kind === "image" && attempt.prompt ? ` Prompt: "${attempt.prompt.slice(0, 200)}${attempt.prompt.length > 200 ? "…" : ""}"` : ""}`,
           }),
         }
       );
+      confirmFor = null;
+      requestedFor = attempt.id;
       refresh.refresh();
     } catch (err) {
-      regenError = err instanceof Error ? err.message : "Failed to request regeneration";
+      requestError = err instanceof Error ? err.message : "Failed to request regeneration";
     } finally {
-      regenerating = false;
+      requesting = false;
     }
   }
 </script>
@@ -114,89 +201,143 @@
     <ol class="ap-list">
       {#each group.attempts as attempt (attempt.id)}
         <li class="ap-item">
-        <button
+        <article
           class="ap-card"
           class:selected={attempt.selected}
           class:unavailable={!attempt.fileAvailable}
-          aria-label="{attempt.kind} {attempt.id} — {attempt.selected ? 'selected' : ''} — {attempt.fileAvailable ? 'available' : 'unavailable'}"
-          onclick={() => select(attempt)}
+          aria-label="{KIND_LABELS[attempt.kind]} {attempt.id} — {attempt.selected ? 'selected' : ''} — {attempt.fileAvailable ? 'available' : 'not generated'}"
         >
           <div class="ap-card-header">
-            <span class="ap-kind-badge" data-kind={attempt.kind}>
-              {attempt.kind === "image" ? "🖼" : attempt.kind === "video" ? "▶" : "🔊"}
-            </span>
+            <span class="ap-kind-badge" data-kind={attempt.kind}>{KIND_LABELS[attempt.kind]}</span>
             <span class="ap-id">{attempt.id}</span>
             {#if attempt.selected}
               <span class="ap-selected-badge">Selected</span>
             {/if}
-            {#if !attempt.fileAvailable}
-              <span class="ap-missing-badge">No {attempt.kind === "image" ? "image" : attempt.kind === "video" ? "video" : "audio"}</span>
-            {/if}
+            <button class="ap-select-btn" onclick={() => select(attempt)}>
+              {attempt.selected ? "Deselect" : "Select"}
+            </button>
           </div>
 
-          {#if attempt.kind === "image" && attempt.imageUrl}
-            <div class="ap-thumb">
-              <img src={attempt.imageUrl} alt={attempt.sceneId} loading="lazy" />
-            </div>
-          {:else if attempt.kind === "video" && attempt.videoUrl}
-            <div class="ap-thumb">
-              <video src={attempt.videoUrl} muted loop playsinline controls preload="metadata"
-                style="width:100%;height:100%;object-fit:contain;background:#0D0D0D;">
-              </video>
-            </div>
-          {:else if attempt.kind === "audio" && attempt.audioUrl}
-            <div class="ap-audio">
-              <audio controls src={attempt.audioUrl} preload="none">
-                Your browser cannot play audio.
-              </audio>
-            </div>
+          {#if attempt.kind === "image"}
+            {#if attempt.imageUrl}
+              <div class="ap-thumb">
+                <img src={attempt.imageUrl} alt="Generated image for scene {group.sceneTitle}" loading="lazy" />
+              </div>
+            {:else}
+              <div class="ap-missing">No image generated for this scene yet.</div>
+            {/if}
+          {:else if attempt.kind === "video"}
+            {#if attempt.videoUrl}
+              <div class="ap-thumb">
+                <!-- svelte-ignore a11y_media_has_caption -->
+                <!-- Terminal recordings carry no spoken track; captions are not applicable. -->
+                <video src={attempt.videoUrl} controls preload="metadata"></video>
+              </div>
+            {:else}
+              <div class="ap-missing">No video recorded for this scene yet.</div>
+            {/if}
+          {:else if attempt.kind === "audio"}
+            {#if attempt.audioUrl}
+              <div class="ap-audio">
+                <audio controls src={attempt.audioUrl} preload="metadata">
+                  Your browser cannot play audio.
+                </audio>
+              </div>
+            {:else}
+              <div class="ap-missing">No narration synthesized for this scene yet.</div>
+            {/if}
           {/if}
 
-          <div class="ap-prompt" ondblclick={() => { editingPrompt = attempt.id; editedText = attempt.prompt; }}>
-            {#if editingPrompt === attempt.id}
+          <!-- Editable generation inputs -->
+          {#if attempt.kind === "image"}
+            <label class="ap-field">
+              <span class="ap-field-label">Image prompt</span>
               <textarea
-                class="ap-prompt-edit"
-                bind:value={editedText}
+                class="ap-field-input"
                 rows={3}
-                onblur={() => savePrompt(attempt)}
-                onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); savePrompt(attempt); } }}
+                value={attempt.prompt}
+                placeholder="No prompt recorded for this scene."
+                disabled={saving}
+                onblur={(e) => saveImagePrompt(attempt, (e.target as HTMLTextAreaElement).value)}
               ></textarea>
-            {:else}
-              {attempt.prompt}
-              <span class="ap-edit-hint">double-click to edit</span>
-            {/if}
-          </div>
+            </label>
+          {:else if attempt.kind === "audio"}
+            <label class="ap-field">
+              <span class="ap-field-label">Narration text</span>
+              <textarea
+                class="ap-field-input"
+                rows={4}
+                value={attempt.prompt}
+                placeholder="No narration script for this scene yet."
+                disabled={saving}
+                onblur={(e) => saveNarrationText(attempt, (e.target as HTMLTextAreaElement).value)}
+              ></textarea>
+            </label>
+            <label class="ap-field">
+              <span class="ap-field-label">Voice instruct</span>
+              <textarea
+                class="ap-field-input"
+                rows={2}
+                value={attempt.instruct ?? ""}
+                placeholder="e.g. Warm, unhurried narrator"
+                disabled={saving}
+                onblur={(e) => saveInstruct(attempt, (e.target as HTMLTextAreaElement).value)}
+              ></textarea>
+            </label>
+          {/if}
+          {#if saving}
+            <p class="ap-saving" role="status">Saving…</p>
+          {/if}
 
+          <!-- Provenance: only fields with real values are shown -->
           <div class="ap-meta">
-            <span>{attempt.model}</span>
-            <span>Seed {attempt.seed ?? "—"}</span>
-            <span>{attempt.dimensions.width}×{attempt.dimensions.height}</span>
-            {#if attempt.cost !== null}
-              <span>${attempt.cost.toFixed(3)}</span>
-            {/if}
-          </div>
-
-          <div class="ap-footer">
-            <span class="ap-date">{formatDate(attempt.createdAt)}</span>
-            <span class="ap-license">{attempt.license}</span>
+            {#if attempt.provider}<span>{attempt.provider}</span>{/if}
+            {#if attempt.model}<span>{attempt.model}</span>{/if}
+            {#if attempt.seed !== null}<span>Seed {attempt.seed}</span>{/if}
+            {#if attempt.dimensions}<span>{attempt.dimensions.width}×{attempt.dimensions.height}</span>{/if}
+            {#if formatDuration(attempt.durationSeconds)}<span>{formatDuration(attempt.durationSeconds)}</span>{/if}
+            {#if formatBytes(attempt.fileSize)}<span>{formatBytes(attempt.fileSize)}</span>{/if}
+            {#if attempt.cost !== null}<span>${attempt.cost.toFixed(3)}</span>{/if}
+            {#if formatDate(attempt.createdAt)}<span>{formatDate(attempt.createdAt)}</span>{/if}
           </div>
 
           <div class="ap-actions">
-            <span
-              class="ap-regen-btn"
-              class:ap-regen-disabled={regenerating}
-              role="button"
-              tabindex={regenerating ? -1 : 0}
-              onclick={(e) => { e.stopPropagation(); if (!regenerating) requestRegenerate(attempt); }}
-              onkeydown={(e) => { if (!regenerating && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); requestRegenerate(attempt); } }}
-            >
-              {regenerating ? "Requesting…" : `🔄 Regenerate ${attempt.kind === "audio" ? "Narration" : "Image"}`}
-            </span>
+            {#if requestedFor === attempt.id}
+              <p class="ap-requested" role="status">Regeneration requested — Pi will pick it up from the Reviews inbox.</p>
+            {:else if confirmFor === attempt.id}
+              <div class="ap-confirm" role="group" aria-label="Confirm regeneration">
+                <p class="ap-confirm-title">Request regeneration from Pi:</p>
+                <ul class="ap-confirm-list">
+                  {#each CONSEQUENCES[attempt.kind] as c}
+                    <li>{c}</li>
+                  {/each}
+                </ul>
+                <div class="ap-confirm-actions">
+                  <button
+                    class="ap-btn ap-btn-primary"
+                    disabled={requesting}
+                    onclick={() => confirmRegenerate(attempt)}
+                  >
+                    {requesting ? "Requesting…" : "Request regeneration"}
+                  </button>
+                  <button class="ap-btn" onclick={() => (confirmFor = null)} disabled={requesting}>
+                    Cancel
+                  </button>
+                </div>
+                {#if requestError}
+                  <p class="ap-error" role="alert">{requestError}</p>
+                {/if}
+              </div>
+            {:else}
+              <button class="ap-btn ap-btn-outline" onclick={() => { confirmFor = attempt.id; requestError = null; }}>
+                Regenerate {KIND_LABELS[attempt.kind].toLowerCase()}…
+              </button>
+            {/if}
           </div>
-          {#if regenError}
-            <div class="ap-error">{regenError}</div>
+          {#if saveError}
+            <p class="ap-error" role="alert">{saveError}</p>
           {/if}
-        </button>
+        </article>
         </li>
       {/each}
     </ol>
@@ -229,27 +370,12 @@
   }
 
   .ap-card {
-    text-align: left;
     padding: var(--vs-space-3);
     background: var(--vs-bg-surface);
     border: 1px solid var(--vs-border);
     border-radius: var(--vs-radius-md);
-    cursor: pointer;
-    font-family: var(--vs-font-sans);
     font-size: var(--vs-text-sm);
     color: var(--vs-text-primary);
-    width: 100%;
-    transition:
-      border-color var(--vs-duration-fast) var(--vs-ease-standard);
-  }
-
-  .ap-card:hover {
-    border-color: var(--vs-accent);
-  }
-
-  .ap-card:focus-visible {
-    outline: 2px solid var(--vs-border-focus);
-    outline-offset: 1px;
   }
 
   .ap-card.selected {
@@ -258,7 +384,6 @@
   }
 
   .ap-card.unavailable {
-    opacity: 0.5;
     border-style: dashed;
   }
 
@@ -266,7 +391,18 @@
     display: flex;
     align-items: center;
     gap: var(--vs-space-2);
-    margin-bottom: var(--vs-space-1);
+    margin-bottom: var(--vs-space-2);
+  }
+
+  .ap-kind-badge {
+    font-size: 10px;
+    font-weight: var(--vs-font-weight-semibold);
+    font-family: var(--vs-font-mono);
+    color: var(--vs-text-secondary);
+    background: var(--vs-bg-raised);
+    border: 1px solid var(--vs-border);
+    padding: 1px var(--vs-space-1);
+    border-radius: var(--vs-radius-sm);
   }
 
   .ap-id {
@@ -274,15 +410,7 @@
     font-size: var(--vs-text-xs);
     color: var(--vs-text-secondary);
     font-weight: var(--vs-font-weight-semibold);
-  }
-
-  .ap-kind-badge {
-    font-size: 14px;
-    line-height: 1;
-  }
-
-  .ap-kind-badge[data-kind="audio"] {
-    opacity: 0.8;
+    flex: 1;
   }
 
   .ap-selected-badge {
@@ -293,54 +421,20 @@
     border-radius: var(--vs-radius-sm);
   }
 
-  .ap-missing-badge {
-    font-size: var(--vs-text-xs);
-    color: var(--vs-state-blocked);
-    background: var(--vs-state-blocked-bg);
-    padding: 0 var(--vs-space-1);
-    border-radius: var(--vs-radius-sm);
-  }
-
-  .ap-prompt {
-    font-size: var(--vs-text-xs);
-    color: var(--vs-text-secondary);
-    line-height: 1.4;
-    margin-bottom: var(--vs-space-2);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    cursor: text;
-    position: relative;
-  }
-
-  .ap-prompt-edit {
-    width: 100%;
-    padding: var(--vs-space-1);
-    border: 1px solid var(--vs-accent);
-    border-radius: var(--vs-radius-sm);
-    font-family: var(--vs-font-sans);
-    font-size: var(--vs-text-xs);
-    background: var(--vs-bg-canvas);
-    color: var(--vs-text-primary);
-    resize: vertical;
-    line-height: 1.4;
-  }
-
-  .ap-edit-hint {
-    display: none;
-    position: absolute;
-    top: 0;
-    right: 0;
-    font-size: 9px;
-    color: var(--vs-text-disabled);
+  .ap-select-btn {
+    border: 1px solid var(--vs-border);
     background: var(--vs-bg-surface);
-    padding: 0 var(--vs-space-1);
+    color: var(--vs-text-secondary);
+    font-family: var(--vs-font-sans);
+    font-size: 10px;
+    padding: 1px var(--vs-space-2);
+    border-radius: var(--vs-radius-sm);
+    cursor: pointer;
   }
 
-  .ap-prompt:hover .ap-edit-hint {
-    display: inline;
+  .ap-select-btn:hover {
+    color: var(--vs-text-primary);
+    background: var(--vs-bg-hover);
   }
 
   .ap-thumb {
@@ -359,6 +453,13 @@
     display: block;
   }
 
+  .ap-thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
   .ap-audio {
     margin-bottom: var(--vs-space-2);
   }
@@ -366,6 +467,48 @@
   .ap-audio audio {
     width: 100%;
     height: 32px;
+  }
+
+  .ap-missing {
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-tertiary);
+    background: var(--vs-bg-raised);
+    border-radius: var(--vs-radius-sm);
+    padding: var(--vs-space-2) var(--vs-space-3);
+    margin-bottom: var(--vs-space-2);
+  }
+
+  .ap-field {
+    display: block;
+    margin-bottom: var(--vs-space-2);
+  }
+
+  .ap-field-label {
+    display: block;
+    font-size: 10px;
+    font-weight: var(--vs-font-weight-semibold);
+    color: var(--vs-text-tertiary);
+    margin-bottom: 2px;
+  }
+
+  .ap-field-input {
+    width: 100%;
+    padding: var(--vs-space-1) var(--vs-space-2);
+    border: 1px solid var(--vs-border);
+    border-radius: var(--vs-radius-sm);
+    font-family: var(--vs-font-sans);
+    font-size: var(--vs-text-xs);
+    background: var(--vs-bg-canvas);
+    color: var(--vs-text-primary);
+    resize: vertical;
+    line-height: 1.4;
+    box-sizing: border-box;
+  }
+
+  .ap-field-input:focus-visible {
+    outline: 2px solid var(--vs-border-focus);
+    outline-offset: -1px;
+    border-color: var(--vs-accent);
   }
 
   .ap-meta {
@@ -378,57 +521,98 @@
     margin-bottom: var(--vs-space-1);
   }
 
-  .ap-footer {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: var(--vs-text-disabled);
-  }
-
-  .ap-license {
-    max-width: 50%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .ap-actions {
     margin-top: var(--vs-space-2);
     padding-top: var(--vs-space-2);
     border-top: 1px solid var(--vs-border);
   }
 
-  .ap-regen-btn {
-    display: block;
-    text-align: center;
-    width: 100%;
-    padding: var(--vs-space-1) var(--vs-space-2);
-    border: 1px solid var(--vs-accent);
+  .ap-btn {
+    padding: var(--vs-space-1) var(--vs-space-3);
     border-radius: var(--vs-radius-sm);
-    background: transparent;
-    color: var(--vs-accent);
     font-family: var(--vs-font-sans);
     font-size: var(--vs-text-xs);
     cursor: pointer;
-    transition: background var(--vs-duration-fast);
-    box-sizing: border-box;
+    border: 1px solid var(--vs-border);
+    background: var(--vs-bg-surface);
+    color: var(--vs-text-primary);
   }
 
-  .ap-regen-btn:hover:not(.ap-regen-disabled) {
-    background: var(--vs-accent-subtle);
+  .ap-btn:hover {
+    background: var(--vs-bg-hover);
   }
 
-  .ap-regen-disabled {
+  .ap-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
+  .ap-btn-outline {
+    width: 100%;
+    border-color: var(--vs-accent-strong);
+    color: var(--vs-accent-strong);
+    background: transparent;
+  }
+
+  .ap-btn-outline:hover {
+    background: var(--vs-accent-subtle);
+  }
+
+  .ap-btn-primary {
+    background: var(--vs-accent-strong);
+    border-color: var(--vs-accent-strong);
+    color: var(--vs-accent-text);
+  }
+
+  .ap-btn-primary:hover:not(:disabled) {
+    background: var(--vs-accent-strong-hover);
+  }
+
+  .ap-confirm-title {
+    font-size: var(--vs-text-xs);
+    font-weight: var(--vs-font-weight-semibold);
+    color: var(--vs-text-primary);
+    margin: 0 0 var(--vs-space-1);
+  }
+
+  .ap-confirm-list {
+    margin: 0 0 var(--vs-space-2);
+    padding-left: var(--vs-space-4);
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-secondary);
+  }
+
+  .ap-confirm-list li {
+    padding: 1px 0;
+  }
+
+  .ap-confirm-actions {
+    display: flex;
+    gap: var(--vs-space-2);
+  }
+
+  .ap-requested {
+    font-size: var(--vs-text-xs);
+    color: var(--vs-state-current);
+    margin: 0;
+  }
+
   .ap-error {
     margin-top: var(--vs-space-1);
-    padding: var(--vs-space-1);
+    padding: var(--vs-space-1) var(--vs-space-2);
     background: var(--vs-state-blocked-bg);
     color: var(--vs-state-blocked);
     border-radius: var(--vs-radius-sm);
     font-size: 11px;
+  }
+
+  .ap-saving {
+    font-size: 10px;
+    color: var(--vs-text-tertiary);
+    margin: 0 0 var(--vs-space-1);
+  }
+
+  .ap-field-input:disabled {
+    opacity: 0.6;
   }
 </style>

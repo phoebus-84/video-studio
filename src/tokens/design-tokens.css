@@ -66,15 +66,22 @@
 
   --vs-text-primary: oklch(18% 0.002 85);
   --vs-text-secondary: oklch(42% 0.002 85);
-  --vs-text-tertiary: oklch(60% 0.002 85);
+  --vs-text-tertiary: oklch(54% 0.002 85); /* AA 4.78:1 on canvas */
   --vs-text-disabled: oklch(72% 0.002 85);
 
   /* semantic states */
-  --vs-state-running: oklch(62% 0.16 230);
-  --vs-state-attention: oklch(65% 0.14 85);
-  --vs-state-blocked: oklch(52% 0.18 24);
-  --vs-state-current: oklch(58% 0.14 160);
-  --vs-state-stale: oklch(60% 0.03 60);
+  /* semantic state text colors must hold 4.5:1 on canvas (WCAG AA) */
+  --vs-state-running: oklch(50% 0.14 230);
+  --vs-state-attention: oklch(48% 0.13 85);
+  --vs-state-blocked: oklch(48% 0.17 24);
+  --vs-state-current: oklch(50% 0.14 160);
+  --vs-state-stale: oklch(52% 0.03 60);
+
+  /* darker accent for text-on-canvas and as a bg under white text (7.4:1) */
+  --vs-accent-strong: oklch(45% 0.13 48);
+  --vs-accent-strong-hover: oklch(50% 0.14 48);
+  /* text color for use on attention/running filled backgrounds */
+  --vs-on-attention: oklch(22% 0.02 85);
 
   --vs-state-running-bg: oklch(62% 0.16 230 / 0.1);
   --vs-state-attention-bg: oklch(65% 0.14 85 / 0.1);
@@ -114,15 +121,20 @@
 
   --vs-text-primary: oklch(94% 0.002 260);
   --vs-text-secondary: oklch(70% 0.004 260);
-  --vs-text-tertiary: oklch(52% 0.004 260);
+  --vs-text-tertiary: oklch(58% 0.004 260); /* AA 4.59:1 on dark canvas */
   --vs-text-disabled: oklch(38% 0.004 260);
 
   /* semantic states — adjusted for dark bg */
   --vs-state-running: oklch(68% 0.12 230);
   --vs-state-attention: oklch(68% 0.12 85);
-  --vs-state-blocked: oklch(58% 0.16 24);
+  --vs-state-blocked: oklch(66% 0.16 24);
   --vs-state-current: oklch(62% 0.12 160);
-  --vs-state-stale: oklch(62% 0.02 60);
+  --vs-state-stale: oklch(66% 0.02 60);
+
+  /* in dark theme the regular accent already meets AA on canvas */
+  --vs-accent-strong: oklch(66% 0.15 48);
+  --vs-accent-strong-hover: oklch(72% 0.16 48);
+  --vs-on-attention: oklch(22% 0.02 85);
 
   --vs-state-running-bg: oklch(68% 0.12 230 / 0.12);
   --vs-state-attention-bg: oklch(68% 0.12 85 / 0.12);

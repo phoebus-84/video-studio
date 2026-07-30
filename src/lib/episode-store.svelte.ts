@@ -3,9 +3,17 @@ import type { GatewayClient } from "$contracts/client";
 
 /** Asset paths derived from episode structure — resolved by the gateway. */
 export interface EpisodeAssets {
-  images: Record<string, string>;   // sceneId → image URL
-  narration: Record<string, string>; // segmentId → WAV URL
-  video: string | null;              // final.mp4 URL
+  images: Record<string, string>;   // sceneId → image URL (only files that exist)
+  videos: Record<string, string>;   // sceneId → video URL (only files that exist)
+  narration: Record<string, string>; // sceneId → WAV URL (only completed narration)
+  video: string | null;              // current render URL, null when no render exists
+}
+
+export interface EpisodeRender {
+  url: string;
+  file: string;
+  size: number;
+  generatedAt: string;
 }
 
 export type EpisodeLoadState =
@@ -17,7 +25,11 @@ export type EpisodeLoadState =
 class EpisodeStore {
   state = $state<EpisodeLoadState>({ phase: "unselected" });
   selectedStageId = $state<string | null>(null);
-  assets = $state<EpisodeAssets>({ images: {}, narration: {}, video: null });
+  assets = $state<EpisodeAssets>({ images: {}, videos: {}, narration: {}, video: null });
+  render = $state<EpisodeRender | null>(null);
+  qaReport = $state<Record<string, any> | null>(null);
+  /** Real narration text per scene id (from artifacts/narration-script.json). */
+  narrationTexts = $state<Record<string, string>>({});
   private _gatewayBaseUrl = $state("");
 
   load(episode: EpisodeWorkspace) {
@@ -34,21 +46,34 @@ class EpisodeStore {
     try {
       const detail = await client.getEpisode(channel, series, epSlug) as any;
       const now = new Date().toISOString();
-      // Build asset URLs FIRST (before loading workspace, so effects see them)
+      // Build asset URLs from the gateway's enriched scene data. Never guess
+      // URLs: an asset exists only when the gateway found the file on disk.
       const libraryBase = this._gatewayBaseUrl || "http://127.0.0.1:5198";
-      const epBase = `${libraryBase}/library/${channel}/${series}/${epSlug}`;
+      const abs = (u: string | null | undefined) => (u ? `${libraryBase}${u}` : null);
       const imgUrls: Record<string, string> = {};
+      const vidUrls: Record<string, string> = {};
       const narUrls: Record<string, string> = {};
 
       for (const scene of detail.scenes ?? []) {
-        imgUrls[scene.id] = `${epBase}/assets/images/${scene.id}.jpg`;
-        narUrls[scene.id] = `${epBase}/artifacts/narration/${scene.id}.wav`;
+        if (scene.asset?.kind === "image" && scene.asset.url) {
+          imgUrls[scene.id] = abs(scene.asset.url)!;
+        }
+        if (scene.asset?.kind === "video" && scene.asset.url) {
+          vidUrls[scene.id] = abs(scene.asset.url)!;
+        }
+        if (scene.narration?.status === "completed" && scene.narration.url) {
+          narUrls[scene.id] = abs(scene.narration.url)!;
+        }
       }
+
+      this.render = detail.render ? { ...detail.render, url: abs(detail.render.url)! } : null;
+      this.qaReport = detail.qaReport ?? null;
 
       this.assets = {
         images: imgUrls,
+        videos: vidUrls,
         narration: narUrls,
-        video: `${epBase}/artifacts/final.mp4`,
+        video: this.render?.url ?? null,
       };
 
       // Augment scenes with image URLs before loading
@@ -57,10 +82,21 @@ class EpisodeStore {
         imageUrl: imgUrls[s.id] ?? null,
       }));
 
+      // Real staleness from the gateway/runtime. Pending or runnable stages
+      // are NOT stale; stale means previously produced inputs changed.
+      let realStale: string[] = [];
+      let realAffected: string[] = [];
+      try {
+        const st = await client.fetchJSON(
+          `/api/channels/${channel}/series/${series}/episodes/${epSlug}/staleness`
+        ) as { stale?: string[]; affected?: string[] };
+        realStale = st.stale ?? [];
+        realAffected = st.affected ?? [];
+      } catch { /* staleness endpoint unavailable; report none */ }
+
       // Build stages with staleness from API
       const enrichedStages = (detail.stages ?? []).map((s: any) => {
         const state = s.status ?? s.state ?? "pending";
-        const isStale = state === "pending" || state === "runnable";
         return {
           id: s.id ?? s,
           name: s.name ?? s.id ?? s,
@@ -68,7 +104,7 @@ class EpisodeStore {
           blocked: s.blocked ?? false,
           progress: state === "completed" ? 1 : state === "running" ? 0.5 : 0,
           attemptCount: 0,
-          stale: isStale,
+          stale: realStale.includes(s.id ?? s),
           dependsOn: s.dependsOn ?? [],
         };
       });
@@ -93,32 +129,34 @@ class EpisodeStore {
         scenes: augmentedScenes,
         budget: detail.budget,
         reviews: detail.reviews ?? [],
-        staleness: detail.staleness ?? { stale: [], affected: [] },
+        staleness: { stale: realStale, affected: realAffected },
         blockers: detail.blockers ?? [],
       };
       this.load(workspace);
+
+      // Real narration text from the episode's narration script artifact.
+      const narrationTexts: Record<string, string> = {};
+      try {
+        const scriptFile = await client.fetchJSON(
+          `/api/channels/${channel}/series/${series}/episodes/${epSlug}/file/artifacts/narration-script.json`
+        ) as { content?: string };
+        const entries = JSON.parse(scriptFile.content ?? "[]") as Array<{ id: string; text: string }>;
+        for (const e of entries) narrationTexts[e.id] = e.text;
+      } catch { /* no narration script yet; texts stay empty */ }
+      this.narrationTexts = narrationTexts;
+
       // Build narration segments from scenes (each scene = one narration segment)
       const segments = (detail.scenes ?? []).map((s: any, i: number) => {
         const role = s.role ?? "narrator";
-        // Character-specific voice and instruction mappings
-        const charVoices: Record<string, { voice: string; instruct: string | null }> = {
-          narrator: { voice: "default", instruct: "Speak warmly and gently like a grandmother telling a bedtime story to a child. Soft, soothing, and full of love." },
-          wolf: { voice: "default", instruct: "Speak with a sly, smooth, cunning voice. Charming but dangerous. A wolf in sheep's clothing." },
-          woodcutter: { voice: "default", instruct: "Speak with a deep, strong, heroic voice. Brave and reassuring." },
-          grandmother: { voice: "default", instruct: "Speak with a frail, elderly female voice. Kind, gentle, and loving." },
-          girl: { voice: "default", instruct: "Speak with a young, innocent, sweet little girl's voice. Curious and trusting." },
-        };
-        const charConfig = charVoices[role] || charVoices["narrator"]!;
-
         return {
           id: s.id ?? `n${i + 1}`,
           index: i,
-          text: `Scene ${i + 1}: ${s.title ?? ""}`,
-          status: "idle" as const,
-          durationSeconds: s.durationSeconds ?? 10,
+          text: narrationTexts[s.id] ?? "",
+          status: (narUrls[s.id] ? "ready" : "idle") as any,
+          durationSeconds: s.narration?.durationSeconds ?? s.durationSeconds ?? 10,
           wavPath: narUrls[s.id ?? `n${i + 1}`],
-          voice: charConfig.voice,
-          instruct: charConfig.instruct,
+          voice: s.narration?.voice ?? s.voice ?? "default",
+          instruct: s.instruct ?? null,
           role,
         };
       });
@@ -165,8 +203,8 @@ class EpisodeStore {
           captionsStatus: (s.captions?.count > 0 ? "completed" : "idle") as any,
           transition: (s.transition ?? "cut") as any,
           // Asset info
-          assetUrl: s.asset?.url ?? imgUrls[s.id] ?? null,
-          narrationUrl: s.narration?.url ?? narUrls[s.id] ?? null,
+          assetUrl: s.asset?.url ? abs(s.asset.url) : null,
+          narrationUrl: narUrls[s.id] ?? null,
           narrationDuration: s.narration?.durationSeconds ?? s.durationSeconds ?? 10,
         })));
       }

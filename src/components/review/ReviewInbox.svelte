@@ -30,10 +30,8 @@
 
       threads = (data.threads ?? []).map((t: RawThread) => ({
         id: t.id,
-        anchor: { kind: t.anchor.split("/")[0] ?? "general", targetId: t.anchor },
+        anchor: { kind: (t.anchor.split("/")[0] ?? "episode") as ReviewThread["anchor"]["kind"], targetId: t.anchor },
         status: deriveThreadStatus(t),
-        author: (t.messages[0]?.author ?? "operator") as ReviewThread["author"],
-        body: t.messages[0]?.body ?? "",
         messages: (t.messages ?? []).map((m: any) => ({
           id: m.id,
           author: (m.author ?? "operator") as "operator" | "pi",
@@ -41,7 +39,6 @@
           createdAt: m.timestamp ?? new Date().toISOString(),
           agentStatus: (m.agentStatus ?? "idle") as any,
         })),
-        agentStatus: (t.messages[t.messages.length - 1]?.agentStatus ?? "idle") as any,
         createdAt: t.createdAt ?? new Date().toISOString(),
       }));
     } catch (err) {
@@ -145,6 +142,24 @@
   }
 
   const openCount = $derived(threads.filter((t) => t.status !== "resolved").length);
+
+  function relativeDate(iso: string): string {
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return "";
+    const diff = Date.now() - then;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${Math.max(mins, 1)}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(iso).toLocaleDateString();
+  }
+
+  function preview(thread: ReviewThread): string {
+    const first = thread.messages[0]?.text ?? "";
+    return first.replace(/\s+/g, " ").trim();
+  }
 </script>
 
 <div class="inbox" aria-label="Review inbox">
@@ -175,10 +190,16 @@
           onclick={() => toggle(thread.id)}
           aria-expanded={expandedId === thread.id}
         >
-          <span class="inbox-anchor-type">{thread.anchor.kind}</span>
-          <span class="inbox-anchor-id">{thread.anchor.targetId}</span>
-          <span class="inbox-status">{THREAD_STATUS_LABELS[thread.status]}</span>
-          <span class="inbox-msg-count">{thread.messages.length}</span>
+          <span class="inbox-row-top">
+            <span class="inbox-anchor-type">{thread.anchor.kind}</span>
+            <span class="inbox-anchor-id">{thread.anchor.targetId}</span>
+            <span class="inbox-status">{THREAD_STATUS_LABELS[thread.status]}</span>
+            <span class="inbox-msg-count" aria-label="{thread.messages.length} messages">{thread.messages.length}</span>
+          </span>
+          {#if preview(thread)}
+            <span class="inbox-preview">{preview(thread)}</span>
+          {/if}
+          <span class="inbox-date">{relativeDate(thread.createdAt)}</span>
         </button>
 
         {#if expandedId === thread.id}
@@ -289,8 +310,9 @@
 
   .inbox-toggle {
     display: flex;
-    align-items: center;
-    gap: var(--vs-space-2);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
     width: 100%;
     padding: var(--vs-space-2) var(--vs-space-3);
     background: var(--vs-bg-surface);
@@ -300,6 +322,24 @@
     font-size: var(--vs-text-xs);
     text-align: left;
     cursor: pointer;
+  }
+
+  .inbox-row-top {
+    display: flex;
+    align-items: center;
+    gap: var(--vs-space-2);
+  }
+
+  .inbox-preview {
+    color: var(--vs-text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inbox-date {
+    color: var(--vs-text-disabled);
+    font-size: 10px;
   }
 
   .inbox-toggle:hover {

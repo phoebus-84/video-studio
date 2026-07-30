@@ -1,5 +1,7 @@
 <script lang="ts">
   import { episode } from "$lib/episode-store.svelte.ts";
+  import { getGatewayClient } from "$lib/gateway.svelte.ts";
+  import { reviews as refresh } from "$lib/refresh.svelte.ts";
 
   const ep = $derived(episode.state);
 
@@ -28,7 +30,96 @@
     );
   });
 
+  /**
+   * Root causes: stale stages whose own dependencies are NOT stale. Their
+   * inputs changed on disk; every other stale stage inherits from them.
+   */
+  const rootStaleIds = $derived.by(() => {
+    const staleIds = new Set(staleStages.map((s) => s.id));
+    return new Set(
+      staleStages
+        .filter((s) => !s.dependsOn.some((d) => staleIds.has(d)))
+        .map((s) => s.id),
+    );
+  });
+
+  function staleReason(stage: (typeof staleStages)[number]): string {
+    if (rootStaleIds.has(stage.id)) {
+      return "inputs changed on disk since last run";
+    }
+    const staleDeps = stage.dependsOn.filter((d) =>
+      staleStages.some((s) => s.id === d),
+    );
+    return `upstream ${staleDeps.join(", ")} changed`;
+  }
+
   const hasStaleness = $derived(staleStages.length > 0);
+
+  /* ── rerun planning + request (Pi executes; the studio requests) ── */
+
+  type PlanState =
+    | { phase: "idle" }
+    | { phase: "loading" }
+    | { phase: "ready"; stageCount: number; message: string }
+    | { phase: "sent" }
+    | { phase: "error"; message: string };
+
+  let plan = $state<PlanState>({ phase: "idle" });
+
+  async function loadPlan() {
+    if (ep.phase !== "ready") return;
+    const w = ep.episode;
+    const client = getGatewayClient();
+    plan = { phase: "loading" };
+    try {
+      const result = (await client.fetchJSON(
+        `/api/channels/${w.channel}/series/${w.series}/episodes/${w.slug}/rerun-plan`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "rerun-affected" }),
+        },
+      )) as { ok: boolean; plan?: { message?: string; stages?: unknown[] } };
+      const count = result.plan?.stages?.length ?? staleStages.length + affectedStages.length;
+      plan = {
+        phase: "ready",
+        stageCount: count,
+        message: result.plan?.message ?? `${count} stages would rerun`,
+      };
+    } catch (err) {
+      plan = {
+        phase: "error",
+        message: err instanceof Error ? err.message : "Failed to plan rerun",
+      };
+    }
+  }
+
+  async function requestRerun() {
+    if (ep.phase !== "ready") return;
+    const w = ep.episode;
+    const client = getGatewayClient();
+    plan = { phase: "loading" };
+    try {
+      await client.fetchJSON(
+        `/api/channels/${w.channel}/series/${w.series}/episodes/${w.slug}/reviews`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            anchor: `episode/${w.slug}`,
+            body: `Rerun requested from the studio: ${staleStages.map((s) => s.id).join(", ")} stale${affectedStages.length > 0 ? `, ${affectedStages.map((s) => s.id).join(", ")} affected downstream` : ""}. Mode: rerun-affected.`,
+          }),
+        },
+      );
+      plan = { phase: "sent" };
+      refresh.refresh();
+    } catch (err) {
+      plan = {
+        phase: "error",
+        message: err instanceof Error ? err.message : "Failed to request rerun",
+      };
+    }
+  }
 </script>
 
 {#if ep.phase === "ready" && hasStaleness}
@@ -46,7 +137,7 @@
       <h6 class="sp-section-title">Stale</h6>
       <ul class="sp-list sp-list-stale">
         {#each staleStages as stage (stage.id)}
-          <li>{stage.name} — edited upstream dependency</li>
+          <li>{stage.name} — {staleReason(stage)}</li>
         {/each}
       </ul>
     </div>
@@ -80,14 +171,32 @@
       </div>
     {/if}
 
-    <!-- Rerun actions -->
+    <!-- Rerun: plan first, then request. Pi executes; the studio never does. -->
     <div class="sp-actions">
-      <button class="sp-btn sp-btn-rerun">
-        Rerun affected ({staleStages.length + affectedStages.length} stages)
-      </button>
-      <button class="sp-btn sp-btn-accept">
-        Accept staleness
-      </button>
+      {#if plan.phase === "idle"}
+        <button class="sp-btn sp-btn-rerun" onclick={loadPlan}>
+          Plan rerun ({staleStages.length + affectedStages.length} stages)
+        </button>
+      {:else if plan.phase === "loading"}
+        <span class="sp-working" role="status">Working…</span>
+      {:else if plan.phase === "ready"}
+        <div class="sp-plan">
+          <p class="sp-plan-msg">{plan.message}. Pi runs the stages; prior attempts are preserved.</p>
+          <div class="sp-plan-actions">
+            <button class="sp-btn sp-btn-rerun" onclick={requestRerun}>
+              Request rerun from Pi
+            </button>
+            <button class="sp-btn sp-btn-accept" onclick={() => (plan = { phase: "idle" })}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      {:else if plan.phase === "sent"}
+        <p class="sp-sent" role="status">Rerun requested — Pi will pick it up from the Reviews inbox.</p>
+      {:else if plan.phase === "error"}
+        <p class="sp-error" role="alert">{plan.message}</p>
+        <button class="sp-btn sp-btn-accept" onclick={() => (plan = { phase: "idle" })}>Dismiss</button>
+      {/if}
     </div>
   </div>
 {/if}
@@ -118,8 +227,6 @@
   .sp-section-title {
     font-size: var(--vs-text-xs);
     font-weight: var(--vs-font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: var(--vs-text-tertiary);
     margin: 0 0 var(--vs-space-1);
   }
@@ -169,12 +276,41 @@
   .sp-btn-rerun {
     border: 1px solid var(--vs-state-attention);
     background: var(--vs-state-attention);
-    color: oklch(100% 0 0);
+    color: var(--vs-on-attention);
+    font-weight: var(--vs-font-weight-medium);
   }
 
   .sp-btn-accept {
     border: 1px solid var(--vs-border);
     background: var(--vs-bg-surface);
     color: var(--vs-text-secondary);
+  }
+
+  .sp-working {
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-tertiary);
+  }
+
+  .sp-plan-msg {
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-secondary);
+    margin: 0 0 var(--vs-space-2);
+  }
+
+  .sp-plan-actions {
+    display: flex;
+    gap: var(--vs-space-2);
+  }
+
+  .sp-sent {
+    font-size: var(--vs-text-xs);
+    color: var(--vs-state-current);
+    margin: 0;
+  }
+
+  .sp-error {
+    font-size: var(--vs-text-xs);
+    color: var(--vs-state-blocked);
+    margin: 0 0 var(--vs-space-1);
   }
 </style>

@@ -14,20 +14,20 @@
     assetStore.selectGroup(id);
   }
 
-  function statusSymbol(status: string): string {
-    if (status === "ready") return "✓";
-    if (status === "stale") return "⚠";
-    if (status === "generating") return "◎";
+  function statusLabel(status: string): string {
+    if (status === "ready" || status === "completed") return "done";
+    if (status === "stale") return "stale";
+    if (status === "generating" || status === "running") return "running";
+    if (status === "failed" || status === "missing") return "failed";
     return "—";
   }
 
-  function assetIcon(scene: (typeof scenes.scenes)[number]): string {
+  function assetKindLabel(scene: (typeof scenes.scenes)[number]): string {
     if (scene.assetUrl) {
-      // Determine from scene kind or URL extension
-      if (scene.kind === "terminal-demo" || scene.assetUrl.endsWith(".mp4")) return "▶";
-      return "🖼";
+      if (scene.kind === "terminal-demo" || scene.assetUrl.endsWith(".mp4") || scene.assetUrl.endsWith(".webm")) return "video";
+      return "image";
     }
-    return "—";
+    return "";
   }
 
   function detectSceneKind(scene: (typeof scenes.scenes)[number]): SceneKind | undefined {
@@ -39,6 +39,17 @@
     if (/end card|outro/.test(intent)) return "end-card";
     if (/diagram|architecture|layered/.test(intent)) return "diagram";
     return "illustration";
+  }
+
+  function kindLabel(scene: (typeof scenes.scenes)[number]): string {
+    const kind = detectSceneKind(scene);
+    if (!kind) return "—";
+    return SCENE_KIND_LABELS[kind] ?? kind;
+  }
+
+  function transitionLabel(transition: string | null): string {
+    if (!transition) return "";
+    return TRANSITION_LABELS[transition as keyof typeof TRANSITION_LABELS] ?? transition;
   }
 </script>
 
@@ -85,30 +96,28 @@
               <span class="sb-scene-title">{scene.title}</span>
               <span class="sb-intent">{scene.intent}</span>
             </td>
-            <td class="sb-cell sb-kind">{SCENE_KIND_LABELS[detectSceneKind(scene)] ?? detectSceneKind(scene)}</td>
+            <td class="sb-cell sb-kind">{kindLabel(scene)}</td>
             <td class="sb-cell sb-time">{formatTime(scene.narrationDuration ?? scene.durationSeconds)}</td>
             <td class="sb-cell">
               {#if scene.assetUrl}
-                <span class="sb-asset-selected">{assetIcon(scene)}</span>
-              {:else if scene.selectedAssetId}
-                <span class="sb-asset-selected">{scene.selectedAssetId.slice(0, 8)}</span>
+                <span class="sb-kind-chip">{assetKindLabel(scene)}</span>
               {:else}
                 <span class="sb-asset-missing">—</span>
               {/if}
             </td>
             <td class="sb-cell">
               <span class="sb-badge" data-status={scene.narrationStatus}>
-                {statusSymbol(scene.narrationStatus)}
+                {statusLabel(scene.narrationStatus)}
               </span>
             </td>
             <td class="sb-cell">
               <span class="sb-badge" data-status={scene.captionsStatus}>
-                {statusSymbol(scene.captionsStatus)}
+                {statusLabel(scene.captionsStatus)}
               </span>
             </td>
             <td class="sb-cell sb-transition">
               {#if scene.transition}
-                {TRANSITION_LABELS[scene.transition] ?? scene.transition}
+                {transitionLabel(scene.transition)}
               {/if}
             </td>
           </tr>
@@ -158,8 +167,6 @@
     font-size: var(--vs-text-xs);
     font-weight: var(--vs-font-weight-medium);
     color: var(--vs-text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     padding: var(--vs-space-2) var(--vs-space-3);
     border-bottom: 1px solid var(--vs-border);
     white-space: nowrap;
@@ -186,6 +193,16 @@
 
   .sb-row.stale {
     opacity: 0.6;
+  }
+
+  .sb-kind-chip {
+    font-family: var(--vs-font-mono);
+    font-size: 10px;
+    color: var(--vs-text-secondary);
+    background: var(--vs-bg-raised);
+    border: 1px solid var(--vs-border);
+    padding: 1px var(--vs-space-1);
+    border-radius: var(--vs-radius-sm);
   }
 
   .sb-cell {
@@ -257,8 +274,17 @@
     font-size: var(--vs-text-xs);
   }
 
-  .sb-badge[data-status="ready"] {
+  .sb-badge[data-status="ready"],
+  .sb-badge[data-status="completed"] {
     color: var(--vs-state-current);
+  }
+
+  .sb-badge[data-status="failed"] {
+    color: var(--vs-state-blocked);
+  }
+
+  .sb-badge[data-status="running"] {
+    color: var(--vs-state-running);
   }
 
   .sb-badge[data-status="stale"] {

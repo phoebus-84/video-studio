@@ -4,6 +4,9 @@
   import { SAVE_LABELS } from "$lib/editor-types";
 
   const label = $derived(SAVE_LABELS[editor.saveState]);
+  const artifactPath = $derived(
+    editor.artifact ? (editor.artifact as any).filePath as string ?? "" : "",
+  );
   const revisionLabel = $derived(
     editor.artifact
       ? `rev ${editor.artifact.revision.etag.slice(0, 7)}`
@@ -64,6 +67,9 @@
 
 <div class="editor-toolbar" aria-label="Editor toolbar">
   <div class="et-left">
+    {#if artifactPath}
+      <span class="et-path" aria-label="Editing artifact" title={artifactPath}>{artifactPath}</span>
+    {/if}
     <span class="et-revision" aria-label="Revision">{revisionLabel}</span>
     <span
       class="et-save-state"
@@ -118,6 +124,15 @@
     color: var(--vs-text-tertiary);
   }
 
+  .et-path {
+    font-family: var(--vs-font-mono);
+    color: var(--vs-text-secondary);
+    max-width: 32ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .et-save-state {
     font-weight: var(--vs-font-weight-medium);
   }
@@ -155,8 +170,8 @@
   }
 
   .et-btn-save:not(:disabled) {
-    background: var(--vs-accent);
-    border-color: var(--vs-accent);
+    background: var(--vs-accent-strong);
+    border-color: var(--vs-accent-strong);
     color: var(--vs-accent-text);
   }
 

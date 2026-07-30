@@ -1,9 +1,15 @@
 <script lang="ts">
   import { episode } from "$lib/episode-store.svelte.ts";
 
-  // Render status derived from episode assets (real)
-  const renderStatus = $derived(episode.assets.video ? "current" : "not-started");
-  const renderQaOverall = $derived(episode.assets.video ? "pass" : "pending");
+  // Render status derived from real render + QA report on disk
+  const renderStatus = $derived(episode.render ? "current" : "not-started");
+  const renderQaOverall = $derived(
+    episode.qaReport?.overall === "pass"
+      ? "pass"
+      : episode.qaReport?.overall === "fail"
+        ? "fail"
+        : "pending",
+  );
 
   const ep = $derived(episode.state);
 
@@ -47,7 +53,7 @@
     <!-- Budget bar -->
     {#if ep.episode.budgetLimit}
       <div class="pb-budget" aria-label="Budget: ${ep.episode.budgetSpent?.toFixed(2)} of ${ep.episode.budgetLimit.toFixed(2)}">
-        <div class="pb-budget-bar" style="width: {Math.min(budgetPct, 100)}%"></div>
+        <div class="pb-budget-bar" style="transform: scaleX({Math.min(budgetPct, 100) / 100})"></div>
         <span class="pb-budget-label">
           ${ep.episode.budgetSpent?.toFixed(2)} / ${ep.episode.budgetLimit.toFixed(2)}
         </span>
@@ -62,7 +68,7 @@
           <div class="pb-progress-bar">
             <div
               class="pb-progress-fill"
-              style="width: {Math.round(activeStage.progress * 100)}%"
+              style="transform: scaleX({activeStage.progress})"
             ></div>
           </div>
           <span class="pb-progress-pct">{Math.round(activeStage.progress * 100)}%</span>
@@ -97,10 +103,10 @@
     <div class="pb-render">
       <span class="pb-render-label">Last render</span>
       <span class="pb-render-status" data-status={renderStatus}>
-        {renderStatus === "current" ? "Current" : renderStatus}
+        {renderStatus === "current" ? "On disk" : "No render"}
       </span>
       <span class="pb-render-qa" data-overall={renderQaOverall}>
-        {renderQaOverall === "pass" ? "QA passed" : "QA pending"}
+        {renderQaOverall === "pass" ? "QA passed" : renderQaOverall === "fail" ? "QA failed" : "No QA report"}
       </span>
     </div>
   </div>
@@ -128,7 +134,8 @@
     height: 100%;
     background: var(--vs-accent);
     opacity: 0.3;
-    transition: width var(--vs-duration-normal) var(--vs-ease-standard);
+    transform-origin: left;
+    transition: transform var(--vs-duration-normal) var(--vs-ease-standard);
   }
 
   .pb-budget-label {
@@ -168,7 +175,8 @@
     height: 100%;
     background: var(--vs-state-running);
     border-radius: 2px;
-    transition: width var(--vs-duration-normal) var(--vs-ease-standard);
+    transform-origin: left;
+    transition: transform var(--vs-duration-normal) var(--vs-ease-standard);
   }
 
   .pb-progress-pct {

@@ -13,70 +13,110 @@
   type Tab = "assets" | "reviews" | "status";
   let tab = $state<Tab>("assets");
 
-  // Build asset groups from episode scenes + real image URLs.
-  // Rebuilds whenever episodes or scenes change.
+  // Build asset groups from the gateway-enriched episode scenes. Every field
+  // comes from disk truth: files the gateway found, real mtimes, real
+  // narration text. Nothing is fabricated; unknown fields stay null and the
+  // panel hides them.
   $effect(() => {
     if (episode.state.phase !== "ready") return;
-    const sceneList = scenes.scenes;
-    if (sceneList.length === 0) return;
+    const epScenes = episode.state.episode.scenes as any[];
+    if (epScenes.length === 0) return;
 
-    const imgUrls = episode.assets.images;
-    const narUrls = episode.assets.narration;
+    const texts = episode.narrationTexts;
     untrack(() => {
-      const generated: AssetGroup[] = sceneList.map((scene) => {
-        const imgUrl = imgUrls[scene.id] ?? null;
-        const narUrl = narUrls[scene.id] ?? null;
-        const hasNarration = narUrl != null;
+      const generated: AssetGroup[] = epScenes.map((scene) => {
+        const sid = scene.id as string;
+        const attempts: import("$lib/asset-types").AssetAttempt[] = [];
+        const asset = scene.asset as { kind: string; url: string; size: number; generatedAt: string } | null;
+        const nar = scene.narration as { url: string; durationSeconds: number; voice: string; status: string; generatedAt: string | null; size: number | null } | null;
+        const base = episode.assets;
 
-        return {
-          sceneId: scene.id,
-          sceneTitle: scene.title,
-          attempts: [
-            // Image attempt
-            {
-              id: `img-${scene.id}`,
-              sceneId: scene.id,
-              kind: "image" as const,
-              prompt: scene.intent ?? `Image for ${scene.title}`,
-              referenceImages: [],
-              provider: "fal.ai",
-              model: "nano-banana-pro",
-              seed: null,
-              dimensions: { width: 1920, height: 1080 },
-              cost: null,
-              license: imgUrl ? "generated" : "pending",
-              createdAt: new Date().toISOString(),
-              selected: true,
-              imageUrl: imgUrl,
-              filePath: imgUrl,
-              fileAvailable: imgUrl != null,
-              state: imgUrl ? "ready" as const : "generating" as const,
-              anchorType: "assets" as const,
-            },
-            // Narration audio attempt
-            {
-              id: `nar-${scene.id}`,
-              sceneId: scene.id,
-              kind: "audio" as const,
-              prompt: `Narration for scene "${scene.title}" (${scene.durationSeconds ?? 10}s)`,
-              referenceImages: [],
-              provider: "Qwen3-TTS",
-              model: "0.6B-4bit",
-              seed: null,
-              dimensions: { width: 0, height: 0 },
-              cost: null,
-              license: hasNarration ? "synthesized" : "pending",
-              createdAt: new Date().toISOString(),
-              selected: false,
-              imageUrl: null,
-              audioUrl: narUrl,
-              filePath: narUrl,
-              fileAvailable: hasNarration,
-              state: hasNarration ? "ready" as const : "generating" as const,
-              anchorType: "narration" as const,
-            },
-          ],
-        };
+        // Video attempt (terminal recordings etc.) — only when a file exists.
+        if (asset?.kind === "video") {
+          attempts.push({
+            id: `vid-${sid}`,
+            sceneId: sid,
+            kind: "video" as const,
+            prompt: (scene.intent as string) ?? "",
+            instruct: null,
+            referenceImages: [],
+            provider: null,
+            model: null,
+            seed: null,
+            dimensions: null,
+            durationSeconds: null,
+            fileSize: asset.size ?? null,
+            cost: null,
+            license: "",
+            createdAt: asset.generatedAt ?? null,
+            selected: false,
+            imageUrl: null,
+            videoUrl: base.videos[sid] ?? null,
+            audioUrl: null,
+            filePath: null,
+            fileAvailable: true,
+            state: "ready" as const,
+            anchorType: "assets" as const,
+          });
+        }
+
+        // Image attempt — always listed so a missing image is visible.
+        const imgUrl = asset?.kind === "image" ? (base.images[sid] ?? null) : null;
+        attempts.push({
+          id: `img-${sid}`,
+          sceneId: sid,
+          kind: "image" as const,
+          prompt: (scene.intent as string) ?? "",
+          instruct: null,
+          referenceImages: [],
+          provider: null,
+          model: null,
+          seed: null,
+          dimensions: null,
+          durationSeconds: null,
+          fileSize: asset?.kind === "image" ? (asset.size ?? null) : null,
+          cost: null,
+          license: "",
+          createdAt: asset?.kind === "image" ? (asset.generatedAt ?? null) : null,
+          selected: true,
+          imageUrl: imgUrl,
+          videoUrl: null,
+          audioUrl: null,
+          filePath: null,
+          fileAvailable: imgUrl != null,
+          state: imgUrl ? ("ready" as const) : ("idle" as const),
+          anchorType: "assets" as const,
+        });
+
+        // Narration audio attempt — always listed, text/instruct editable.
+        const narReady = nar?.status === "completed" && nar.url;
+        attempts.push({
+          id: `nar-${sid}`,
+          sceneId: sid,
+          kind: "audio" as const,
+          prompt: texts[sid] ?? "",
+          instruct: (scene.instruct as string) ?? null,
+          referenceImages: [],
+          provider: "Qwen3-TTS",
+          model: null,
+          seed: null,
+          dimensions: null,
+          durationSeconds: nar?.durationSeconds ?? null,
+          fileSize: nar?.size ?? null,
+          cost: null,
+          license: "",
+          createdAt: nar?.generatedAt ?? null,
+          selected: false,
+          imageUrl: null,
+          videoUrl: null,
+          audioUrl: narReady ? (base.narration[sid] ?? null) : null,
+          filePath: null,
+          fileAvailable: Boolean(narReady),
+          state: narReady ? ("ready" as const) : ("idle" as const),
+          anchorType: "narration" as const,
+        });
+
+        return { sceneId: sid, sceneTitle: scene.title ?? sid, attempts };
       });
       assetStore.load(generated);
     });

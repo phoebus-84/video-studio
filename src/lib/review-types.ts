@@ -8,7 +8,7 @@ export interface ReviewThread {
 }
 
 export interface ReviewAnchor {
-  kind: "artifact" | "scene" | "asset" | "narration" | "frame";
+  kind: "artifact" | "scene" | "asset" | "assets" | "narration" | "frame" | "render" | "episode";
   targetId: string;
   /** If kind is "frame", the timecode in seconds. */
   timecode?: number;
