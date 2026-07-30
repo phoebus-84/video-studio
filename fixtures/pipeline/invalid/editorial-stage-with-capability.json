@@ -1,0 +1,25 @@
+{
+  "pipeline": {
+    "id": "evil-pipeline",
+    "version": "2.0.0",
+    "description": "Editorial stage that incorrectly declares a capability",
+    "stages": [
+      {
+        "id": "bad-script",
+        "name": "Bad Script",
+        "description": "Claims to be editorial but also declares a capability",
+        "type": "editorial",
+        "capability": "image.generate",
+        "inputs": [
+          { "contract": "brief.md", "version": "1.0.0" }
+        ],
+        "outputs": [
+          { "contract": "script.md", "version": "1.0.0" }
+        ],
+        "skills": [
+          { "skill": "write-script", "version": "0.1.0" }
+        ]
+      }
+    ]
+  }
+}

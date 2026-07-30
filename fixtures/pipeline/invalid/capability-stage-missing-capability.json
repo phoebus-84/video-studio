@@ -1,0 +1,21 @@
+{
+  "pipeline": {
+    "id": "evil-pipeline",
+    "version": "1.0.0",
+    "description": "Capability stage without a required capability field",
+    "stages": [
+      {
+        "id": "bad-illustrate",
+        "name": "Bad Illustrate",
+        "description": "Claims to be a capability stage but omits the capability field",
+        "type": "capability",
+        "inputs": [
+          { "contract": "art-direction.json", "version": "1.0.0" }
+        ],
+        "outputs": [
+          { "contract": "illustrations/", "version": "1.0.0" }
+        ]
+      }
+    ]
+  }
+}
