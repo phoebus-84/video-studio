@@ -17,6 +17,8 @@ import {
   createSnapshot,
 } from "./pipeline/index.js";
 import type { PipelineLoader } from "./pipeline/types.js";
+import { doctor } from "./workspace/doctor.js";
+import { NodeFileSystem } from "./ports/filesystem.js";
 
 // ── Exit codes ──────────────────────────────────────────────────────────────
 
@@ -94,35 +96,45 @@ function extractPipeline(args: string[]): { pipeline?: string; remaining: string
 
 // ── doctor ──────────────────────────────────────────────────────────────────
 
-async function cmdDoctor(ctx: CliContext, _args: string[]): Promise<number> {
-  const checks: Record<string, string> = {};
-  checks["runtime-version"] = `v${VERSION}`;
+async function cmdDoctor(ctx: CliContext, args: string[]): Promise<number> {
+  // Parse --library <path>
+  let libraryRoot = "";
+  let channel: string | undefined;
+  let series: string | undefined;
+  let episode: string | undefined;
 
-  try {
-    makeLoader();
-    checks["pipeline-loader"] = "OK (in-memory)";
-  } catch (e) {
-    checks["pipeline-loader"] = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--library" && args[i + 1]) libraryRoot = args[++i]!;
+    else if (args[i] === "--channel" && args[i + 1]) channel = args[++i];
+    else if (args[i] === "--series" && args[i + 1]) series = args[++i];
+    else if (args[i] === "--episode" && args[i + 1]) episode = args[++i];
   }
 
-  try {
-    resolveSettings({});
-    checks["settings-resolver"] = "OK";
-  } catch (e) {
-    checks["settings-resolver"] = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
+  if (!libraryRoot) {
+    emit(ctx, { error: "--library <path> is required" });
+    return EX_USAGE;
   }
 
-  const failures = Object.entries(checks).filter(([, v]) => v.startsWith("FAIL"));
-  const healthy = failures.length === 0;
+  const fs = new NodeFileSystem();
+  const report = await doctor({ fs, libraryRoot, channel, series, episode });
 
-  emit(ctx, {
-    message: healthy ? "All checks passed" : `${failures.length} check(s) failed`,
-    healthy,
-    version: VERSION,
-    checks,
-    failures: failures.map(([k]) => k),
-  });
-  return healthy ? EX_OK : EX_RUNTIME;
+  if (ctx.jsonMode) {
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  } else {
+    if (report.ok) {
+      ctx.logger.info("✓ Workspace is healthy");
+    } else {
+      const errors = report.findings.filter((f) => f.code.startsWith("E_"));
+      const warnings = report.findings.filter((f) => f.code.startsWith("W_"));
+      ctx.logger.error(`${errors.length} error(s), ${warnings.length} warning(s)`);
+      for (const f of report.findings) {
+        const prefix = f.code.startsWith("E_") ? "✗" : "!";
+        ctx.logger.error(`  ${prefix} [${f.code}] ${f.path}: ${f.message}`);
+      }
+    }
+  }
+
+  return report.ok ? EX_OK : EX_USAGE;
 }
 
 // ── init ────────────────────────────────────────────────────────────────────
@@ -451,7 +463,7 @@ const COMMANDS: Record<string, CliCommand> = {
   run: { name: "run", description: "Execute pipeline stages", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001 --stage write-brief", "vpr run my-channel/my-series/ep001 --pipeline fairy-tale-adaptation"], run: cmdRun },
   rerun: { name: "rerun", description: "Plan targeted reruns with cost estimates", usage: "vpr rerun <channel>/<series>/<episode> [--mode <mode>] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode rerun-affected"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
-  doctor: { name: "doctor", description: "Check system health and library accessibility", usage: "vpr doctor [--json]", examples: ["vpr doctor", "vpr doctor --json"], run: cmdDoctor },
+  doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },
 };
 
 // ── Help ────────────────────────────────────────────────────────────────────

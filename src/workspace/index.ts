@@ -57,3 +57,10 @@ export {
   discoverSeries,
   discoverEpisodes,
 } from "./discover.js";
+
+// Doctor
+export type { DoctorFinding, DoctorReport, DoctorOptions } from "./doctor.js";
+export { doctor } from "./doctor.js";
+
+// Canonical tree
+export { CHANNEL_TREE, SERIES_TREE, EPISODE_TREE, TREE_BY_KIND } from "./tree.js";
