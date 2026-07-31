@@ -1,0 +1,63 @@
+{
+  "schema_version": "0.1.0",
+  "fixture_id": "direction-continuity-v1",
+  "purpose": "Adjacent CustomVoice identity and bounded-delivery evaluation",
+  "profiles": [
+    {
+      "profile_id": "narrator-serena-v1",
+      "profile_revision": "1",
+      "character_id": "narrator-under-test",
+      "continuity_group": "narrator-serena",
+      "backend_speaker": "serena",
+      "source_language": "en-US",
+      "backend_language": "english",
+      "base_direction_id": "warm-clear-narration-v1",
+      "base_instruction": "Speak clearly and naturally while maintaining consistent delivery across adjacent narration"
+    },
+    {
+      "profile_id": "mira-vivian-v1",
+      "profile_revision": "1",
+      "character_id": "character-mira",
+      "continuity_group": "mira-vivian",
+      "backend_speaker": "vivian",
+      "source_language": "en-US",
+      "backend_language": "english",
+      "base_direction_id": "clear-dialogue-v1",
+      "base_instruction": "Speak clearly and naturally while maintaining consistent delivery across adjacent dialogue"
+    }
+  ],
+  "adjacent_sequences": [
+    {
+      "sequence_id": "narrator-neutral-warm-question",
+      "profile_id": "narrator-serena-v1",
+      "segments": [
+        {
+          "source_segment_id": "continuous-performance.1",
+          "delta": {}
+        },
+        {
+          "source_segment_id": "continuous-performance.2",
+          "delta": {"emotion": "warm", "pace": "steady", "intent": "narrate"}
+        },
+        {
+          "source_segment_id": "continuous-performance.3",
+          "delta": {"emotion": "curious", "intent": "question", "intensity": "restrained"}
+        }
+      ]
+    },
+    {
+      "sequence_id": "mira-question-exclamation",
+      "profile_id": "mira-vivian-v1",
+      "segments": [
+        {
+          "source_segment_id": "dialogue-attribution.1",
+          "delta": {"emotion": "curious", "intent": "question", "distance": "conversational"}
+        },
+        {
+          "source_segment_id": "dialogue-attribution.2",
+          "delta": {"emotion": "joyful", "intent": "exclaim", "energy": "medium"}
+        }
+      ]
+    }
+  ]
+}

@@ -20,7 +20,8 @@ Implementation status after the frozen investigation:
 - `qtw-48r.3.2` added deterministic en-US spoken normalization with exact display/spoken separation, ordered source-mapped changes, episode lexicons, reviewed number/date/time/currency/unit/technical rules, and fail-review diagnostics for ambiguity.
 - `qtw-48r.3.3` added conserved narration/dialogue turns, nested quotation handling, explicit alias-based character attribution, stable source spans, and review-required failures instead of speaker guessing.
 - `qtw-48r.3.4` added measured word/duration/backend limits, protected display/spoken alignment, safe sentence/clause boundaries, stable content IDs, adjacent metadata context, explicit pause intent, and distribution/reason reports. The supported corpus produces 151 segments from 87 turns with no shipped hard-limit violations.
-- Direction policy, durable attempts, mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
+- `qtw-48r.4.3` added checkpoint-discovered CustomVoice profiles, preset identity/base-direction continuity, bounded delivery deltas, contradiction and length checks, final segment-plan binding, and frozen adjacent narrator/character evaluation sequences.
+- Durable attempts, mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
 
 Evidence labels used below:
 

@@ -29,7 +29,8 @@ Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semant
 - Preprocessing tasks `qtw-48r.3.1` through `.3.4` are complete: source-mapped ingestion, deterministic en-US normalization, conserved speaker turns, and measured semantic/prosodic segmentation now produce stable, context-aware synthesis units.
 - Required work remains `qtw-48r.3` through `qtw-48r.6`; `qtw-48r.7` is optional and outside the critical path.
 - The deterministic preprocessing epic `qtw-48r.3` is complete, including seeded property, exact conservation, stable-ID, locale, malformed-input, and repository-wide coverage.
-- The next dependency-ready quality task is `qtw-48r.4.3` (stable CustomVoice profiles and delivery direction).
+- Stable CustomVoice profile and bounded delivery direction task `qtw-48r.4.3` is complete with adjacent continuity fixtures.
+- The next synthesis task is `qtw-48r.4.4` (immutable attempts, cache, and selective retry).
 - Beads remains authoritative for live status and dependency edges.
 
 ### Module hierarchy
