@@ -28,31 +28,37 @@ from typing import Callable
 # Known model metadata
 # ---------------------------------------------------------------------------
 
-# Each entry declares the download source, expected size (bytes), and
-# the SHA-256 hash of the main safetensors file.  The CLI will refuse
-# to proceed if the actual file does not match.
+# Each entry declares a pinned Hugging Face revision and verified file size/hash.
+# Values were checked 2026-07-31 against HF blob metadata; the local 1.7B copy
+# was independently hashed. The CLI refuses any size or SHA-256 mismatch.
 _MODEL_METADATA: dict[str, dict] = {
     "0.6B": {
-        "huggingface_repo": "Qwen/Qwen3-TTS-0.6B-MLX",
+        "huggingface_repo": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+        "revision": "049ef77fe8816b536193c0c25f9a214d17921282",
         "expected_disk_bytes": 1_300_000_000,  # ~1.3 GB
         "files": {
             "model.safetensors": {
-                "sha256": "placeholder-0.6B-model-sha256",
+                "size_bytes": 1_286_743_170,
+                "sha256": "3bcb2c4a127e6243e81a30b7126c7865f686d3559de4f938e5d3b150c6a9560d",
             },
             "config.json": {
-                "sha256": "placeholder-0.6B-config-sha256",
+                "size_bytes": 6_058,
+                "sha256": "2eea3665564268139c3beb8d497fd3c2e4524e9eed5452836cdf1de96ed3cdbd",
             },
         },
     },
     "1.7B": {
-        "huggingface_repo": "Qwen/Qwen3-TTS-1.7B-MLX",
-        "expected_disk_bytes": 3_500_000_000,  # ~3.5 GB
+        "huggingface_repo": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+        "revision": "41d3337e8b7f2843a75841595fc14e4b9a7a4b96",
+        "expected_disk_bytes": 3_500_000_000,  # includes speech tokenizer headroom
         "files": {
             "model.safetensors": {
-                "sha256": "placeholder-1.7B-model-sha256",
+                "size_bytes": 2_393_308_931,
+                "sha256": "b696f4bf45f54497b6de758981e76f1410bd68af05a657477dee466b0202df1a",
             },
             "config.json": {
-                "sha256": "placeholder-1.7B-config-sha256",
+                "size_bytes": 6_058,
+                "sha256": "43f29f9ab55cf387bd2ce1d07e9d95a5ca8974fa2fda4e2b45c13ae64aad3bfa",
             },
         },
     },
@@ -148,9 +154,11 @@ def download_model(
         # clear, typed error if the download library is missing.
         _download_single(
             repo_id=meta["huggingface_repo"],
+            revision=meta["revision"],
             filename=fname,
             dest=dest,
             expected_sha256=expected_sha,
+            expected_size_bytes=finfo["size_bytes"],
             on_progress=on_progress,
             cancel_event=cancel_event,
         )
@@ -162,6 +170,8 @@ def download_model(
     manifest = {
         "model_size": model_size,
         "huggingface_repo": meta["huggingface_repo"],
+        "revision": meta["revision"],
+        "verification": "sha256-and-size",
         "downloaded_files": {
             fname: {
                 "sha256": _sha256_file(model_dir / fname),
@@ -188,6 +198,9 @@ def _download_single(
     expected_sha256: str,
     on_progress: Callable[[str], None] | None,
     cancel_event: Callable[[], bool] | None,
+    *,
+    revision: str | None = None,
+    expected_size_bytes: int | None = None,
 ) -> None:
     """Download a single file from HuggingFace Hub and verify its hash.
 
@@ -206,6 +219,7 @@ def _download_single(
     try:
         downloaded = hf_hub_download(
             repo_id=repo_id,
+            revision=revision,
             filename=filename,
             local_dir=dest.parent,
             local_dir_use_symlinks=False,
@@ -219,6 +233,15 @@ def _download_single(
     downloaded_path = Path(downloaded)
     if downloaded_path != dest:
         shutil.move(str(downloaded_path), str(dest))
+
+    # Verify size before hashing so truncated/error pages fail clearly.
+    if expected_size_bytes is not None and dest.stat().st_size != expected_size_bytes:
+        actual_size = dest.stat().st_size
+        dest.unlink(missing_ok=True)
+        raise DownloadError(
+            f"Size mismatch for {filename}: expected {expected_size_bytes} bytes, "
+            f"got {actual_size} bytes"
+        )
 
     # Verify hash
     actual = _sha256_file(dest)

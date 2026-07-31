@@ -10,7 +10,9 @@ Covers:
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 from pathlib import Path
 from unittest import mock
 
@@ -111,13 +113,18 @@ class TestModelMetadata:
         from qwen_tts_worker.cli import _MODEL_METADATA
 
         for size, meta in _MODEL_METADATA.items():
-            assert "huggingface_repo" in meta
+            assert meta["huggingface_repo"].startswith("mlx-community/Qwen3-TTS-12Hz-")
+            assert re.fullmatch(r"[0-9a-f]{40}", meta["revision"])
             assert "expected_disk_bytes" in meta
             assert "files" in meta
             assert isinstance(meta["files"], dict)
             assert len(meta["files"]) >= 2  # model.safetensors + config.json
             for fname, finfo in meta["files"].items():
-                assert "sha256" in finfo, f"{size}/{fname} missing sha256"
+                assert re.fullmatch(r"[0-9a-f]{64}", finfo["sha256"]), (
+                    f"{size}/{fname} has an unverified sha256"
+                )
+                assert finfo["size_bytes"] > 0
+                assert "placeholder-" not in finfo["sha256"]
 
     def test_all_known_sizes_are_in_model_size_enum(self) -> None:
         """Every key in _MODEL_METADATA must be a valid ModelSize."""
@@ -160,7 +167,6 @@ class TestHashVerification:
     def test_sha256_file(self, tmp_path: Path) -> None:
         """_sha256_file must compute the correct hash."""
         from qwen_tts_worker.cli import _sha256_file
-        import hashlib
 
         content = b"test content for hashing"
         f = tmp_path / "test.bin"
@@ -169,6 +175,58 @@ class TestHashVerification:
         expected = hashlib.sha256(content).hexdigest()
         actual = _sha256_file(f)
         assert actual == expected
+
+    def test_download_single_matching_hash_and_size_passes(self, tmp_path: Path) -> None:
+        from qwen_tts_worker.cli import _download_single
+
+        content = b"verified model bytes"
+        dest = tmp_path / "model.safetensors"
+        dest.write_bytes(content)
+        fake_hf_hub = mock.MagicMock()
+        fake_hf_hub.hf_hub_download.return_value = str(dest)
+
+        with mock.patch.dict("sys.modules", {"huggingface_hub": fake_hf_hub}):
+            _download_single(
+                repo_id="mlx-community/model",
+                revision="a" * 40,
+                filename=dest.name,
+                dest=dest,
+                expected_sha256=hashlib.sha256(content).hexdigest(),
+                expected_size_bytes=len(content),
+                on_progress=None,
+                cancel_event=None,
+            )
+
+        assert dest.read_bytes() == content
+        fake_hf_hub.hf_hub_download.assert_called_once_with(
+            repo_id="mlx-community/model",
+            revision="a" * 40,
+            filename=dest.name,
+            local_dir=dest.parent,
+            local_dir_use_symlinks=False,
+        )
+
+    def test_download_single_size_mismatch_refuses_and_removes_file(
+        self, tmp_path: Path
+    ) -> None:
+        from qwen_tts_worker.cli import _download_single
+
+        dest = tmp_path / "model.safetensors"
+        dest.write_bytes(b"truncated")
+        fake_hf_hub = mock.MagicMock()
+        fake_hf_hub.hf_hub_download.return_value = str(dest)
+        with mock.patch.dict("sys.modules", {"huggingface_hub": fake_hf_hub}):
+            with pytest.raises(DownloadError, match="Size mismatch"):
+                _download_single(
+                    repo_id="test/repo",
+                    filename=dest.name,
+                    dest=dest,
+                    expected_sha256="a" * 64,
+                    expected_size_bytes=10_000,
+                    on_progress=None,
+                    cancel_event=None,
+                )
+        assert not dest.exists()
 
     def test_download_single_hash_mismatch(self, tmp_path: Path) -> None:
         """When downloaded file doesn't match expected hash, raise DownloadError."""
