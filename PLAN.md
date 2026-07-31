@@ -26,11 +26,9 @@ Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semant
 
 - Evidence gate `qtw-48r.2` is complete: contracts, fixtures/rubric, and the 54-attempt controlled legacy baseline are preserved.
 - Synthesis foundation tasks `qtw-48r.4.1` and `.4.2` are complete: live synthesis fails closed, maps controls exactly, and reuses one safely leased warm model with telemetry.
-- Source-ingestion task `qtw-48r.3.1` is complete for all supported repository Markdown/JSON scripts.
+- Preprocessing tasks `qtw-48r.3.1` and `.3.2` are complete: supported scripts ingest into source-mapped blocks and deterministic en-US rules/lexicons produce audited spoken text.
 - Required work remains `qtw-48r.3` through `qtw-48r.6`; `qtw-48r.7` is optional and outside the critical path.
-- The next dependency-ready quality tasks are:
-  - `qtw-48r.3.2` — English normalization and pronunciation lexicon;
-  - `qtw-48r.3.3` — narration/dialogue/attribution turns.
+- The next dependency-ready quality task is `qtw-48r.3.3` — narration/dialogue/attribution turns.
 - Beads remains authoritative for live status and dependency edges.
 
 ### Module hierarchy
