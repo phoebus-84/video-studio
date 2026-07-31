@@ -7,9 +7,12 @@ inputs:
     type: text/markdown
     description: The narration script with character annotations
 outputs:
-  - narration/:
+  - narration-manifest.json:
+      kind: application/json
+      description: Canonical ordered accepted-attempt and mastering provenance
+  - narration-full.wav:
       kind: audio/wav
-      description: Per-scene WAV files in artifacts/narration/
+      description: Manifest-driven mastered mono PCM16/24k narration
 capabilities:
   - speech.synthesize
 ---
@@ -21,28 +24,19 @@ running on the local TTS worker (`http://127.0.0.1:5197`).
 
 ## Process
 
-1. Load the narration script (`artifacts/narration-script.json`)
-2. Identify scenes with direct speech vs. pure narration
-3. Map each character to a CustomVoice preset speaker
-4. For multi-character scenes, split text at dialogue boundaries, synthesize each
-   segment with the appropriate speaker, and concatenate WAVs
-5. Save per-scene WAV files and update metadata JSON
+1. Ingest `artifacts/narration-script.json` into source-mapped spoken blocks.
+2. Normalize reviewed English forms and resolve narration/dialogue turns; attribution stays narrator.
+3. Segment only at safe semantic boundaries and bind each character to a stable CustomVoice profile/direction.
+4. Submit each complete segment/profile to `/attempt-jobs`, execute, validate signal, and retry only reason-coded eligible rejection within bounds.
+5. Process accepted attempts into linked speech/pause artifacts without changing raw WAVs.
+6. Submit explicit manifest order to `/narrations/master` and write the returned canonical `narration-manifest.json` plus `narration-full.wav`.
+7. Generate captions/timing from manifest order and measured WAV durations, never filename order.
 
 ## Model
 
-Always pass `instruct` to trigger the 8-bit CustomVoice model (`qwen3-tts-1.7b-customvoice-8bit`).
-Without `instruct`, the worker falls back to the lower-quality 0.6B 4-bit model.
+The selected profile pins the exact 1.7B CustomVoice checkpoint hash, preset, backend language, base direction, and sampling controls. `instruct` controls bounded delivery only; it never selects a different model. Neutral delivery is valid. Speed is exactly 1.0 because mlx-audio 0.4.6 exposes no Qwen speed control.
 
-API: `POST http://127.0.0.1:5197/synthesize`
-
-```json
-{
-  "text": "Narration text",
-  "voice": "<speaker_name>",
-  "speed": 1.0,
-  "instruct": "<emotion/style instruction>"
-}
-```
+Primary API: `POST /attempt-jobs` followed by execute/validate/process and `POST /narrations/master`. `POST /synthesize` is legacy compatibility only.
 
 ## CustomVoice Preset Speakers
 
@@ -58,13 +52,11 @@ API: `POST http://127.0.0.1:5197/synthesize`
 | `eric` | Male (alt) | Alternative male voice. |
 | `dylan` | Male (alt) | Alternative male voice. |
 
-**Important**: Pass the exact speaker name as `voice`. When `instruct` is set,
-unknown names are silently mapped to `serena`.
+**Important**: Supported names are discovered from checkpoint config. Unknown speakers and languages fail before generation; there is no silent remap.
 
 ## Multi-Character Scenes
 
-Use **split-and-concatenate**: split the text at dialogue boundaries, synthesize
-each segment with the character's preset speaker, then concatenate WAVs with `wave`.
+Use source-conserving dialogue analysis followed by one immutable attempt per semantic turn. Attribution remains a narrator turn. Assemble only from the ordered accepted-attempt manifest; never concatenate lexically sorted filenames.
 
 **Attribution text** ("she said", "he whispered") belongs to the narrator,
 not the character. Split accordingly.
@@ -74,55 +66,25 @@ not the character. Split accordingly.
 Do NOT use `Name: dialogue` inline format — the model reads character names aloud.
 The `mlx_audio` `generate_audio` function does not expose multi-character tagging.
 
-## Instruct Prompts
+## Delivery direction
 
-### Narrator (serena)
-```
-Speak warmly and gently, like a storyteller reading to a young child.
-Soft, calm, and full of wonder.
-```
+Preset speaker is identity. Base instructions describe only stable performance, for example:
 
-### Young Female (vivian)
 ```
-Speak with a young, innocent, sweet voice. Curious and trusting.
+Speak clearly and naturally while maintaining consistent delivery across adjacent narration.
 ```
 
-### Villain — Charming (uncle_fu)
-```
-Speak with a sly, smooth, charming voice. Polite but cunning.
-Keep it concise and natural, no unnecessary pauses.
-```
-
-### Villain — Disguised (uncle_fu)
-```
-Speak with a raspy, hoarse voice, trying to sound like a different
-character. Strained and creaky.
-```
-
-### Villain — Menacing (uncle_fu)
-```
-Speak with a deep, growling, menacing voice. Fierce, sudden, and hungry.
-```
-
-### Wise Older Character (serena or ono_anna)
-```
-Speak with a warm, magical, grandmotherly voice. Kind and twinkling.
-Soft and full of gentle wonder.
-```
-
-### Hero (ryan)
-```
-Speak with a strong, kind, heroic voice. Determined and brave.
-```
+Per-segment deltas use only the bounded pace, articulation, energy, emotion, intensity, intent, and distance taxonomy. Do not restate age, gender, timbre, pitch, accent, or character identity in instructions. Contradictory or over-length direction fails review.
 
 ## Common Issues
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
-| Short line takes 20s+ with breaths | Bad model generation | Re-synthesize that segment |
-| Character names read aloud | Inline tag format used | Switch to split+concatenate |
-| All voices sound the same | Voice mapped to serena | Pass exact CV speaker name |
-| TTS worker unreachable | Wrong port | Worker runs on **5197**, not 5199 |
+| Short line takes 20s+ with breaths | Signal/rate validation rejection | Retain rejected attempt and create a bounded quality retry |
+| Character names read aloud | Inline tag format used | Resolve explicit dialogue turns before synthesis |
+| All voices sound the same | Wrong stable profile assignment | Validate exact checkpoint-discovered preset per character |
+| Fake silence present | Explicit CI provider was used | Never publish fake mode; speech-presence validation rejects it |
+| Legacy scene sidecars used | Canonical manifest absent | Read during transition only; new writers emit `narration-manifest.json` |
 
 ## Quality Checks
 

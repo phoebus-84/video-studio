@@ -116,14 +116,16 @@ pipeline:
     - id: narration
       name: "Narration"
       type: capability
-      description: "Generate voiceover audio from the script"
+      description: "Generate source-mapped segments, immutable accepted attempts, and mastered narration"
       capability: speech.synthesize
       inputs:
         - contract: script.md
           version: "1.0.0"
       outputs:
-        - contract: narration.mp3
-          version: "1.0.0"
+        - contract: narration-manifest.json
+          version: "0.1.0"
+        - contract: narration-full.wav
+          version: "0.1.0"
       gates:
         autopilot: true
         review: none
@@ -135,11 +137,11 @@ pipeline:
     - id: captions
       name: "Captions"
       type: capability
-      description: "Generate timed captions from narration audio"
+      description: "Generate timed captions in manifest order from measured accepted WAV durations"
       capability: media.probe
       inputs:
-        - contract: narration.mp3
-          version: "1.0.0"
+        - contract: narration-manifest.json
+          version: "0.1.0"
       outputs:
         - contract: captions.srt
           version: "1.0.0"
@@ -154,12 +156,12 @@ pipeline:
     - id: timing
       name: "Scene Timing"
       type: editorial
-      description: "Compute per-scene durations and transition timestamps"
+      description: "Compute per-segment durations and transitions from the narration manifest"
       inputs:
         - contract: script.md
           version: "1.0.0"
-        - contract: narration.mp3
-          version: "1.0.0"
+        - contract: narration-manifest.json
+          version: "0.1.0"
       outputs:
         - contract: timing.json
           version: "1.0.0"
@@ -175,7 +177,7 @@ pipeline:
     - id: compose
       name: "Compose & Render"
       type: capability
-      description: "Assemble final video from illustrations, narration, captions, and timing"
+      description: "Assemble final video from illustrations, canonical narration manifest, captions, and timing"
       capability: video.compose
       inputs:
         - contract: illustrations/
@@ -183,8 +185,8 @@ pipeline:
         - contract: tapes/
           version: "1.0.0"
           optional: true
-        - contract: narration.mp3
-          version: "1.0.0"
+        - contract: narration-manifest.json
+          version: "0.1.0"
         - contract: captions.srt
           version: "1.0.0"
         - contract: timing.json
