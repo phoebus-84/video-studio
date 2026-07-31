@@ -18,7 +18,8 @@ Implementation status after the frozen investigation:
 - `qtw-48r.4.1` corrected live CustomVoice routing: failures and silence fail closed, the model config owns speaker/language discovery, unsupported profile controls are rejected, and seed/sampling arguments map explicitly to MLX.
 - `qtw-48r.4.2` added a serialized warm-model lifecycle with exact checkpoint identity, active leases, failed-load recovery, explicit/idle unload, health state, latency counters, and MLX memory telemetry. A live two-request smoke loaded once and reduced wall time from 7.266 s to 3.242 s.
 - `qtw-48r.3.2` added deterministic en-US spoken normalization with exact display/spoken separation, ordered source-mapped changes, episode lexicons, reviewed number/date/time/currency/unit/technical rules, and fail-review diagnostics for ambiguity.
-- Dialogue/segmentation, direction policy, durable attempts, mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
+- `qtw-48r.3.3` added conserved narration/dialogue turns, nested quotation handling, explicit alias-based character attribution, stable source spans, and review-required failures instead of speaker guessing.
+- Segmentation, direction policy, durable attempts, mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
 
 Evidence labels used below:
 
