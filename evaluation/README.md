@@ -130,7 +130,7 @@ For every item, listeners also choose `A`, `B`, or `no preference`, and may flag
 
 ## Current candidate
 
-`candidate-qtw-v1` completed 54/54 seeded live generations and all objective gates. Compact evidence is under `evaluation/candidates/`; raw audio and the randomized 54-item A/B package remain under ignored `evaluation/runs/candidate-qtw-v1/`. No listener scores exist, so `evaluation/acceptance-v1.json` blocks a quality claim.
+`candidate-qtw-v1` completed 54/54 seeded live generations and all objective gates. Compact evidence is under `evaluation/candidates/`; raw audio and the randomized 54-item A/B package remain under ignored `evaluation/runs/candidate-qtw-v1/`. Run `python evaluation/create_listening_review.py`, open the generated `results/listening-review.html`, and collect its CSV from each independent listener without sharing `listening-key.json`. Opaque staged audio paths do not reveal system assignment. No listener scores exist, so `evaluation/acceptance-v1.json` blocks a quality claim.
 
 ## Acceptance and reporting
 
