@@ -202,8 +202,10 @@ New integrations submit complete segment/profile contracts to `POST /attempt-job
 jobs/       # atomically replaced lifecycle state
 attempts/        # immutable terminal JSON manifests
 raw-wav/         # immutable successful generation output
-quality-reports/ # immutable signal metrics/checks/decisions
-cache/           # rebuildable verified fingerprint index
+quality-reports/  # immutable signal metrics/checks/decisions
+processed/        # transformed speech and exact pause WAVs
+transform-reports/# immutable transform provenance
+cache/            # rebuildable verified fingerprint index
 ```
 
 On restart, an interrupted `running` job returns to `queued` and is marked recovered. Completed cache entries are reused only after attempt/fingerprint/segment/provider identity and WAV SHA-256 verification. Deleting the cache directory causes regeneration but does not delete provenance. Never edit attempt manifests or raw WAV files in place.
@@ -211,6 +213,8 @@ On restart, an interrupted `running` job returns to `queued` and is marked recov
 Cancellation is cooperative: queued work cancels immediately; MLX generation may finish internally, but bytes are discarded if cancellation was requested before persistence. Retry creates a new attempt with a deterministically advanced seed and never replaces its parent.
 
 Validate every successful raw attempt before publication with `POST /attempt-jobs/{id}/validate`. Reject decisions block assembly. Review decisions require an explicit reviewed disposition. Fake mode produces silence by design and therefore always fails the speech-presence gate.
+
+After acceptance, `POST /attempt-jobs/{id}/process` creates linked speech/pause artifacts without touching raw WAVs. Current policy trims only threshold-silent edges, retains 80 ms margins, and applies no micro-fade. Duplicate transform identity fails instead of overwriting prior output.
 
 ## Graceful shutdown
 

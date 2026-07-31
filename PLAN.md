@@ -33,7 +33,8 @@ Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semant
 - Immutable durable attempt jobs, verified segment cache, restart/cancellation recovery, and bounded selective retries are complete in `qtw-48r.4.4`.
 - Versioned segment signal validation and bounded quality-retry mapping are complete in `qtw-48r.5.1`.
 - Local tiny-English ASR and spectral/RMS continuity diagnostics were evaluated in `.5.2` and remain advisory because measured error/bias cannot support an automatic gate.
-- Conservative pause/edge processing (`.5.3`) is next.
+- Conservative non-destructive edge processing and exact pause artifacts are complete in `.5.3`; micro-fades remain disabled by evidence.
+- Manifest-driven assembly and final mastering (`.5.4`) is next.
 - Beads remains authoritative for live status and dependency edges.
 
 ### Module hierarchy

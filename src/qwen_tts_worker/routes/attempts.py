@@ -13,6 +13,13 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from qwen_tts_worker.audio_processing import (
+    AudioProcessingError,
+    AudioProcessor,
+    AudioTransformReport,
+    AudioTransformStore,
+    EdgeProcessingPolicy,
+)
 from qwen_tts_worker.attempt_store import (
     AttemptStore,
     AttemptStoreError,
@@ -58,6 +65,12 @@ class RetryQualityRequest(BaseModel):
     report_id: UUID
 
 
+class ProcessAttemptRequest(BaseModel):
+    report_id: UUID
+    pause_after_ms: int = 0
+    policy: EdgeProcessingPolicy | None = None
+
+
 @lru_cache(maxsize=4)
 def _store_at(root: str, max_retries: int, seed_step: int) -> AttemptStore:
     return AttemptStore(
@@ -78,6 +91,10 @@ def attempt_store() -> AttemptStore:
 
 def quality_report_store() -> QualityReportStore:
     return QualityReportStore(attempt_store().root / "quality-reports")
+
+
+def audio_transform_store() -> AudioTransformStore:
+    return AudioTransformStore(attempt_store().root)
 
 
 @lru_cache(maxsize=8)
@@ -267,4 +284,40 @@ def retry_rejected_attempt(
     except AttemptStoreError as exc:
         raise _http_error(exc) from exc
     except SignalValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{job_id}/process", response_model=AudioTransformReport)
+def process_accepted_attempt(
+    job_id: UUID, request: ProcessAttemptRequest
+) -> AudioTransformReport:
+    try:
+        store = attempt_store()
+        job = store.get_job(job_id)
+        if job.attempt_id is None:
+            raise AttemptStoreError(f"durable job {job_id} has no terminal attempt")
+        attempt = store.get_attempt(job.attempt_id)
+        evidence = quality_report_store().get(str(request.report_id))
+        report = AudioProcessor(request.policy).process_attempt(
+            attempt,
+            evidence.report,
+            store.root,
+            store.root,
+            pause_after_ms=request.pause_after_ms,
+        )
+        audio_transform_store().save(report)
+        return report
+    except AttemptStoreError as exc:
+        raise _http_error(exc) from exc
+    except SignalValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AudioProcessingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/transforms/{transform_id}", response_model=AudioTransformReport)
+def get_audio_transform(transform_id: str) -> AudioTransformReport:
+    try:
+        return audio_transform_store().get(transform_id)
+    except AudioProcessingError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

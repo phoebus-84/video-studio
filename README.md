@@ -38,6 +38,7 @@ pytest --cov=src/qwen_tts_worker --cov-report=term-missing
 - [Voice direction](docs/VOICE-DIRECTION.md) — stable preset identity, bounded delivery deltas, and continuity rules
 - [Signal validation](docs/SIGNAL-VALIDATION.md) — calibrated objective checks, rejection, review, and quality retry
 - [Advisory diagnostics](docs/ADVISORY-DIAGNOSTICS.md) — local ASR/boundary evaluation, calibration evidence, bias, and no-gate decision
+- [Audio processing](docs/AUDIO-PROCESSING.md) — non-destructive edge trim, exact pauses, provenance, and fade decision
 
 ## Plan
 

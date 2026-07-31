@@ -332,6 +332,14 @@ Retrieve persisted validation evidence.
 
 Create a bounded retry for retryable signal/rate rejection checks. Integrity/decode/format rejection requires operator correction rather than repeated sampling.
 
+### `POST /attempt-jobs/{job_id}/process`
+
+For an accepted quality report, verify raw integrity, conservatively trim only threshold-silent edges while preserving an 80 ms margin, and realize the requested pause as a separate exact silence WAV. Returns and persists a policy-fingerprinted transform report. No fades or destructive in-place changes occur.
+
+### `GET /attempt-jobs/transforms/{transform_id}`
+
+Retrieve an immutable transform report linking raw attempt, quality evidence, transformed speech, pause artifact, trim positions, and active-sequence hash.
+
 ## Errors
 
 All non-2xx responses follow a uniform envelope:
