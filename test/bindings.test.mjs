@@ -16,7 +16,7 @@ describe("TypeScript bindings", () => {
     const expected = [
       "asset", "capability-binding", "edit-timeline", "editorial-artifact",
       "error-envelope", "identity", "journal-event", "pipeline-manifest",
-      "provider-job", "review-thread", "vocabulary", "workspace",
+      "narration", "provider-job", "review-thread", "vocabulary", "workspace",
     ];
     for (const name of expected) {
       assert.ok(existsSync(resolve(bindingsDir, `${name}.ts`)), `Missing binding: ${name}.ts`);
@@ -61,6 +61,15 @@ describe("TypeScript bindings", () => {
     assert.ok(content.includes("ContentHash"), "identity.ts should contain ContentHash");
     assert.ok(content.includes("ChannelId"), "identity.ts should contain ChannelId");
     assert.ok(content.includes("Provenance"), "identity.ts should contain Provenance");
+  });
+
+  it("generates canonical narration manifests and legacy read compatibility", () => {
+    const content = readBinding("narration");
+    assert.ok(content.includes("NarrationSegment"));
+    assert.ok(content.includes("SynthesisAttempt"));
+    assert.ok(content.includes("SegmentQualityReport"));
+    assert.ok(content.includes("NarrationManifest"));
+    assert.ok(content.includes("LegacyNarrationSidecar"));
   });
 
   it("workspace has imports from identity", () => {

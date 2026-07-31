@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/narration.schema.json",
+  "title": "Canonical narration segment, attempt, quality, timing, and mastering contracts",
+  "$defs": {
+    "SourceSpan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 1}
+      }
+    },
+    "SpeechRole": {"type": "string", "enum": ["narrator", "dialogue"]},
+    "SegmentContext": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy", "before", "after"],
+      "properties": {
+        "policy": {"type": "string", "enum": ["none", "metadata_only"]},
+        "before": {"type": "string", "maxLength": 1000},
+        "after": {"type": "string", "maxLength": 1000}
+      }
+    },
+    "DeliveryDelta": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "pace": {"type": "string", "enum": ["slower", "steady", "quicker"]},
+        "articulation": {"type": "string", "enum": ["soft", "natural", "crisp"]},
+        "energy": {"type": "string", "enum": ["low", "medium", "high"]},
+        "emotion": {"type": "string", "enum": ["neutral", "warm", "joyful", "curious", "somber", "tense", "urgent"]},
+        "intensity": {"type": "string", "enum": ["restrained", "moderate", "strong"]},
+        "intent": {"type": "string", "enum": ["narrate", "explain", "reassure", "wonder", "warn", "question", "exclaim"]},
+        "distance": {"type": "string", "enum": ["intimate", "conversational", "projected"]}
+      }
+    },
+    "VoiceDirection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["directionVersion", "baseDirectionId", "baseInstruction", "delta", "composedInstruction"],
+      "properties": {
+        "directionVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "baseDirectionId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "baseInstruction": {"type": "string", "minLength": 1, "maxLength": 512},
+        "delta": {"$ref": "#/$defs/DeliveryDelta"},
+        "composedInstruction": {"type": "string", "minLength": 1, "maxLength": 768}
+      }
+    },
+    "NarrationSegment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "segmentId", "sourceDocumentHash", "sourceBlockIds", "sourceSpans", "preprocessingVersion", "displayText", "spokenText", "language", "role", "speakerProfileId", "direction", "context", "pauseAfterMs"],
+      "properties": {
+        "schemaVersion": {"const": "0.1.0"},
+        "segmentId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "sourceDocumentHash": {"$ref": "identity.schema.json#/$defs/ContentHash"},
+        "sourceBlockIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+        "sourceSpans": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/SourceSpan"}},
+        "preprocessingVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "displayText": {"type": "string", "minLength": 1},
+        "spokenText": {"type": "string", "minLength": 1},
+        "language": {"type": "string", "minLength": 2, "maxLength": 35},
+        "role": {"$ref": "#/$defs/SpeechRole"},
+        "speakerProfileId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "direction": {"$ref": "#/$defs/VoiceDirection"},
+        "context": {"$ref": "#/$defs/SegmentContext"},
+        "pauseAfterMs": {"type": "integer", "minimum": 0, "maximum": 10000}
+      }
+    },
+    "ModelIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["modelId", "modelProfile", "modelHash", "quantization", "mlxAudioVersion", "mlxVersion"],
+      "properties": {
+        "modelId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "modelProfile": {"const": "custom_voice"},
+        "modelHash": {"$ref": "identity.schema.json#/$defs/ContentHash"},
+        "quantization": {"type": "string", "minLength": 1, "maxLength": 64},
+        "mlxAudioVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "mlxVersion": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "SamplingProfile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["temperature", "topK", "topP", "repetitionPenalty", "maxTokens", "seed"],
+      "properties": {
+        "temperature": {"type": "number", "exclusiveMinimum": 0, "maximum": 2},
+        "topK": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "topP": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "repetitionPenalty": {"type": "number", "minimum": 1, "maximum": 3},
+        "maxTokens": {"type": "integer", "minimum": 1, "maximum": 8192},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+      }
+    },
+    "SynthesisProfile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "profileId", "profileRevision", "model", "speaker", "language", "sampleRate", "channels", "sampleWidthBytes", "sampling"],
+      "properties": {
+        "schemaVersion": {"const": "0.1.0"},
+        "profileId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "profileRevision": {"type": "string", "minLength": 1, "maxLength": 64},
+        "model": {"$ref": "#/$defs/ModelIdentity"},
+        "speaker": {"type": "string", "minLength": 1, "maxLength": 128},
+        "language": {"type": "string", "minLength": 2, "maxLength": 35},
+        "sampleRate": {"const": 24000},
+        "channels": {"const": 1},
+        "sampleWidthBytes": {"const": 2},
+        "sampling": {"$ref": "#/$defs/SamplingProfile"}
+      }
+    },
+    "WavArtifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "contentHash", "sizeBytes", "durationSeconds", "sampleRate", "channels", "sampleWidthBytes"],
+      "properties": {
+        "path": {"$ref": "identity.schema.json#/$defs/PortableRelativePath"},
+        "contentHash": {"$ref": "identity.schema.json#/$defs/ContentHash"},
+        "sizeBytes": {"type": "integer", "minimum": 44},
+        "durationSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "sampleRate": {"type": "integer", "minimum": 1},
+        "channels": {"type": "integer", "minimum": 1},
+        "sampleWidthBytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "AttemptFailure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {"type": "string", "enum": ["invalid_request", "model_unavailable", "generation_failed", "missing_output", "invalid_wav", "validation_rejected", "cancelled"]},
+        "message": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "retryable": {"type": "boolean"}
+      }
+    },
+    "SynthesisAttempt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "attemptId", "segmentId", "requestFingerprint", "phase", "profile", "direction", "createdAt", "completedAt", "processingSeconds"],
+      "properties": {
+        "schemaVersion": {"const": "0.1.0"},
+        "attemptId": {"type": "string", "format": "uuid"},
+        "segmentId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "requestFingerprint": {"$ref": "identity.schema.json#/$defs/ContentHash"},
+        "phase": {"type": "string", "enum": ["completed", "failed", "cancelled"]},
+        "profile": {"$ref": "#/$defs/SynthesisProfile"},
+        "direction": {"$ref": "#/$defs/VoiceDirection"},
+        "rawWav": {"$ref": "#/$defs/WavArtifact"},
+        "failure": {"$ref": "#/$defs/AttemptFailure"},
+        "retryOf": {"type": "string", "format": "uuid"},
+        "createdAt": {"$ref": "identity.schema.json#/$defs/Timestamp"},
+        "completedAt": {"$ref": "identity.schema.json#/$defs/Timestamp"},
+        "processingSeconds": {"type": "number", "minimum": 0},
+        "peakMemoryBytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "SignalMetrics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["peakDbfs", "rmsDbfs", "clippedSampleRatio", "dcOffset", "leadingSilenceMs", "trailingSilenceMs", "spokenWordsPerMinute"],
+      "properties": {
+        "peakDbfs": {"type": "number"}, "rmsDbfs": {"type": "number"},
+        "clippedSampleRatio": {"type": "number", "minimum": 0, "maximum": 1},
+        "dcOffset": {"type": "number", "minimum": -1, "maximum": 1},
+        "leadingSilenceMs": {"type": "number", "minimum": 0},
+        "trailingSilenceMs": {"type": "number", "minimum": 0},
+        "spokenWordsPerMinute": {"type": "number", "minimum": 0}
+      }
+    },
+    "QualityCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["checkId", "status", "observed", "expected"],
+      "properties": {
+        "checkId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "status": {"type": "string", "enum": ["pass", "warn", "fail"]},
+        "observed": {"type": "string", "minLength": 1, "maxLength": 512},
+        "expected": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    },
+    "SegmentQualityReport": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "reportId", "validatorVersion", "attemptId", "metrics", "checks", "decision", "createdAt"],
+      "properties": {
+        "schemaVersion": {"const": "0.1.0"},
+        "reportId": {"type": "string", "format": "uuid"},
+        "validatorVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "attemptId": {"type": "string", "format": "uuid"},
+        "metrics": {"$ref": "#/$defs/SignalMetrics"},
+        "checks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/QualityCheck"}},
+        "decision": {"type": "string", "enum": ["accept", "reject", "review"]},
+        "overrideActor": {"type": "string", "maxLength": 256},
+        "overrideReason": {"type": "string", "maxLength": 1000},
+        "createdAt": {"$ref": "identity.schema.json#/$defs/Timestamp"}
+      }
+    },
+    "NarrationEntry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["segmentId", "acceptedAttemptId", "qualityReportId", "wav", "pauseAfterMs", "transformIds"],
+      "properties": {
+        "segmentId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "acceptedAttemptId": {"type": "string", "format": "uuid"},
+        "qualityReportId": {"type": "string", "format": "uuid"},
+        "wav": {"$ref": "#/$defs/WavArtifact"},
+        "pauseAfterMs": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "transformIds": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "MasteringMetrics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["integratedLufs", "truePeakDbtp", "loudnessRangeLu"],
+      "properties": {
+        "integratedLufs": {"type": "number"},
+        "truePeakDbtp": {"type": "number"},
+        "loudnessRangeLu": {"type": "number", "minimum": 0}
+      }
+    },
+    "CaptionCue": {
+      "type": "object", "additionalProperties": false,
+      "required": ["segmentId", "index", "startSeconds", "endSeconds", "text"],
+      "properties": {
+        "segmentId": {"type": "string", "minLength": 1},
+        "index": {"type": "integer", "minimum": 1},
+        "startSeconds": {"type": "number", "minimum": 0},
+        "endSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "text": {"type": "string", "minLength": 1}
+      }
+    },
+    "NarrationManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "manifestId", "episodeId", "sourceRevision", "entries", "masteringProfileId", "finalWav", "mastering", "captions", "createdAt"],
+      "properties": {
+        "schemaVersion": {"const": "0.1.0"},
+        "manifestId": {"type": "string", "format": "uuid"},
+        "episodeId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "sourceRevision": {"type": "string", "minLength": 1, "maxLength": 256},
+        "entries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/NarrationEntry"}},
+        "masteringProfileId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "finalWav": {"$ref": "#/$defs/WavArtifact"},
+        "mastering": {"$ref": "#/$defs/MasteringMetrics"},
+        "captions": {"type": "array", "items": {"$ref": "#/$defs/CaptionCue"}},
+        "createdAt": {"$ref": "identity.schema.json#/$defs/Timestamp"}
+      }
+    },
+    "LegacyNarrationSidecar": {
+      "type": "object",
+      "description": "Read-only migration shape. Writers must emit NarrationManifest.",
+      "properties": {
+        "id": {"type": "string"}, "scene": {"type": "string"},
+        "duration": {"type": "number", "minimum": 0},
+        "duration_sec": {"type": "number", "minimum": 0},
+        "durationSeconds": {"type": "number", "minimum": 0},
+        "wav_path": {"type": "string"}, "path": {"type": "string"},
+        "text": {"type": "string"}, "voice": {"type": "string"},
+        "speakers": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "NarrationExample": {
+      "type": "object", "additionalProperties": false,
+      "required": ["segment", "attempt", "quality", "manifest", "legacy"],
+      "properties": {
+        "segment": {"$ref": "#/$defs/NarrationSegment"},
+        "attempt": {"$ref": "#/$defs/SynthesisAttempt"},
+        "quality": {"$ref": "#/$defs/SegmentQualityReport"},
+        "manifest": {"$ref": "#/$defs/NarrationManifest"},
+        "legacy": {"$ref": "#/$defs/LegacyNarrationSidecar"}
+      }
+    }
+  }
+}
