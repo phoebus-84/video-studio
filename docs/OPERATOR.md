@@ -205,6 +205,7 @@ raw-wav/         # immutable successful generation output
 quality-reports/  # immutable signal metrics/checks/decisions
 processed/        # transformed speech and exact pause WAVs
 transform-reports/# immutable transform provenance
+mastered/         # premaster, narration-full.wav, canonical report/manifest
 cache/            # rebuildable verified fingerprint index
 ```
 
@@ -215,6 +216,8 @@ Cancellation is cooperative: queued work cancels immediately; MLX generation may
 Validate every successful raw attempt before publication with `POST /attempt-jobs/{id}/validate`. Reject decisions block assembly. Review decisions require an explicit reviewed disposition. Fake mode produces silence by design and therefore always fails the speech-presence gate.
 
 After acceptance, `POST /attempt-jobs/{id}/process` creates linked speech/pause artifacts without touching raw WAVs. Current policy trims only threshold-silent edges, retains 80 ms margins, and applies no micro-fade. Duplicate transform identity fails instead of overwriting prior output.
+
+Submit ordered accepted transforms to `POST /narrations/master`. The masterer verifies every hash, exact pause frame count, and sample boundary before two-pass FFmpeg `loudnorm` to -16 LUFS / -1.5 dBTP. Publication uses `narration-full.wav` only when the persisted report passes duration, loudness, and peak tolerances.
 
 ## Graceful shutdown
 

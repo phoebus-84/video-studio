@@ -340,6 +340,16 @@ For an accepted quality report, verify raw integrity, conservatively trim only t
 
 Retrieve an immutable transform report linking raw attempt, quality evidence, transformed speech, pause artifact, trim positions, and active-sequence hash.
 
+## Narration mastering
+
+### `POST /narrations/master`
+
+Assemble an explicit ordered `AssemblyPlan`, verify all speech/pause hashes and boundaries, and run two-pass FFmpeg loudness mastering. Returns the canonical `NarrationManifest`, premaster/final WAV metadata, order, durations, boundary report, complete profile fingerprint, FFmpeg version, integrated LUFS, true peak, and loudness range.
+
+### `GET /narrations/{assembly_id}`
+
+Retrieve the persisted mastering report. Identical assembly identity is immutable and cannot overwrite prior output.
+
 ## Errors
 
 All non-2xx responses follow a uniform envelope:

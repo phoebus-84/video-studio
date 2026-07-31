@@ -39,6 +39,7 @@ pytest --cov=src/qwen_tts_worker --cov-report=term-missing
 - [Signal validation](docs/SIGNAL-VALIDATION.md) — calibrated objective checks, rejection, review, and quality retry
 - [Advisory diagnostics](docs/ADVISORY-DIAGNOSTICS.md) — local ASR/boundary evaluation, calibration evidence, bias, and no-gate decision
 - [Audio processing](docs/AUDIO-PROCESSING.md) — non-destructive edge trim, exact pauses, provenance, and fade decision
+- [Narration mastering](docs/MASTERING.md) — manifest order, boundary checks, two-pass loudness, and final provenance
 
 ## Plan
 

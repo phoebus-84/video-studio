@@ -25,7 +25,8 @@ Implementation status after the frozen investigation:
 - `qtw-48r.5.1` added immutable policy-fingerprinted checks for artifact integrity, canonical PCM, duration/rate, speech presence, clipping, DC offset, and edge silence; reject/review/override evidence controls bounded quality retries, and fake silence is unpublishable.
 - `qtw-48r.5.2` ran pinned local `mlx-whisper` tiny-English ASR over all 18 baseline segments (mean WER 0.2744; only 4/16 lexicon spellings observed) and RMS/waveform/spectral metrics over 9 boundaries. Synthetic edit calibration validates accounting, but accent/name/code bias and absent speaker embeddings keep every diagnostic advisory.
 - `qtw-48r.5.3` added immutable accepted-attempt transforms with byte-identical active-sample conservation, 80 ms edge margins, exact separate pause WAVs, and complete raw/report/policy hashes. Baseline A/B removed only 0.2146 seconds over 18 segments (maximum 0.033 seconds each); unproven micro-fades remain disabled.
-- Final mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
+- `qtw-48r.5.4` added manifest-only ordering, hash/format/pause/boundary integrity, exact duration accounting, deterministic two-pass FFmpeg mastering to -16 LUFS/-1.5 dBTP, and canonical narration manifests linked to accepted attempts/reports/transforms.
+- Migration and listening acceptance remain tracked work; no quality win is claimed yet.
 
 Evidence labels used below:
 
