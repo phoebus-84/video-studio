@@ -35,7 +35,8 @@ Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semant
 - Local tiny-English ASR and spectral/RMS continuity diagnostics were evaluated in `.5.2` and remain advisory because measured error/bias cannot support an automatic gate.
 - Conservative non-destructive edge processing and exact pause artifacts are complete in `.5.3`; micro-fades remain disabled by evidence.
 - Manifest-driven FFmpeg assembly/mastering (`.5.4`) is complete with exact order/duration, boundary checks, -16 LUFS/-1.5 dBTP targets, and canonical narration manifests.
-- The segment-validation/mastering epic `qtw-48r.5` is implementation-complete; representative listening remains part of `.6.1`/`.6.4` acceptance.
+- The segment-validation/mastering epic `qtw-48r.5` is implementation-complete.
+- Candidate `candidate-qtw-v1` completed 54/54 generations, 54 signal accepts, and passing -16.14 LUFS/-1.46 dBTP mastering; `.6.1` remains honestly blocked on the predeclared three-listener blinded panel.
 - Beads remains authoritative for live status and dependency edges.
 
 ### Module hierarchy

@@ -128,6 +128,10 @@ Objective metrics diagnose failures; they do not replace listening judgments.
 
 For every item, listeners also choose `A`, `B`, or `no preference`, and may flag pronunciation, omission, repetition, clipping, breath, pause, or identity problems.
 
+## Current candidate
+
+`candidate-qtw-v1` completed 54/54 seeded live generations and all objective gates. Compact evidence is under `evaluation/candidates/`; raw audio and the randomized 54-item A/B package remain under ignored `evaluation/runs/candidate-qtw-v1/`. No listener scores exist, so `evaluation/acceptance-v1.json` blocks a quality claim.
+
 ## Acceptance and reporting
 
 Before baseline capture, the project must set numeric thresholds for signal validity. Before claiming a candidate improvement, it must set aggregate listening acceptance thresholds without seeing candidate labels.
