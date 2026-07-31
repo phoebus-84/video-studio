@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import * as yaml from "yaml";
 import type { WorkspaceService, ChannelSummary, SeriesSummary, EpisodeSummary } from "./service.js";
+import { loadNarrationManifest } from "../runtime/narration-manifest.js";
 
 export class FileSystemWorkspaceService implements WorkspaceService {
   private roots: string[];
@@ -117,30 +118,57 @@ export class FileSystemWorkspaceService implements WorkspaceService {
           const rawScenes = Array.isArray(meta) ? meta : (meta.scenes ?? []);
 
           // ── Enrich each scene with narration, asset, captions, and transition data ──
+          const canonicalNarration = await loadNarrationManifest(epPath);
+          const narrationBySegment = new Map(
+            canonicalNarration?.entries.map((entry) => [entry.segmentId, entry]) ?? [],
+          );
           const scenes = await Promise.all(rawScenes.map(async (scene: Record<string, unknown>, i: number) => {
             const sid = (scene.id as string) || `s${i + 1}`;
             const enriched: Record<string, unknown> = { ...scene };
 
-            // Narration: check artifacts/narration/sN.json and .wav
-            try {
-              const narJsonPath = path.join(epPath, "artifacts", "narration", `${sid}.json`);
-              const narRaw = await fs.readFile(narJsonPath, "utf-8");
-              const narMeta = JSON.parse(narRaw);
-              const wavPath = path.join(epPath, "artifacts", "narration", `${sid}.wav`);
+            // Canonical manifest first; legacy sidecar remains read-only compatibility.
+            const canonicalEntry = narrationBySegment.get(sid);
+            if (canonicalEntry) {
+              const wavPath = path.isAbsolute(canonicalEntry.wavPath)
+                ? canonicalEntry.wavPath
+                : path.join(epPath, canonicalEntry.wavPath);
               let wavStat: import("node:fs").Stats | null = null;
               try { wavStat = await fs.stat(wavPath); } catch {}
               enriched.narration = {
-                file: `${sid}.wav`,
-                url: `/library/${channel}/${series}/${episode}/artifacts/narration/${sid}.wav`,
-                durationSeconds: (narMeta.duration_sec as number) ?? scene.durationSeconds ?? 0,
-                voice: (narMeta.voice as string) || "default",
-                jobId: narMeta.job_id as string,
+                segmentId: canonicalEntry.segmentId,
+                file: path.basename(canonicalEntry.wavPath),
+                url: `/library/${channel}/${series}/${episode}/${canonicalEntry.wavPath}`,
+                durationSeconds: canonicalEntry.durationSeconds,
+                pauseAfterMs: canonicalEntry.pauseAfterMs,
+                acceptedAttemptId: canonicalEntry.acceptedAttemptId,
+                source: "narration-manifest",
                 status: wavStat ? "completed" : "missing",
                 generatedAt: wavStat ? wavStat.mtime.toISOString() : null,
                 size: wavStat ? wavStat.size : null,
               };
-            } catch {
-              enriched.narration = null;
+            } else {
+              try {
+                const narJsonPath = path.join(epPath, "artifacts", "narration", `${sid}.json`);
+                const narRaw = await fs.readFile(narJsonPath, "utf-8");
+                const narMeta = JSON.parse(narRaw);
+                const wavPath = path.join(epPath, "artifacts", "narration", `${sid}.wav`);
+                let wavStat: import("node:fs").Stats | null = null;
+                try { wavStat = await fs.stat(wavPath); } catch {}
+                enriched.narration = {
+                  file: `${sid}.wav`,
+                  url: `/library/${channel}/${series}/${episode}/artifacts/narration/${sid}.wav`,
+                  durationSeconds: (narMeta.duration_sec as number) ?? scene.durationSeconds ?? 0,
+                  voice: (narMeta.voice as string) || "default",
+                  jobId: narMeta.job_id as string,
+                  source: "legacy-sidecar",
+                  deprecated: true,
+                  status: wavStat ? "completed" : "missing",
+                  generatedAt: wavStat ? wavStat.mtime.toISOString() : null,
+                  size: wavStat ? wavStat.size : null,
+                };
+              } catch {
+                enriched.narration = null;
+              }
             }
 
             // Asset: check for image files in assets/images/ and video files in assets/tapes/

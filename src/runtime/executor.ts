@@ -11,6 +11,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
+import { loadNarrationManifest, naturalSceneOrder, type NarrationTimingEntry } from "./narration-manifest.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -88,86 +89,92 @@ async function handleIllustrations(ctx: StageContext): Promise<string[]> {
   return outputs;
 }
 
-async function handleCaptions(ctx: StageContext): Promise<string[]> {
-  // Generate SRT from narration segments
-  const narDir = path.join(ctx.episodeDir, "artifacts", "narration");
-  const captionsPath = path.join(ctx.episodeDir, "artifacts", "captions.srt");
-  const outputs: string[] = [];
+async function narrationEntries(ctx: StageContext, sceneText: string[]): Promise<NarrationTimingEntry[]> {
+  const canonical = await loadNarrationManifest(ctx.episodeDir);
+  if (canonical) {
+    const measured = [];
+    for (let index = 0; index < canonical.entries.length; index++) {
+      const entry = canonical.entries[index]!;
+      const resolved = path.isAbsolute(entry.wavPath)
+        ? entry.wavPath
+        : path.join(ctx.episodeDir, entry.wavPath);
+      let duration = entry.durationSeconds;
+      try { duration = getWavDuration(resolved); } catch { /* retain immutable measured metadata */ }
+      measured.push({ ...entry, durationSeconds: duration, text: entry.text ?? sceneText[index] });
+    }
+    return measured;
+  }
+  const narrationDir = path.join(ctx.episodeDir, "artifacts", "narration");
+  const files = (await fs.readdir(narrationDir))
+    .filter((file) => /^(?:s|scene-?)\d+[a-z]?\.wav$/i.test(file))
+    .sort(naturalSceneOrder);
+  if (files.length > 0) {
+    ctx.log("  narration: DEPRECATED legacy WAV filename order; write narration-manifest.json");
+  }
+  return files.map((file, index) => ({
+    segmentId: file.replace(/\.wav$/i, ""),
+    wavPath: path.join("artifacts", "narration", file),
+    durationSeconds: getWavDuration(path.join(narrationDir, file)),
+    pauseAfterMs: 0,
+    text: sceneText[index],
+  }));
+}
 
+async function handleCaptions(ctx: StageContext): Promise<string[]> {
+  const captionsPath = path.join(ctx.episodeDir, "artifacts", "captions.srt");
   try {
-    const files = await fs.readdir(narDir);
-    const wavs = files.filter((f) => f.match(/^s\d+\.wav$/)).sort();
-    if (wavs.length === 0) {
+    let scriptText = "";
+    try { scriptText = await fs.readFile(path.join(ctx.episodeDir, "artifacts", "script.md"), "utf-8"); } catch { /* optional legacy fallback */ }
+    const entries = await narrationEntries(ctx, parseScriptScenes(scriptText));
+    if (entries.length === 0) {
       ctx.log("  captions: no narration segments found");
       return [];
     }
-
-    // Read script for caption text
-    const scriptPath = path.join(ctx.episodeDir, "artifacts", "script.md");
-    let scriptText = "";
-    try {
-      scriptText = await fs.readFile(scriptPath, "utf-8");
-    } catch { /* use defaults */ }
-
-    // Parse script into per-scene text
-    const scenes = parseScriptScenes(scriptText);
-
-    // Build SRT from scene text + WAV durations
     let srt = "";
-    let timeSec = 0;
-    for (let i = 0; i < wavs.length; i++) {
-      const wavPath = path.join(narDir, wavs[i]!);
-      const dur = getWavDuration(wavPath);
-      const text = scenes[i] ?? `Scene ${i + 1}`;
-      const start = timeSec;
-      const end = timeSec + dur;
-      timeSec = end;
-
-      srt += `${i + 1}\n`;
-      srt += `${formatSrtTime(start)} --> ${formatSrtTime(end)}\n`;
-      // Auto-wrap long text
-      srt += wrapText(text, 60) + "\n\n";
-    }
-
+    let timeline = 0;
+    entries.forEach((entry, index) => {
+      const start = timeline;
+      const end = start + entry.durationSeconds;
+      srt += `${index + 1}\n${formatSrtTime(start)} --> ${formatSrtTime(end)}\n`;
+      srt += wrapText(entry.text ?? `Segment ${entry.segmentId}`, 60) + "\n\n";
+      timeline = end + entry.pauseAfterMs / 1000;
+    });
     await fs.writeFile(captionsPath, srt);
-    ctx.log(`  captions: ${wavs.length} segments, ${timeSec.toFixed(1)}s total`);
-    outputs.push(captionsPath);
+    ctx.log(`  captions: ${entries.length} manifest-ordered segments, ${timeline.toFixed(1)}s total`);
+    return [captionsPath];
   } catch (err) {
     ctx.log(`  captions: error — ${err instanceof Error ? err.message : String(err)}`);
+    return [];
   }
-  return outputs;
 }
 
 async function handleTiming(ctx: StageContext): Promise<string[]> {
-  const narDir = path.join(ctx.episodeDir, "artifacts", "narration");
   const timingPath = path.join(ctx.episodeDir, "artifacts", "timing.json");
-
   try {
-    const files = await fs.readdir(narDir);
-    const wavs = files.filter((f) => f.match(/^s\d+\.wav$/)).sort();
-    const segments = [];
-    let timeSec = 0;
-
-    for (const wav of wavs) {
-      const dur = getWavDuration(path.join(narDir, wav));
-      segments.push({
-        id: wav.replace(".wav", ""),
-        startSec: timeSec,
-        endSec: timeSec + dur,
-        durationSec: dur,
-      });
-      timeSec += dur;
-    }
-
+    const entries = await narrationEntries(ctx, []);
+    let timeline = 0;
+    const segments = entries.map((entry) => {
+      const startSec = timeline;
+      const endSec = startSec + entry.durationSeconds;
+      timeline = endSec + entry.pauseAfterMs / 1000;
+      return {
+        id: entry.segmentId,
+        acceptedAttemptId: entry.acceptedAttemptId,
+        startSec,
+        endSec,
+        durationSec: entry.durationSeconds,
+        pauseAfterSec: entry.pauseAfterMs / 1000,
+      };
+    });
     const timing = {
-      totalDurationSec: timeSec,
+      source: (await loadNarrationManifest(ctx.episodeDir)) ? "narration-manifest" : "legacy-sidecars",
+      totalDurationSec: timeline,
       segments,
       transitionSec: 0.5,
       fps: 30,
     };
-
     await fs.writeFile(timingPath, JSON.stringify(timing, null, 2));
-    ctx.log(`  timing: ${segments.length} segments, ${timeSec.toFixed(1)}s total`);
+    ctx.log(`  timing: ${segments.length} manifest-ordered segments, ${timeline.toFixed(1)}s total`);
     return [timingPath];
   } catch (err) {
     ctx.log(`  timing: error — ${err instanceof Error ? err.message : String(err)}`);
