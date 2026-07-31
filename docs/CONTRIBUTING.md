@@ -78,6 +78,18 @@ pytest tests/test_health.py -v
 pytest tests/test_health.py::TestHealthEndpoint::test_health_model_starts_none -v
 ```
 
+The default suite is hardware-independent and exercises the complete durable queue, cache, restart, cancellation, fake-provider labeling, validation rejection, transform, and mastering lifecycle. Fake silence is intentionally rejected by the publication signal gate.
+
+Run the Apple-Silicon live smoke only with explicit local weights:
+
+```bash
+QTW_RUN_MLX_SMOKE=1 \
+QTW_MLX_SMOKE_MODEL="$PWD/models/qwen3-tts-1.7b-customvoice-8bit" \
+pytest -q tests/test_mlx_opt_in_smoke.py -s
+```
+
+The smoke downloads nothing. It produces two live canonical segments, verifies output probes, and requires exactly one model load/two synthesis records. The configured checkpoint may be the pinned 0.6B CustomVoice profile when installed; CI never requires model weights.
+
 ## Model registry conventions
 
 The model registry (`models/registry.py`) is the **single source of truth** for
