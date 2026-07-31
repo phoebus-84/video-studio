@@ -235,6 +235,57 @@ Delete a voice profile.
 
 #### Response `204 No Content`
 
+## Compatibility synthesis
+
+### `POST /synthesize`
+
+Synchronous compatibility endpoint for one Qwen3-TTS **CustomVoice** segment. New pipeline integrations should use the durable job API when it becomes available.
+
+Live mode is fail-closed. Set `QTW_TTS_MODE=live` (the default) to use MLX or explicitly set `QTW_TTS_MODE=fake` for CI. A live model/import/generation/output failure returns a terminal failed result; it is never replaced by fake or silent audio. Fake responses are labeled with `provider_mode: "fake"`.
+
+#### Request body
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `text` | string (1–5000) | required | One prepared semantic segment |
+| `voice` | string | `serena` | Speaker from the model config or a documented alias |
+| `language` | backend language name | `auto` | Passed exactly as MLX `lang_code`; BCP-47 aliases are not accepted |
+| `instruct` | string or null | null | CustomVoice delivery instruction |
+| `temperature` | float (0, 2] | 0.7 | Sampling temperature |
+| `top_k` | integer 0–10000 | 50 | Sampling top-k |
+| `top_p` | float (0, 1] | 1.0 | Nucleus sampling |
+| `repetition_penalty` | float 1–3 | 1.05 | Repetition penalty |
+| `max_tokens` | integer 1–8192 | 1200 | Generation ceiling |
+| `seed` | uint32 | 42 | Applied to `mx.random` before generation |
+| `speed` | exactly 1.0 | 1.0 | Other values are rejected because mlx-audio 0.4.6 does not support Qwen speed control |
+
+`voice_description` and `ref_audio` remain recognizable compatibility fields but are rejected with `422`: they require VoiceDesign and Base voice-cloning models, respectively. Unknown speakers and unavailable model profiles fail before generation.
+
+#### Response `202 Accepted`
+
+The compatibility route currently completes inline but retains its historical `202` response. Inspect both `ok` and `result.status`.
+
+```json
+{
+  "ok": false,
+  "result": {
+    "job_id": "tts-0123456789ab",
+    "status": "failed",
+    "provider_mode": "live",
+    "actual_speaker": null,
+    "model_path": null,
+    "wav_path": null,
+    "error": "FileNotFoundError: CustomVoice model directory not found: ..."
+  }
+}
+```
+
+A live result is completed only after the output is verified as uncompressed mono PCM16 at 24 kHz with non-empty frames and RMS above -50 dBFS. Failed output is not persisted.
+
+### `GET /synthesize/{job_id}`
+
+Returns the in-memory compatibility result. Both `completed` and `failed` jobs are terminal and include `result`; this store does not survive worker restart.
+
 ## Errors
 
 All non-2xx responses follow a uniform envelope:

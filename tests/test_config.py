@@ -40,6 +40,10 @@ class TestSettingsDefaults:
         s = Settings()
         assert s.log_format == "json"
 
+    def test_default_tts_mode_is_live(self) -> None:
+        s = Settings()
+        assert s.tts_mode == "live"
+
     def test_default_workers_1(self) -> None:
         s = Settings()
         assert s.workers == 1
@@ -77,6 +81,11 @@ class TestSettingsEnvOverrides:
         s = Settings()
         assert s.graceful_timeout == 15.5
 
+    def test_fake_tts_requires_explicit_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QTW_TTS_MODE", "fake")
+        s = Settings()
+        assert s.tts_mode == "fake"
+
 
 class TestSettingsValidation:
     """Invalid settings must be rejected at construction time."""
@@ -92,6 +101,10 @@ class TestSettingsValidation:
     def test_graceful_timeout_must_be_at_least_1(self) -> None:
         with pytest.raises(Exception):
             Settings(graceful_timeout=0.0)
+
+    def test_tts_mode_rejects_implicit_fallback_values(self) -> None:
+        with pytest.raises(Exception):
+            Settings(tts_mode="auto")
 
 
 class TestSettingsDirectoryCreation:

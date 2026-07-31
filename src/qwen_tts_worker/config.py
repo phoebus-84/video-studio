@@ -60,6 +60,13 @@ class Settings(BaseSettings):
         "JSON for machine consumption; 'console' emits coloured text for humans.",
     )
 
+    # --- Synthesis provider -----------------------------------------------
+
+    tts_mode: Literal["live", "fake"] = Field(
+        default="live",
+        description="Synthesis provider mode. 'fake' is an explicit CI-only mode; live failures never fall back to it.",
+    )
+
     # --- Concurrency -------------------------------------------------------
 
     workers: int = Field(
@@ -83,6 +90,11 @@ class Settings(BaseSettings):
     models_dir: Path = Field(
         default=Path("models"),
         description="Directory for downloaded TTS model files.",
+    )
+
+    model_path: Path | None = Field(
+        default=None,
+        description="Optional exact CustomVoice model directory; otherwise the installed profile under models_dir is used.",
     )
 
     voices_dir: Path = Field(

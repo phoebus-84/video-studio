@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request, status
@@ -141,7 +142,13 @@ def create_app() -> FastAPI:
 
     # Mount voices directory for WAV file serving
     import os
-    voices_dir = os.environ.get("TTS_VOICES_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "voices"))
+    voices_dir = os.environ.get(
+        "QTW_VOICES_DIR",
+        os.environ.get(
+            "TTS_VOICES_DIR",
+            str(Path(__file__).resolve().parents[2] / "voices"),
+        ),
+    )
     os.makedirs(voices_dir, exist_ok=True)
     app.mount("/voices", StaticFiles(directory=voices_dir), name="voices")
 

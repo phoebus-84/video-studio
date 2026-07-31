@@ -33,6 +33,8 @@ A `.env` file in the working directory is also supported.
 | `QTW_UNIX_SOCKET` | *(none)* | Path to Unix socket (takes priority over host/port) |
 | `QTW_LOG_LEVEL` | `info` | `debug`, `info`, `warning`, `error`, or `critical` |
 | `QTW_LOG_FORMAT` | `json` | `json` (machine-readable) or `console` (human-readable) |
+| `QTW_TTS_MODE` | `live` | `live` fails closed; set `fake` explicitly for CI-only silent fixtures |
+| `QTW_MODEL_PATH` | *(installed CustomVoice profile)* | Exact Qwen3-TTS CustomVoice directory for `/synthesize` |
 | `QTW_WORKERS` | `1` | Uvicorn worker processes (keep at 1 until the job queue supports concurrency) |
 | `QTW_GRACEFUL_TIMEOUT` | `30.0` | Max seconds to drain in-flight requests on shutdown |
 | `QTW_MODELS_DIR` | `models` | Directory for downloaded model files |
