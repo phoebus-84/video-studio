@@ -113,11 +113,33 @@ class Settings(BaseSettings):
         description="Directory for synthesized WAV segment outputs.",
     )
 
+    attempt_store_dir: Path | None = Field(
+        default=None,
+        description="Durable attempt/job root; defaults to outputs_dir/attempt-store.",
+    )
+
+    attempt_max_retries: int = Field(
+        default=2,
+        ge=0,
+        le=10,
+        description="Maximum reason-coded retries after the initial synthesis attempt.",
+    )
+
+    attempt_retry_seed_step: int = Field(
+        default=1,
+        ge=1,
+        le=1_000_000,
+        description="Deterministic seed increment for each retry.",
+    )
+
     # --- Validation --------------------------------------------------------
 
     @model_validator(mode="after")
     def _ensure_directories(self) -> Settings:
         """Create runtime directories if they do not exist."""
-        for d in (self.models_dir, self.voices_dir, self.outputs_dir):
-            d.mkdir(parents=True, exist_ok=True)
+        directories = [self.models_dir, self.voices_dir, self.outputs_dir]
+        if self.attempt_store_dir is not None:
+            directories.append(self.attempt_store_dir)
+        for directory in directories:
+            directory.mkdir(parents=True, exist_ok=True)
         return self

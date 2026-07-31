@@ -247,7 +247,7 @@ Delete a voice profile.
 
 ### `POST /synthesize`
 
-Synchronous compatibility endpoint for one Qwen3-TTS **CustomVoice** segment. New pipeline integrations should use the durable job API when it becomes available.
+Synchronous compatibility endpoint for one Qwen3-TTS **CustomVoice** segment. New pipeline integrations should use the durable attempt-job API below.
 
 Live mode is fail-closed. Set `QTW_TTS_MODE=live` (the default) to use MLX or explicitly set `QTW_TTS_MODE=fake` for CI. A live model/import/generation/output failure returns a terminal failed result; it is never replaced by fake or silent audio. Fake responses are labeled with `provider_mode: "fake"`.
 
@@ -292,7 +292,33 @@ A live result is completed only after the output is verified as uncompressed mon
 
 ### `GET /synthesize/{job_id}`
 
-Returns the in-memory compatibility result. Both `completed` and `failed` jobs are terminal and include `result`; this store does not survive worker restart.
+Returns the in-memory compatibility result. Both `completed` and `failed` jobs are terminal and include `result`; this compatibility store does not survive worker restart.
+
+## Durable attempt jobs
+
+### `POST /attempt-jobs`
+
+Submit one complete `SegmentPlan` and `SynthesisProfile`. The response is a durable job with `provider_mode`, full request fingerprint, retry lineage, and cache status. Exact completed segment/fingerprint/provider matches return immediately with `phase=completed` and `cache_hit=true`; otherwise the job is queued.
+
+### `POST /attempt-jobs/{job_id}/execute`
+
+Execute a queued job synchronously through the warm-model lifecycle. Each terminal outcome creates an immutable attempt manifest. Successful raw WAVs are content-hashed and retained; failed/cancelled attempts never receive a WAV. A provider-mode change after submission fails rather than crossing live/fake cache identity.
+
+### `GET /attempt-jobs` and `GET /attempt-jobs/{job_id}`
+
+List or poll durable jobs. A job found in `running` state after process restart is recovered to `queued` with `recovered_after_restart=true`.
+
+### `GET /attempt-jobs/{job_id}/attempt`
+
+Return the immutable terminal `SynthesisAttempt`, including exact profile, direction, fingerprint, raw WAV metadata or reason-coded failure, retry parent, timestamps, and processing duration.
+
+### `POST /attempt-jobs/{job_id}/cancel`
+
+Request cooperative cancellation. Queued cancellation is immediate. Running generation output is discarded if cancellation arrives before persistence.
+
+### `POST /attempt-jobs/{job_id}/retry`
+
+Create a new queued job for a retryable failed attempt. Retry never overwrites the prior attempt, increments the seed deterministically, records `retry_of`, bypasses cache, and enforces the configured retry bound.
 
 ## Errors
 
@@ -322,8 +348,10 @@ All non-2xx responses follow a uniform envelope:
 |------|---------|
 | 200 | Success |
 | 201 | Resource created |
+| 202 | Durable job accepted/queued |
 | 204 | Resource deleted (no body) |
 | 404 | Resource not found |
+| 409 | Durable lifecycle conflict or retry/cancellation invariant |
 | 405 | Method not allowed |
 | 422 | Validation error |
 | 500 | Internal error (redacted) |
@@ -332,8 +360,5 @@ All non-2xx responses follow a uniform envelope:
 
 The following endpoints will be added in subsequent issues:
 
-- `POST /jobs` — Submit a narration segment for synthesis (qtw-2af.4)
-- `GET /jobs/{job_id}` — Poll job status
-- `DELETE /jobs/{job_id}` — Cancel a job
-- `POST /models/load` — Load a model (qtw-2af.3)
+- `POST /models/load` — Load a model explicitly
 - `POST /models/unload` — Unload the current model

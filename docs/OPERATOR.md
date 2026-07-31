@@ -41,6 +41,9 @@ A `.env` file in the working directory is also supported.
 | `QTW_MODELS_DIR` | `models` | Directory for downloaded model files |
 | `QTW_VOICES_DIR` | `voices` | Directory for voice profiles |
 | `QTW_OUTPUTS_DIR` | `outputs` | Directory for synthesized WAV outputs |
+| `QTW_ATTEMPT_STORE_DIR` | `QTW_OUTPUTS_DIR/attempt-store` | Durable jobs, immutable attempts/raw WAVs, and verified cache index |
+| `QTW_ATTEMPT_MAX_RETRIES` | `2` | Maximum retries after the initial failed attempt |
+| `QTW_ATTEMPT_RETRY_SEED_STEP` | `1` | Deterministic uint32 seed increment per retry |
 
 ### Unix socket example
 
@@ -191,6 +194,21 @@ curl -X DELETE http://127.0.0.1:8000/models/runtime
 
 Unload returns `409` while any synthesis request holds a lease; it never interrupts an active generation. Set `QTW_MODEL_IDLE_TIMEOUT_SECONDS` for automatic idle unload. Failed loads leave the lifecycle in `error`, are visible in runtime/health diagnostics, and may be retried by the next request.
 
+## Durable attempts and recovery
+
+New integrations submit complete segment/profile contracts to `POST /attempt-jobs`, then execute or poll by UUID. Runtime data is partitioned under the attempt store:
+
+```text
+jobs/       # atomically replaced lifecycle state
+attempts/   # immutable terminal JSON manifests
+raw-wav/    # immutable successful generation output
+cache/      # rebuildable verified fingerprint index
+```
+
+On restart, an interrupted `running` job returns to `queued` and is marked recovered. Completed cache entries are reused only after attempt/fingerprint/segment/provider identity and WAV SHA-256 verification. Deleting the cache directory causes regeneration but does not delete provenance. Never edit attempt manifests or raw WAV files in place.
+
+Cancellation is cooperative: queued work cancels immediately; MLX generation may finish internally, but bytes are discarded if cancellation was requested before persistence. Retry creates a new attempt with a deterministically advanced seed and never replaces its parent.
+
 ## Graceful shutdown
 
 Send `SIGTERM` or `SIGINT` (Ctrl+C) to the worker process. The server will:
@@ -210,7 +228,7 @@ A forced exit occurs if in-flight requests do not complete within the graceful t
 ```
 QTW_MODELS_DIR/    # Downloaded model weights, tokenizers, configs
 QTW_VOICES_DIR/    # Voice profile JSON files, reference embeddings
-QTW_OUTPUTS_DIR/   # Synthesized WAV segment files
+QTW_OUTPUTS_DIR/   # Synthesized WAVs and default durable attempt store
 ```
 
 All directories are created automatically on startup if they do not exist.
