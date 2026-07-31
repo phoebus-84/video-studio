@@ -1,40 +1,135 @@
-# Beads implementation plan
+# Beads implementation index
 
-Epic: `qtw-2af` — Deliver persistent local Qwen3-TTS narration
-
-Beads/Dolt is the issue source of truth. `.beads/issues.jsonl` is an inspectable export, not a backup.
+Beads/Dolt is the issue source of truth. This file is a human-readable projection; refresh status with the commands below rather than editing task status here.
 
 ```bash
 bd status
-bd list
-bd graph --all
-bd show qtw-2af
+bd ready
+bd children qtw-48r
+bd graph qtw-48r
+bd show <id>
+bd blocked
+bd dep cycles
 ```
 
-## Current dependency graph
+## Active quality program
+
+**Epic:** `qtw-48r` — Build a reproducible high-quality local TTS pipeline
+
+**Investigation and architecture:** [`docs/TTS-QUALITY-PIPELINE.md`](docs/TTS-QUALITY-PIPELINE.md)
+
+### Goal
+
+Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semantic segmentation, stable CustomVoice direction, immutable/retryable synthesis attempts, segment validation, boundary-safe mastering, and measured baseline-versus-candidate quality evidence.
+
+### Current decision state
+
+- Evidence gate `qtw-48r.2` is complete: contracts, fixtures/rubric, and the 54-attempt controlled legacy baseline are preserved.
+- P0 routing task `qtw-48r.4.1` is complete: live synthesis fails closed and maps validated CustomVoice controls exactly.
+- Source-ingestion task `qtw-48r.3.1` is complete for all supported repository Markdown/JSON scripts.
+- Required work remains `qtw-48r.3` through `qtw-48r.6`; `qtw-48r.7` is optional and outside the critical path.
+- The next dependency-ready quality tasks are:
+  - `qtw-48r.3.2` — English normalization and pronunciation lexicon;
+  - `qtw-48r.3.3` — narration/dialogue/attribution turns;
+  - `qtw-48r.4.2` — warm model lifecycle and resource telemetry.
+- Beads remains authoritative for live status and dependency edges.
+
+### Module hierarchy
 
 ```text
-📊 Dependency graph for qtw-2af:
-
-  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred
-
-  LAYER 0 (ready)                    LAYER 1                            LAYER 2                            LAYER 3                            LAYER 4                            LAYER 5                            LAYER 6                            LAYER 7                            LAYER 8                      
-
-  ┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐
-  │ ○ Deliver persistent loc… │   ╭─▶│ ○ Implement model regist… │────┬▶│ ○ Implement warm model l… │─────▶│ ○ Implement persistent s… │─────▶│ ○ Implement preset Custo… │─┬──┬▶│ ○ Produce canonical WAVs… │─────▶│ ○ Add resource limits, c… │─────▶│ ○ Publish client SDK and… │─────▶│ ○ Build fake and Apple-S… │
-  │ qtw-2af P1                │   │  │ qtw-2af.2 P1              │    │ │ qtw-2af.3 P1              │      │ qtw-2af.4 P1              │ │  │ │ qtw-2af.6 P2              │ │  │ │ qtw-2af.9 P1              │      │ qtw-2af.10 P2             │      │ qtw-2af.11 P2             │      │ qtw-2af.12 P1             │
-  └───────────────────────────┘   │  └───────────────────────────┘    │ └───────────────────────────┘      └───────────────────────────┘ │  │ └───────────────────────────┘ │  │ └───────────────────────────┘      └───────────────────────────┘      └───────────────────────────┘      └───────────────────────────┘
-                                  │                                   │                                                                  │  │                               │  │
-  ┌───────────────────────────┐   │  ┌───────────────────────────┐    │                                                                  │  │ ┌───────────────────────────┐ │  │
-  │ ○ Scaffold Python servic… │───┴─▶│ ○ Normalize and chunk na… │────┴▶                             ─────▶                             ─┼──┴▶│ ○ Implement VoiceDesign … │─┼──╯
-  │ qtw-2af.1 P1              │      │ qtw-2af.5 P1              │ │                                                                     │    │ qtw-2af.7 P2              │ │
-  └───────────────────────────┘      └───────────────────────────┘ │                                                                     │    └───────────────────────────┘ │
-                                                                   │                                                                     │                                  │
-                                                                   │                                                                     │    ┌───────────────────────────┐ │
-                                                                   ╰───▶                             ─────▶                             ─┴───▶│ ○ Implement voice clonin… │─╯
-                                                                                                                                              │ qtw-2af.8 P2              │
-                                                                                                                                              └───────────────────────────┘
-
-  Dependencies: 16 blocking relationships
-  Total: 13 issues across 9 layers
+qtw-48r  High-quality local TTS pipeline
+├─ qtw-48r.2  Evidence, contracts, and controlled baseline [required]
+│  ├─ qtw-48r.1    Investigation and Alexandria comparison [complete]
+│  ├─ qtw-48r.2.1  Freeze stage and artifact contracts
+│  ├─ qtw-48r.2.2  Build evaluation fixtures and rubric
+│  └─ qtw-48r.2.3  Capture controlled legacy baseline
+├─ qtw-48r.3  Deterministic spoken-text preparation [required]
+│  ├─ qtw-48r.3.1  Source ingestion and structural blocks
+│  ├─ qtw-48r.3.2  English normalization and pronunciation lexicon
+│  ├─ qtw-48r.3.3  Narration/dialogue/attribution turns
+│  ├─ qtw-48r.3.4  Semantic segmentation and stable IDs
+│  └─ qtw-48r.3.5  Golden/property/conservation tests
+├─ qtw-48r.4  Voice direction and reproducible CustomVoice synthesis [required]
+│  ├─ qtw-48r.4.1  Correct Qwen/MLX routing and fail closed
+│  ├─ qtw-48r.4.2  Warm lifecycle and resource telemetry
+│  ├─ qtw-48r.4.3  Stable voice profiles and delivery direction
+│  └─ qtw-48r.4.4  Immutable attempts, cache, and selective retry
+├─ qtw-48r.5  Validation, post-processing, and mastering [required]
+│  ├─ qtw-48r.5.1  Segment signal validation
+│  ├─ qtw-48r.5.2  ASR/pronunciation/continuity diagnostic evaluation
+│  ├─ qtw-48r.5.3  Edge processing and explicit pauses
+│  └─ qtw-48r.5.4  Manifest-driven assembly and mastering
+├─ qtw-48r.6  Evaluation, migration, and acceptance [required]
+│  ├─ qtw-48r.6.1  Repeated blinded baseline/candidate comparison
+│  ├─ qtw-48r.6.2  Cross-module contract and consumer migration
+│  ├─ qtw-48r.6.3  Operator/contributor/findings documentation
+│  └─ qtw-48r.6.4  Fairy-tale and technical-explainer acceptance
+└─ qtw-48r.7  Optional extensions
+   ├─ qtw-48r.7.1  Constrained LLM spoken adaptation
+   ├─ qtw-48r.7.2  VoiceDesign-to-clone/Base cloning evaluation
+   └─ qtw-48r.7.3  Native MLX batching evaluation
 ```
+
+### Dependency-ordered execution route
+
+```text
+qtw-48r.1 investigation [done]
+  ├─> qtw-48r.2.1 contracts ───────────────┬─> qtw-48r.3.1 ingestion
+  └─> qtw-48r.2.2 evaluation fixtures ─┐   │      ├─> qtw-48r.3.2 normalization ─┐
+                                       ├─> qtw-48r.2.3 baseline                  ├─> qtw-48r.3.4 segmentation
+                                       │       └─> qtw-48r.4.1 fail closed       │        └─> qtw-48r.3.5 tests
+                                       │             └─> qtw-48r.4.2 lifecycle   │
+                                       │                                        └─> qtw-48r.4.3 direction
+                                       │                                              └─> qtw-48r.4.4 attempts/retry
+                                       │                                                    └─> qtw-48r.5.1 validation
+                                       │                                                          ├─> qtw-48r.5.2 diagnostics
+                                       │                                                          └─> qtw-48r.5.3 edges/pauses
+                                       │                                                                └─> qtw-48r.5.4 assembly
+                                       └──────────────────────────────────────────────────────────────────────┐
+                                                                                                               v
+qtw-48r.3.5 + qtw-48r.5.2 + qtw-48r.5.4 ─> qtw-48r.6.1 blinded comparison
+qtw-48r.2.1 + qtw-48r.5.4 ───────────────> qtw-48r.6.2 migration
+qtw-48r.6.1 + qtw-48r.6.2 ───────────────> qtw-48r.6.3 documentation
+qtw-48r.6.1 + qtw-48r.6.2 + qtw-48r.6.3 ─> qtw-48r.6.4 acceptance
+```
+
+`qtw-48r.3.3` (dialogue turns) also blocks segmentation. Use `bd show` for the authoritative complete edge list.
+
+### Validation and relationship links
+
+- `qtw-48r.3.5` validates normalization and preprocessing behavior.
+- `qtw-48r.6.1` validates voice direction and post-processing quality.
+- `qtw-48r.3.2` supersedes the incomplete closed scope recorded by `qtw-2af.5`.
+- `qtw-48r.4.2` relates to existing lifecycle issue `qtw-2af.3`.
+- `qtw-48r.4.3` relates to existing CustomVoice issue `qtw-2af.6`.
+- `qtw-48r.4.1` relates to fake-provider safety issue `qtw-i7t.3`.
+- `qtw-48r.4.4` relates to existing persistent-job issue `qtw-2af.4`.
+
+### Completed decisions
+
+- Keep the existing worker boundary and migrate incrementally; no broad rewrite.
+- CustomVoice preset is speaker identity. Instructions primarily control delivery.
+- English-first deterministic normalization; optional LLM adaptation is not required.
+- Raw attempts are immutable; retries create new attempts.
+- Silence/fallback is never a successful live output.
+- Final assembly is manifest-driven and final mastering should align with `ffmpeg-video-composer` ownership.
+- Quality claims require repeated representative baseline/candidate evidence.
+
+### Unresolved questions
+
+- The requested `preprocessor.md` and `qwen3-voice-director.md` files are missing and must be supplied or explicitly waived.
+- Primary English narrator preset requires blinded selection.
+- Initial segment length and generation sampling profile require evaluation.
+- Final mastering ownership/API boundary with `ffmpeg-video-composer` requires a contract decision.
+- Baseline hardware/run budget, listener panel, ASR gate status, and attempt retention need decisions.
+
+## Existing worker delivery program
+
+`qtw-2af` remains the worker's original implementation epic. Quality work must reuse rather than duplicate its still-open lifecycle, jobs, CustomVoice, resource, client, and hardware-test tasks. Inspect it with:
+
+```bash
+bd children qtw-2af
+bd graph qtw-2af
+```
+
+`qtw-i7t` tracks honest model management and repository hygiene. Its fake-provider and model-integrity issues remain relevant to the quality critical path.

@@ -31,6 +31,7 @@ pytest --cov=src/qwen_tts_worker --cov-report=term-missing
 - [API Contract](docs/API.md) — public HTTP API reference
 - [Operator Guide](docs/OPERATOR.md) — deployment, configuration, monitoring
 - [Contributing](docs/CONTRIBUTING.md) — development setup and conventions
+- [TTS quality pipeline](docs/TTS-QUALITY-PIPELINE.md) — investigation, architecture, evaluation design, and implementation plan
 
 ## Plan
 

@@ -16,10 +16,12 @@ build/
 venv/
 *.egg
 
-# Runtime directories
-models/
-voices/
-outputs/
+# Runtime directories (repository root only; do not hide Python packages)
+/models/
+/voices/
+# Legacy runtime path used before app path correction
+/src/voices/
+/outputs/
 
 # Environment
 .env
@@ -35,3 +37,4 @@ outputs/
 .coverage
 htmlcov/
 .coverage.*
+evaluation/runs/

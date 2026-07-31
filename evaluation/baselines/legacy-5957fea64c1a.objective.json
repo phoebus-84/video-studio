@@ -1,0 +1,64 @@
+{
+  "assembled_cases": 9,
+  "attempts_completed": 54,
+  "attempts_expected": 54,
+  "attempts_signal_failed": 0,
+  "attempts_signal_valid": 54,
+  "generation_wall_seconds": {
+    "max": 25.491395,
+    "mean": 9.098035,
+    "median": 7.808811,
+    "min": 1.342543
+  },
+  "generation_wall_seconds_total": 491.293881,
+  "interpretation": "Signal-valid means decodable non-silent PCM that passed cheap thresholds; it does not imply pronunciation, fidelity, continuity, or publication quality.",
+  "listening_evaluation": "not_yet_performed",
+  "local_evidence_bytes": 19730757,
+  "metrics": {
+    "clipped_sample_ratio": {
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0
+    },
+    "duration_seconds": {
+      "max": 14.72,
+      "mean": 5.687407,
+      "median": 4.76,
+      "min": 0.56
+    },
+    "leading_silence_ms": {
+      "max": 100.917,
+      "mean": 89.257741,
+      "median": 89.646,
+      "min": 80.75
+    },
+    "peak_dbfs": {
+      "max": -3.18,
+      "mean": -7.708074,
+      "median": -7.8295,
+      "min": -11.355
+    },
+    "rms_dbfs": {
+      "max": -16.562,
+      "mean": -24.162759,
+      "median": -24.505,
+      "min": -27.591
+    },
+    "spoken_words_per_minute": {
+      "max": 187.5,
+      "mean": 138.74187,
+      "median": 142.125,
+      "min": 90.226
+    },
+    "trailing_silence_ms": {
+      "max": 90.542,
+      "mean": 37.447574,
+      "median": 35.0835,
+      "min": 0.0
+    }
+  },
+  "run_id": "legacy-5957fea64c1a",
+  "schema_version": "0.1.0",
+  "server_rss_bytes_after_max": 3315171328
+}

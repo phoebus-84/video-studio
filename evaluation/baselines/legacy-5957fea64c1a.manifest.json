@@ -1,0 +1,154 @@
+{
+  "classification": "controlled-legacy-baseline",
+  "completed_at": "2026-07-31T14:24:56.379441Z",
+  "endpoint": "http://127.0.0.1:5197/synthesize",
+  "fixture": {
+    "baseline_input_policy": "send expected segment display_text; retain spoken_text as the candidate normalization target",
+    "fixture_version": "1.0.0",
+    "path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/fixtures/quality-v1.json",
+    "repeat_count": 3,
+    "sha256": "55ebc47e3df8fc06911ffdcd3ce1882e853e408ae0c8362f0145ec17578af74e",
+    "suite_id": "qtw-quality-core"
+  },
+  "historical_episode_audio": {
+    "classification": "legacy-uncontrolled",
+    "eligible_as_controlled_baseline": false,
+    "reason": "Historical files lack complete source/profile/seed/runtime provenance and inspected worker outputs include silent WAVs."
+  },
+  "legacy_limitations": [
+    "model reloads for each request",
+    "language is accepted but not forwarded as lang_code",
+    "sampling seed/top-k/top-p/repetition penalty are not exposed",
+    "voice instructions are unconstrained free text",
+    "successful fallback silence is possible",
+    "assembly has no explicit pause or mastering policy"
+  ],
+  "model": {
+    "files": {
+      "config.json": {
+        "sha256": "43f29f9ab55cf387bd2ce1d07e9d95a5ca8974fa2fda4e2b45c13ae64aad3bfa",
+        "size_bytes": 6058
+      },
+      "generation_config.json": {
+        "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa",
+        "size_bytes": 245
+      },
+      "model.safetensors": {
+        "sha256": "b696f4bf45f54497b6de758981e76f1410bd68af05a657477dee466b0202df1a",
+        "size_bytes": 2393308931
+      }
+    },
+    "path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/models/qwen3-tts-1.7b-customvoice-8bit",
+    "profile": "custom_voice",
+    "quantization": "8bit-affine-g64"
+  },
+  "request_profile": {
+    "instruction_policy": "legacy-freeform-1",
+    "language": "english",
+    "seed": null,
+    "seed_limitation": "legacy endpoint does not expose or apply a seed",
+    "speakers": {
+      "mira-under-test": "vivian",
+      "narrator-under-test": "serena"
+    },
+    "speed": 1.0,
+    "temperature": 0.7
+  },
+  "run_id": "legacy-5957fea64c1a",
+  "runtime": {
+    "hardware": {
+      "machine": "arm64",
+      "physical_memory_bytes": 17179869184,
+      "platform": "macOS-15.1.1-arm64-arm-64bit",
+      "processor": "arm",
+      "python": "3.12.9"
+    },
+    "health_at_start": {
+      "_http_status": 200,
+      "dependencies": [
+        {
+          "detail": null,
+          "latency_ms": 0.77,
+          "name": "filesystem",
+          "status": "ok"
+        },
+        {
+          "detail": "Found at /opt/homebrew/bin/ffmpeg (version: 8.1.1)",
+          "latency_ms": null,
+          "name": "ffmpeg",
+          "status": "ok"
+        },
+        {
+          "detail": "Importable; no model loaded.",
+          "latency_ms": null,
+          "name": "mlx-audio",
+          "status": "ok"
+        }
+      ],
+      "model": "none",
+      "service": "healthy",
+      "timestamp": "2026-07-31T14:16:10.607439Z",
+      "uptime_seconds": 394.427,
+      "version": "0.1.0"
+    },
+    "packages": {
+      "fastapi": "0.140.1",
+      "mlx": "0.32.0",
+      "mlx-audio": "0.4.6",
+      "qwen-tts-worker": "0.1.0",
+      "uvicorn": "0.51.0"
+    },
+    "server_pid": 12287
+  },
+  "schema_version": "0.1.0",
+  "source_files": {
+    "evaluation/capture_legacy_baseline.py": {
+      "sha256": "15b4870540eab5886a8fec937352161987ad71794b0a74106079b71432bacfdf",
+      "size_bytes": 20862
+    },
+    "pyproject.toml": {
+      "sha256": "f6fec18522e30e6d2770d665a5d15b965e76d550e153c3cd0e9b4d6d586a035a",
+      "size_bytes": 1432
+    },
+    "requirements.txt": {
+      "sha256": "538ba5ea4b227104e29368b0f4cd30d186a24762f0baa2eaae41c05cbf66d632",
+      "size_bytes": 464
+    },
+    "src/qwen_tts_worker/__main__.py": {
+      "sha256": "8d182d9bb490fea384b915f551f440df11cee524e1bfb67918aa07644c18c1bb",
+      "size_bytes": 2203
+    },
+    "src/qwen_tts_worker/app.py": {
+      "sha256": "4f084eec8a7592d5ad64afdfe12460bd461b267b7b2ef279c7349e0b49537d2c",
+      "size_bytes": 5386
+    },
+    "src/qwen_tts_worker/config.py": {
+      "sha256": "1a003ee39d7f611dafa3dcf2d160b59a13386c9e96bc9aaad3a9b2bcde8adae6",
+      "size_bytes": 3278
+    },
+    "src/qwen_tts_worker/routes/synthesis.py": {
+      "sha256": "5c4e897d9d5157c39a464599a943fa34083e4c7a77a5978c9498852db64ad6a3",
+      "size_bytes": 14948
+    }
+  },
+  "source_repository": {
+    "dirty": true,
+    "revision": "5957fea64c1a42a8c41aef9bf72266884dc85a81",
+    "status_porcelain": "M .beads/interactions.jsonl\n M .gitignore\n M PLAN.md\n M README.md\n M src/qwen_tts_worker/models/__init__.py\n?? docs/TTS-QUALITY-PIPELINE.md\n?? evaluation/\n?? tests/test_capture_legacy_baseline.py\n?? tests/test_evaluation_fixtures.py\n?? tests/test_quality_contracts.py"
+  },
+  "started_at": "2026-07-31T14:16:10.473726Z",
+  "status": "complete",
+  "summary": {
+    "assembled_cases": 9,
+    "attempts_completed": 54,
+    "attempts_expected": 54,
+    "attempts_failed": 0,
+    "attempts_valid": 54,
+    "baseline_status": "complete",
+    "completed_at": "2026-07-31T14:24:56.379441Z",
+    "completion_rate": 1.0,
+    "run_id": "legacy-5957fea64c1a",
+    "schema_version": "0.1.0",
+    "valid_rate": 1.0
+  }
+}
