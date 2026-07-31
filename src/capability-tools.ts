@@ -123,7 +123,21 @@ async function composeEpisodeVideo(
 ): Promise<{ outputPath: string; durationSec: number; fileSize: number }> {
   const { execSync } = await import("node:child_process");
   const scenesDir = join(episodeDir, "assets", "images");
-  const narrationFile = join(episodeDir, "artifacts", "narration", "narration-full.wav");
+  let narrationFile = join(episodeDir, "artifacts", "narration", "narration-full.wav");
+  const narrationManifestPath = join(episodeDir, "artifacts", "narration", "narration-manifest.json");
+  if (existsSync(narrationManifestPath)) {
+    const { readFileSync } = await import("node:fs");
+    const manifest = JSON.parse(readFileSync(narrationManifestPath, "utf-8")) as any;
+    const finalWav = manifest.finalWav ?? manifest.final_wav;
+    const manifestPath = finalWav?.path;
+    if (typeof manifestPath !== "string" || manifestPath.length === 0) {
+      throw new Error("Canonical narration manifest has no final WAV path");
+    }
+    narrationFile = manifestPath.startsWith("/") ? manifestPath : join(episodeDir, manifestPath);
+    if (!existsSync(narrationFile)) {
+      throw new Error(`Canonical narration final WAV is missing: ${narrationFile}`);
+    }
+  }
 
   // Use Python PIL for image preprocessing via a quick inline call
   const { execSync: es } = await import("node:child_process");
@@ -137,10 +151,11 @@ async function composeEpisodeVideo(
 
   // Concatenate scene narration files if present
   const narrationDir = join(episodeDir, "artifacts", "narration");
-  if (existsSync(narrationDir) && !existsSync(narrationFile)) {
+  if (!existsSync(narrationManifestPath) && existsSync(narrationDir) && !existsSync(narrationFile)) {
+    console.warn("DEPRECATED: composing narration by scene WAV filenames; write narration-manifest.json");
     const wavFiles = (await import("node:fs")).readdirSync(narrationDir)
       .filter(f => f.match(/^s\d+\.wav$/))
-      .sort();
+      .sort((a, b) => Number(a.match(/\d+/)?.[0] ?? 0) - Number(b.match(/\d+/)?.[0] ?? 0));
     if (wavFiles.length > 0) {
       const concatList = join(episodeDir, "artifacts", "narration", "concat.txt");
       const listContent = wavFiles.map(f => `file '${join(narrationDir, f)}'`).join("\n");
