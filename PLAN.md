@@ -37,6 +37,7 @@ Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semant
 - Manifest-driven FFmpeg assembly/mastering (`.5.4`) is complete with exact order/duration, boundary checks, -16 LUFS/-1.5 dBTP targets, and canonical narration manifests.
 - The segment-validation/mastering epic `qtw-48r.5` is implementation-complete.
 - Candidate `candidate-qtw-v1` completed 54/54 generations, 54 signal accepts, and passing -16.14 LUFS/-1.46 dBTP mastering; `.6.1` remains honestly blocked on the predeclared three-listener blinded panel.
+- Canonical narration segment/attempt/quality/manifest contracts and compatibility readers are migrated across workspace contracts, worker, Pi, pipeline, gateway timing/captions/staleness, and composer in `.6.2`.
 - Beads remains authoritative for live status and dependency edges.
 
 ### Module hierarchy
