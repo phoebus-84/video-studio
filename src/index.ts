@@ -77,3 +77,7 @@ export { createLogger } from "./logging.js";
 
 // Validator
 export { validateTimeline } from "./validator.js";
+
+// Canonical narration manifest projection
+export { narrationCompositionInput } from "./narration.js";
+export type { CanonicalNarrationManifest, NarrationCompositionInput } from "./narration.js";
