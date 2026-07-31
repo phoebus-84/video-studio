@@ -32,7 +32,8 @@ Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semant
 - Stable CustomVoice profile and bounded delivery direction task `qtw-48r.4.3` is complete with adjacent continuity fixtures.
 - Immutable durable attempt jobs, verified segment cache, restart/cancellation recovery, and bounded selective retries are complete in `qtw-48r.4.4`.
 - Versioned segment signal validation and bounded quality-retry mapping are complete in `qtw-48r.5.1`.
-- Post-validation work now proceeds through advisory diagnostics (`.5.2`) and conservative pause/edge processing (`.5.3`).
+- Local tiny-English ASR and spectral/RMS continuity diagnostics were evaluated in `.5.2` and remain advisory because measured error/bias cannot support an automatic gate.
+- Conservative pause/edge processing (`.5.3`) is next.
 - Beads remains authoritative for live status and dependency edges.
 
 ### Module hierarchy

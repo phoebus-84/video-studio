@@ -23,7 +23,8 @@ Implementation status after the frozen investigation:
 - `qtw-48r.4.3` added checkpoint-discovered CustomVoice profiles, preset identity/base-direction continuity, bounded delivery deltas, contradiction and length checks, final segment-plan binding, and frozen adjacent narrator/character evaluation sequences.
 - `qtw-48r.4.4` added durable segment jobs, immutable terminal attempt/WAV artifacts, verified segment/fingerprint/provider cache identity, restart recovery, cooperative cancellation, bounded deterministic-seed retries, selective rerun, and a compatibility-preserving HTTP surface.
 - `qtw-48r.5.1` added immutable policy-fingerprinted checks for artifact integrity, canonical PCM, duration/rate, speech presence, clipping, DC offset, and edge silence; reject/review/override evidence controls bounded quality retries, and fake silence is unpublishable.
-- Advisory diagnostics, mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
+- `qtw-48r.5.2` ran pinned local `mlx-whisper` tiny-English ASR over all 18 baseline segments (mean WER 0.2744; only 4/16 lexicon spellings observed) and RMS/waveform/spectral metrics over 9 boundaries. Synthetic edit calibration validates accounting, but accent/name/code bias and absent speaker embeddings keep every diagnostic advisory.
+- Mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
 
 Evidence labels used below:
 

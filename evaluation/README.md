@@ -66,6 +66,10 @@ The baseline and candidate must use the same fixture revision, host class, speak
 - Never regenerate a missing or poor attempt merely to replace it. Retain the failed attempt and apply the bounded retry policy as additional evidence.
 - Report attempt-level and segment-level regeneration rates.
 
+## Optional advisory diagnostics
+
+Install `.[diagnostics]` and run `PYTHONPATH=src python evaluation/evaluate_advisory_diagnostics.py` to reproduce pinned local tiny-English ASR and adjacent boundary metrics over baseline repeat 1. Frozen results live in `evaluation/diagnostics/legacy-advisory-v1.json`; high measured ASR error and documented bias explicitly prohibit automatic gating.
+
 ## Objective measurements
 
 Required per attempt:
