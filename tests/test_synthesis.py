@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import wave
 from array import array
@@ -257,6 +258,16 @@ class TestMlxArgumentMapping:
 
 
 class TestSynthesisAPI:
+    def test_fake_mode_logs_prominent_startup_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setenv("QTW_TTS_MODE", "fake")
+        with caplog.at_level(logging.WARNING, logger="qwen-tts-worker"):
+            with TestClient(create_app()):
+                pass
+        assert "FAKE TTS MODE ENABLED" in caplog.text
+        assert "must not be published" in caplog.text
+
     def test_explicit_fake_mode_is_labeled(self, fake_client: TestClient) -> None:
         response = fake_client.post("/synthesize", json={"text": "Hello world."})
         assert response.status_code == 202

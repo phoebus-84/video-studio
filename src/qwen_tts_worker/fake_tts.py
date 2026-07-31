@@ -1,3 +1,5 @@
+"""Test/contract harness only. Never enabled unless QTW_TTS_MODE=fake."""
+
 # ---------------------------------------------------------------------------
 # Fake TTS — deterministic no-model test harness
 # ---------------------------------------------------------------------------

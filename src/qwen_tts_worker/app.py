@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -42,7 +43,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     app.state.started_at = time.monotonic()
     idle_task: asyncio.Task[None] | None = None
-    idle_timeout = Settings().model_idle_timeout_seconds
+    settings = Settings()
+    if settings.tts_mode == "fake":
+        logging.getLogger("qwen-tts-worker").warning(
+            "FAKE TTS MODE ENABLED: generated audio is a silent CI fixture and must not be published"
+        )
+    idle_timeout = settings.model_idle_timeout_seconds
     if idle_timeout is not None:
         async def unload_idle_model() -> None:
             interval = min(60.0, max(1.0, idle_timeout / 2.0))
