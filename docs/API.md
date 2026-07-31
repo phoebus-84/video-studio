@@ -350,6 +350,10 @@ Assemble an explicit ordered `AssemblyPlan`, verify all speech/pause hashes and 
 
 Retrieve the persisted mastering report. Identical assembly identity is immutable and cannot overwrite prior output.
 
+### `GET /narrations/{assembly_id}/workspace-manifest`
+
+Retrieve the canonical camelCase `video-workspace-contracts` narration manifest. The projection includes `sha256:` hashes and caption cues derived from segment display text, selected measured WAV durations, explicit pauses, and exact manifest order.
+
 ## Errors
 
 All non-2xx responses follow a uniform envelope:
