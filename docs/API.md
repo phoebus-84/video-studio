@@ -152,6 +152,14 @@ external tool required by the TTS pipeline. Does **not** load any model.
 }
 ```
 
+### `GET /models/runtime`
+
+Report the live warm-model state. Fields include `state`, exact `identity_sha256`, `active_references`, load attempt/success/unload counts, synthesis count and latency, active/peak MLX memory, timestamps, and `last_error`. The first live synthesis transitions `unloaded → loading → ready`; repeated requests for the same identity reuse the loaded object.
+
+### `DELETE /models/runtime`
+
+Unload the current model and release MLX cache memory. Returns `200` when already unloaded or successfully unloaded. Returns `409` while any synthesis request holds an active model lease, so an operator or idle policy cannot interrupt generation.
+
 ## Voice profiles
 
 Voice profiles describe how a narrator should sound. They are persistent

@@ -67,6 +67,12 @@ class Settings(BaseSettings):
         description="Synthesis provider mode. 'fake' is an explicit CI-only mode; live failures never fall back to it.",
     )
 
+    model_idle_timeout_seconds: float | None = Field(
+        default=None,
+        ge=1.0,
+        description="Unload an idle warm model after this many seconds; disabled when unset.",
+    )
+
     # --- Concurrency -------------------------------------------------------
 
     workers: int = Field(

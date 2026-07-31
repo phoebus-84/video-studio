@@ -44,6 +44,10 @@ class TestSettingsDefaults:
         s = Settings()
         assert s.tts_mode == "live"
 
+    def test_model_idle_unload_is_disabled_by_default(self) -> None:
+        s = Settings()
+        assert s.model_idle_timeout_seconds is None
+
     def test_default_workers_1(self) -> None:
         s = Settings()
         assert s.workers == 1
@@ -86,6 +90,10 @@ class TestSettingsEnvOverrides:
         s = Settings()
         assert s.tts_mode == "fake"
 
+    def test_idle_timeout_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QTW_MODEL_IDLE_TIMEOUT_SECONDS", "120")
+        assert Settings().model_idle_timeout_seconds == 120
+
 
 class TestSettingsValidation:
     """Invalid settings must be rejected at construction time."""
@@ -105,6 +113,10 @@ class TestSettingsValidation:
     def test_tts_mode_rejects_implicit_fallback_values(self) -> None:
         with pytest.raises(Exception):
             Settings(tts_mode="auto")
+
+    def test_idle_timeout_must_be_at_least_one_second(self) -> None:
+        with pytest.raises(Exception):
+            Settings(model_idle_timeout_seconds=0.5)
 
 
 class TestSettingsDirectoryCreation:

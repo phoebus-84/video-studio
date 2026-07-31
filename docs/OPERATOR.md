@@ -35,6 +35,7 @@ A `.env` file in the working directory is also supported.
 | `QTW_LOG_FORMAT` | `json` | `json` (machine-readable) or `console` (human-readable) |
 | `QTW_TTS_MODE` | `live` | `live` fails closed; set `fake` explicitly for CI-only silent fixtures |
 | `QTW_MODEL_PATH` | *(installed CustomVoice profile)* | Exact Qwen3-TTS CustomVoice directory for `/synthesize` |
+| `QTW_MODEL_IDLE_TIMEOUT_SECONDS` | *(disabled)* | Unload the warm model after this many idle seconds; minimum 1 |
 | `QTW_WORKERS` | `1` | Uvicorn worker processes (keep at 1 until the job queue supports concurrency) |
 | `QTW_GRACEFUL_TIMEOUT` | `30.0` | Max seconds to drain in-flight requests on shutdown |
 | `QTW_MODELS_DIR` | `models` | Directory for downloaded model files |
@@ -173,6 +174,22 @@ When `QTW_LOG_FORMAT=json`, every log line is a JSON object with `timestamp`, `l
 ```bash
 QTW_LOG_FORMAT=json qwen-tts-worker 2>&1 | tee /var/log/qtw/worker.log
 ```
+
+## Warm model operation
+
+The first live synthesis validates and hashes the exact checkpoint, loads it once, and leases it for the active request. Later requests for the same identity reuse that model. Check state and resource evidence with:
+
+```bash
+curl http://127.0.0.1:8000/models/runtime
+```
+
+The response includes the exact identity SHA-256, active lease count, load/attempt/unload counts, load and synthesis latency, active/peak MLX memory, and the last load diagnostic. To unload an idle model:
+
+```bash
+curl -X DELETE http://127.0.0.1:8000/models/runtime
+```
+
+Unload returns `409` while any synthesis request holds a lease; it never interrupts an active generation. Set `QTW_MODEL_IDLE_TIMEOUT_SECONDS` for automatic idle unload. Failed loads leave the lifecycle in `error`, are visible in runtime/health diagnostics, and may be retried by the next request.
 
 ## Graceful shutdown
 

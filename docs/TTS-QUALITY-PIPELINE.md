@@ -16,7 +16,8 @@ Implementation status after the frozen investigation:
 
 - `qtw-48r.2` completed: v0.1.0 stage contracts, a nine-case/eighteen-segment evaluation fixture, rubric, and controlled legacy baseline.
 - `qtw-48r.4.1` corrected live CustomVoice routing: failures and silence fail closed, the model config owns speaker/language discovery, unsupported profile controls are rejected, and seed/sampling arguments map explicitly to MLX.
-- Warm model lifecycle, deterministic preprocessing, direction policy, durable attempts, mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
+- `qtw-48r.4.2` added a serialized warm-model lifecycle with exact checkpoint identity, active leases, failed-load recovery, explicit/idle unload, health state, latency counters, and MLX memory telemetry. A live two-request smoke loaded once and reduced wall time from 7.266 s to 3.242 s.
+- Deterministic normalization/dialogue/segmentation, direction policy, durable attempts, mastering, migration, and listening acceptance remain tracked work; no quality win is claimed yet.
 
 Evidence labels used below:
 

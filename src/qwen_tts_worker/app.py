@@ -8,6 +8,8 @@ result to uvicorn.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -35,12 +37,28 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     - Ensures runtime directories exist.
     - Drains in-flight requests during graceful shutdown.
     """
-    # Startup
+    from qwen_tts_worker.config import Settings
+    from qwen_tts_worker.model_lifecycle import model_lifecycle
+
     app.state.started_at = time.monotonic()
-    yield
-    # Shutdown — the uvicorn server handles signal trapping and
-    # graceful connection draining. Any additional cleanup (e.g.
-    # flushing job state) is added here once the job queue exists.
+    idle_task: asyncio.Task[None] | None = None
+    idle_timeout = Settings().model_idle_timeout_seconds
+    if idle_timeout is not None:
+        async def unload_idle_model() -> None:
+            interval = min(60.0, max(1.0, idle_timeout / 2.0))
+            while True:
+                await asyncio.sleep(interval)
+                model_lifecycle.unload_if_idle(idle_timeout)
+
+        idle_task = asyncio.create_task(unload_idle_model())
+    try:
+        yield
+    finally:
+        if idle_task is not None:
+            idle_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await idle_task
+        model_lifecycle.unload(wait=True)
 
 
 def create_app() -> FastAPI:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -147,6 +148,35 @@ class TestModelDiagnosticsEndpoint:
             assert dep["status"] in {"ok", "missing", "error"}
 
 
+class TestModelRuntimeEndpoint:
+    def test_runtime_reports_lifecycle_and_resource_fields(self, client: TestClient) -> None:
+        response = client.get("/models/runtime")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["state"] in {"unloaded", "loading", "ready", "unloading", "error"}
+        assert "load_count" in data
+        assert "active_references" in data
+        assert "load_latency_seconds" in data
+        assert "active_memory_bytes" in data
+        assert "peak_memory_bytes" in data
+
+    def test_idle_runtime_can_be_unloaded(self, client: TestClient) -> None:
+        response = client.delete("/models/runtime")
+        assert response.status_code == 200
+        assert response.json()["unloaded"] is True
+        assert response.json()["runtime"]["state"] == "unloaded"
+
+    def test_active_runtime_rejects_unload(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from qwen_tts_worker.model_lifecycle import model_lifecycle
+
+        monkeypatch.setattr(model_lifecycle, "unload", lambda **kwargs: False)
+        response = client.delete("/models/runtime")
+        assert response.status_code == 409
+        assert "active" in response.json()["error"]
+
+
 class TestOpenApiSchema:
     """The OpenAPI schema must include the new /models paths."""
 
@@ -157,3 +187,4 @@ class TestOpenApiSchema:
         assert "/models" in paths
         assert "/models/{size}/{profile}" in paths
         assert "/models/diagnostics" in paths
+        assert "/models/runtime" in paths

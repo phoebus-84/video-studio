@@ -7,6 +7,7 @@ combinations and their installation readiness, and
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
@@ -115,6 +116,27 @@ async def model_diagnostics() -> dict:
             for p in probes
         ]
     }
+
+
+@router.get("/models/runtime")
+async def model_runtime() -> dict:
+    """Report warm-model state, exact identity, counters, latency, and memory."""
+    from qwen_tts_worker.model_lifecycle import model_lifecycle
+
+    return asdict(model_lifecycle.snapshot())
+
+
+@router.delete("/models/runtime")
+async def unload_runtime_model() -> dict:
+    """Unload an idle model; reject the request while synthesis holds a lease."""
+    from qwen_tts_worker.model_lifecycle import model_lifecycle
+
+    if not model_lifecycle.unload(wait=False):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot unload the model while synthesis jobs are active.",
+        )
+    return {"unloaded": True, "runtime": asdict(model_lifecycle.snapshot())}
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,9 @@ import json
 import math
 import wave
 from array import array
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -205,14 +207,17 @@ class TestMlxArgumentMapping:
             languages=frozenset({"auto", "english"}),
         )
 
-        data, info = synthesize_with_qwen(request, model, "serena")
+        backend_model = object()
+        data, info = synthesize_with_qwen(
+            request, model, "serena", backend_model
+        )
 
         assert data[:4] == b"RIFF"
         assert info.rms_dbfs > -50
         assert seeded == [1234]
         assert captured == {
             "text": "Exact spoken text.",
-            "model": str(tmp_path / "model"),
+            "model": backend_model,
             "voice": "serena",
             "instruct": "Speak warmly.",
             "speed": 1.0,
@@ -248,7 +253,7 @@ class TestMlxArgumentMapping:
             languages=frozenset({"auto", "english"}),
         )
         with pytest.raises(RuntimeError, match="backend exploded"):
-            synthesize_with_qwen(request, model, "serena")
+            synthesize_with_qwen(request, model, "serena", object())
 
 
 class TestSynthesisAPI:
@@ -319,6 +324,11 @@ class TestSynthesisAPI:
             data = _generate_silent_wav(0.5)
             return data, validate_live_wav(data)
 
+        @contextmanager
+        def acquire_without_loading(path: Path):
+            yield SimpleNamespace(instance=object(), identity_sha256="a" * 64)
+
+        monkeypatch.setattr(synthesis_route.model_lifecycle, "acquire", acquire_without_loading)
         monkeypatch.setattr(synthesis_route, "synthesize_with_qwen", silent)
         response = TestClient(create_app()).post(
             "/synthesize", json={"text": "Hello", "voice": "serena"}

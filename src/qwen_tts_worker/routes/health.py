@@ -14,6 +14,7 @@ import time
 from fastapi import APIRouter, Request
 
 from qwen_tts_worker import __version__
+from qwen_tts_worker.model_state import get_model_status, set_model_status
 from qwen_tts_worker.models.diagnostics import DepStatus, DepProbe, probe_all
 from qwen_tts_worker.models.health import (
     DependencyCheck,
@@ -27,25 +28,6 @@ router = APIRouter()
 
 # Module-level record of process start time for uptime calculation.
 _process_started_at: float = time.monotonic()
-
-# Module-level model status — mutated by the model lifecycle manager
-# once implemented (qtw-2af.3). Starts as NONE because this issue
-# deliberately does not load a model.
-_current_model_status: ModelStatus = ModelStatus.NONE
-
-
-def set_model_status(status: ModelStatus) -> None:
-    """Update the model readiness reported by the health endpoint.
-
-    Called by the model lifecycle manager when the model transitions
-    between states. Thread-safe as long as the caller ensures it.
-
-    Args:
-        status: The new model status to report.
-    """
-    global _current_model_status
-    _current_model_status = status
-
 
 def _probe_dependencies() -> list[DependencyCheck]:
     """Run dependency probes and return their results.
@@ -139,7 +121,7 @@ async def health(request: Request) -> HealthResponse:
 
     return HealthResponse(
         service=service_status,
-        model=_current_model_status,
+        model=get_model_status(),
         dependencies=deps,
         uptime_seconds=round(uptime, 3),
         version=__version__,

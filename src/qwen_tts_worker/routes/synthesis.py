@@ -26,6 +26,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from qwen_tts_worker.model_lifecycle import model_lifecycle
+
 
 router = APIRouter()
 logger = logging.getLogger("qwen-tts-worker")
@@ -122,6 +124,7 @@ class SynthesisResult(BaseModel):
     provider_mode: Literal["live", "fake"]
     actual_speaker: str | None = None
     model_path: str | None = None
+    model_identity_sha256: str | None = None
     wav_path: str | None = None
     wav_size_bytes: int | None = None
     created_at: str
@@ -356,6 +359,7 @@ def synthesize_with_qwen(
     request: SynthesizeRequest,
     model: CustomVoiceModel,
     speaker: str,
+    backend_model: object,
 ) -> tuple[bytes, WavInfo]:
     """Map validated request controls exactly to mlx-audio 0.4.6."""
 
@@ -366,7 +370,7 @@ def synthesize_with_qwen(
     try:
         generate_audio(
             text=request.text,
-            model=str(model.path),
+            model=backend_model,
             voice=speaker,
             instruct=request.instruct,
             speed=1.0,
@@ -484,12 +488,23 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
             )
             actual_speaker = request.voice
             selected_model_path = None
+            model_identity = None
         else:
             model = inspect_customvoice_model(_model_path())
             actual_speaker = resolve_speaker(request.voice, model)
             validate_language(request.language, model)
             selected_model_path = str(model.path)
-            wav_data, wav_info = synthesize_with_qwen(request, model, actual_speaker)
+            with model_lifecycle.acquire(model.path) as loaded:
+                generation_started = time.monotonic()
+                try:
+                    wav_data, wav_info = synthesize_with_qwen(
+                        request, model, actual_speaker, loaded.instance
+                    )
+                finally:
+                    model_lifecycle.record_synthesis(
+                        time.monotonic() - generation_started
+                    )
+                model_identity = loaded.identity_sha256
 
         voices_root = Path(
             os.environ.get(
@@ -503,6 +518,7 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
         result.status = "completed"
         result.actual_speaker = actual_speaker
         result.model_path = selected_model_path
+        result.model_identity_sha256 = model_identity
         result.wav_path = str(wav_path.resolve())
         result.wav_size_bytes = wav_size
         result.duration_sec = round(wav_info.duration_seconds, 6)
@@ -515,6 +531,7 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
             status="completed",
             actual_speaker=actual_speaker,
             model_path=selected_model_path,
+            model_identity_sha256=model_identity,
             wav_path=result.wav_path,
             wav_size_bytes=wav_size,
             duration_sec=result.duration_sec,
