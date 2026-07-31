@@ -28,6 +28,7 @@
   "files": [
     "extensions/",
     "skills/",
+    "src/",
     "README.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
