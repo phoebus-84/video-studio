@@ -8,7 +8,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
@@ -117,6 +117,19 @@ async function synthesizeSpeech(text: string, voice: string, speed: number, inst
 
 // ── FFmpeg composition ─────────────────────────────────────────────────────
 
+export function canonicalNarrationPath(episodeDir: string): string | null {
+  const manifestPath = join(episodeDir, "artifacts", "narration", "narration-manifest.json");
+  if (!existsSync(manifestPath)) return null;
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as any;
+  const finalWav = manifest.finalWav ?? manifest.final_wav;
+  if (typeof finalWav?.path !== "string" || finalWav.path.length === 0) {
+    throw new Error("Canonical narration manifest has no final WAV path");
+  }
+  const resolved = finalWav.path.startsWith("/") ? finalWav.path : join(episodeDir, finalWav.path);
+  if (!existsSync(resolved)) throw new Error(`Canonical narration final WAV is missing: ${resolved}`);
+  return resolved;
+}
+
 async function composeEpisodeVideo(
   episodeDir: string,
   outputPath: string,
@@ -125,19 +138,7 @@ async function composeEpisodeVideo(
   const scenesDir = join(episodeDir, "assets", "images");
   let narrationFile = join(episodeDir, "artifacts", "narration", "narration-full.wav");
   const narrationManifestPath = join(episodeDir, "artifacts", "narration", "narration-manifest.json");
-  if (existsSync(narrationManifestPath)) {
-    const { readFileSync } = await import("node:fs");
-    const manifest = JSON.parse(readFileSync(narrationManifestPath, "utf-8")) as any;
-    const finalWav = manifest.finalWav ?? manifest.final_wav;
-    const manifestPath = finalWav?.path;
-    if (typeof manifestPath !== "string" || manifestPath.length === 0) {
-      throw new Error("Canonical narration manifest has no final WAV path");
-    }
-    narrationFile = manifestPath.startsWith("/") ? manifestPath : join(episodeDir, manifestPath);
-    if (!existsSync(narrationFile)) {
-      throw new Error(`Canonical narration final WAV is missing: ${narrationFile}`);
-    }
-  }
+  narrationFile = canonicalNarrationPath(episodeDir) ?? narrationFile;
 
   // Use Python PIL for image preprocessing via a quick inline call
   const { execSync: es } = await import("node:child_process");
