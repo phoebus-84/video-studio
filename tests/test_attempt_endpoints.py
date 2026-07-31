@@ -105,6 +105,20 @@ def test_fake_attempt_is_signal_rejected_and_quality_retry_is_audited(
         assert retried.json()["retry_reason"] == "quality:signal.speech-presence"
 
 
+def test_oversized_declared_request_is_rejected_before_parsing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("QTW_MAX_REQUEST_BODY_BYTES", "1024")
+    with client(tmp_path, monkeypatch) as api:
+        response = api.post(
+            "/attempt-jobs",
+            content=b"x" * 1025,
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 413
+        assert response.json()["detail"][0]["type"] == "request_too_large"
+
+
 def test_unknown_and_nonterminal_attempt_errors_are_machine_visible(
     tmp_path: Path, monkeypatch
 ) -> None:

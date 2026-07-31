@@ -78,8 +78,27 @@ class Settings(BaseSettings):
     workers: int = Field(
         default=1,
         ge=1,
-        description="Number of uvicorn worker processes. Use 1 for a single-worker "
-        "service; increase only when the synthesis job queue supports concurrent work.",
+        description="Number of uvicorn worker processes. Keep at 1 for one warm MLX lifecycle.",
+    )
+
+    max_concurrent_attempt_jobs: int = Field(
+        default=1,
+        ge=1,
+        le=4,
+        description="Maximum durable synthesis jobs allowed in running state.",
+    )
+
+    minimum_free_disk_bytes: int = Field(
+        default=536_870_912,
+        ge=0,
+        description="Block job submission/execution when attempt storage has less free space.",
+    )
+
+    max_request_body_bytes: int = Field(
+        default=2_000_000,
+        ge=1024,
+        le=100_000_000,
+        description="Reject declared HTTP request bodies larger than this local safety limit.",
     )
 
     # --- Shutdown ----------------------------------------------------------

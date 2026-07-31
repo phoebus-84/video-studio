@@ -385,8 +385,9 @@ All non-2xx responses follow a uniform envelope:
 | 202 | Durable job accepted/queued |
 | 204 | Resource deleted (no body) |
 | 404 | Resource not found |
-| 409 | Durable lifecycle conflict or retry/cancellation invariant |
+| 409 | Durable lifecycle conflict, disk/concurrency preflight, or retry/cancellation invariant |
 | 405 | Method not allowed |
+| 413 | Declared request body exceeds configured local limit |
 | 422 | Validation error |
 | 500 | Internal error (redacted) |
 

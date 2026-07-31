@@ -254,6 +254,28 @@ def test_running_job_is_resumable_after_process_restart(tmp_path: Path) -> None:
     assert complete.phase == "completed"
 
 
+def test_disk_preflight_and_concurrency_limit_block_before_generation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import qwen_tts_worker.attempt_store as attempt_module
+
+    disk_limited = AttemptStore(tmp_path / "disk", minimum_free_disk_bytes=1000)
+    usage = type("Usage", (), {"total": 10_000, "used": 9_500, "free": 500})()
+    monkeypatch.setattr(attempt_module.shutil, "disk_usage", lambda _: usage)
+    with pytest.raises(AttemptStoreError, match="insufficient free disk"):
+        disk_limited.submit(segment(), profile())
+    assert disk_limited.snapshot().jobs == 0
+
+    monkeypatch.undo()
+    limited = AttemptStore(tmp_path / "concurrency", max_concurrent_jobs=1)
+    first = limited.submit(segment("first"), profile())
+    limited._save_job(first.model_copy(update={"phase": "running", "updated_at": limited._now()}))
+    second = limited.submit(segment("second"), profile())
+    with pytest.raises(AttemptStoreError, match="concurrency limit"):
+        limited.execute(second.job_id, success_generator)
+    assert limited.get_job(second.job_id).phase == "queued"
+
+
 def test_invalid_wav_is_reason_coded_and_never_persisted(tmp_path: Path) -> None:
     store = AttemptStore(tmp_path)
     failed_job = store.execute(

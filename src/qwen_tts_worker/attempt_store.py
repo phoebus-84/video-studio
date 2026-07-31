@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import threading
 import time
 import uuid
@@ -98,9 +99,22 @@ class AttemptStoreSnapshot(FrozenContract):
 class AttemptStore:
     """Local filesystem store with atomic state updates and immutable outcomes."""
 
-    def __init__(self, root: str | Path, *, retry_policy: RetryPolicy | None = None) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        retry_policy: RetryPolicy | None = None,
+        max_concurrent_jobs: int = 1,
+        minimum_free_disk_bytes: int = 0,
+    ) -> None:
         self.root = Path(root).expanduser().resolve()
         self.retry_policy = retry_policy or RetryPolicy()
+        if max_concurrent_jobs < 1:
+            raise ValueError("max_concurrent_jobs must be positive")
+        if minimum_free_disk_bytes < 0:
+            raise ValueError("minimum_free_disk_bytes cannot be negative")
+        self.max_concurrent_jobs = max_concurrent_jobs
+        self.minimum_free_disk_bytes = minimum_free_disk_bytes
         self.jobs_dir = self.root / "jobs"
         self.attempts_dir = self.root / "attempts"
         self.wav_dir = self.root / "raw-wav"
@@ -110,6 +124,14 @@ class AttemptStore:
         self._lock = threading.RLock()
         self._cancel_events: dict[UUID, threading.Event] = {}
         self._recover_running_jobs()
+
+    def _preflight_disk(self) -> None:
+        free = shutil.disk_usage(self.root).free
+        if free < self.minimum_free_disk_bytes:
+            raise AttemptStoreError(
+                f"insufficient free disk before synthesis: {free} bytes available; "
+                f"minimum {self.minimum_free_disk_bytes}"
+            )
 
     @staticmethod
     def _now() -> datetime:
@@ -231,6 +253,7 @@ class AttemptStore:
         retry_reason: str | None = None,
     ) -> DurableAttemptJob:
         synthesis_inputs = synthesis_fingerprint(segment, profile)
+        self._preflight_disk()
         fingerprint = hashlib.sha256(
             f"attempt-store-{ATTEMPT_STORE_VERSION}\0{synthesis_inputs}\0{provider_mode}".encode()
         ).hexdigest()
@@ -370,9 +393,15 @@ class AttemptStore:
     def execute(self, job_id: UUID | str, generator: Generator) -> DurableAttemptJob:
         identifier = UUID(str(job_id))
         with self._lock:
+            self._preflight_disk()
             job = self.get_job(identifier)
             if job.phase != "queued":
                 return job
+            running = sum(item.phase == "running" for item in self.list_jobs())
+            if running >= self.max_concurrent_jobs:
+                raise AttemptStoreError(
+                    f"synthesis concurrency limit reached: {running}/{self.max_concurrent_jobs}"
+                )
             event = self._cancel_events.setdefault(identifier, threading.Event())
             if event.is_set():
                 return self.cancel(identifier)

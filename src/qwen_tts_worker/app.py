@@ -96,7 +96,28 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # --- Middleware: request-id injection ---
+    # --- Middleware: local request/body limits and request-id injection ---
+    @app.middleware("http")
+    async def enforce_request_size(request: Request, call_next):
+        from qwen_tts_worker.config import Settings
+
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            try:
+                size = int(declared)
+            except ValueError:
+                return JSONResponse(status_code=400, content={"error": "Invalid Content-Length", "detail": []})
+            maximum = Settings().max_request_body_bytes
+            if size > maximum:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": "Request body exceeds local safety limit",
+                        "detail": [{"msg": f"declared={size}, maximum={maximum}", "type": "request_too_large"}],
+                    },
+                )
+        return await call_next(request)
+
     @app.middleware("http")
     async def add_request_id(request: Request, call_next):
         request_id = str(uuid.uuid4())

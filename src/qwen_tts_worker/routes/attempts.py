@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
+import logging
 import threading
 import time
 from functools import lru_cache
@@ -72,10 +75,18 @@ class ProcessAttemptRequest(BaseModel):
 
 
 @lru_cache(maxsize=4)
-def _store_at(root: str, max_retries: int, seed_step: int) -> AttemptStore:
+def _store_at(
+    root: str,
+    max_retries: int,
+    seed_step: int,
+    max_concurrent_jobs: int,
+    minimum_free_disk_bytes: int,
+) -> AttemptStore:
     return AttemptStore(
         root,
         retry_policy=RetryPolicy(max_retries=max_retries, seed_step=seed_step),
+        max_concurrent_jobs=max_concurrent_jobs,
+        minimum_free_disk_bytes=minimum_free_disk_bytes,
     )
 
 
@@ -86,6 +97,8 @@ def attempt_store() -> AttemptStore:
         str(root.expanduser().resolve()),
         settings.attempt_max_retries,
         settings.attempt_retry_seed_step,
+        settings.max_concurrent_attempt_jobs,
+        settings.minimum_free_disk_bytes,
     )
 
 
@@ -154,7 +167,18 @@ def _durable_generator(
             raise JobCancelled("generation cancelled before synthesis")
         started = time.monotonic()
         try:
-            data, _ = synthesize_with_qwen(request, model, speaker, loaded.instance)
+            captured_stdout = io.StringIO()
+            captured_stderr = io.StringIO()
+            with contextlib.redirect_stdout(captured_stdout), contextlib.redirect_stderr(captured_stderr):
+                data, _ = synthesize_with_qwen(request, model, speaker, loaded.instance)
+            if captured_stdout.getvalue() or captured_stderr.getvalue():
+                logging.getLogger("qwen-tts-worker").debug(
+                    "Suppressed mlx-audio console output during durable synthesis",
+                    extra={
+                        "stdout_bytes": len(captured_stdout.getvalue()),
+                        "stderr_bytes": len(captured_stderr.getvalue()),
+                    },
+                )
         finally:
             model_lifecycle.record_synthesis(time.monotonic() - started)
     return data

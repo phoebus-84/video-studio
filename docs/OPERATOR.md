@@ -36,7 +36,10 @@ A `.env` file in the working directory is also supported.
 | `QTW_TTS_MODE` | `live` | `live` fails closed; set `fake` explicitly for CI-only silent fixtures |
 | `QTW_MODEL_PATH` | *(installed CustomVoice profile)* | Exact Qwen3-TTS CustomVoice directory for `/synthesize` |
 | `QTW_MODEL_IDLE_TIMEOUT_SECONDS` | *(disabled)* | Unload the warm model after this many idle seconds; minimum 1 |
-| `QTW_WORKERS` | `1` | Uvicorn worker processes (keep at 1 until the job queue supports concurrency) |
+| `QTW_WORKERS` | `1` | Uvicorn worker processes; keep 1 for one warm MLX lifecycle |
+| `QTW_MAX_CONCURRENT_ATTEMPT_JOBS` | `1` | Maximum durable jobs in running state |
+| `QTW_MINIMUM_FREE_DISK_BYTES` | `536870912` | Block submission/execution below this attempt-store free space |
+| `QTW_MAX_REQUEST_BODY_BYTES` | `2000000` | Reject larger declared HTTP request bodies before parsing |
 | `QTW_GRACEFUL_TIMEOUT` | `30.0` | Max seconds to drain in-flight requests on shutdown |
 | `QTW_MODELS_DIR` | `models` | Directory for downloaded model files |
 | `QTW_VOICES_DIR` | `voices` | Directory for voice profiles |
