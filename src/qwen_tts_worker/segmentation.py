@@ -22,7 +22,7 @@ from qwen_tts_worker.models.quality import (
 
 
 SEGMENTATION_VERSION = "0.1.0"
-_WORD_RE = re.compile(r"\b[^\W_]+(?:[-'][^\W_]+)*\b", re.UNICODE)
+_WORD_RE = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
 _BACKEND_TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 _TOKEN_RE = re.compile(r"\s+|[^\s]+", re.UNICODE)
 _PROTECTED_PATTERNS = (

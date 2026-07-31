@@ -326,7 +326,7 @@ def normalize_block(
         (r"\b\d{1,2}:\d{2}\b(?!\s*(?:a\.m\.|p\.m\.))", "error", "time.ambiguous", "Time without a.m./p.m. or an explicit 24-hour policy is ambiguous."),
         (r"(?<!\w)St\.(?!\w)", "error", "abbreviation.ambiguous-st", "St. may mean Saint or Street; provide a lexicon entry."),
         (r"\b[A-Za-z]+-\d+[A-Za-z0-9-]*\b", "warning", "technical.identifier", "Mixed identifier was preserved; provide a lexicon entry for intended speech."),
-        (r"(?<![\d:.])0\d+\b", "error", "number.leading-zero", "Leading-zero number may be an identifier; provide a lexicon entry."),
+        (r"(?<![\d:.,])0\d+\b", "error", "number.leading-zero", "Leading-zero number may be an identifier; provide a lexicon entry."),
         (r"(?<![\d/])\d+\s*/\s*\d+(?!\s*/|\d)", "error", "number.ambiguous-fraction", "Slash form may be a fraction or identifier; spell out the intended form."),
         (r"\b\d+\s*[-–]\s*\d+\b", "error", "number.ambiguous-range", "Numeric range requires an explicit range policy; spell out 'to' if intended."),
     )
