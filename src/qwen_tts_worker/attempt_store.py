@@ -23,7 +23,9 @@ from qwen_tts_worker.models.quality import (
     AttemptFailure,
     AttemptPhase,
     FrozenContract,
+    QualityDecision,
     SegmentPlan,
+    SegmentQualityReport,
     SynthesisAttempt,
     SynthesisProfile,
     WavArtifact,
@@ -59,6 +61,7 @@ class DurableAttemptJob(FrozenContract):
     provider_mode: Literal["live", "fake"] = "live"
     retry_count: int = Field(default=0, ge=0)
     retry_of: UUID | None = None
+    retry_reason: str | None = Field(default=None, max_length=256)
     attempt_id: UUID | None = None
     cache_hit: bool = False
     cancel_requested: bool = False
@@ -225,6 +228,7 @@ class AttemptStore:
         retry_count: int = 0,
         retry_of: UUID | None = None,
         provider_mode: Literal["live", "fake"] = "live",
+        retry_reason: str | None = None,
     ) -> DurableAttemptJob:
         synthesis_inputs = synthesis_fingerprint(segment, profile)
         fingerprint = hashlib.sha256(
@@ -245,6 +249,7 @@ class AttemptStore:
                 provider_mode=provider_mode,
                 retry_count=retry_count,
                 retry_of=retry_of,
+                retry_reason=retry_reason,
                 attempt_id=cached.attempt_id if cached else None,
                 cache_hit=cached is not None,
                 created_at=now,
@@ -449,9 +454,13 @@ class AttemptStore:
             raise AttemptStoreError(
                 f"attempt failure {prior.failure.code!r} is not retryable"
             )
-        parent_jobs = [job for job in self.list_jobs() if job.attempt_id == prior.attempt_id]
+        parent_jobs = [
+            job
+            for job in self.list_jobs()
+            if job.attempt_id == prior.attempt_id and not job.cache_hit
+        ]
         if len(parent_jobs) != 1:
-            raise AttemptStoreError("attempt does not map to exactly one durable job")
+            raise AttemptStoreError("attempt does not map to exactly one generating durable job")
         parent = parent_jobs[0]
         retry_count = parent.retry_count + 1
         if retry_count > self.retry_policy.max_retries:
@@ -471,6 +480,66 @@ class AttemptStore:
             retry_count=retry_count,
             retry_of=prior.attempt_id,
             provider_mode=parent.provider_mode,
+            retry_reason=prior.failure.code,
+        )
+
+    def retry_rejected(
+        self,
+        attempt_id: UUID | str,
+        report: SegmentQualityReport,
+    ) -> DurableAttemptJob:
+        prior = self.get_attempt(attempt_id)
+        if prior.phase != AttemptPhase.COMPLETED:
+            raise AttemptStoreError("only completed attempts can be quality-retried")
+        if report.attempt_id != prior.attempt_id:
+            raise AttemptStoreError("quality report attempt_id does not match attempt")
+        if report.decision != QualityDecision.REJECT:
+            raise AttemptStoreError("quality retry requires a reject decision")
+        failed_checks = sorted(
+            check.check_id for check in report.checks if check.status == "fail"
+        )
+        retryable_checks = {
+            "signal.speech-presence",
+            "signal.clipping",
+            "signal.dc-offset",
+            "signal.edge-silence",
+            "speech.rate",
+            "wav.duration",
+        }
+        if not failed_checks or any(check not in retryable_checks for check in failed_checks):
+            raise AttemptStoreError(
+                "quality rejection includes non-retryable integrity/format failure"
+            )
+        parent_jobs = [
+            job
+            for job in self.list_jobs()
+            if job.attempt_id == prior.attempt_id and not job.cache_hit
+        ]
+        if len(parent_jobs) != 1:
+            raise AttemptStoreError("attempt does not map to exactly one generating durable job")
+        parent = parent_jobs[0]
+        retry_count = parent.retry_count + 1
+        if retry_count > self.retry_policy.max_retries:
+            raise AttemptStoreError(
+                f"retry limit exceeded: {retry_count} > {self.retry_policy.max_retries}"
+            )
+        seed = (
+            parent.profile.sampling.seed
+            + self.retry_policy.seed_step * retry_count
+        ) % (2**32)
+        profile = parent.profile.model_copy(
+            update={
+                "sampling": parent.profile.sampling.model_copy(update={"seed": seed})
+            }
+        )
+        return self.submit(
+            parent.segment,
+            profile,
+            use_cache=False,
+            retry_count=retry_count,
+            retry_of=prior.attempt_id,
+            provider_mode=parent.provider_mode,
+            retry_reason="quality:" + ",".join(failed_checks),
         )
 
     def _recover_running_jobs(self) -> None:

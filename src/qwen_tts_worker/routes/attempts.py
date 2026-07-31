@@ -23,6 +23,13 @@ from qwen_tts_worker.attempt_store import (
 from qwen_tts_worker.config import Settings
 from qwen_tts_worker.model_lifecycle import model_lifecycle
 from qwen_tts_worker.models.quality import SegmentPlan, SynthesisAttempt, SynthesisProfile
+from qwen_tts_worker.signal_validation import (
+    QualityReportStore,
+    SignalValidationEvidence,
+    SignalValidationError,
+    SignalValidationPolicy,
+    validate_attempt_signal,
+)
 from qwen_tts_worker.routes.synthesis import (
     SynthesizeRequest,
     _generate_silent_wav,
@@ -42,6 +49,15 @@ class SubmitAttemptRequest(BaseModel):
     use_cache: bool = True
 
 
+class ValidateAttemptRequest(BaseModel):
+    spoken_word_count: int | None = None
+    policy: SignalValidationPolicy | None = None
+
+
+class RetryQualityRequest(BaseModel):
+    report_id: UUID
+
+
 @lru_cache(maxsize=4)
 def _store_at(root: str, max_retries: int, seed_step: int) -> AttemptStore:
     return AttemptStore(
@@ -58,6 +74,10 @@ def attempt_store() -> AttemptStore:
         settings.attempt_max_retries,
         settings.attempt_retry_seed_step,
     )
+
+
+def quality_report_store() -> QualityReportStore:
+    return QualityReportStore(attempt_store().root / "quality-reports")
 
 
 @lru_cache(maxsize=8)
@@ -199,3 +219,52 @@ def retry_attempt_job(job_id: UUID) -> DurableAttemptJob:
         return attempt_store().retry(job.attempt_id)
     except AttemptStoreError as exc:
         raise _http_error(exc) from exc
+
+
+@router.post("/{job_id}/validate", response_model=SignalValidationEvidence)
+def validate_attempt_job(
+    job_id: UUID, request: ValidateAttemptRequest
+) -> SignalValidationEvidence:
+    try:
+        store = attempt_store()
+        job = store.get_job(job_id)
+        if job.attempt_id is None:
+            raise AttemptStoreError(f"durable job {job_id} has no terminal attempt")
+        attempt = store.get_attempt(job.attempt_id)
+        evidence = validate_attempt_signal(
+            attempt,
+            store.root,
+            spoken_word_count=request.spoken_word_count,
+            policy=request.policy,
+        )
+        quality_report_store().save(evidence)
+        return evidence
+    except AttemptStoreError as exc:
+        raise _http_error(exc) from exc
+    except SignalValidationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/quality-reports/{report_id}", response_model=SignalValidationEvidence)
+def get_quality_report(report_id: UUID) -> SignalValidationEvidence:
+    try:
+        return quality_report_store().get(str(report_id))
+    except SignalValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{job_id}/retry-quality", response_model=DurableAttemptJob, status_code=202)
+def retry_rejected_attempt(
+    job_id: UUID, request: RetryQualityRequest
+) -> DurableAttemptJob:
+    try:
+        store = attempt_store()
+        job = store.get_job(job_id)
+        if job.attempt_id is None:
+            raise AttemptStoreError(f"durable job {job_id} has no terminal attempt")
+        evidence = quality_report_store().get(str(request.report_id))
+        return store.retry_rejected(job.attempt_id, evidence.report)
+    except AttemptStoreError as exc:
+        raise _http_error(exc) from exc
+    except SignalValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

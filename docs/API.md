@@ -320,6 +320,18 @@ Request cooperative cancellation. Queued cancellation is immediate. Running gene
 
 Create a new queued job for a retryable failed attempt. Retry never overwrites the prior attempt, increments the seed deterministically, records `retry_of`, bypasses cache, and enforces the configured retry bound.
 
+### `POST /attempt-jobs/{job_id}/validate`
+
+Measure artifact integrity, canonical format, duration, speech presence, clipping, DC offset, edge silence, and optional words/minute. The immutable response includes the complete policy fingerprint, metrics, reason-coded checks, and `accept`, `review`, or `reject` decision.
+
+### `GET /attempt-jobs/quality-reports/{report_id}`
+
+Retrieve persisted validation evidence.
+
+### `POST /attempt-jobs/{job_id}/retry-quality`
+
+Create a bounded retry for retryable signal/rate rejection checks. Integrity/decode/format rejection requires operator correction rather than repeated sampling.
+
 ## Errors
 
 All non-2xx responses follow a uniform envelope:

@@ -74,6 +74,37 @@ def test_api_cache_and_cancel_paths(tmp_path: Path, monkeypatch) -> None:
         assert attempt["failure"]["code"] == "cancelled"
 
 
+def test_fake_attempt_is_signal_rejected_and_quality_retry_is_audited(
+    tmp_path: Path, monkeypatch
+) -> None:
+    with client(tmp_path, monkeypatch) as api:
+        queued = api.post("/attempt-jobs", json=payload("quality-retry")).json()
+        complete = api.post(f"/attempt-jobs/{queued['job_id']}/execute").json()
+        validated = api.post(
+            f"/attempt-jobs/{queued['job_id']}/validate",
+            json={"spoken_word_count": 2},
+        )
+        assert validated.status_code == 200
+        evidence = validated.json()
+        assert evidence["report"]["decision"] == "reject"
+        assert any(
+            check["check_id"] == "signal.speech-presence" and check["status"] == "fail"
+            for check in evidence["report"]["checks"]
+        )
+        fetched = api.get(
+            f"/attempt-jobs/quality-reports/{evidence['report']['report_id']}"
+        )
+        assert fetched.status_code == 200
+        assert fetched.json() == evidence
+        retried = api.post(
+            f"/attempt-jobs/{queued['job_id']}/retry-quality",
+            json={"report_id": evidence["report"]["report_id"]},
+        )
+        assert retried.status_code == 202
+        assert retried.json()["retry_of"] == complete["attempt_id"]
+        assert retried.json()["retry_reason"] == "quality:signal.speech-presence"
+
+
 def test_unknown_and_nonterminal_attempt_errors_are_machine_visible(
     tmp_path: Path, monkeypatch
 ) -> None:

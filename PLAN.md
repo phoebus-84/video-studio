@@ -31,7 +31,8 @@ Deliver a local Qwen3-TTS pipeline with explicit spoken-text preparation, semant
 - The deterministic preprocessing epic `qtw-48r.3` is complete, including seeded property, exact conservation, stable-ID, locale, malformed-input, and repository-wide coverage.
 - Stable CustomVoice profile and bounded delivery direction task `qtw-48r.4.3` is complete with adjacent continuity fixtures.
 - Immutable durable attempt jobs, verified segment cache, restart/cancellation recovery, and bounded selective retries are complete in `qtw-48r.4.4`.
-- The next quality gate is `qtw-48r.5.1` (segment signal validation and rejection reasons).
+- Versioned segment signal validation and bounded quality-retry mapping are complete in `qtw-48r.5.1`.
+- Post-validation work now proceeds through advisory diagnostics (`.5.2`) and conservative pause/edge processing (`.5.3`).
 - Beads remains authoritative for live status and dependency edges.
 
 ### Module hierarchy

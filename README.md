@@ -36,6 +36,7 @@ pytest --cov=src/qwen_tts_worker --cov-report=term-missing
 - [Dialogue turns](docs/DIALOGUE.md) — narration/character separation, attribution policy, ambiguity, and conservation
 - [Semantic segmentation](docs/SEGMENTATION.md) — measured limits, protected boundaries, stable IDs, pauses, and reporting
 - [Voice direction](docs/VOICE-DIRECTION.md) — stable preset identity, bounded delivery deltas, and continuity rules
+- [Signal validation](docs/SIGNAL-VALIDATION.md) — calibrated objective checks, rejection, review, and quality retry
 
 ## Plan
 
