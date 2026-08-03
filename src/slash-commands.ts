@@ -25,19 +25,17 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
           return;
         }
         ctx.ui.notify(`Initializing episode workspace: ${path}`, "info");
-        // Pi will call pva_init workspace tool to initialize
-        await ctx.agent.prompt(
+        pi.sendUserMessage(
           `Initialize the episode workspace at ${path}. ` +
-          `Use the pva_init tool to create it, then gather context with pva_gather_context. ` +
-          `If this is a fairy tale episode, use the fairy-tale-adaptation pipeline. ` +
-          `Report the workspace status after initialization.`
+          `Use pva_create_channel, pva_create_series, and pva_create_episode as needed, ` +
+          `then gather context with pva_gather_context. Report the workspace status after initialization.`
         );
         return;
       }
 
       if (action === "resume" && path) {
         ctx.ui.notify(`Resuming production: ${path}`, "info");
-        await ctx.agent.prompt(
+        pi.sendUserMessage(
           `Resume production on ${path}. ` +
           `Use pva_gather_context to check the current state, ` +
           `then run any pending stages with pva_run_pipeline.`
@@ -47,7 +45,7 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
 
       if (action === "status" || !action) {
         ctx.ui.notify(`Production status: ${path || "all episodes"}`, "info");
-        await ctx.agent.prompt(
+        pi.sendUserMessage(
           `Show the production status for ${path || "all episodes"}. ` +
           `Use pva_gather_context to collect state from the gateway.`
         );
@@ -79,7 +77,7 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
       }
 
       ctx.ui.notify(`${preview ? "Preview" : "Full"} render: ${path}`, "info");
-      await ctx.agent.prompt(
+      pi.sendUserMessage(
         `Compose the video for episode ${path}. ` +
         `Use pva_compose_video to trigger composition with FFmpeg. ` +
         `${preview ? "Use preview/rough quality settings." : "Use full production quality."} ` +
@@ -109,7 +107,7 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
       }
 
       ctx.ui.notify(`Approved stage "${stageId}" for ${path}`, "info");
-      await ctx.agent.prompt(
+      pi.sendUserMessage(
         `Approve stage "${stageId}" for episode ${path}. ` +
         `Use the pva_approve tool with justification "Approved by operator". ` +
         `Then continue the pipeline with pva_run_pipeline.`
@@ -125,9 +123,9 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
       const path = args.trim() || "";
 
       ctx.ui.notify(`Gathering production status for ${path || "all episodes"}...`, "info");
-      await ctx.agent.prompt(
+      pi.sendUserMessage(
         `Show the production status overview for ${path || "all episodes in the library"}. ` +
-        `Use pva_list_episodes to discover what exists, ` +
+        `Use pva_channels, pva_series, and pva_episodes to discover what exists, ` +
         `then pva_gather_context for each episode of interest. ` +
         `Report: pipeline progress, budget consumed, stale artifacts, open reviews, blockers.`
       );
@@ -140,7 +138,7 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
     description: "List available production skills",
     async handler(args: string, ctx: ExtensionCommandContext) {
       ctx.ui.notify(`Loading skills...`, "info");
-      await ctx.agent.prompt(
+      pi.sendUserMessage(
         `List all available production skills ` +
         `${args ? `matching "${args}"` : "for the current pipeline"}. ` +
         `Use pva_list_skills to discover them. ` +
@@ -168,7 +166,7 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
       }
 
       ctx.ui.notify(`Gathering context for ${path}...`, "info");
-      await ctx.agent.prompt(
+      pi.sendUserMessage(
         `Gather and display the full production context for ${path}. ` +
         `Use pva_gather_context to collect: ` +
         `pipeline state, stage progress, budget, staleness, open reviews, ` +

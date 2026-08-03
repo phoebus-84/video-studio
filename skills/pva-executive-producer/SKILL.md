@@ -29,6 +29,7 @@ commands become available through the Pi agent.
 - **Channel**: Top-level organization unit for a video series or brand.
 - **Series**: A collection of episodes within a channel.
 - **Episode**: A single video production unit with its own pipeline state.
+- **Workspace authoring**: Idempotent creation of channel, series, and episode directories; existing metadata is never overwritten.
 - **Run**: One execution of a pipeline against an episode.
 - **Resume**: Continue a previous run from its last checkpoint.
 - **Review**: Evaluate pipeline output and collect human feedback.
@@ -38,9 +39,19 @@ commands become available through the Pi agent.
 
 - `pva_version` — Report package version and load-time health.
 - `pva_diagnostics` — Return detailed diagnostics including any errors.
+- `pva_create_channel` — Create channel metadata and an optional pipeline profile.
+- `pva_create_series` — Create a series and its local skill directory.
+- `pva_create_episode` — Create the canonical episode workspace layout.
+- `pva_render_vector_animation` — Validate or render a declarative rigged SVG animation.
+- `pva_synthesize_nonverbal_audio` — Generate deterministic speech-free character cues.
+- `pva_compose_multitrack_video` — Mix an animated clip with frame-addressed local audio cues into an immutable render.
 
-Additional tools for workspace, pipeline, configuration, and capability management
-are registered by dependent extensions as the package evolves.
+Create parents in order: channel, series, then episode. Creation is intentionally
+non-destructive: revise existing metadata with reviewed file edits rather than
+using the create tools as overwrite operations.
+
+Additional tools for pipeline, configuration, and capability management are
+registered by dependent extensions as the package evolves.
 
 ## Reference
 

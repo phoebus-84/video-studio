@@ -70,13 +70,36 @@ const DEFAULT_TTS_WORKER_URL = "http://127.0.0.1:5199";
 /**
  * Read environment overrides (never logs values).
  */
-function readEnv(): EnvOverrides {
+async function readEnv(): Promise<EnvOverrides> {
+  const fromFile: EnvOverrides = {};
+  try {
+    const raw = await fs.readFile(path.resolve(process.cwd(), ".env"), "utf-8");
+    const allowed = new Set<keyof EnvOverrides>([
+      "AVG_LIBRARY_ROOT",
+      "AVG_GATEWAY_URL",
+      "AVG_GATEWAY_TOKEN",
+      "FAL_KEY",
+      "AVG_TTS_WORKER_URL",
+    ]);
+    for (const line of raw.split(/\r?\n/)) {
+      const match = line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (!match || !allowed.has(match[1] as keyof EnvOverrides)) continue;
+      let value = match[2] ?? "";
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      fromFile[match[1] as keyof EnvOverrides] = value;
+    }
+  } catch {
+    // A project-local .env is optional. Environment variables remain primary.
+  }
+
   return {
-    AVG_LIBRARY_ROOT: process.env.AVG_LIBRARY_ROOT,
-    AVG_GATEWAY_URL: process.env.AVG_GATEWAY_URL,
-    AVG_GATEWAY_TOKEN: process.env.AVG_GATEWAY_TOKEN,
-    FAL_KEY: process.env.FAL_KEY,
-    AVG_TTS_WORKER_URL: process.env.AVG_TTS_WORKER_URL,
+    AVG_LIBRARY_ROOT: process.env.AVG_LIBRARY_ROOT ?? fromFile.AVG_LIBRARY_ROOT,
+    AVG_GATEWAY_URL: process.env.AVG_GATEWAY_URL ?? fromFile.AVG_GATEWAY_URL,
+    AVG_GATEWAY_TOKEN: process.env.AVG_GATEWAY_TOKEN ?? fromFile.AVG_GATEWAY_TOKEN,
+    FAL_KEY: process.env.FAL_KEY ?? fromFile.FAL_KEY,
+    AVG_TTS_WORKER_URL: process.env.AVG_TTS_WORKER_URL ?? fromFile.AVG_TTS_WORKER_URL,
   };
 }
 
@@ -86,7 +109,7 @@ function readEnv(): EnvOverrides {
  * Precedence: environment > defaults > project-local discovery.
  */
 export async function resolveConfig(): Promise<StudioConfig> {
-  const env = readEnv();
+  const env = await readEnv();
   const diagnostics: ConfigDiagnostic[] = [];
 
   // Library root

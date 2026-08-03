@@ -5,10 +5,16 @@
 // the canonical workspace data through the gateway.
 // ---------------------------------------------------------------------------
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { join } from "node:path";
 import type { StudioConfig } from "../src/config.js";
 import { resolveConfig } from "../src/config.js";
+import {
+  createChannelWorkspace,
+  createEpisodeWorkspace,
+  createSeriesWorkspace,
+} from "../src/workspace-authoring.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,6 +59,85 @@ export function registerWorkspaceTools(pi: ExtensionAPI): void {
     }
     return gwClient;
   }
+
+  // --- Tool: pva_create_channel -----------------------------------------
+
+  pi.registerTool({
+    name: "pva_create_channel",
+    label: "Create Channel",
+    description: "Create a new channel workspace without overwriting existing metadata.",
+    parameters: Type.Object({
+      slug: Type.String({ description: "Lowercase kebab-case channel slug" }),
+      title: Type.String({ description: "Human-readable channel title" }),
+      description: Type.String({ description: "Channel purpose and audience" }),
+      pipelineYaml: Type.Optional(Type.String({ description: "Optional channel pipeline profile as YAML" })),
+    }),
+    async execute(_toolCallId, params) {
+      const config = await resolveConfig();
+      const mutationPath = join(config.libraryRoot, params.slug, "channel.json");
+      return withFileMutationQueue(mutationPath, async () => {
+        const result = await createChannelWorkspace(params);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: { workspace: result },
+        };
+      });
+    },
+  });
+
+  // --- Tool: pva_create_series ------------------------------------------
+
+  pi.registerTool({
+    name: "pva_create_series",
+    label: "Create Series",
+    description: "Create a series inside an existing channel without overwriting existing metadata.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Existing channel slug" }),
+      slug: Type.String({ description: "Lowercase kebab-case series slug" }),
+      title: Type.String({ description: "Human-readable series title" }),
+      description: Type.String({ description: "Series promise and format" }),
+      pipelineYaml: Type.Optional(Type.String({ description: "Optional series pipeline selector/profile as YAML" })),
+    }),
+    async execute(_toolCallId, params) {
+      const config = await resolveConfig();
+      const mutationPath = join(config.libraryRoot, params.channel, params.slug, "series.json");
+      return withFileMutationQueue(mutationPath, async () => {
+        const result = await createSeriesWorkspace(params);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: { workspace: result },
+        };
+      });
+    },
+  });
+
+  // --- Tool: pva_create_episode -----------------------------------------
+
+  pi.registerTool({
+    name: "pva_create_episode",
+    label: "Create Episode",
+    description: "Create a canonical episode workspace inside an existing series without overwriting existing metadata.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Existing channel slug" }),
+      series: Type.String({ description: "Existing series slug" }),
+      slug: Type.String({ description: "Lowercase kebab-case episode slug" }),
+      title: Type.String({ description: "Human-readable episode title" }),
+      description: Type.String({ description: "Episode test objective or editorial premise" }),
+      episodeRequest: Type.Optional(Type.String({ description: "Optional initial episode-request markdown" })),
+      pipelineYaml: Type.Optional(Type.String({ description: "Optional episode-level pipeline selector as YAML" })),
+    }),
+    async execute(_toolCallId, params) {
+      const config = await resolveConfig();
+      const mutationPath = join(config.libraryRoot, params.channel, params.series, params.slug, "episode.json");
+      return withFileMutationQueue(mutationPath, async () => {
+        const result = await createEpisodeWorkspace(params);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: { workspace: result },
+        };
+      });
+    },
+  });
 
   // --- Tool: pva_channels -----------------------------------------------
 

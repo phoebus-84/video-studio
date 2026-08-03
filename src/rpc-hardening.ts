@@ -152,7 +152,7 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
         pi.sendMessage?.({
           customType: "pva:stage-update",
           content: update.message,
-          display: { mode: "inline" as const, label: update.type },
+          display: true,
         }, { triggerTurn: false });
       } catch { /* best-effort */ }
     }

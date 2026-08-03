@@ -5,11 +5,13 @@ A distributable Pi package that turns Pi into the Agentic Video Studio executive
 ## Owns
 
 - Pi extensions and production tools.
+- Idempotent filesystem authoring for channels, series, and episode workspaces.
 - Commands for channel, series, episode, run, resume, review, and rerun operations.
 - Dynamic discovery of built-in and series-local skills.
 - Runtime and adapter clients with compact, abort-aware tool output.
 - TUI status, progress, and approval interactions.
 - Context injection from current channel, series, episode, snapshot, and stale dependency state.
+- Deterministic rigged SVG animation rendering, local nonverbal character-audio synthesis, and frame-addressed multitrack composition.
 
 ## Constraints
 

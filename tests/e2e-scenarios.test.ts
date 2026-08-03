@@ -160,15 +160,17 @@ describe("Package release checks", () => {
     expect(mod.default.length).toBe(1);
   });
 
-  it("all 26 tools have unique names", () => {
+  it("all 33 tools have unique names", () => {
     const names = [
       "pva_version", "pva_diagnostics", "pva_config", "pva_health",
+      "pva_create_channel", "pva_create_series", "pva_create_episode",
       "pva_channels", "pva_series", "pva_episodes", "pva_episode_detail",
       "pva_snapshot", "pva_run_stage", "pva_run_pipeline",
       "pva_check_staleness", "pva_plan_rerun", "pva_approve",
       "pva_budget_status", "pva_journal",
-      "pva_generate_image", "pva_synthesize_speech", "pva_render_graphics",
-      "pva_compose_video", "pva_probe_media", "pva_capability_status",
+      "pva_generate_image", "pva_synthesize_speech", "pva_synthesize_nonverbal_audio",
+      "pva_render_graphics", "pva_render_terminal", "pva_render_vector_animation",
+      "pva_compose_video", "pva_compose_multitrack_video", "pva_probe_media", "pva_capability_status",
       "pva_list_skills", "pva_load_skill", "pva_gather_context",
       "pva_rpc_health",
     ];

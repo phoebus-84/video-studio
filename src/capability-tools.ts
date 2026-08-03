@@ -5,11 +5,26 @@
 // Each tool calls the underlying service directly — Pi is a trusted local process.
 // ---------------------------------------------------------------------------
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveConfig } from "./config.js";
+import { guardEpisodePath } from "./trust-guards.js";
+import {
+  loadVectorAnimationSpec,
+  renderVectorAnimation,
+} from "./vector-animation.js";
+import {
+  NONVERBAL_EMOTIONS,
+  synthesizeNonverbalBuzz,
+} from "./nonverbal-audio.js";
+import {
+  composeMultitrackVideo,
+  loadSoundCueSheet,
+} from "./multitrack-compose.js";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
@@ -44,7 +59,7 @@ async function generateImage(
   prompt: string,
   model?: string,
 ): Promise<{ imageUrl: string; data: Buffer; seed: number; model: string }> {
-  const apiKey = process.env.FAL_KEY;
+  const apiKey = (await resolveConfig()).falKeyRef;
   if (!apiKey) throw new Error("FAL_KEY env var not set");
 
   const modelName = model || DEFAULT_MODEL;
@@ -227,12 +242,116 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     return join(LIBRARY_ROOT, channel, series, episode);
   }
 
+  // --- Tool: pva_render_vector_animation ---------------------------------
+
+  pi.registerTool({
+    name: "pva_render_vector_animation",
+    label: "Render Vector Animation",
+    description: "Validate or render a deterministic rigged 2D SVG animation spec to H.264 MP4. Saves under episode assets/animation/.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      specPath: Type.Optional(Type.String({ default: "artifacts/vector-animation.json", description: "Animation spec path relative to the episode" })),
+      outputName: Type.Optional(Type.String({ default: "visuals.mp4", description: "Output filename under assets/animation" })),
+      renderScale: Type.Optional(Type.Number({ default: 1, minimum: 0.1, maximum: 1, description: "Preview scale; use 1 for delivery" })),
+      keepFrames: Type.Optional(Type.Boolean({ default: false })),
+      dryRun: Type.Optional(Type.Boolean({ default: false, description: "Validate the spec without rasterizing frames" })),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate) {
+      const relativeSpec = params.specPath ?? "artifacts/vector-animation.json";
+      const outputName = params.outputName ?? "visuals.mp4";
+      if (!outputName.match(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.mp4$/)) throw new Error("outputName must be a safe .mp4 filename");
+      const guard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, relativeSpec);
+      if (!guard.allowed) throw new Error(guard.reason ?? "Animation spec path rejected");
+      const outputGuard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, join("assets", "animation", outputName));
+      if (!outputGuard.allowed) throw new Error(outputGuard.reason ?? "Animation output path rejected");
+
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const spec = await loadVectorAnimationSpec(join(dir, relativeSpec));
+      if (params.dryRun) {
+        const summary = {
+          valid: true,
+          name: spec.name,
+          dimensions: `${spec.width}x${spec.height}`,
+          fps: spec.fps,
+          frames: spec.durationInFrames,
+          durationSeconds: spec.durationInFrames / spec.fps,
+          nodes: spec.nodes.length,
+          tracks: spec.tracks.length,
+        };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }],
+          details: { validation: summary },
+        };
+      }
+
+      let lastPercent = -1;
+      const result = await renderVectorAnimation({
+        spec,
+        outputPath: join(dir, "assets", "animation", outputName),
+        renderScale: params.renderScale ?? 1,
+        keepFrames: params.keepFrames ?? false,
+        signal,
+        onProgress(completed, total) {
+          const percent = Math.floor((completed / total) * 10) * 10;
+          if (percent !== lastPercent) {
+            lastPercent = percent;
+            onUpdate?.({
+              content: [{ type: "text" as const, text: `Rasterizing vector frames: ${percent}%` }],
+              details: { completed, total, percent },
+            });
+          }
+        },
+      });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        details: { render: result },
+      };
+    },
+  });
+
+  // --- Tool: pva_synthesize_nonverbal_audio -------------------------------
+
+  pi.registerTool({
+    name: "pva_synthesize_nonverbal_audio",
+    label: "Synthesize Nonverbal Audio",
+    description: "Generate a deterministic speech-free character buzz cue as mono PCM WAV.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      cueId: Type.String({ description: "Safe cue ID used as the WAV filename" }),
+      emotion: StringEnum(NONVERBAL_EMOTIONS, { description: "Expressive buzz emotion" }),
+      durationSeconds: Type.Number({ minimum: 0.1, maximum: 8 }),
+      gain: Type.Optional(Type.Number({ default: 0.72, exclusiveMinimum: 0, maximum: 1 })),
+    }),
+    async execute(_toolCallId, params) {
+      if (!params.cueId.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)) throw new Error("cueId must contain only letters, numbers, underscores, and hyphens");
+      const relativeOutput = join("assets", "audio", `${params.cueId}.wav`);
+      const guard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, relativeOutput);
+      if (!guard.allowed) throw new Error(guard.reason ?? "Audio output path rejected");
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const result = await synthesizeNonverbalBuzz({
+        emotion: params.emotion,
+        durationSeconds: params.durationSeconds,
+        gain: params.gain,
+        seed: `${params.channel}/${params.series}/${params.episode}/${params.cueId}`,
+        outputPath: join(dir, relativeOutput),
+      });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        details: { audio: result },
+      };
+    },
+  });
+
   // --- Tool: pva_generate_image (via fal.ai) ------------------------------
 
   pi.registerTool({
     name: "pva_generate_image",
     label: "Generate Image",
-    description: "Generate an image using fal.ai Flux/dev. Saves directly to episode assets/images/.",
+    description: "Generate an image using the series-configured fal.ai model. Saves directly to episode assets/images/.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -304,6 +423,46 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           isError: true as unknown as boolean,
         };
       }
+    },
+  });
+
+  // --- Tool: pva_compose_multitrack_video ---------------------------------
+
+  pi.registerTool({
+    name: "pva_compose_multitrack_video",
+    label: "Compose Multitrack Video",
+    description: "Compose an animated clip with frame-addressed local buzz, Foley, and music cues into an immutable canonical render.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      videoPath: Type.Optional(Type.String({ default: "assets/animation/visuals.mp4", description: "Visual MP4 relative to the episode" })),
+      cueSheetPath: Type.Optional(Type.String({ default: "artifacts/sound-cues.json", description: "Sound cue JSON relative to the episode" })),
+      label: Type.Optional(Type.String({ default: "wordless-short", description: "Lowercase kebab-case render label" })),
+    }),
+    async execute(_toolCallId, params, signal) {
+      const relativeVideo = params.videoPath ?? "assets/animation/visuals.mp4";
+      const relativeCues = params.cueSheetPath ?? "artifacts/sound-cues.json";
+      for (const relative of [relativeVideo, relativeCues]) {
+        const guard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, relative);
+        if (!guard.allowed) throw new Error(guard.reason ?? "Composition input path rejected");
+      }
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const cueSheet = await loadSoundCueSheet(join(dir, relativeCues));
+      const currentPath = join(dir, "output", "current.json");
+      return withFileMutationQueue(currentPath, async () => {
+        const result = await composeMultitrackVideo({
+          episodeDir: dir,
+          videoPath: join(dir, relativeVideo),
+          cueSheet,
+          label: params.label,
+          signal,
+        });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          details: { render: result },
+        };
+      });
     },
   });
 
@@ -533,8 +692,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
 
       // fal.ai
       try {
-        if (process.env.FAL_KEY) {
-          caps["image-generation"] = { available: true, detail: "fal.ai Flux/dev configured" };
+        if ((await resolveConfig()).falKeyRef) {
+          caps["image-generation"] = { available: true, detail: "fal.ai configured" };
         } else {
           caps["image-generation"] = { available: false, detail: "FAL_KEY not set" };
         }
@@ -575,6 +734,18 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
 
       // Graphics
       caps["graphics-rendering"] = { available: false, detail: "Not yet wired (sgr-3i9.4)" };
+
+      // Deterministic rigged vector animation
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync("magick -version", { stdio: "ignore" });
+        caps["vector-animation"] = { available: true, detail: "SVG rigs via ImageMagick + FFmpeg" };
+      } catch {
+        caps["vector-animation"] = { available: false, detail: "ImageMagick not found" };
+      }
+
+      // Local nonverbal synthesis has no external dependency.
+      caps["nonverbal-audio"] = { available: true, detail: "Deterministic local PCM buzz synthesis" };
 
       const allAvailable = Object.values(caps).every(c => c.available);
 
