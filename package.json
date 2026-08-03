@@ -1,0 +1,40 @@
+{
+  "name": "@video-studio/remotion-infographic-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic motion-infographic renderer built on Remotion",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "render-infographic": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "check": "npm run typecheck && npm test",
+    "render": "npm run build && node dist/cli.js render"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.505",
+    "@remotion/renderer": "4.0.505",
+    "@remotion/transitions": "4.0.505",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "remotion": "4.0.505",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0"
+  }
+}
