@@ -11,6 +11,23 @@ import * as yaml from "yaml";
 import type { WorkspaceService, ChannelSummary, SeriesSummary, EpisodeSummary } from "./service.js";
 import { loadNarrationManifest } from "../runtime/narration-manifest.js";
 
+const SERIES_SUPPORT_DIRECTORIES = new Set([
+  "assets",
+  "pipelines",
+  "rigs",
+  "shared-assets",
+  "skills",
+  "sources",
+  "templates",
+  "voice-profiles",
+]);
+
+function isEpisodeDirectory(entry: import("node:fs").Dirent): boolean {
+  return entry.isDirectory()
+    && !entry.name.startsWith(".")
+    && !SERIES_SUPPORT_DIRECTORIES.has(entry.name);
+}
+
 export class FileSystemWorkspaceService implements WorkspaceService {
   private roots: string[];
 
@@ -75,7 +92,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       try {
         const entries = await fs.readdir(seriesPath, { withFileTypes: true });
         for (const entry of entries) {
-          if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+          if (!isEpisodeDirectory(entry)) continue;
 
           const epPath = path.join(seriesPath, entry.name);
 
@@ -322,7 +339,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
   private async countEpisodes(seriesPath: string): Promise<number> {
     try {
       const entries = await fs.readdir(seriesPath, { withFileTypes: true });
-      return entries.filter((e) => e.isDirectory() && !e.name.startsWith(".")).length;
+      return entries.filter(isEpisodeDirectory).length;
     } catch { return 0; }
   }
 

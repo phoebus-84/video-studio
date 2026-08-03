@@ -95,9 +95,11 @@ export class RuntimeClient {
     return this.exec(args);
   }
 
-  /** vpr resolve <channel>/<series>/<episode> */
-  async resolve(ref: EpisodeRef): Promise<RuntimeCommandResult> {
-    return this.exec(["resolve", `${ref.channel}/${ref.series}/${ref.episode}`]);
+  /** vpr resolve <channel>/<series>/<episode> [--pipeline <name>] */
+  async resolve(ref: EpisodeRef, pipeline?: string): Promise<RuntimeCommandResult> {
+    const args = ["resolve", `${ref.channel}/${ref.series}/${ref.episode}`];
+    if (pipeline) args.push("--pipeline", pipeline);
+    return this.exec(args);
   }
 
   /** vpr status <channel>/<series>/<episode> [--pipeline <name>] */

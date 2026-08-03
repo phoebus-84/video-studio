@@ -24,6 +24,13 @@ function parseEpisode(params: Record<string, string>): EpisodeRef {
   };
 }
 
+async function inheritedPipeline(workspace: WorkspaceService, ref: EpisodeRef, explicit?: string): Promise<string | undefined> {
+  if (explicit) return explicit;
+  const episode = await workspace.getEpisode(ref.channel, ref.series, ref.episode);
+  const pipeline = episode?.pipeline;
+  return typeof pipeline === "string" && pipeline.length > 0 ? pipeline : undefined;
+}
+
 export function registerProductionRoutes(
   app: FastifyInstance,
   runtime: RuntimeClient,
@@ -52,7 +59,8 @@ export function registerProductionRoutes(
     },
   }, async (request) => {
     const ref = parseEpisode(request.params as Record<string, string>);
-    const result = await runtime.resolve(ref);
+    const pipeline = await inheritedPipeline(workspace, ref);
+    const result = await runtime.resolve(ref, pipeline);
     if (!result.ok) {
       throw new GatewayError({
         code: ErrorCode.RUNTIME_UNREACHABLE,
@@ -88,7 +96,8 @@ export function registerProductionRoutes(
     const ref = parseEpisode(request.params as Record<string, string>);
     const stageId = (request.params as Record<string, string>).stage!;
     const { dryRun } = request.body as { dryRun?: boolean };
-    const result = await runtime.run(ref, stageId, dryRun);
+    const pipeline = await inheritedPipeline(workspace, ref);
+    const result = await runtime.run(ref, stageId, dryRun, pipeline);
     return { ok: result.ok, data: result.data, error: result.error };
   });
 
@@ -116,10 +125,11 @@ export function registerProductionRoutes(
     },
   }, async (request, reply) => {
     const ref = parseEpisode(request.params as Record<string, string>);
-    const { pipeline, dryRun } = request.body as { pipeline?: string; dryRun?: boolean };
+    const { pipeline: requestedPipeline, dryRun } = request.body as { pipeline?: string; dryRun?: boolean };
+    const pipeline = await inheritedPipeline(workspace, ref, requestedPipeline) ?? "narrated-illustrated-video";
 
     if (dryRun) {
-      const result = await runtime.run(ref, undefined, true);
+      const result = await runtime.run(ref, undefined, true, pipeline);
       return { ok: result.ok, data: result.data, dryRun: true };
     }
 
@@ -127,7 +137,7 @@ export function registerProductionRoutes(
     const report = await runAutopilot(
       runtime,
       ref,
-      pipeline ?? "fairy-tale-adaptation",
+      pipeline,
       libraryRoot,
       (msg) => request.log.info(msg),
     );
@@ -155,7 +165,8 @@ export function registerProductionRoutes(
     },
   }, async (request) => {
     const ref = parseEpisode(request.params as Record<string, string>);
-    const result = await runtime.status(ref);
+    const pipeline = await inheritedPipeline(workspace, ref);
+    const result = await runtime.status(ref, pipeline);
     return { ok: result.ok, data: result.data, error: result.error };
   });
 
