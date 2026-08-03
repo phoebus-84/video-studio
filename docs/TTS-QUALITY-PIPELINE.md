@@ -1,6 +1,6 @@
 # Local high-quality TTS pipeline: investigation and implementation plan
 
-**Status:** investigation and accepted architecture; implementation in progress under `qtw-48r`
+**Status:** required implementation and objective production acceptance complete; quality claim blocked on the predeclared three-listener panel under `qtw-48r.6.1`
 
 **Tracking epic:** `qtw-48r`
 
@@ -10,7 +10,7 @@
 
 ## 1. Scope and evidence rules
 
-This document maps the narration path as observed at revision `5957fea64c1a`, compares it with Alexandria Audiobook, proposes the smallest testable architecture, and defines the dependency-ordered work program. Sections describing “current” behavior are therefore a frozen pre-change baseline, not a claim about the latest worktree. It does not claim an audio-quality improvement. A 54-attempt controlled legacy signal baseline is now preserved under `evaluation/baselines/`; no baseline/candidate blinded listening experiment has been completed.
+This document maps the narration path as observed at revision `5957fea64c1a`, compares it with Alexandria Audiobook, and records the implemented architecture. Sections describing “current” behavior are a frozen pre-change baseline, not a claim about the latest worktree. It does not claim an audio-quality improvement. A 54-attempt controlled legacy signal baseline and 54-attempt candidate are preserved; objective gates and two production episodes are complete, while the predeclared blinded listening panel remains pending.
 
 Implementation status after the frozen investigation:
 
@@ -28,7 +28,9 @@ Implementation status after the frozen investigation:
 - `qtw-48r.5.4` added manifest-only ordering, hash/format/pause/boundary integrity, exact duration accounting, deterministic two-pass FFmpeg mastering to -16 LUFS/-1.5 dBTP, and canonical narration manifests linked to accepted attempts/reports/transforms.
 - Candidate `candidate-qtw-v1` completed all 54 predeclared seeded generations with 54 signal accepts, no invalid/clipped WAVs, and a 106.475 s mastered repeat-1 assembly at -16.14 LUFS/-1.46 dBTP with zero boundary failures. Its 54-item randomized A/B package has no scores; the frozen policy requires three independent listeners, so no quality win is claimed.
 - `qtw-48r.6.2` promoted canonical camelCase narration segments, immutable attempts, quality reports, accepted-attempt manifests, measured mastering metadata, and caption cues through `video-workspace-contracts`; gateway, Pi, built-in pipeline, and composer now prefer manifest order/durations with documented legacy read fallback and minimal one-segment staleness.
-- Human listening acceptance remains tracked work.
+- Technical production acceptance regenerated and recomposed JaroMail: 9/9 accepted segments, 189.524542-second master at -16.1 LUFS/-1.46 dBTP, canonical schema validity, exact scene reconstruction, full mixed-media decode, and seven-scene visual sampling.
+- Multi-character production acceptance regenerated and recomposed The Wolf and the Seven Little Kids: reviewed quote attribution, 41 accepted segments across six continuity profiles, one rejected/targeted retry with 40 unrelated attempts preserved, 292.310625-second master at -16.09 LUFS/-1.43 dBTP, canonical schema validity, exact scene reconstruction, full decode, and eight-scene visual sampling.
+- The blinded panel now includes 54 isolated items and one loudness-matched full-assembly continuity/boundary item. Exactly three complete independent CSVs remain required; no quality claim is authorized.
 
 Evidence labels used below:
 

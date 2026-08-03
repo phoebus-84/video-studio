@@ -43,7 +43,7 @@ Repeat 1 of all 18 segments passed transform and assembly gates:
 
 ## Blinded review blocker
 
-The local run contains a deterministic 54-item randomized A/B package and withheld key under `results/`. No scores have been entered. The predeclared acceptance policy requires three independent listeners and complete item coverage. Therefore:
+The local run contains 54 deterministic randomized isolated A/B items plus one independently randomized loudness-matched full-assembly continuity/boundary item, with withheld keys under `results/`. The offline review page captures all predeclared dimensions and side-specific issue flags. No scores have been entered. The predeclared acceptance policy requires three independent listeners and complete item coverage. Therefore:
 
 - no naturalness, pronunciation, emotional-fit, identity-continuity, or publication-quality claim is authorized;
 - `qtw-48r.6.1` remains open;

@@ -99,7 +99,7 @@ Objective metrics diagnose failures; they do not replace listening judgments.
 3. Randomize system labels independently per item (for example `A` and `B`).
 4. Withhold `listening-key.json` from listeners until scoring closes.
 5. Ask listeners to use headphones in a quiet environment and score each item once before optional replay.
-6. Include isolated segments and assembled continuity groups.
+6. Include all isolated segments plus the loudness-matched complete baseline/candidate assembly for continuity and boundaries.
 7. Record listener identity pseudonym, playback setup, timestamp, scores, preference, and notes.
 8. Report listener count, missing ratings, median/mean, confidence intervals where practical, and inter-rater agreement. A minimum panel size is an open project decision; never imply a panel when only one author listened.
 
@@ -130,7 +130,7 @@ For every item, listeners also choose `A`, `B`, or `no preference`, and may flag
 
 ## Current candidate
 
-`candidate-qtw-v1` completed 54/54 seeded live generations and all objective gates. Compact evidence is under `evaluation/candidates/`; raw audio and the randomized 54-item A/B package remain under ignored `evaluation/runs/candidate-qtw-v1/`. Run `python evaluation/create_listening_review.py`, open the generated `results/listening-review.html`, and collect its CSV from each independent listener without sharing `listening-key.json`. Opaque staged audio paths do not reveal system assignment. No listener scores exist, so `evaluation/acceptance-v1.json` blocks a quality claim.
+`candidate-qtw-v1` completed 54/54 seeded live generations and all objective gates. Compact evidence is under `evaluation/candidates/`; raw audio, 54 randomized isolated A/B items, and one independently randomized loudness-matched complete-assembly A/B item remain under ignored `evaluation/runs/candidate-qtw-v1/`. Run `python evaluation/create_listening_review.py`, open the generated `results/listening-review.html`, and collect its CSV from each independent listener without sharing either key. Opaque staged audio paths do not reveal system assignment. Segment rows use the seven-dimension rubric; the assembly row uses all six continuity/boundary dimensions; issue flags are side-specific. Analyze exactly three complete CSVs with `evaluation/analyze_listening_scores.py`. No listener scores exist, so `evaluation/acceptance-v1.json` blocks a quality claim.
 
 ## Acceptance and reporting
 
