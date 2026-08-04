@@ -301,7 +301,7 @@ export async function runAutopilot(
 
     if (!stageId) {
       const stdout = runResult.stdout ?? "";
-      if (stdout.includes("All stages complete") || runResult.stdout?.includes("completed")) {
+      if (stageData?.completed === true || stdout.includes("All stages complete") || runResult.stdout?.includes("completed")) {
         log("Autopilot: all stages complete!");
         break;
       }
@@ -360,7 +360,9 @@ export async function runAutopilot(
     pipeline,
     stages: results,
     totalDurationMs: totalMs,
-    summary: `${completed} completed, ${failed} failed, ${results.length} total (${(totalMs / 1000).toFixed(1)}s)`,
+    summary: results.length === 0
+      ? `All stages already complete (${(totalMs / 1000).toFixed(1)}s)`
+      : `${completed} completed, ${failed} failed, ${results.length} total (${(totalMs / 1000).toFixed(1)}s)`,
   };
 }
 

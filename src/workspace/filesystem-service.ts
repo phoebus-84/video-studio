@@ -283,7 +283,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
           let qaReport: unknown = null;
           const reportPaths = [path.join(epPath, "artifacts", "qa-report.json")];
           if (render) {
-            reportPaths.unshift(path.join(epPath, "output", `${path.basename(render.file as string, ".mp4")}.report.json`));
+            reportPaths.push(path.join(epPath, "output", `${path.basename(render.file as string, ".mp4")}.report.json`));
           }
           for (const rp of reportPaths) {
             try { qaReport = JSON.parse(await fs.readFile(rp, "utf-8")); break; } catch { /* try next */ }
@@ -344,10 +344,23 @@ export class FileSystemWorkspaceService implements WorkspaceService {
   }
 
   private async detectStatus(epPath: string): Promise<string> {
-    // Check for output render
+    try {
+      const qa = JSON.parse(await fs.readFile(path.join(epPath, "artifacts", "qa-report.json"), "utf-8")) as { approved?: unknown };
+      if (qa.approved === true) return "completed";
+    } catch { /* no approved QA report */ }
+
+    try {
+      const pointer = JSON.parse(await fs.readFile(path.join(epPath, "output", "current.json"), "utf-8")) as { path?: unknown };
+      if (typeof pointer.path === "string" && !path.isAbsolute(pointer.path) && !pointer.path.includes("..")) {
+        await fs.access(path.join(epPath, "output", pointer.path));
+        return "in-progress";
+      }
+    } catch { /* no canonical render */ }
+
     try { await fs.access(path.join(epPath, "artifacts", "output.mp4")); return "completed"; } catch {}
-    // Check for script
-    try { await fs.access(path.join(epPath, "artifacts", "script.md")); return "in-progress"; } catch {}
+    for (const marker of ["production-profile.json", "visual-beats.json", "script.md"]) {
+      try { await fs.access(path.join(epPath, "artifacts", marker)); return "in-progress"; } catch {}
+    }
     return "pending";
   }
 
