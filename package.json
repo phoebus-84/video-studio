@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node --enable-source-maps dist/index.js",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts config.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/ test/",

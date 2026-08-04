@@ -1,4 +1,5 @@
 {
   "port": 5198,
-  "libraryRoots": ["/Users/alcibiade/strange_things/avg/library"]
+  "libraryRoots": ["/Users/alcibiade/strange_things/avg/library"],
+  "allowedOrigins": ["http://localhost:5173", "http://localhost:5199"]
 }

@@ -67,7 +67,7 @@ export async function createGateway(
   // ── Plugins ──────────────────────────────────────────────────────────────
   await app.register(fastifyWebsocket);
   await app.register(fastifyCors, {
-    origin: config.allowedOrigins.length > 0 ? config.allowedOrigins : ["http://localhost:5199"],
+    origin: config.allowedOrigins.length > 0 ? config.allowedOrigins : ["http://localhost:5173", "http://localhost:5199"],
     credentials: false,
   });
 

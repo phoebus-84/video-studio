@@ -279,6 +279,17 @@ export class FileSystemWorkspaceService implements WorkspaceService {
             }
           } catch { /* discovery failed */ }
 
+          // ── Animation beats fall back to the episode render as their asset ──
+          // Rigged-vector episodes have one continuous animated clip rather than
+          // per-scene images; each beat still previews the current render.
+          if (render) {
+            for (const scene of scenes as Array<Record<string, any>>) {
+              if (!scene.asset && scene.kind === "animation") {
+                scene.asset = { kind: "video", url: render.url, file: render.file, size: render.size, generatedAt: render.generatedAt };
+              }
+            }
+          }
+
           // ── QA report (only if a real report file exists on disk) ──
           let qaReport: unknown = null;
           const reportPaths = [path.join(epPath, "artifacts", "qa-report.json")];
