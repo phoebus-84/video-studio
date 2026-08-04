@@ -19,6 +19,7 @@ import {
 import type { PipelineLoader } from "./pipeline/types.js";
 import { doctor } from "./workspace/doctor.js";
 import { NodeFileSystem } from "./ports/filesystem.js";
+import { artifactExists } from "./artifacts/discovery.js";
 
 // ── Exit codes ──────────────────────────────────────────────────────────────
 
@@ -228,37 +229,9 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     // ── Detect completed stages by checking for output artifacts ──────────
     const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
     const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
-    const { existsSync, readdirSync } = await import("node:fs");
-
-    const artifactPaths: Record<string, string> = {
-      "brief.md": `${episodeDir}/artifacts/brief.md`,
-      "script.md": `${episodeDir}/artifacts/script.md`,
-      "art-direction.json": `${episodeDir}/artifacts/art-direction.json`,
-      "narration.mp3": `${episodeDir}/artifacts/narration/narration-full.wav`,
-      "safety-report.json": `${episodeDir}/artifacts/safety-report.json`,
-      "illustrations/": `${episodeDir}/artifacts/frames`,
-      "captions.srt": `${episodeDir}/artifacts/captions.srt`,
-      "timing.json": `${episodeDir}/artifacts/timing.json`,
-      "continuity-report.json": `${episodeDir}/artifacts/continuity-report.json`,
-      "output.mp4": `${episodeDir}/artifacts/render/final.mp4`,
-      "qa-report.json": `${episodeDir}/artifacts/qa-report.json`,
-    };
 
     function checkArtifact(label: string): string {
-      const p = artifactPaths[label];
-      if (!p) return "pending";
-      try {
-        if (label.endsWith("/")) {
-          // Directory artifact — check if it has files
-          if (existsSync(p)) {
-            const entries = readdirSync(p);
-            return entries.length > 0 ? "completed" : "pending";
-          }
-        }
-        return existsSync(p) ? "completed" : "pending";
-      } catch {
-        return "pending";
-      }
+      return artifactExists(episodeDir, label) ? "completed" : "pending";
     }
 
     function stageState(s: typeof pipeline.stages[0]): string {
@@ -379,40 +352,14 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     const loader = makeLoader();
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
-    // Reuse artifact detection from cmdStatus
     const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
     const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
-    const { existsSync, readdirSync } = await import("node:fs");
-    const ArtifactPaths: Record<string, string> = {
-      "brief.md": `${episodeDir}/artifacts/brief.md`,
-      "script.md": `${episodeDir}/artifacts/script.md`,
-      "art-direction.json": `${episodeDir}/artifacts/art-direction.json`,
-      "narration.mp3": `${episodeDir}/artifacts/narration/narration-full.wav`,
-      "safety-report.json": `${episodeDir}/artifacts/safety-report.json`,
-      "illustrations/": `${episodeDir}/artifacts/frames`,
-      "captions.srt": `${episodeDir}/artifacts/captions.srt`,
-      "timing.json": `${episodeDir}/artifacts/timing.json`,
-      "continuity-report.json": `${episodeDir}/artifacts/continuity-report.json`,
-      "output.mp4": `${episodeDir}/artifacts/render/final.mp4`,
-      "qa-report.json": `${episodeDir}/artifacts/qa-report.json`,
-    };
 
-    // Find the first non-completed stage
+    // Find the first non-completed stage using the same provider-neutral
+    // artifact discovery as status. An explicit stage remains a forced run.
     const pending = pipeline.stages.filter((s) => {
       if (stageId) return s.definition.id === stageId;
-      const produces = s.definition.produces;
-      return produces.some((p) => {
-        const ap = ArtifactPaths[p.label];
-        if (!ap) return true;
-        if (p.label.endsWith("/")) {
-          const ex = existsSync(ap);
-          if (!ex) return true;
-          const len = readdirSync(ap).length;
-          return len === 0;
-        }
-        const ex = existsSync(ap);
-        return !ex;
-      });
+      return s.definition.produces.some((output) => !artifactExists(episodeDir, output.label));
     });
 
 
