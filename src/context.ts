@@ -59,6 +59,23 @@ function createClient(baseUrl: string, token: string): GatewayClient {
 
 // ── Context builder ─────────────────────────────────────────────────────────
 
+export function normalizeEpisodeStatus(status: any): {
+  pipeline: { name: string; version: number };
+  stages: { id: string; state: string }[];
+  hasBlockers: boolean;
+} {
+  const pipelineName = typeof status?.pipeline === "string"
+    ? status.pipeline
+    : (status?.pipeline?.name ?? "unknown");
+  return {
+    pipeline: { name: pipelineName, version: status?.snapshot?.version ?? status?.pipeline?.version ?? 0 },
+    stages: Array.isArray(status?.stages)
+      ? status.stages.map((stage: any) => ({ ...stage, state: stage.state ?? stage.status ?? "pending" }))
+      : [],
+    hasBlockers: Array.isArray(status?.blockers) && status.blockers.length > 0,
+  };
+}
+
 /**
  * Gather current production context for an episode.
  * Fetches pipeline state, budget, staleness, and reviews from the gateway.
@@ -84,9 +101,10 @@ export async function gatherContext(
   // Try to fetch status from gateway
   try {
     const status = await client.fetch(`/api/channels/${channel}/series/${series}/episodes/${episode}`);
-    pipeline = { name: status.pipeline?.name ?? "unknown", version: status.snapshot?.version ?? 0 };
-    stages = status.stages ?? [];
-    hasBlockers = status.blockers?.length > 0;
+    const normalized = normalizeEpisodeStatus(status);
+    pipeline = normalized.pipeline;
+    stages = normalized.stages;
+    hasBlockers = normalized.hasBlockers;
   } catch {
     // Gateway not available — use defaults
   }

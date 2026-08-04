@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 
 export interface AudioCue {
@@ -67,7 +67,7 @@ export function parseSoundCueSheet(value: unknown): SoundCueSheet {
   return sheet;
 }
 
-async function run(binary: string, args: string[], signal?: AbortSignal): Promise<{ stdout: string }> {
+async function run(binary: string, args: string[], signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
@@ -80,7 +80,7 @@ async function run(binary: string, args: string[], signal?: AbortSignal): Promis
     child.on("close", (code) => {
       signal?.removeEventListener("abort", abort);
       if (signal?.aborted) reject(new Error("Video composition cancelled"));
-      else if (code === 0) resolve({ stdout });
+      else if (code === 0) resolve({ stdout, stderr });
       else reject(new Error(`${binary} exited with code ${code}: ${stderr.trim()}`));
     });
   });
@@ -98,6 +98,25 @@ async function probe(filePath: string, signal?: AbortSignal): Promise<{ duration
     durationSeconds: Number(parsed.format?.duration ?? 0),
     fileSize: Number(parsed.format?.size ?? (await stat(filePath)).size),
   };
+}
+
+interface LoudnessMeasurement {
+  input_i: string;
+  input_tp: string;
+  input_lra: string;
+  input_thresh: string;
+  target_offset: string;
+}
+
+async function measureLoudness(filePath: string, signal?: AbortSignal): Promise<LoudnessMeasurement> {
+  const result = await run("ffmpeg", [
+    "-hide_banner", "-i", filePath,
+    "-af", "loudnorm=I=-14:TP=-1.2:LRA=11:print_format=json",
+    "-f", "null", "-",
+  ], signal);
+  const blocks = result.stderr.match(/\{[\s\S]*?"target_offset"[\s\S]*?\}/g);
+  if (!blocks?.length) throw new Error("FFmpeg did not return a loudness measurement");
+  return JSON.parse(blocks.at(-1)!) as LoudnessMeasurement;
 }
 
 export async function composeMultitrackVideo(options: {
@@ -129,20 +148,22 @@ export async function composeMultitrackVideo(options: {
   const reportPath = path.join(outputDir, `${renderId}.report.json`);
   await mkdir(outputDir, { recursive: true });
 
-  const args = ["-y", "-i", videoPath];
-  for (const cue of audioCues) args.push("-i", path.join(episodeDir, cue.assetPath!));
-
+  const sourceMedia = await probe(videoPath, options.signal);
+  const mixPath = path.join(outputDir, `.${renderId}.mix.wav`);
+  const normalizedPath = path.join(outputDir, `.${renderId}.normalized.wav`);
+  const mixArgs = ["-y"];
   if (audioCues.length === 0) {
-    args.push(
-      "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-      "-map", "0:v:0", "-map", "1:a:0",
+    mixArgs.push(
+      "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=48000",
+      "-t", sourceMedia.durationSeconds.toFixed(6),
     );
   } else {
+    for (const cue of audioCues) mixArgs.push("-i", path.join(episodeDir, cue.assetPath!));
     const chains: string[] = [];
     audioCues.forEach((cue, index) => {
       const duration = cue.durationFrames / cueSheet.fps;
       const delayMs = Math.round((cue.startFrame / cueSheet.fps) * 1000);
-      chains.push(`[${index + 1}:a]atrim=0:${duration.toFixed(6)},asetpts=PTS-STARTPTS,volume=${cue.gain.toFixed(4)},adelay=${delayMs}|${delayMs}[a${index}]`);
+      chains.push(`[${index}:a]atrim=0:${duration.toFixed(6)},asetpts=PTS-STARTPTS,volume=${cue.gain.toFixed(4)},adelay=${delayMs}|${delayMs}[a${index}]`);
     });
     chains.push(`${audioCues.map((_, index) => `[a${index}]`).join("")}amix=inputs=${audioCues.length}:normalize=0:dropout_transition=0[mix0]`);
     silenceCues.forEach((cue, index) => {
@@ -151,22 +172,53 @@ export async function composeMultitrackVideo(options: {
       chains.push(`[mix${index}]volume=0:enable=between(t\\,${start.toFixed(6)}\\,${end.toFixed(6)})[mix${index + 1}]`);
     });
     const finalMix = `mix${silenceCues.length}`;
-    chains.push(`[${finalMix}]loudnorm=I=-14:TP=-1:LRA=11,apad[aout]`);
-    args.push("-filter_complex", chains.join(";"), "-map", "0:v:0", "-map", "[aout]");
+    chains.push(`[${finalMix}]apad[aout]`);
+    mixArgs.push(
+      "-filter_complex", chains.join(";"),
+      "-map", "[aout]",
+      "-t", sourceMedia.durationSeconds.toFixed(6),
+    );
+  }
+  mixArgs.push("-c:a", "pcm_s24le", "-ar", "48000", mixPath);
+
+  let loudness: LoudnessMeasurement | undefined;
+  try {
+    await run("ffmpeg", mixArgs, options.signal);
+    let finalAudioPath = mixPath;
+    let correctionDb = 0;
+    if (audioCues.length > 0) {
+      loudness = await measureLoudness(mixPath, options.signal);
+      await run("ffmpeg", [
+        "-y", "-i", mixPath,
+        "-af", `loudnorm=I=-14:TP=-1.2:LRA=11:measured_I=${loudness.input_i}:measured_TP=${loudness.input_tp}:measured_LRA=${loudness.input_lra}:measured_thresh=${loudness.input_thresh}:offset=${loudness.target_offset}:linear=true`,
+        "-c:a", "pcm_s24le", "-ar", "48000", normalizedPath,
+      ], options.signal);
+      const normalizedLoudness = await measureLoudness(normalizedPath, options.signal);
+      correctionDb = -14 - Number(normalizedLoudness.input_i);
+      finalAudioPath = normalizedPath;
+    }
+
+    const finalArgs = [
+      "-y", "-i", videoPath, "-i", finalAudioPath,
+      "-map", "0:v:0", "-map", "1:a:0",
+      "-c:v", "copy",
+    ];
+    if (audioCues.length > 0) finalArgs.push("-af", `volume=${correctionDb.toFixed(4)}dB,alimiter=limit=0.88:level=false`);
+    finalArgs.push(
+      "-c:a", "aac",
+      "-b:a", "192k",
+      "-ar", "48000",
+      "-shortest",
+      "-movflags", "+faststart",
+      outputPath,
+    );
+    await run("ffmpeg", finalArgs, options.signal);
+  } finally {
+    await Promise.all([rm(mixPath, { force: true }), rm(normalizedPath, { force: true })]);
   }
 
-  args.push(
-    "-c:v", "copy",
-    "-c:a", "aac",
-    "-b:a", "192k",
-    "-ar", "48000",
-    "-shortest",
-    "-movflags", "+faststart",
-    outputPath,
-  );
-  await run("ffmpeg", args, options.signal);
-
   const media = await probe(outputPath, options.signal);
+  const measuredOutput = audioCues.length > 0 ? await measureLoudness(outputPath, options.signal) : undefined;
   const report = {
     version: 1,
     renderId,
@@ -180,6 +232,10 @@ export async function composeMultitrackVideo(options: {
       audioCodec: "aac",
       targetIntegratedLoudnessLufs: -14,
       maximumTruePeakDb: -1,
+      normalizationTruePeakCeilingDb: -1.2,
+      encodingLimiterCeilingDb: -1.1,
+      measuredIntegratedLoudnessLufs: measuredOutput ? Number(measuredOutput.input_i) : null,
+      measuredTruePeakDb: measuredOutput ? Number(measuredOutput.input_tp) : null,
     },
     createdAt: new Date().toISOString(),
   };

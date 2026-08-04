@@ -57,7 +57,10 @@ describe("multitrack composition", () => {
     expect(result.durationSeconds).toBeGreaterThanOrEqual(1);
     expect(result.audioCueCount).toBe(1);
     expect(current.renderId).toBe(result.renderId);
-    expect(await readFile(result.reportPath, "utf-8")).toContain('"targetIntegratedLoudnessLufs": -14');
+    const report = JSON.parse(await readFile(result.reportPath, "utf-8"));
+    expect(report.output.targetIntegratedLoudnessLufs).toBe(-14);
+    expect(report.output.normalizationTruePeakCeilingDb).toBe(-1.2);
+    expect(report.output.measuredTruePeakDb).toBeLessThanOrEqual(-1);
   }, 30_000);
 
   it("rejects traversal in cue assets", () => {
