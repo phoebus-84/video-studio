@@ -167,24 +167,36 @@ export function registerReviewRoutes(
         type: "object",
         properties: {
           anchor: { type: "string" },
+          body: { type: "string" },
         },
         required: ["anchor"],
       },
     },
   }, async (request: FastifyRequest<{
     Params: { channel: string; series: string; episode: string };
-    Body: { anchor: string };
+    Body: { anchor: string; body?: string };
   }>, reply: FastifyReply) => {
     const { channel, series, episode } = request.params;
-    const { anchor } = request.body;
+    const { anchor, body } = request.body;
     const threadId = `review-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const now = new Date().toISOString();
+
+    const messages: ReviewMessage[] = [];
+    if (body && body.trim()) {
+      messages.push({
+        id: makeId(),
+        author: "operator",
+        body,
+        timestamp: now,
+        status: "open",
+      });
+    }
 
     const thread: ReviewThread = {
       id: threadId,
       anchor,
       episodeSlug: `${channel}/${series}/${episode}`,
-      messages: [],
+      messages,
       createdAt: now,
       updatedAt: now,
     };
