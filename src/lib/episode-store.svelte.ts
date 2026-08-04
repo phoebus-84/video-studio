@@ -202,6 +202,7 @@ class EpisodeStore {
           narrationStatus: (s.narration?.status ?? "idle") as any,
           captionsStatus: (s.captions?.count > 0 ? "completed" : "idle") as any,
           transition: (s.transition ?? "cut") as any,
+          kind: s.kind ?? (s.asset?.kind === "video" ? "animation" : undefined) as any,
           // Asset info
           assetUrl: s.asset?.url ? abs(s.asset.url) : null,
           narrationUrl: narUrls[s.id] ?? null,

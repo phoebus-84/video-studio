@@ -10,6 +10,9 @@ export const VOICE_FIXTURE: VoiceProfile = {
 export const NARRATION_FIXTURE: NarrationSegment[] = [
   {
     id: "seg-1",
+    voice: "default",
+    instruct: null,
+    role: "narrator",
     sceneId: "scene-1",
     text: "Every CPU spends most of its time waiting. Not for the next instruction — it can execute billions per second — but for data.",
     durationSeconds: 12.4,
@@ -19,6 +22,9 @@ export const NARRATION_FIXTURE: NarrationSegment[] = [
   },
   {
     id: "seg-2",
+    voice: "default",
+    instruct: null,
+    role: "narrator",
     sceneId: "scene-2",
     text: "Memory isn't one thing. It's a hierarchy, carefully balanced between speed and cost. Think of it like a library.",
     durationSeconds: 10.8,
@@ -28,6 +34,9 @@ export const NARRATION_FIXTURE: NarrationSegment[] = [
   },
   {
     id: "seg-3",
+    voice: "default",
+    instruct: null,
+    role: "narrator",
     sceneId: "scene-3",
     text: "Programs tend to access the same data repeatedly. This is temporal locality. They also tend to access nearby data. This is spatial locality.",
     durationSeconds: 15.2,
@@ -37,6 +46,9 @@ export const NARRATION_FIXTURE: NarrationSegment[] = [
   },
   {
     id: "seg-4",
+    voice: "default",
+    instruct: null,
+    role: "narrator",
     sceneId: "scene-4",
     text: "Cache lines are the fundamental unit of data movement between cache levels. Each line is typically 64 bytes on modern processors.",
     durationSeconds: null,
@@ -46,6 +58,9 @@ export const NARRATION_FIXTURE: NarrationSegment[] = [
   },
   {
     id: "seg-5",
+    voice: "default",
+    instruct: null,
+    role: "narrator",
     sceneId: "scene-5",
     text: "Latency measures how long a single access takes. Bandwidth measures how many accesses you can complete per second. They are not the same thing.",
     durationSeconds: 14.1,
@@ -55,6 +70,9 @@ export const NARRATION_FIXTURE: NarrationSegment[] = [
   },
   {
     id: "seg-6",
+    voice: "default",
+    instruct: null,
+    role: "narrator",
     sceneId: "scene-6",
     text: "Understanding the memory hierarchy is the single most important optimization skill for any systems programmer.",
     durationSeconds: null,
@@ -67,6 +85,9 @@ export const NARRATION_FIXTURE: NarrationSegment[] = [
 export const FAILED_FIXTURE: NarrationSegment[] = [
   {
     id: "seg-7",
+    voice: "default",
+    instruct: null,
+    role: "narrator",
     sceneId: "scene-4",
     text: "Cache coherence protocols ensure all processors see a consistent view of memory.",
     durationSeconds: null,

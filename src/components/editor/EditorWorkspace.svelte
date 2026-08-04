@@ -66,7 +66,7 @@
         series,
         episode: episodeSlug,
       });
-    } catch (err) {
+    } catch {
       // File might not exist yet — create empty artifact
       const ext = filePath.split(".").pop() ?? "md";
       const kindMap: Record<string, ArtifactContent["kind"]> = {

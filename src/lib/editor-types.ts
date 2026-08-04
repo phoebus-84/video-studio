@@ -1,5 +1,5 @@
 /** Kinds of artifacts the editor can handle. */
-export type ArtifactKind = "markdown" | "yaml";
+export type ArtifactKind = "markdown" | "yaml" | "json" | "plaintext" | "html";
 
 /** Editor save state lifecycle. */
 export type SaveState =
@@ -21,6 +21,11 @@ export interface ArtifactContent {
   kind: ArtifactKind;
   text: string;
   revision: Revision;
+  /** Workspace location for round-trip saves. */
+  filePath?: string;
+  channel?: string;
+  series?: string;
+  episode?: string;
 }
 
 /** Validation diagnostic pointing to a specific location. */

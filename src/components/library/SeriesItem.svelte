@@ -53,6 +53,7 @@
       class="series-name-btn"
       class:selected={library.selectedSeries?.series === series.slug && library.selectedSeries?.channel === channelSlug}
       onclick={selectSeries}
+      onkeydown={onKeydown}
     >
       <span class="series-name">{series.title}</span>
       <span class="series-count" aria-label="{series.episodes.length} episodes">

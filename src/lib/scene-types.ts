@@ -37,7 +37,7 @@ export type SceneRole =
   | "woodcutter"
   | "grandmother";
 
-export type SceneKind = "title-card" | "illustration" | "diagram" | "terminal-demo" | "end-card";
+export type SceneKind = "title-card" | "illustration" | "diagram" | "terminal-demo" | "end-card" | "animation";
 
 export const SCENE_KIND_ICONS: Record<SceneKind, string> = {
   "title-card": "🎬",
@@ -45,6 +45,7 @@ export const SCENE_KIND_ICONS: Record<SceneKind, string> = {
   "diagram": "📊",
   "terminal-demo": "▸",
   "end-card": "🏁",
+  "animation": "🎞️",
 };
 
 export const SCENE_KIND_LABELS: Record<SceneKind, string> = {
@@ -53,6 +54,7 @@ export const SCENE_KIND_LABELS: Record<SceneKind, string> = {
   "diagram": "Diagram",
   "terminal-demo": "Terminal Demo",
   "end-card": "End Card",
+  "animation": "Animation",
 };
 
 export type TransitionType = "cut" | "dissolve" | "wipe" | "slide";
@@ -64,6 +66,11 @@ export const ROLE_LABELS: Record<SceneRole, string> = {
   comparison: "Comparison",
   summary: "Summary",
   outro: "Outro",
+  narrator: "Narrator",
+  girl: "Girl",
+  wolf: "Wolf",
+  woodcutter: "Woodcutter",
+  grandmother: "Grandmother",
 };
 
 export const TRANSITION_LABELS: Record<TransitionType, string> = {

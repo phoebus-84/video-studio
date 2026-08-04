@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { library } from "$lib/library-store.svelte.ts";
   import { editor } from "$lib/editor-store.svelte.ts";
   import { getGatewayClient } from "$lib/gateway.svelte.ts";
   import EditorPane from "../editor/EditorPane.svelte";
@@ -63,7 +62,7 @@
         series: series ?? "",
         episode: "",
       } as any);
-    } catch (err) {
+    } catch {
       editor.open({
         kind: "markdown",
         text: "",
