@@ -134,10 +134,15 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   const gatewayToken = resolveToken();
 
   /** Emit an update that can notify Pi of gateway events. */
-  function notify(update: { type: string; message: string }): void {
+  function notify(update: { type: string; message: string; author?: string }): void {
     // Use stderr for logging (Pi shows this in agent output)
     process.stderr.write(`[pva-gateway] ${update.type}: ${update.message}\n`);
-    // For review events, trigger Pi to read the journal and respond
+    // For review events, trigger Pi to read the journal and respond.
+    // Only trigger on thread creation and on operator comments; pi's own
+    // comments are echoed back through the bus and must not re-trigger a turn.
+    if (update.type === "review-reply" && update.author !== "operator") {
+      return;
+    }
     if (update.type === "review-new" || update.type === "review-reply") {
       try {
         // sendUserMessage always triggers a turn (unlike sendMessage with nextTurn)
@@ -306,7 +311,7 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
  */
 export function processGatewayEvent(
   event: { channel: string; type: string; data: Record<string, unknown>; episodeSlug?: string },
-  onUpdate: (update: { type: string; message: string }) => void,
+  onUpdate: (update: { type: string; message: string; author?: string }) => void,
 ): void {
   const { channel, type, data, episodeSlug } = event;
 
@@ -329,9 +334,11 @@ export function processGatewayEvent(
           message: `New review thread on "${data.anchor}"`,
         });
       } else if (type === "message-added") {
+        const author = typeof data.author === "string" ? data.author : "unknown";
         onUpdate({
           type: "review-reply",
-          message: `New ${data.author} comment in review thread`,
+          message: `New ${author} comment in review thread`,
+          author,
         });
       }
       break;
