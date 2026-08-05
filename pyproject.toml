@@ -39,12 +39,17 @@ dev = [
     "httpx>=0.27",
     "pytest-cov>=4.1",
 ]
+mlx = [
+    "mlx-audio[tts]==0.4.6",
+    "huggingface-hub>=1.0,<2",
+]
 diagnostics = [
     "mlx-whisper==0.4.3",
 ]
 
 [project.scripts]
 qwen-tts-worker = "qwen_tts_worker.__main__:main"
+qwen-tts = "qwen_tts_worker.user_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/qwen_tts_worker"]
