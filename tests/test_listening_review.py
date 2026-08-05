@@ -52,3 +52,5 @@ def test_review_page_uses_opaque_audio_and_complete_rubric(tmp_path: Path, monke
     assert (results / "listening-audio" / "item-001-A.wav").read_bytes() == b"candidate"
     assert (results / "listening-audio" / "item-002-A.wav").read_bytes() == b"baseline-full"
     assert "listening-key" not in document
+    assert ".join('\\n')+'\\n'" in document
+    assert ".join('\n')+'\n'" not in document

@@ -46,6 +46,9 @@ mlx = [
 diagnostics = [
     "mlx-whisper==0.4.3",
 ]
+docs = [
+    "mkdocs==1.6.1",
+]
 
 [project.scripts]
 qwen-tts-worker = "qwen_tts_worker.__main__:main"

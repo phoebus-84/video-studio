@@ -43,8 +43,10 @@ def create(run: Path, output: Path) -> None:
         audio_a = html.escape(os.path.relpath(opaque_a, output.parent))
         audio_b = html.escape(os.path.relpath(opaque_b, output.parent))
         scores = "".join(
-            f'<label>{dimension.replace("_", " ")} A <input required type="number" min="1" max="5" name="{dimension}_A"></label>'
-            f'<label>{dimension.replace("_", " ")} B <input required type="number" min="1" max="5" name="{dimension}_B"></label>'
+            f'<label for="score-{index}-{dimension}-A">{dimension.replace("_", " ")} A</label>'
+            f'<input id="score-{index}-{dimension}-A" aria-label="Item {index} {dimension.replace("_", " ")} A" required type="number" min="1" max="5" name="{dimension}_A">'
+            f'<label for="score-{index}-{dimension}-B">{dimension.replace("_", " ")} B</label>'
+            f'<input id="score-{index}-{dimension}-B" aria-label="Item {index} {dimension.replace("_", " ")} B" required type="number" min="1" max="5" name="{dimension}_B">'
             for dimension in dimensions
         )
         explanation = (
@@ -58,24 +60,24 @@ def create(run: Path, output: Path) -> None:
 <div class="players"><label>A<audio controls preload="none" src="{audio_a}"></audio></label>
 <label>B<audio controls preload="none" src="{audio_b}"></audio></label></div>
 <div class="scores">{scores}</div>
-<label>Preference <select name="preference" required><option value="">choose</option><option>A</option><option>B</option><option>no preference</option></select></label>
-<label>Flags A <input name="flags_A" placeholder="pronunciation|omission|repetition|clipping|breath|pause|identity|boundary"></label>
-<label>Flags B <input name="flags_B" placeholder="pronunciation|omission|repetition|clipping|breath|pause|identity|boundary"></label>
-<label>Notes <textarea name="notes"></textarea></label></section>""")
+<label>Preference <select aria-label="Item {index} preference" name="preference" required><option value="">choose</option><option>A</option><option>B</option><option>no preference</option></select></label>
+<label>Flags A <input aria-label="Item {index} flags A" name="flags_A" placeholder="pronunciation|omission|repetition|clipping|breath|pause|identity|boundary"></label>
+<label>Flags B <input aria-label="Item {index} flags B" name="flags_B" placeholder="pronunciation|omission|repetition|clipping|breath|pause|identity|boundary"></label>
+<label>Notes <textarea aria-label="Item {index} notes" name="notes"></textarea></label></section>""")
     columns = [
         "listener_id", "item_id", "item_kind", "playback_setup", "timestamp",
         *(f"{dimension}_{side}" for dimension in DIMENSIONS for side in ("A", "B")),
         "preference", "flags_A", "flags_B", "notes",
     ]
-    document = f"""<!doctype html><meta charset="utf-8"><title>Blinded TTS review</title>
-<style>body{{font:16px system-ui;max-width:1100px;margin:auto;padding:2rem}}section{{border-top:2px solid #888;padding:1rem 0}}.players,.scores{{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}}label{{display:flex;justify-content:space-between;gap:1rem;margin:.35rem}}audio{{width:400px}}textarea{{width:70%;height:4rem}}input:invalid,select:invalid{{outline:2px solid #c33}}small{{font-weight:normal;color:#555}}</style>
+    document = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="A 55-item blinded A/B evaluation of local speech synthesis."><link rel="icon" href="data:,"><title>Blinded TTS review</title>
+<style>body{{font:16px system-ui;max-width:1100px;margin:auto;padding:2rem;color:#18201d;background:#f9fbfa}}section{{border-top:2px solid #6d7772;padding:1rem 0}}.players,.scores{{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}}label{{display:flex;justify-content:space-between;gap:1rem;margin:.35rem}}audio{{width:400px;max-width:100%}}textarea{{width:70%;height:4rem}}input:invalid,select:invalid{{outline:2px solid #b62f3c}}small{{font-weight:normal;color:#53605a}}@media(max-width:700px){{body{{padding:1rem}}.players,.scores{{grid-template-columns:1fr}}}}</style></head><body><main>
 <h1>Blinded TTS listening review</h1><p>Use headphones in a quiet room. Score each item once before optional replay. System identity is withheld. Complete all isolated segments and the final continuity assembly.</p>
 <form id="review"><label>Listener pseudonym <input required id="listener"></label><label>Playback setup <input required id="setup"></label>{''.join(sections)}
 <button type="submit">Download completed CSV</button></form>
 <script>
 const columns={json.dumps(columns)};
-document.querySelector('#review').addEventListener('submit', event=>{{event.preventDefault();const rows=[columns];const listener=document.querySelector('#listener').value;const setup=document.querySelector('#setup').value;const timestamp=new Date().toISOString();for(const section of document.querySelectorAll('section')){{const row={{listener_id:listener,item_id:section.dataset.item,item_kind:section.dataset.kind,playback_setup:setup,timestamp}};const dimensions=JSON.parse(section.dataset.dimensions);for(const name of [...dimensions.flatMap(d=>[d+'_A',d+'_B']),'preference','flags_A','flags_B','notes'])row[name]=section.querySelector(`[name="${{name}}"]`).value;rows.push(columns.map(c=>row[c]??''));}}const csv=rows.map(row=>row.map(value=>'"'+String(value).replaceAll('"','""')+'"').join(',')).join('\n')+'\n';const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{{type:'text/csv'}}));link.download='listening-'+listener+'.csv';link.click();}});
-</script>"""
+document.querySelector('#review').addEventListener('submit', event=>{{event.preventDefault();const rows=[columns];const listener=document.querySelector('#listener').value;const setup=document.querySelector('#setup').value;const timestamp=new Date().toISOString();for(const section of document.querySelectorAll('section')){{const row={{listener_id:listener,item_id:section.dataset.item,item_kind:section.dataset.kind,playback_setup:setup,timestamp}};const dimensions=JSON.parse(section.dataset.dimensions);for(const name of [...dimensions.flatMap(d=>[d+'_A',d+'_B']),'preference','flags_A','flags_B','notes'])row[name]=section.querySelector(`[name="${{name}}"]`).value;rows.push(columns.map(c=>row[c]??''));}}const csv=rows.map(row=>row.map(value=>'"'+String(value).replaceAll('"','""')+'"').join(',')).join('\\n')+'\\n';const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{{type:'text/csv'}}));link.download='listening-'+listener+'.csv';link.click();}});
+</script></main></body></html>"""
     output.write_text(document, encoding="utf-8")
 
 

@@ -46,6 +46,7 @@ pytest --cov=src/qwen_tts_worker --cov-report=term-missing
 - [Narration mastering](docs/MASTERING.md) — manifest order, boundary checks, two-pass loudness, and final provenance
 - [Narration migration](docs/NARRATION-MIGRATION.md) — canonical workspace contract, compatibility readers, timing, and staleness
 - [Production acceptance](docs/PRODUCTION-ACCEPTANCE.md) — controlled candidate, JaroMail/fairy runs, listener workflow, findings, and limitations
+- [Blinded review publication](docs/LISTENING-REVIEW.md) — key-free packaging, deferred GitHub Pages deployment, collection, and analysis
 
 ## Plan
 
