@@ -21,11 +21,14 @@ from qwen_tts_worker.models.registry import (
     ModelStatusReport,
 )
 from qwen_tts_worker.models.voices import (
+    CloneEnrollmentRequest,
+    ConsentSource,
     SynthesisMode,
     VoiceProfile,
     VoiceProfileCreate,
     VoiceProfilePreview,
     VoiceProfileUpdate,
+    VoiceConsent,
 )
 from qwen_tts_worker.models.jobs import (
     JobPhase,
@@ -81,11 +84,14 @@ __all__ = [
     "ModelSize",
     "ModelStatusReport",
     # Voices
+    "CloneEnrollmentRequest",
+    "ConsentSource",
     "SynthesisMode",
     "VoiceProfile",
     "VoiceProfileCreate",
     "VoiceProfilePreview",
     "VoiceProfileUpdate",
+    "VoiceConsent",
     # Jobs
     "JobPhase",
     "JobStatus",

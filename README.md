@@ -30,6 +30,7 @@ pytest --cov=src/qwen_tts_worker --cov-report=term-missing
 
 - [API Contract](docs/API.md) — public HTTP API reference
 - [Operator Guide](docs/OPERATOR.md) — deployment, configuration, monitoring
+- [Local voice cloning](docs/VOICE-CLONING.md) — consented Base enrollment, private references, synthesis, revocation, and limitations
 - [Contributing](docs/CONTRIBUTING.md) — development setup and conventions
 - [TTS quality pipeline](docs/TTS-QUALITY-PIPELINE.md) — investigation, architecture, evaluation design, and implementation plan
 - [English normalization](docs/NORMALIZATION.md) — supported spoken forms, lexicon policy, diagnostics, and source mapping

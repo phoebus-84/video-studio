@@ -185,23 +185,32 @@ List all voice profiles (previews).
 
 ### `POST /voices`
 
-Create a new voice profile.
+Create a preset or VoiceDesign descriptor. Clone profiles cannot be created through this shortcut: use consent-gated enrollment below. `speed` is exactly `1.0` because this backend has no supported Qwen speed control.
 
 #### Request body
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string (1-128) | yes | Human-readable label |
-| `mode` | `"preset"` \| `"clone"` \| `"design"` | yes | Synthesis method |
-| `preset_name` | string | when mode=preset | Qwen3-TTS preset |
-| `reference_audio_path` | string | when mode=clone | Path to reference audio |
-| `description` | string | when mode=design | VoiceDesign description |
-| `language` | string (2-8) | no (default "en") | BCP-47 tag |
-| `speed` | float (0.5-2.0) | no (default 1.0) | Speed multiplier |
+| `mode` | `"preset"` \| `"design"` | yes | Checkpoint synthesis method |
+| `preset_name` | string | when mode=preset | CustomVoice preset |
+| `description` | string (10-1000) | when mode=design | VoiceDesign description |
+| `language` | string (2-35) | no (default `en-US`) | BCP-47 metadata |
+| `speed` | exactly `1.0` | no | Unsupported values fail validation |
 
 #### Response `201 Created`
 
 Returns the full `VoiceProfile` object.
+
+### `POST /voices/enroll`
+
+Create a consented clone profile. The worker reads the explicitly named local source, converts it to mono 24 kHz PCM, validates 3-30 seconds of non-silent speech, hashes it, and privately copies it into the voice store. The supplied transcript must be the exact spoken content; the worker never guesses it.
+
+Required body fields are `name`, `reference_audio_path`, `reference_text`, `language`, and `consent`. Consent requires `confirmed: true`, `source` (`self_recorded`, `licensed`, or `synthetic`), a human statement, and `license_or_terms`.
+
+### `POST /voices/{voice_id}/synthesize`
+
+Synthesize with an enrolled clone through a verified **Base** checkpoint. This never routes reference audio to CustomVoice. The request accepts prepared `text`, backend `language`, `model_size`, sampling controls, token ceiling, and seed. The response records the immutable voice revision, Base model revision/identity, reference hashes, output hash, measured WAV properties, and provider mode. A tampered or missing reference, wrong profile, missing verified Base installation, malformed WAV, or live generation failure returns an error rather than fallback audio.
 
 ### `GET /voices/{voice_id}`
 
@@ -230,8 +239,7 @@ Update an existing voice profile. Only provided fields are changed.
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string (1-128) | New label |
-| `speed` | float (0.5-2.0) | New speed |
-| `language` | string (2-8) | New language |
+| `language` | string (2-35) | New language metadata |
 
 #### Response `200 OK`
 
@@ -239,7 +247,7 @@ Returns the updated `VoiceProfile`.
 
 ### `DELETE /voices/{voice_id}`
 
-Delete a voice profile.
+Revoke a voice profile by atomically removing its metadata and privately stored reference audio. Existing generated outputs remain separately auditable and must be deleted by the operator if desired.
 
 #### Response `204 No Content`
 

@@ -130,7 +130,7 @@ class TestVoiceModels:
     def test_voice_profile_creation_valid(self) -> None:
         vp = VoiceProfile(name="Narrator", mode=SynthesisMode.PRESET, preset_name="en-female-1")
         assert vp.name == "Narrator"
-        assert vp.language == "en"
+        assert vp.language == "en-US"
         assert vp.speed == 1.0
 
     def test_voice_profile_speed_range(self) -> None:
@@ -153,7 +153,6 @@ class TestVoiceModels:
         """Only provided fields must be set."""
         payload = VoiceProfileUpdate(name="Renamed")
         assert payload.name == "Renamed"
-        assert payload.speed is None
         assert payload.language is None
 
     def test_voice_profile_preview(self) -> None:

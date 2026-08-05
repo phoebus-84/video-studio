@@ -94,7 +94,7 @@ class TestVoiceCRUD:
     def test_list_voices(self, client: TestClient) -> None:
         # Create two voices
         client.post("/voices", json={"name": "A", "mode": "preset", "preset_name": "p1"})
-        client.post("/voices", json={"name": "B", "mode": "clone", "reference_audio_path": "/tmp/x.wav"})
+        client.post("/voices", json={"name": "B", "mode": "design", "description": "A calm and precise storyteller for technical explanations."})
         response = client.get("/voices")
         assert response.status_code == 200
         data = response.json()
