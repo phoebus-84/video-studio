@@ -1,100 +1,37 @@
-"""Download command for Qwen3-TTS MLX models.
-
-**Explicit, cancellable, and hash-audited.**  The command:
-
-1.  Checks available disk space before starting any transfer.
-2.  Supports cancellation via SIGINT (Ctrl+C) with clean cleanup.
-3.  Validates downloaded files against expected SHA-256 hashes.
-4.  Leaves auditable state — a ``.download.json`` manifest is
-    written alongside the model files.
-
-No model blobs are bundled in this repository.  This command is the
-**only** path to obtaining model files, and it must be invoked
-explicitly by an operator.
-"""
+"""Atomic, pinned, profile-aware Qwen3-TTS model installer."""
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 import shutil
 import signal
 import sys
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-# ---------------------------------------------------------------------------
-# Known model metadata
-# ---------------------------------------------------------------------------
-
-# Each entry declares a pinned Hugging Face revision and verified file size/hash.
-# Values were checked 2026-07-31 against HF blob metadata; the local 1.7B copy
-# was independently hashed. The CLI refuses any size or SHA-256 mismatch.
-_MODEL_METADATA: dict[str, dict] = {
-    "0.6B": {
-        "huggingface_repo": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
-        "revision": "049ef77fe8816b536193c0c25f9a214d17921282",
-        "expected_disk_bytes": 1_300_000_000,  # ~1.3 GB
-        "files": {
-            "model.safetensors": {
-                "size_bytes": 1_286_743_170,
-                "sha256": "3bcb2c4a127e6243e81a30b7126c7865f686d3559de4f938e5d3b150c6a9560d",
-            },
-            "config.json": {
-                "size_bytes": 6_058,
-                "sha256": "2eea3665564268139c3beb8d497fd3c2e4524e9eed5452836cdf1de96ed3cdbd",
-            },
-        },
-    },
-    "1.7B": {
-        "huggingface_repo": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-        "revision": "41d3337e8b7f2843a75841595fc14e4b9a7a4b96",
-        "expected_disk_bytes": 3_500_000_000,  # includes speech tokenizer headroom
-        "files": {
-            "model.safetensors": {
-                "size_bytes": 2_393_308_931,
-                "sha256": "b696f4bf45f54497b6de758981e76f1410bd68af05a657477dee466b0202df1a",
-            },
-            "config.json": {
-                "size_bytes": 6_058,
-                "sha256": "43f29f9ab55cf387bd2ce1d07e9d95a5ca8974fa2fda4e2b45c13ae64aad3bfa",
-            },
-        },
-    },
-}
-
-# Profiles that each model supports (same as the registry).
-_PROFILES: tuple[str, ...] = ("custom_voice", "voice_design", "base")
+from qwen_tts_worker.models.catalog import MODEL_SPECS, ModelSpec, get_model_spec
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+class DownloadError(RuntimeError):
+    pass
 
 
-class DownloadError(Exception):
-    """Raised when a download cannot proceed or fails."""
-
-
-def check_disk_space(models_root: Path, model_size: str) -> int:
-    """Return available disk bytes.  Raise ``DownloadError`` if insufficient.
-
-    We require at least *2×* the expected size to account for temporary
-    files during extraction/verification.
-    """
-    meta = _get_meta(model_size)
-    needed = meta["expected_disk_bytes"] * 2
-
-    usage = shutil.disk_usage(models_root)
-    free = usage.free
-
+def check_disk_space(models_root: Path, model_size: str, profile: str = "custom_voice") -> int:
+    try:
+        spec = get_model_spec(model_size, profile)
+    except KeyError as exc:
+        raise DownloadError(str(exc)) from exc
+    models_root.mkdir(parents=True, exist_ok=True)
+    free = shutil.disk_usage(models_root).free
+    needed = spec.expected_disk_bytes * 2
     if free < needed:
-        shortage = needed - free
         raise DownloadError(
-            f"Insufficient disk space. Need {_human_bytes(needed)}, "
-            f"have {_human_bytes(free)} (short by {_human_bytes(shortage)}). "
-            f"Free up space or use a different QTW_MODELS_DIR."
+            f"Insufficient disk space. Need {_human_bytes(needed)}, have {_human_bytes(free)}."
         )
     return free
 
@@ -103,263 +40,169 @@ def download_model(
     models_root: Path,
     model_size: str,
     *,
+    profile: str = "custom_voice",
     on_progress: Callable[[str], None] | None = None,
     cancel_event: Callable[[], bool] | None = None,
+    replace: bool = False,
 ) -> Path:
-    """Download a Qwen3-TTS MLX model to *models_root*.
+    """Download one exact checkpoint snapshot, verify it, and publish atomically."""
 
-    Args:
-        models_root: Root directory for model storage.
-        model_size: One of ``"0.6B"`` or ``"1.7B"``.
-        on_progress: Optional callback receiving status messages.
-        cancel_event: Optional callable returning ``True`` when
-            cancellation is requested.  Checked between phases.
-
-    Returns:
-        Path to the downloaded model directory.
-
-    Raises:
-        DownloadError: On any failure including cancellation, disk
-            shortage, or hash mismatch.
-    """
-    meta = _get_meta(model_size)
-
-    # 1. Pre-flight: disk check
-    _log(on_progress, f"Checking disk space under {models_root}...")
-    check_disk_space(models_root, model_size)
-    _log(on_progress, "Disk space OK.")
-
-    # 2. Create directory structure
-    model_dir = models_root / f"qwen3-tts-{model_size}"
-    model_dir.mkdir(parents=True, exist_ok=True)
-
-    # Each profile gets its own sub-directory.  The actual model weights
-    # live at the model level and are symlinked/copied into profile dirs
-    # by the lifecycle manager.  Here we lay down the skeleton.
-    for profile in _PROFILES:
-        (model_dir / profile).mkdir(parents=True, exist_ok=True)
-
-    # 3. Download each file
-    for fname, finfo in meta["files"].items():
-        if cancel_event and cancel_event():
-            raise DownloadError("Download cancelled by operator.")
-
-        dest = model_dir / fname
-        expected_sha = finfo["sha256"]
-
-        _log(on_progress, f"Downloading {fname} from {meta['huggingface_repo']}...")
-
-        # The actual download mechanism requires huggingface_hub or
-        # direct HTTP.  For now we validate the contract and leave a
-        # clear, typed error if the download library is missing.
-        _download_single(
-            repo_id=meta["huggingface_repo"],
-            revision=meta["revision"],
-            filename=fname,
-            dest=dest,
-            expected_sha256=expected_sha,
-            expected_size_bytes=finfo["size_bytes"],
-            on_progress=on_progress,
-            cancel_event=cancel_event,
-        )
-
-        _log(on_progress, f"Verified {fname} ✓")
-
-    # 4. Write audit manifest
-    manifest_path = model_dir / ".download.json"
-    manifest = {
-        "model_size": model_size,
-        "huggingface_repo": meta["huggingface_repo"],
-        "revision": meta["revision"],
-        "verification": "sha256-and-size",
-        "downloaded_files": {
-            fname: {
-                "sha256": _sha256_file(model_dir / fname),
-                "size_bytes": (model_dir / fname).stat().st_size,
-            }
-            for fname in meta["files"]
-        },
-    }
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    _log(on_progress, f"Audit manifest written to {manifest_path}")
-
-    return model_dir
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _download_single(
-    repo_id: str,
-    filename: str,
-    dest: Path,
-    expected_sha256: str,
-    on_progress: Callable[[str], None] | None,
-    cancel_event: Callable[[], bool] | None,
-    *,
-    revision: str | None = None,
-    expected_size_bytes: int | None = None,
-) -> None:
-    """Download a single file from HuggingFace Hub and verify its hash.
-
-    Requires ``huggingface_hub`` to be installed.  If it is missing,
-    raises a clear ``DownloadError`` with installation instructions.
-    """
-    # Deferred import — huggingface_hub is only needed for downloads.
     try:
-        from huggingface_hub import hf_hub_download  # type: ignore[import-untyped]
-    except ImportError:
+        spec = get_model_spec(model_size, profile)
+    except KeyError as exc:
+        raise DownloadError(str(exc)) from exc
+    models_root = models_root.expanduser().resolve()
+    _log(on_progress, f"Checking disk space for {spec.size}/{spec.profile}...")
+    check_disk_space(models_root, model_size, profile)
+    if cancel_event and cancel_event():
+        raise DownloadError("Download cancelled by operator.")
+    target = spec.path_under(models_root)
+    if target.exists() and not replace:
+        if _verify_directory(target, spec, require_manifest=True):
+            _log(on_progress, f"Already installed and verified: {target}")
+            return target
+        if _verify_directory(target, spec, require_manifest=False):
+            _write_manifest(target, spec)
+            _log(on_progress, f"Adopted matching legacy snapshot and wrote verified manifest: {target}")
+            return target
         raise DownloadError(
-            "huggingface_hub is required for model downloads. "
-            "Install it with: pip install huggingface_hub"
+            f"Installation already exists but does not match the pinned catalogue: {target}. "
+            "Inspect it, then rerun with --replace to remove it explicitly."
         )
-
     try:
-        downloaded = hf_hub_download(
-            repo_id=repo_id,
-            revision=revision,
-            filename=filename,
-            local_dir=dest.parent,
+        from huggingface_hub import snapshot_download  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise DownloadError(
+            "huggingface_hub is required. Install qwen-tts-worker with its 'mlx' extra."
+        ) from exc
+    temporary = Path(tempfile.mkdtemp(prefix=f".{spec.directory_name}.", dir=models_root))
+    try:
+        _log(on_progress, f"Downloading {spec.repository}@{spec.revision}...")
+        snapshot_download(
+            repo_id=spec.repository,
+            revision=spec.revision,
+            local_dir=temporary,
             local_dir_use_symlinks=False,
         )
+        shutil.rmtree(temporary / ".cache", ignore_errors=True)
+        if cancel_event and cancel_event():
+            raise DownloadError("Download cancelled by operator.")
+        _verify_directory(temporary, spec, require_manifest=False, raise_error=True)
+        _write_manifest(temporary, spec)
+        if not _verify_directory(temporary, spec, require_manifest=True):
+            raise DownloadError("post-manifest verification failed")
+        if target.exists():
+            if not replace:
+                raise DownloadError(f"target appeared during download: {target}")
+            shutil.rmtree(target)
+        os.replace(temporary, target)
+        _log(on_progress, f"Installed and verified {target}")
+        return target
+    except DownloadError:
+        raise
     except Exception as exc:
-        raise DownloadError(
-            f"Failed to download {filename} from {repo_id}: {exc}"
-        ) from exc
+        raise DownloadError(f"Failed to install {spec.repository}: {exc}") from exc
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
 
-    # Move to expected location if hf_hub_download placed it elsewhere.
-    downloaded_path = Path(downloaded)
-    if downloaded_path != dest:
-        shutil.move(str(downloaded_path), str(dest))
 
-    # Verify size before hashing so truncated/error pages fail clearly.
-    if expected_size_bytes is not None and dest.stat().st_size != expected_size_bytes:
-        actual_size = dest.stat().st_size
-        dest.unlink(missing_ok=True)
-        raise DownloadError(
-            f"Size mismatch for {filename}: expected {expected_size_bytes} bytes, "
-            f"got {actual_size} bytes"
+def _verify_directory(
+    directory: Path,
+    spec: ModelSpec,
+    *,
+    require_manifest: bool,
+    raise_error: bool = False,
+) -> bool:
+    try:
+        required = (
+            "model.safetensors", "config.json", "generation_config.json", "merges.txt",
+            "tokenizer_config.json", "vocab.json", "speech_tokenizer/model.safetensors",
+            "speech_tokenizer/config.json",
         )
+        missing = [name for name in required if not (directory / name).is_file()]
+        if missing: raise DownloadError(f"snapshot is missing: {', '.join(missing)}")
+        config = json.loads((directory / "config.json").read_text())
+        if config.get("model_type") != "qwen3_tts" or config.get("tts_model_type") != spec.profile:
+            raise DownloadError(
+                f"checkpoint type {config.get('tts_model_type')!r} does not match {spec.profile!r}"
+            )
+        for expected in spec.verified_files:
+            path = directory / expected.path
+            if path.stat().st_size != expected.size_bytes:
+                raise DownloadError(f"size mismatch for {expected.path}")
+            if _sha256_file(path) != expected.sha256:
+                raise DownloadError(f"SHA-256 mismatch for {expected.path}")
+        if require_manifest:
+            manifest = json.loads((directory / ".download.json").read_text())
+            if manifest.get("repository") != spec.repository or manifest.get("revision") != spec.revision:
+                raise DownloadError("download manifest source identity mismatch")
+        return True
+    except (OSError, json.JSONDecodeError, DownloadError) as exc:
+        if raise_error:
+            if isinstance(exc, DownloadError): raise
+            raise DownloadError(f"cannot verify model snapshot: {exc}") from exc
+        return False
 
-    # Verify hash
-    actual = _sha256_file(dest)
-    if actual != expected_sha256:
-        dest.unlink(missing_ok=True)
-        raise DownloadError(
-            f"Hash mismatch for {filename}:\n"
-            f"  expected: {expected_sha256}\n"
-            f"  got:      {actual}"
-        )
+
+def _write_manifest(directory: Path, spec: ModelSpec) -> None:
+    files = {
+        str(path.relative_to(directory)): {
+            "size_bytes": path.stat().st_size,
+            "sha256": _sha256_file(path),
+        }
+        for path in sorted(directory.rglob("*"))
+        if path.is_file() and path.name != ".download.json"
+    }
+    manifest = {
+        "schema_version": "1.0.0", "size": spec.size, "profile": spec.profile,
+        "repository": spec.repository, "revision": spec.revision,
+        "verification": "pinned-revision-critical-sha256-and-complete-file-manifest",
+        "installed_at": datetime.now(timezone.utc).isoformat(), "files": files,
+    }
+    temporary = directory / ".download.json.tmp"
+    temporary.write_text(json.dumps(manifest, indent=2) + "\n")
+    os.replace(temporary, directory / ".download.json")
 
 
 def _sha256_file(path: Path) -> str:
-    """Compute SHA-256 of a file.  Returns hex digest."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(1 << 20)  # 1 MiB chunks
-            if not chunk:
-                break
-            h.update(chunk)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _get_meta(model_size: str) -> dict:
-    """Return metadata dict for *model_size*, or raise DownloadError."""
-    if model_size not in _MODEL_METADATA:
-        raise DownloadError(
-            f"Unknown model size: '{model_size}'. "
-            f"Known sizes: {', '.join(_MODEL_METADATA)}"
-        )
-    return _MODEL_METADATA[model_size]
+def _log(callback: Callable[[str], None] | None, message: str) -> None:
+    (callback or (lambda value: print(value, file=sys.stderr)))(message)
 
 
-def _log(cb: Callable[[str], None] | None, msg: str) -> None:
-    """Send a progress message to the callback or print to stderr."""
-    if cb:
-        cb(msg)
-    else:
-        print(msg, file=sys.stderr)
-
-
-def _human_bytes(n: int) -> str:
-    """Format a byte count for human display."""
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if abs(n) < 1024:
-            return f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} PB"
-
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
+def _human_bytes(value: int) -> str:
+    amount = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if amount < 1024: return f"{amount:.1f} {unit}"
+        amount /= 1024
+    return f"{amount:.1f} PiB"
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Standalone download CLI for the Qwen3-TTS MLX model.
-
-    Usage::
-
-        python -m qwen_tts_worker.cli.download 0.6B
-        python -m qwen_tts_worker.cli.download 1.7B --models-dir /cache/models
-
-    The command is **explicit** — no automatic downloads are ever
-    triggered by the worker itself.
-    """
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Download a Qwen3-TTS MLX model.",
-    )
-    parser.add_argument(
-        "size",
-        choices=list(_MODEL_METADATA.keys()),
-        help="Model size to download.",
-    )
-    parser.add_argument(
-        "--models-dir",
-        type=Path,
-        default=None,
-        help="Models directory (default: QTW_MODELS_DIR env or ./models).",
-    )
+    parser = argparse.ArgumentParser(description="Install a pinned Qwen3-TTS MLX checkpoint.")
+    parser.add_argument("size", choices=sorted({spec.size for spec in MODEL_SPECS}))
+    parser.add_argument("--profile", choices=sorted({spec.profile for spec in MODEL_SPECS}), default="custom_voice")
+    parser.add_argument("--models-dir", type=Path)
+    parser.add_argument("--replace", action="store_true", help="Explicitly replace an unverified existing directory")
     args = parser.parse_args(argv)
-
-    # Resolve models directory
-    if args.models_dir:
-        models_dir = args.models_dir
-    else:
-        try:
-            from qwen_tts_worker.config import Settings
-            models_dir = Settings().models_dir
-        except Exception:
-            models_dir = Path("models")
-
-    # Cancellation handling
+    from qwen_tts_worker.config import Settings
+    models_dir = args.models_dir or Settings().models_dir
     cancelled = False
-
-    def _on_signal(signum: int, frame: object) -> None:
-        nonlocal cancelled
-        cancelled = True
-        signame = signal.Signals(signum).name
-        print(f"\n[{signame}] Cancelling download...", file=sys.stderr)
-
-    signal.signal(signal.SIGINT, _on_signal)
-    signal.signal(signal.SIGTERM, _on_signal)
-
+    def cancel(signum: int, frame: object) -> None:
+        nonlocal cancelled; cancelled = True
+        print(f"\n[{signal.Signals(signum).name}] Cancelling after the current Hub operation...", file=sys.stderr)
+    signal.signal(signal.SIGINT, cancel); signal.signal(signal.SIGTERM, cancel)
     try:
-        result = download_model(
-            models_dir,
-            args.size,
-            cancel_event=lambda: cancelled,
-        )
-        print(f"Downloaded {args.size} to {result}", file=sys.stderr)
+        download_model(models_dir, args.size, profile=args.profile,
+                       cancel_event=lambda: cancelled, replace=args.replace)
     except DownloadError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        parser.exit(1, f"error: {exc}\n")
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

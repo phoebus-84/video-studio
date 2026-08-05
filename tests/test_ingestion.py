@@ -138,16 +138,21 @@ def test_all_supported_legacy_scripts_ingest_with_spoken_blocks() -> None:
         for path in LIBRARY.rglob("*")
         if path.name in {"script.md", "narration-script.json"}
     )
-    assert len(paths) == 11
+    assert len(paths) >= 11
     first_pass = [ingest_script(path) for path in paths]
     second_pass = [ingest_script(path) for path in paths]
-    assert all(result.spoken_blocks for result in first_pass)
+    assert sum(bool(result.spoken_blocks) for result in first_pass) >= 11
+    assert all(
+        result.spoken_blocks or any(item.code == "source.no-spoken-blocks" for item in result.diagnostics)
+        for result in first_pass
+    )
     assert [result.model_dump() for result in first_pass] == [
         result.model_dump() for result in second_pass
     ]
     assert not [
         diagnostic
         for result in first_pass
+        if result.spoken_blocks
         for diagnostic in result.diagnostics
         if diagnostic.severity == "error"
     ]

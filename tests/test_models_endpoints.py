@@ -22,12 +22,12 @@ class TestModelsEndpoint:
         response = client.get("/models")
         assert response.status_code == 200
 
-    def test_list_models_returns_six_entries(self, client: TestClient) -> None:
-        """There must be exactly 6 known model entries (2 sizes × 3 profiles)."""
+    def test_list_models_returns_five_real_entries(self, client: TestClient) -> None:
+        """Only the five profile checkpoints that exist upstream are listed."""
         response = client.get("/models")
         data = response.json()
         assert isinstance(data, list)
-        assert len(data) == 6
+        assert len(data) == 5
 
     def test_each_entry_has_required_fields(self, client: TestClient) -> None:
         response = client.get("/models")
@@ -78,10 +78,9 @@ class TestGetModelBySizeProfile:
         assert data["profile"] == "base"
 
     def test_all_valid_combinations_return_200(self, client: TestClient) -> None:
-        """All 6 combinations must return 200."""
+        """All five real upstream combinations must return 200."""
         combinations = [
             ("0.6B", "custom_voice"),
-            ("0.6B", "voice_design"),
             ("0.6B", "base"),
             ("1.7B", "custom_voice"),
             ("1.7B", "voice_design"),
@@ -93,6 +92,11 @@ class TestGetModelBySizeProfile:
             data = response.json()
             assert data["size"] == size
             assert data["profile"] == profile
+
+    def test_unavailable_size_profile_returns_404(self, client: TestClient) -> None:
+        response = client.get("/models/0.6B/voice_design")
+        assert response.status_code == 404
+        assert "Unsupported combination" in response.json().get("error", "")
 
     def test_unknown_size_returns_404(self, client: TestClient) -> None:
         response = client.get("/models/999B/base")

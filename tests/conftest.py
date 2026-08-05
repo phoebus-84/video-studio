@@ -14,10 +14,14 @@ from qwen_tts_worker.app import create_app
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(tmp_path, monkeypatch) -> TestClient:
     """Return a TestClient for the fully configured application.
 
     Each test gets a fresh application instance with no shared state.
     """
+    monkeypatch.setenv("QTW_MODELS_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("QTW_VOICES_DIR", str(tmp_path / "voices"))
+    monkeypatch.setenv("QTW_OUTPUTS_DIR", str(tmp_path / "outputs"))
+    monkeypatch.setenv("QTW_ATTEMPT_STORE_DIR", str(tmp_path / "attempt-store"))
     app = create_app()
     return TestClient(app)

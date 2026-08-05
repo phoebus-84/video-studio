@@ -77,16 +77,14 @@ The server starts without loading a TTS model. Model readiness is visible via th
 
 ### Supported models
 
-The worker serves two Qwen3-TTS MLX model sizes:
+Each synthesis profile is a distinct checkpoint; profiles are never interchangeable runtime flags:
 
-| Size | Files | Profile support |
-|------|-------|----------------|
-| 0.6B | `model.safetensors`, `config.json` | base, custom_voice, voice_design |
-| 1.7B | `model.safetensors`, `config.json` | base, custom_voice, voice_design |
+| Size | CustomVoice presets | Base / cloning | VoiceDesign |
+|------|---------------------|----------------|-------------|
+| 0.6B | supported | supported | not published upstream |
+| 1.7B | supported | supported | supported |
 
-Each combination of size × profile is a separate entry. The registry
-only reports on combinations it knows — it never invents or claims
-unsupported configurations.
+`GET /models` therefore reports five real combinations, not a Cartesian product. A complete installation includes the text tokenizer and speech-tokenizer encoder/decoder as well as the main weights. `complete` reports whether files are usable; `verified: true` additionally proves a pinned repository revision and critical SHA-256 values through `.download.json`.
 
 ### Checking model status
 
@@ -113,16 +111,20 @@ Model downloads are **explicit** — the worker never downloads anything
 automatically. Use the CLI:
 
 ```bash
-python -m qwen_tts_worker.cli.download 0.6B
-python -m qwen_tts_worker.cli.download 1.7B --models-dir /cache/models
+python -m qwen_tts_worker.cli 0.6B --profile custom_voice
+python -m qwen_tts_worker.cli 1.7B --profile base --models-dir /cache/models
+python -m qwen_tts_worker.cli 1.7B --profile voice_design
 ```
 
 The download command:
 
-1. Checks available disk space before starting any transfer (requires 2× expected size).
-2. Verifies SHA-256 hashes of every downloaded file.
-3. Writes a `.download.json` audit manifest alongside the model.
-4. Supports cancellation via `SIGINT` (Ctrl+C).
+1. Resolves only a catalogue-listed size/profile and immutable Hugging Face revision.
+2. Checks available disk space before transfer (requires 2× installed-size headroom).
+3. Downloads the complete snapshot to a temporary sibling directory.
+4. Verifies checkpoint type plus main weights, config, and speech-tokenizer size/SHA-256.
+5. Hashes every installed file into `.download.json` and atomically publishes the directory.
+6. Adopts an older matching snapshot without downloading; mismatches require explicit `--replace`.
+7. Supports cancellation via `SIGINT` and never leaves a partially published target.
 
 ### Diagnostics
 
