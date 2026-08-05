@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BASE = join(__dirname, "..", "library", "explainers", "how-things-work", "gpu-architecture");
-const EPISODE_PATH = join(BASE, "artifacts", "episode.json");
+const ART_DIR_PATH = join(BASE, "artifacts", "art-direction.json");
 const IMG_DIR = join(BASE, "assets", "images");
 
 if (!existsSync(IMG_DIR)) mkdirSync(IMG_DIR, { recursive: true });
@@ -23,33 +23,36 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const scenes = JSON.parse(readFileSync(EPISODE_PATH, "utf-8"));
+// Use art-direction.json prompts (NOT episode.json intent) for consistency
+// See: video-built-in-pipelines/skills/art-direction.md
+const artDirection = JSON.parse(readFileSync(ART_DIR_PATH, "utf-8"));
 const client = new FalClient({ apiKey });
 
-console.log(`Generating ${scenes.length} images via nano-banana-pro...\n`);
+console.log(`Generating ${artDirection.scenes.length} images via nano-banana-pro...`);
+console.log(`Using art-direction.json prompts (not episode.json intent)\n`);
 
-for (const scene of scenes) {
+for (const scene of artDirection.scenes) {
   const id = scene.id;
   const outPath = join(IMG_DIR, `${id}.jpg`);
   
   if (existsSync(outPath)) {
     const stat = await import("node:fs/promises").then(fs => fs.stat(outPath));
     if (stat.size > 1000) {
-      console.log(`  s${id.replace("s", "")} ⏭️  already exists (${stat.size} bytes)`);
+      console.log(`  ${id} ⏭️  already exists (${stat.size} bytes)`);
       continue;
     }
   }
 
-  console.log(`  s${id.replace("s", "")} 🎨 generating...`);
+  console.log(`  ${id} 🎨 generating...`);
   
   try {
     // Client handles async polling + result fetching internally
     const job = await client.submitAndWait({
       profile: "fal-ai/nano-banana-pro@v1",
       params: {
-        prompt: scene.intent,
+        prompt: scene.prompt,  // ← art-direction prompt (NOT scene.intent)
         aspect_ratio: "16:9",
-        resolution: "1K",
+        resolution: "2K",
         output_format: "jpeg",
       },
     }, 2000, 300_000);
@@ -59,17 +62,17 @@ for (const scene of scenes) {
     if (imageUrl) {
       const img = await client.download(imageUrl);
       writeFileSync(outPath, img.data);
-      console.log(`  s${id.replace("s", "")} ✅ ${img.contentLength} bytes`);
+      console.log(`  ${id} ✅ ${img.contentLength} bytes @ 2K`);
     } else if (job.resultUrl) {
       // Fallback: download from result URL
       const img = await client.download(job.resultUrl);
       writeFileSync(outPath, img.data);
-      console.log(`  s${id.replace("s", "")} ✅ ${img.contentLength} bytes (via resultUrl)`);
+      console.log(`  ${id} ✅ ${img.contentLength} bytes @ 2K (via resultUrl)`);
     } else {
-      console.log(`  s${id.replace("s", "")} ❌ no image URL (status: ${job.status})`);
+      console.log(`  ${id} ❌ no image URL (status: ${job.status})`);
     }
   } catch (err: any) {
-    console.log(`  s${id.replace("s", "")} ❌ ${err.message}`);
+    console.log(`  ${id} ❌ ${err.message}`);
   }
   
   await new Promise(r => setTimeout(r, 2000));
