@@ -355,6 +355,13 @@ def validate_live_wav(data: bytes) -> WavInfo:
     )
 
 
+def _load_generate_audio():
+    """Import the optional MLX entry point only when live synthesis begins."""
+    from mlx_audio.tts.generate import generate_audio
+
+    return generate_audio
+
+
 def synthesize_with_qwen(
     request: SynthesizeRequest,
     model: CustomVoiceModel,
@@ -363,8 +370,7 @@ def synthesize_with_qwen(
 ) -> tuple[bytes, WavInfo]:
     """Map validated request controls exactly to mlx-audio 0.4.6."""
 
-    from mlx_audio.tts.generate import generate_audio
-
+    generate_audio = _load_generate_audio()
     _seed_mlx(request.seed)
     temporary_dir = Path(tempfile.mkdtemp(prefix="qwen-tts-"))
     try:

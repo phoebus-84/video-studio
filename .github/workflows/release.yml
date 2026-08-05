@@ -36,8 +36,9 @@ jobs:
       - run: |
           python -m build
           python -m twine check dist/*
-          cp requirements.txt requirements-macos.lock dist/
-          (cd dist && shasum -a 256 qwen_tts_worker-* requirements.txt requirements-macos.lock > SHA256SUMS)
+          (cd dist && shasum -a 256 qwen_tts_worker-* > SHA256SUMS)
+          shasum -a 256 requirements.txt >> dist/SHA256SUMS
+          cp requirements.txt dist/
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: "dist/*"

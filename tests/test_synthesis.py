@@ -186,9 +186,7 @@ class TestMlxArgumentMapping:
             captured.update(kwargs)
             write_tone(Path(kwargs["output_path"]) / "audio_000.wav")
 
-        monkeypatch.setattr(
-            "mlx_audio.tts.generate.generate_audio", fake_generate_audio
-        )
+        monkeypatch.setattr(synthesis_route, "_load_generate_audio", lambda: fake_generate_audio)
         monkeypatch.setattr(synthesis_route, "_seed_mlx", seeded.append)
         request = SynthesizeRequest(
             text="Exact spoken text.",
@@ -246,7 +244,7 @@ class TestMlxArgumentMapping:
         def fail(**kwargs: Any) -> None:
             raise RuntimeError("backend exploded")
 
-        monkeypatch.setattr("mlx_audio.tts.generate.generate_audio", fail)
+        monkeypatch.setattr(synthesis_route, "_load_generate_audio", lambda: fail)
         request = SynthesizeRequest(text="Hello", voice="serena")
         model = CustomVoiceModel(
             path=tmp_path / "model",

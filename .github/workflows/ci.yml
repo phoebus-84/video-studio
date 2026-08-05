@@ -42,7 +42,7 @@ jobs:
           python -m pip install --no-deps .
           python -m pip install pytest pytest-asyncio httpx pytest-cov
           python -m pip check
-      - run: python -c 'import mlx, mlx_audio; print(mlx.__version__)'
+      - run: python -c 'from importlib.metadata import version; import mlx, mlx_audio; print(version("mlx"), version("mlx-audio"))'
       - run: pytest -q
 
   package:
