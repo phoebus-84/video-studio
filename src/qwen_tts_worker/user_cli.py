@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 import platform
@@ -11,6 +13,7 @@ import shutil
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any
 
@@ -34,13 +37,20 @@ def _default_models_dir() -> Path:
 
 
 def _api(base_url: str, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+    parsed = urlparse(base_url)
+    hostname = parsed.hostname or ""
+    try: loopback = hostname.lower() == "localhost" or ipaddress.ip_address(hostname).is_loopback
+    except ValueError: loopback = hostname.lower() == "localhost"
+    if parsed.scheme != "http" or not loopback or parsed.username or parsed.password:
+        raise CliError("worker URL must be unauthenticated HTTP on an explicit loopback host")
     data = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
         base_url.rstrip("/") + path, data=data, method=method,
         headers={"content-type": "application/json", "accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        # Scheme, credentials, and explicit loopback host are validated above.
+        with urllib.request.urlopen(request, timeout=120) as response:  # nosec B310
             body = response.read()
             return json.loads(body) if body else None
     except urllib.error.HTTPError as exc:
@@ -66,6 +76,9 @@ def _copy_worker_wav(result: dict[str, Any], output: Path) -> None:
     if not source_name: raise CliError("worker response contains no wav_path")
     source = Path(source_name)
     if not source.is_file(): raise CliError(f"worker output is unavailable locally: {source}")
+    expected_hash = worker_result.get("wav_sha256")
+    if expected_hash is not None and hashlib.sha256(source.read_bytes()).hexdigest() != expected_hash:
+        raise CliError("worker output SHA-256 does not match its response provenance")
     output = output.expanduser().resolve(); output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(output.suffix + ".tmp")
     shutil.copyfile(source, temporary); os.replace(temporary, output)

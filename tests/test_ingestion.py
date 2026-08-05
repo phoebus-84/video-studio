@@ -133,6 +133,8 @@ def test_invalid_json_shapes_are_actionable(raw: bytes, message: str) -> None:
 
 
 def test_all_supported_legacy_scripts_ingest_with_spoken_blocks() -> None:
+    if not LIBRARY.is_dir():
+        pytest.skip("optional monorepo library is not present in standalone checkout")
     paths = sorted(
         path
         for path in LIBRARY.rglob("*")

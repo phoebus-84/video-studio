@@ -51,7 +51,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # Install in editable mode with dev dependencies
-pip install -e ".[dev]"
+pip install -e ".[mlx,dev,docs]"
 ```
 
 ## Running the service
@@ -92,16 +92,12 @@ The smoke downloads nothing. It produces two live canonical segments, verifies o
 
 ## Model registry conventions
 
-The model registry (`models/registry.py`) is the **single source of truth** for
-which model size/profile combinations are supported. When adding or removing
-model support:
+`models/catalog.py` is the **single source of truth** for supported size/profile combinations, immutable upstream revisions, installed size, and critical file hashes. `models/registry.py`, the installer, diagnostics, and cloning route all consume it. When changing support:
 
-1. Update `_SUPPORTED_COMBINATIONS` in `registry.py`.
-2. If a new model size is added, update `_MODEL_METADATA` in `cli/__init__.py`
-   with the download URL, expected size, and SHA-256 hashes.
-3. Update `docs/OPERATOR.md` — supported models table.
-4. Add tests for the new combination in both `test_registry.py` and
-   `test_models_endpoints.py`.
+1. Add or remove a real upstream checkpoint in `MODEL_SPECS`; never invent a Cartesian combination.
+2. Verify checkpoint type, exact revision, complete snapshot requirements, and critical SHA-256 values.
+3. Update the operator model matrix.
+4. Add catalogue, installer, registry, and endpoint tests.
 
 The registry never claims an unsupported combination exists. The
 `GET /models` endpoint returns exactly what the registry declares.
@@ -125,10 +121,12 @@ The registry never claims an unsupported combination exists. The
 
 ## Before submitting
 
-- All tests pass: `pytest`
-- No model or MLX dependencies are imported at test time
-- Documentation is updated for any API changes
-- The OpenAPI schema at `/openapi.json` reflects the new endpoints
+- All hardware-independent tests pass: `pytest`
+- `python -m compileall -q src` and `git diff --check` pass
+- `mkdocs build --strict` and wheel/sdist metadata checks pass
+- No model weights, private voice references, listener audio, or unblinding keys are staged
+- Live MLX dependencies remain lazy in hardware-independent tests
+- Documentation and the OpenAPI schema reflect API changes
 
 ## Beads workflow
 
@@ -140,4 +138,4 @@ bd show <id>      # Read issue details
 bd update <id> --claim  # Claim an issue
 ```
 
-Do not make git commits — Beads manages the workflow.
+Follow the active Beads profile. Do not push code or Dolt data unless the user or active repository profile explicitly authorizes it.

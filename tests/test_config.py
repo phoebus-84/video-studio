@@ -61,9 +61,9 @@ class TestSettingsEnvOverrides:
     """Environment variables with the QTW_ prefix must override defaults."""
 
     def test_env_override_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("QTW_HOST", "0.0.0.0")
+        monkeypatch.setenv("QTW_HOST", "::1")
         s = Settings()
-        assert s.host == "0.0.0.0"
+        assert s.host == "::1"
 
     def test_env_override_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("QTW_PORT", "9090")
@@ -97,6 +97,15 @@ class TestSettingsEnvOverrides:
 
 class TestSettingsValidation:
     """Invalid settings must be rejected at construction time."""
+
+    @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.4", "example.com", "::"])
+    def test_remote_host_binding_is_rejected(self, host: str) -> None:
+        with pytest.raises(Exception, match="loopback"):
+            Settings(host=host)
+
+    def test_multiple_workers_are_rejected(self) -> None:
+        with pytest.raises(Exception):
+            Settings(workers=2)
 
     def test_port_must_be_positive(self) -> None:
         with pytest.raises(Exception):  # pydantic ValidationError
@@ -137,6 +146,7 @@ class TestSettingsDirectoryCreation:
         Settings()
         assert d.exists()
         assert d.is_dir()
+        assert d.stat().st_mode & 0o777 == 0o700
 
     def test_outputs_dir_created(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         d = tmp_path / "test_outputs"
@@ -145,3 +155,4 @@ class TestSettingsDirectoryCreation:
         Settings()
         assert d.exists()
         assert d.is_dir()
+        assert d.stat().st_mode & 0o777 == 0o700

@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -75,10 +75,9 @@ class Settings(BaseSettings):
 
     # --- Concurrency -------------------------------------------------------
 
-    workers: int = Field(
+    workers: Literal[1] = Field(
         default=1,
-        ge=1,
-        description="Number of uvicorn worker processes. Keep at 1 for one warm MLX lifecycle.",
+        description="Exactly one process owns the warm MLX lifecycle.",
     )
 
     max_concurrent_attempt_jobs: int = Field(
@@ -153,12 +152,34 @@ class Settings(BaseSettings):
 
     # --- Validation --------------------------------------------------------
 
+    @field_validator("host")
+    @classmethod
+    def _loopback_only(cls, value: str) -> str:
+        """Refuse remote exposure because the local API has no authentication."""
+        import ipaddress
+
+        normalized = value.strip().lower()
+        if normalized == "localhost":
+            return value
+        try:
+            if ipaddress.ip_address(normalized).is_loopback:
+                return value
+        except ValueError:
+            pass
+        raise ValueError("QTW_HOST must be an explicit loopback address; remote binding is unsupported")
+
     @model_validator(mode="after")
     def _ensure_directories(self) -> Settings:
         """Create runtime directories if they do not exist."""
         directories = [self.models_dir, self.voices_dir, self.outputs_dir]
         if self.attempt_store_dir is not None:
             directories.append(self.attempt_store_dir)
+        private_directories = {self.voices_dir, self.outputs_dir}
+        if self.attempt_store_dir is not None:
+            private_directories.add(self.attempt_store_dir)
         for directory in directories:
+            existed = directory.exists()
             directory.mkdir(parents=True, exist_ok=True)
+            if not existed and directory in private_directories:
+                directory.chmod(0o700)
         return self

@@ -9,7 +9,13 @@ from pathlib import Path
 import pytest
 
 from qwen_tts_worker import macos_service
-from qwen_tts_worker.user_cli import CliError, _copy_worker_wav, build_parser, run
+from qwen_tts_worker.user_cli import CliError, _api, _copy_worker_wav, build_parser, run
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "https://127.0.0.1:8000", "http://example.com:8000"])
+def test_api_rejects_nonlocal_or_unexpected_url_schemes(url: str) -> None:
+    with pytest.raises(CliError, match="loopback"):
+        _api(url, "GET", "/health")
 
 
 def test_parser_exposes_production_commands() -> None:
@@ -50,6 +56,8 @@ def test_copy_worker_wav_is_atomic_and_rejects_failed_result(tmp_path: Path) -> 
     assert output.read_bytes() == source.read_bytes()
     with pytest.raises(CliError, match="generation broke"):
         _copy_worker_wav({"ok": False, "result": {"status": "failed", "error": "generation broke"}}, output)
+    with pytest.raises(CliError, match="SHA-256"):
+        _copy_worker_wav({"wav_path": str(source), "wav_sha256": "0" * 64}, output)
 
 
 def test_clone_cli_forwards_explicit_consent(monkeypatch: pytest.MonkeyPatch, capsys) -> None:

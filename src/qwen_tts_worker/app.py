@@ -14,19 +14,65 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from qwen_tts_worker import __version__
 from qwen_tts_worker.models.errors import ErrorDetail, ErrorEnvelope
 from qwen_tts_worker.routes import api_router
+
+
+class RequestBodyLimitMiddleware:
+    """Buffer bounded JSON requests so chunked bodies cannot evade the limit."""
+
+    def __init__(self, app: ASGIApp, maximum_bytes: int) -> None:
+        self.app = app
+        self.maximum_bytes = maximum_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+        declared = dict(scope.get("headers", [])).get(b"content-length")
+        if declared is not None:
+            try: declared_size = int(declared)
+            except ValueError:
+                await JSONResponse(status_code=400, content={"error": "Invalid Content-Length", "detail": []})(scope, receive, send)
+                return
+            if declared_size < 0:
+                await JSONResponse(status_code=400, content={"error": "Invalid Content-Length", "detail": []})(scope, receive, send)
+                return
+            if declared_size > self.maximum_bytes:
+                await self._reject(scope, receive, send, declared_size)
+                return
+        messages: list[Message] = []
+        received = 0
+        while True:
+            message = await receive(); messages.append(message)
+            if message["type"] == "http.disconnect": break
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.maximum_bytes:
+                    await self._reject(scope, receive, send, received)
+                    return
+                if not message.get("more_body", False): break
+        iterator = iter(messages)
+        async def replay() -> Message:
+            try: return next(iterator)
+            except StopIteration: return {"type": "http.disconnect"}
+        await self.app(scope, replay, send)
+
+    async def _reject(self, scope: Scope, receive: Receive, send: Send, size: int) -> None:
+        await JSONResponse(status_code=413, content={
+            "error": "Request body exceeds local safety limit",
+            "detail": [{"msg": f"received={size}, maximum={self.maximum_bytes}", "type": "request_too_large"}],
+        })(scope, receive, send)
 
 
 @asynccontextmanager
@@ -97,26 +143,8 @@ def create_app() -> FastAPI:
     )
 
     # --- Middleware: local request/body limits and request-id injection ---
-    @app.middleware("http")
-    async def enforce_request_size(request: Request, call_next):
-        from qwen_tts_worker.config import Settings
-
-        declared = request.headers.get("content-length")
-        if declared is not None:
-            try:
-                size = int(declared)
-            except ValueError:
-                return JSONResponse(status_code=400, content={"error": "Invalid Content-Length", "detail": []})
-            maximum = Settings().max_request_body_bytes
-            if size > maximum:
-                return JSONResponse(
-                    status_code=413,
-                    content={
-                        "error": "Request body exceeds local safety limit",
-                        "detail": [{"msg": f"declared={size}, maximum={maximum}", "type": "request_too_large"}],
-                    },
-                )
-        return await call_next(request)
+    from qwen_tts_worker.config import Settings
+    app.add_middleware(RequestBodyLimitMiddleware, maximum_bytes=Settings().max_request_body_bytes)
 
     @app.middleware("http")
     async def add_request_id(request: Request, call_next):
@@ -124,6 +152,9 @@ def create_app() -> FastAPI:
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
     # --- Exception handlers ---
@@ -185,16 +216,6 @@ def create_app() -> FastAPI:
     # --- Routes ---
     app.include_router(api_router)
 
-    # Mount voices directory for WAV file serving
-    import os
-    voices_dir = os.environ.get(
-        "QTW_VOICES_DIR",
-        os.environ.get(
-            "TTS_VOICES_DIR",
-            str(Path(__file__).resolve().parents[2] / "voices"),
-        ),
-    )
-    os.makedirs(voices_dir, exist_ok=True)
-    app.mount("/voices", StaticFiles(directory=voices_dir), name="voices")
-
+    # Voice references, exact transcripts, consent records, and outputs are never
+    # mounted as static files. Local clients receive explicit immutable paths.
     return app

@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  verify-and-release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Verify tag matches package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          PACKAGE_VERSION=$(PYTHONPATH=src python -c 'import qwen_tts_worker; print(qwen_tts_worker.__version__)')
+          test "$TAG" = "v$PACKAGE_VERSION"
+      - run: brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements.txt
+          python -m pip install --no-deps .
+          python -m pip install pytest pytest-asyncio httpx pytest-cov mkdocs==1.6.1 build twine
+          python -m pip check
+      - run: pytest -q
+      - run: mkdocs build --strict --site-dir /tmp/qtw-doc-site
+      - run: |
+          python -m build
+          python -m twine check dist/*
+          cp requirements.txt requirements-macos.lock dist/
+          (cd dist && shasum -a 256 qwen_tts_worker-* requirements.txt requirements-macos.lock > SHA256SUMS)
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+      - name: Create immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --verify-tag --generate-notes

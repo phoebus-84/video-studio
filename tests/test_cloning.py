@@ -50,6 +50,9 @@ def test_enroll_copy_fake_synthesize_and_revoke(
     assert hashlib.sha256(stored.read_bytes()).hexdigest() == created["reference_audio_sha256"]
     assert oct(stored.stat().st_mode & 0o777) == "0o600"
     source.unlink()
+    private_url = "/" + created["reference_audio_path"]
+    assert client.get(f"/voices{private_url}").status_code == 404
+    assert "reference_text" not in client.get("/voices").text
 
     monkeypatch.setenv("QTW_TTS_MODE", "fake")
     synthesized = client.post(

@@ -253,6 +253,8 @@ def test_invalid_limits_and_outer_whitespace_fail_validation() -> None:
 
 
 def test_default_policy_segments_every_repository_block_and_reports_limits() -> None:
+    if not LIBRARY.is_dir():
+        pytest.skip("optional monorepo library is not present in standalone checkout")
     paths = sorted(
         path
         for path in LIBRARY.rglob("*")

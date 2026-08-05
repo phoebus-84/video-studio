@@ -5,20 +5,21 @@
 ## Prerequisites
 
 - Python 3.10 or later
-- macOS with Apple Silicon (M1/M2/M3/M4) for production; any platform for development/testing
+- macOS 14+ with Apple Silicon (M1/M2/M3/M4) for production; any platform for hardware-independent development/testing
 - pip 23+
 
 ## Installation
 
 ```bash
 cd qwen-tts-worker
-pip install -e ".[dev]"
+pip install -e ".[mlx,dev]"
 ```
 
-For production deployment, install without dev dependencies:
+For a reproducible Apple-Silicon production deployment, install the hash-locked Python 3.12/macOS 14+ runtime before the package:
 
 ```bash
-pip install .
+pip install --require-hashes -r requirements.txt
+pip install --no-deps .
 ```
 
 ## Configuration
@@ -28,7 +29,7 @@ A `.env` file in the working directory is also supported.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `QTW_HOST` | `127.0.0.1` | IP to bind |
+| `QTW_HOST` | `127.0.0.1` | Explicit loopback IP or `localhost`; remote/wildcard binds are rejected |
 | `QTW_PORT` | `8000` | TCP port |
 | `QTW_UNIX_SOCKET` | *(none)* | Path to Unix socket (takes priority over host/port) |
 | `QTW_LOG_LEVEL` | `info` | `debug`, `info`, `warning`, `error`, or `critical` |
@@ -36,10 +37,10 @@ A `.env` file in the working directory is also supported.
 | `QTW_TTS_MODE` | `live` | `live` fails closed; set `fake` explicitly for CI-only silent fixtures |
 | `QTW_MODEL_PATH` | *(installed CustomVoice profile)* | Exact Qwen3-TTS CustomVoice directory for `/synthesize` |
 | `QTW_MODEL_IDLE_TIMEOUT_SECONDS` | *(disabled)* | Unload the warm model after this many idle seconds; minimum 1 |
-| `QTW_WORKERS` | `1` | Uvicorn worker processes; keep 1 for one warm MLX lifecycle |
+| `QTW_WORKERS` | `1` | Must be exactly 1 so one process owns the warm MLX lifecycle |
 | `QTW_MAX_CONCURRENT_ATTEMPT_JOBS` | `1` | Maximum durable jobs in running state |
 | `QTW_MINIMUM_FREE_DISK_BYTES` | `536870912` | Block submission/execution below this attempt-store free space |
-| `QTW_MAX_REQUEST_BODY_BYTES` | `2000000` | Reject larger declared HTTP request bodies before parsing |
+| `QTW_MAX_REQUEST_BODY_BYTES` | `2000000` | Buffer and reject larger declared or chunked JSON bodies before parsing |
 | `QTW_GRACEFUL_TIMEOUT` | `30.0` | Max seconds to drain in-flight requests on shutdown |
 | `QTW_MODELS_DIR` | `models` | Directory for downloaded model files |
 | `QTW_VOICES_DIR` | `voices` | Directory for voice profiles |
@@ -56,6 +57,10 @@ qwen-tts-worker
 ```
 
 When a Unix socket is set, the server binds only to the socket — `HOST` and `PORT` are ignored.
+
+### Local security boundary
+
+The HTTP API has no remote authentication and can enroll a reference from an explicit local filesystem path. For that reason, non-loopback TCP hosts and multiple worker processes fail configuration validation. Voice references, exact transcripts, consent metadata, and output directories are never mounted as static web content. New voice/output stores use owner-only directory permissions, while the LaunchAgent also applies umask `077`. CORS permits only the designated loopback UI origins. Use a private Unix socket when multiple local accounts share a Mac.
 
 ## Running
 
@@ -158,7 +163,7 @@ A healthy service responds with:
   "dependencies": [...],
   "uptime_seconds": 123.4,
   "timestamp": "2026-07-27T12:00:00Z",
-  "version": "0.1.0"
+  "version": "1.0.0"
 }
 ```
 

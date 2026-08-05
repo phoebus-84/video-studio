@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qwen-tts-worker"
-version = "0.1.0"
+version = "1.0.0"
 description = "Persistent local Qwen3-TTS worker on Apple Silicon via MLX"
 readme = "README.md"
 license = { text = "MIT" }
@@ -13,7 +13,7 @@ authors = [
     { name = "phoebus-84" },
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS :: MacOS X",

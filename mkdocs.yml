@@ -10,6 +10,8 @@ nav:
   - API: API.md
   - Operator guide: OPERATOR.md
   - Quality architecture: TTS-QUALITY-PIPELINE.md
+  - Native batching: BATCHING.md
   - Production evidence: PRODUCTION-ACCEPTANCE.md
   - Blinded review: LISTENING-REVIEW.md
   - Contributing: CONTRIBUTING.md
+  - Releasing: RELEASING.md

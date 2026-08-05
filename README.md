@@ -14,7 +14,8 @@ The worker does not spawn and reload Python for every Pi tool call. A typed loca
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/pip install -e '.[mlx,dev]'
+.venv/bin/pip install --require-hashes -r requirements.txt
+.venv/bin/pip install --no-deps -e .
 .venv/bin/qwen-tts install 1.7B --profile custom_voice
 .venv/bin/qwen-tts serve
 ```
@@ -35,11 +36,14 @@ pytest --cov=src/qwen_tts_worker --cov-report=term-missing
 - [macOS CLI](docs/MACOS-CLI.md) — installation, LaunchAgent lifecycle, diagnostics, synthesis, and recovery
 - [Local voice cloning](docs/VOICE-CLONING.md) — consented Base enrollment, private references, synthesis, revocation, and limitations
 - [Contributing](docs/CONTRIBUTING.md) — development setup and conventions
+- [Releasing](docs/RELEASING.md) — clean-room gates, signed tags, checksums, provenance, verification, and incidents
+- [Changelog](CHANGELOG.md) — production release capabilities, security boundary, and explicit quality limitations
 - [TTS quality pipeline](docs/TTS-QUALITY-PIPELINE.md) — investigation, architecture, evaluation design, and implementation plan
 - [English normalization](docs/NORMALIZATION.md) — supported spoken forms, lexicon policy, diagnostics, and source mapping
 - [Dialogue turns](docs/DIALOGUE.md) — narration/character separation, attribution policy, ambiguity, and conservation
 - [Semantic segmentation](docs/SEGMENTATION.md) — measured limits, protected boundaries, stable IDs, pauses, and reporting
 - [Voice direction](docs/VOICE-DIRECTION.md) — stable preset identity, bounded delivery deltas, and continuity rules
+- [Native batching evaluation](docs/BATCHING.md) — measured speed benefit, segment-seed coupling, and no-adoption decision
 - [Signal validation](docs/SIGNAL-VALIDATION.md) — calibrated objective checks, rejection, review, and quality retry
 - [Advisory diagnostics](docs/ADVISORY-DIAGNOSTICS.md) — local ASR/boundary evaluation, calibration evidence, bias, and no-gate decision
 - [Audio processing](docs/AUDIO-PROCESSING.md) — non-destructive edge trim, exact pauses, provenance, and fade decision

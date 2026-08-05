@@ -4,7 +4,7 @@ This is the supported single-user workflow for a local Apple-Silicon Mac. It ins
 
 ## Prerequisites
 
-- Apple Silicon (`arm64`) macOS;
+- Apple Silicon (`arm64`) macOS 14 or later;
 - Python 3.10-3.12 (3.12 is the release-test target);
 - FFmpeg available on `PATH` (`brew install ffmpeg`);
 - enough free disk: about 4.3 GiB for each 1.7B 8-bit profile plus temporary download headroom.
@@ -15,7 +15,8 @@ This is the supported single-user workflow for a local Apple-Silicon Mac. It ins
 cd qwen-tts-worker
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/pip install -e '.[mlx]'
+.venv/bin/pip install --require-hashes -r requirements.txt
+.venv/bin/pip install --no-deps -e .
 
 # Preset speakers:
 .venv/bin/qwen-tts install 1.7B --profile custom_voice

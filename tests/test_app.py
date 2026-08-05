@@ -46,7 +46,7 @@ class TestRouteRegistration:
 
     def test_openapi_schema_has_version(self, client: TestClient) -> None:
         response = client.get("/openapi.json")
-        assert response.json()["info"]["version"] == "0.1.0"
+        assert response.json()["info"]["version"] == "1.0.0"
 
     def test_docs_endpoint_available(self, client: TestClient) -> None:
         response = client.get("/docs")
@@ -63,6 +63,12 @@ class TestRequestID:
     def test_404_has_request_id(self, client: TestClient) -> None:
         response = client.get("/nope")
         assert "X-Request-ID" in response.headers
+
+    def test_sensitive_api_responses_disable_caching_and_sniffing(self, client: TestClient) -> None:
+        response = client.get("/voices")
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "no-referrer"
 
     def test_request_ids_are_unique(self, client: TestClient) -> None:
         ids = set()
