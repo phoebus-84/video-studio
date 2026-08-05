@@ -20,7 +20,11 @@ jobs:
       - uses: github/codeql-action/init@v4
         with:
           languages: python
+      # This private repository has no GitHub code-scanning entitlement. Keep
+      # analysis in CI, but do not fail after a successful scan on SARIF upload.
       - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
 
   static-security:
     runs-on: ubuntu-latest

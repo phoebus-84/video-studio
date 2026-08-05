@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 EVALUATION = Path(__file__).resolve().parent.parent / "evaluation"
 sys.path.insert(0, str(EVALUATION))
 try:
@@ -18,8 +20,11 @@ finally:
 
 
 def test_reviewed_dialogue_mapping_is_complete_and_attribution_stays_narration() -> None:
+    script = acceptance.DEFAULT_EPISODE / "artifacts" / "script.md"
+    if not script.is_file():
+        pytest.skip("optional monorepo fairy-tale source is not present in standalone checkout")
     plans = acceptance.make_plans(
-        acceptance.DEFAULT_EPISODE / "artifacts" / "script.md"
+        script
     )
     assert len(plans) == 41
     assert {profile for _, profile, _ in plans} == {

@@ -23,7 +23,7 @@ from qwen_tts_worker.segmentation import SegmentationInput, segment_speech
 
 
 ROOT = Path(__file__).resolve().parent.parent
-MODEL = ROOT / "models" / "qwen3-tts-1.7b-customvoice-8bit"
+CUSTOMVOICE_CONFIG_FIXTURE = ROOT / "tests" / "fixtures" / "customvoice-config.json"
 DIRECTION_FIXTURE = ROOT / "evaluation" / "fixtures" / "direction-continuity-v1.json"
 QUALITY_FIXTURE = ROOT / "evaluation" / "fixtures" / "quality-v1.json"
 
@@ -42,6 +42,15 @@ def profile(**changes: object) -> CustomVoiceDirectionProfile:
     }
     values.update(changes)
     return CustomVoiceDirectionProfile(**values)
+
+
+def capabilities(tmp_path: Path):
+    """Use a checked-in config fixture, never an ignored model installation."""
+    model = tmp_path / "customvoice-model"
+    model.mkdir()
+    config = model / "config.json"
+    config.write_bytes(CUSTOMVOICE_CONFIG_FIXTURE.read_bytes())
+    return discover_customvoice_capabilities(model), config
 
 
 def semantic_segment(*, speaker: str = "narrator-under-test", language: str = "en-US"):
@@ -63,21 +72,21 @@ def semantic_segment(*, speaker: str = "narrator-under-test", language: str = "e
     return segment_speech((item,)).segments[0]
 
 
-def test_capabilities_are_discovered_from_installed_config() -> None:
-    capabilities = discover_customvoice_capabilities(MODEL)
-    assert capabilities.config_sha256 == hashlib.sha256((MODEL / "config.json").read_bytes()).hexdigest()
-    assert capabilities.speakers == tuple(sorted(capabilities.speakers))
-    assert {"serena", "vivian", "uncle_fu", "ryan"}.issubset(capabilities.speakers)
-    assert {"auto", "english", "french", "japanese"}.issubset(capabilities.backend_languages)
-    validate_direction_profile(profile(), capabilities)
+def test_capabilities_are_discovered_from_checked_in_config(tmp_path: Path) -> None:
+    discovered, config = capabilities(tmp_path)
+    assert discovered.config_sha256 == hashlib.sha256(config.read_bytes()).hexdigest()
+    assert discovered.speakers == tuple(sorted(discovered.speakers))
+    assert {"serena", "vivian", "uncle_fu", "ryan"}.issubset(discovered.speakers)
+    assert {"auto", "english", "french", "japanese"}.issubset(discovered.backend_languages)
+    validate_direction_profile(profile(), discovered)
 
 
-def test_unknown_speaker_and_language_fail_before_synthesis() -> None:
-    capabilities = discover_customvoice_capabilities(MODEL)
+def test_unknown_speaker_and_language_fail_before_synthesis(tmp_path: Path) -> None:
+    discovered, _ = capabilities(tmp_path)
     with pytest.raises(DirectionError, match="unsupported CustomVoice speaker"):
-        validate_direction_profile(profile(backend_speaker="invented"), capabilities)
+        validate_direction_profile(profile(backend_speaker="invented"), discovered)
     with pytest.raises(DirectionError, match="unsupported backend language"):
-        validate_direction_profile(profile(backend_language="klingon"), capabilities)
+        validate_direction_profile(profile(backend_language="klingon"), discovered)
 
 
 def test_neutral_delta_is_exact_stable_base_instruction() -> None:
@@ -126,14 +135,14 @@ def test_delta_contradictions_fail_actionably() -> None:
         compose_direction(selected, DeliveryDelta(pace="quicker"))
 
 
-def test_direct_segment_builds_final_plan_without_changing_identity() -> None:
-    capabilities = discover_customvoice_capabilities(MODEL)
+def test_direct_segment_builds_final_plan_without_changing_identity(tmp_path: Path) -> None:
+    discovered, _ = capabilities(tmp_path)
     segment = semantic_segment()
     directed = direct_segment(
         segment,
         profile(),
         delta=DeliveryDelta(emotion="warm", intent="narrate"),
-        capabilities=capabilities,
+        capabilities=discovered,
     )
     plan = directed.segment_plan
     assert plan.segment_id == segment.segment_id
