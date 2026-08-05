@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Build documentation
@@ -44,8 +44,8 @@ jobs:
           PYTHONPATH=src python evaluation/package_listening_review.py verify \
             --archive /tmp/review/candidate-qtw-v1-listening-review.tar.gz \
             --destination site/listening/candidate-qtw-v1
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
   deploy:
@@ -57,4 +57,4 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
