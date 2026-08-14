@@ -1,0 +1,37 @@
+# Canonical workspace tree — expected files at each level
+# Lines starting with # are comments.
+# One path per line, relative to the workspace root at each level.
+#
+# Channel:
+channel.md
+settings.yaml
+.workspace/contract.json
+.workspace/metadata.json
+#
+# Series:
+series.md
+settings.yaml
+visual-bible.md
+voice-profiles/
+pipelines/
+skills/
+sources/
+.workspace/contract.json
+.workspace/metadata.json
+#
+# Episode:
+episode.yaml
+source/
+artifacts/
+prompts/
+assets/images/
+assets/graphics/
+assets/audio/
+assets/manifest.json
+attempts/
+reviews/threads.jsonl
+journal/events.jsonl
+output/
+output/current.json
+.workspace/contract.json
+.workspace/metadata.json
