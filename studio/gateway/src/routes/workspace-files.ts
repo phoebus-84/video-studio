@@ -21,6 +21,12 @@ import {
   seriesPath,
   episodePath,
 } from "@studio/contracts/src/layout.mjs";
+import {
+  recordRevision,
+  listRevisions,
+  readRevision,
+  restoreRevision,
+} from "./revisions.js";
 
 export type Level = "channel" | "series" | "episode";
 
@@ -104,7 +110,7 @@ const fail = (reply: FastifyReply, status: number, error: string, message: strin
 // ── Listing ─────────────────────────────────────────────────────────────────
 
 /** Names that are never content and are hidden from listings. */
-const HIDDEN = new Set([".DS_Store", ".workspace"]);
+const HIDDEN = new Set([".DS_Store", ".workspace", ".revisions"]);
 
 async function listDirectory(dir: string, levelDir: string, recursive: boolean): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
@@ -290,6 +296,102 @@ export function registerWorkspaceFileRoutes(
     return reply.send({ from: body.from, to: body.to });
   });
 
+  // ── Write, snapshotting the previous content ──────────────────────────
+  app.put(`${prefix}/files`, {
+    schema: {
+      description: `Write a file at the ${level} level, keeping the previous version.`,
+      tags: ["workspace"],
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = request.body as { path?: string; content?: string; expectedRevision?: string };
+    if (!body?.path) return fail(reply, 400, "BAD_REQUEST", "path is required");
+
+    const levelDir = dirFor(request);
+    const target = resolveInside(levelDir, body.path);
+    if (!target) return fail(reply, 403, "FORBIDDEN", "Path escapes the workspace");
+
+    // Optimistic concurrency: refuse a write based on a stale read.
+    if (body.expectedRevision) {
+      try {
+        const current = await fs.readFile(target);
+        const actual = computeRevision(current);
+        if (actual !== body.expectedRevision) {
+          return fail(
+            reply,
+            409,
+            "CONFLICT",
+            `File changed since it was read (expected ${body.expectedRevision}, found ${actual})`,
+          );
+        }
+      } catch { /* file is new; nothing to conflict with */ }
+    }
+
+    const previous = await recordRevision(levelDir, body.path, target, "edit");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const content = Buffer.from(body.content ?? "", "utf-8");
+    await fs.writeFile(target, content);
+
+    return reply.send({
+      path: body.path,
+      revision: computeRevision(content),
+      previousRevision: previous?.id ?? null,
+    });
+  });
+
+  // ── Revisions ─────────────────────────────────────────────────────────
+  app.get(`${prefix}/revisions`, {
+    schema: {
+      description: `List stored versions of a file at the ${level} level.`,
+      tags: ["workspace"],
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const query = request.query as { path?: string; id?: string };
+    if (!query?.path) return fail(reply, 400, "BAD_REQUEST", "path is required");
+
+    const levelDir = dirFor(request);
+    if (!resolveInside(levelDir, query.path)) {
+      return fail(reply, 403, "FORBIDDEN", "Path escapes the workspace");
+    }
+
+    // With `id`, return that version's bytes rather than the list.
+    if (query.id) {
+      const content = await readRevision(levelDir, query.path, query.id);
+      if (content === null) {
+        return fail(reply, 404, "NOT_FOUND", `No such revision: ${query.id}`);
+      }
+      const type = contentTypeFor(query.path);
+      if (type) reply.header("content-type", type);
+      return reply.send(isTextFile(query.path) ? content.toString("utf-8") : content);
+    }
+
+    return reply.send({
+      path: query.path,
+      revisions: await listRevisions(levelDir, query.path),
+    });
+  });
+
+  app.post(`${prefix}/revisions/restore`, {
+    schema: {
+      description: `Restore a stored version over the live file at the ${level} level.`,
+      tags: ["workspace"],
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = request.body as { path?: string; id?: string };
+    if (!body?.path || !body?.id) {
+      return fail(reply, 400, "BAD_REQUEST", "path and id are required");
+    }
+
+    const levelDir = dirFor(request);
+    const target = resolveInside(levelDir, body.path);
+    if (!target) return fail(reply, 403, "FORBIDDEN", "Path escapes the workspace");
+
+    const result = await restoreRevision(levelDir, body.path, target, body.id);
+    if (!result) return fail(reply, 404, "NOT_FOUND", `No such revision: ${body.id}`);
+
+    // The pre-restore content is itself kept, so this is undoable.
+    return reply.send({ path: body.path, restored: body.id, previous: result.previous?.id ?? null });
+  });
+
   // ── Delete ────────────────────────────────────────────────────────────
   app.delete(`${prefix}/files`, {
     schema: {
@@ -328,6 +430,8 @@ export function registerWorkspaceFileRoutes(
       }
       await fs.rm(target, { recursive: true, force: true });
     } else {
+      // Keep a copy so a delete is recoverable from the revision history.
+      await recordRevision(levelDir, query.path, target, "delete");
       await fs.rm(target);
     }
 

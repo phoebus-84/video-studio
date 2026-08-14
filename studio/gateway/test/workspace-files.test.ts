@@ -241,3 +241,134 @@ describe("workspace file API", () => {
     expect(res.status).toBe(401);
   });
 });
+
+/**
+ * Editing used to be destructive. The revisions endpoint read a
+ * `.revisions.json` sidecar that nothing ever wrote, so it always answered []
+ * — and the studio never called it. History now accrues from ordinary editing.
+ */
+describe("file revisions", () => {
+  let gateway: GatewayInstance;
+  let baseUrl: string;
+  let token: string;
+
+  const TMP2 = resolve(".test-tmp/revisions");
+  const ch = () => `${baseUrl}/api/channels/acme`;
+  const auth = () => ({ authorization: `Bearer ${token}` });
+  const json = () => ({ ...auth(), "content-type": "application/json" });
+
+  const write = (path: string, content: string, expectedRevision?: string) =>
+    fetch(`${ch()}/files`, {
+      method: "PUT",
+      headers: json(),
+      body: JSON.stringify({ path, content, expectedRevision }),
+    });
+
+  const revisions = async (path: string) =>
+    (await (await fetch(`${ch()}/revisions?path=${encodeURIComponent(path)}`, { headers: auth() })).json()).revisions;
+
+  beforeAll(async () => {
+    await fs.rm(TMP2, { recursive: true, force: true });
+    await fs.mkdir(join(TMP2, "acme"), { recursive: true });
+
+    const config = loadConfig();
+    config.port = 0;
+    config.host = "127.0.0.1";
+    config.token.file = join(TMP2, "token");
+    config.libraryRoots = [TMP2];
+
+    token = resolveToken(config.token);
+    gateway = await createGateway(config, token);
+    baseUrl = await gateway.start();
+  });
+
+  afterAll(async () => {
+    await gateway.stop();
+    await fs.rm(TMP2, { recursive: true, force: true });
+  });
+
+  it("keeps a version each time a file changes", async () => {
+    await write("notes.md", "first");
+    expect(await revisions("notes.md")).toHaveLength(0); // nothing existed before the first write
+
+    await write("notes.md", "second");
+    await write("notes.md", "third");
+
+    const list = await revisions("notes.md");
+    expect(list).toHaveLength(2);
+    // Newest first.
+    expect(list[0].createdAt >= list[1].createdAt).toBe(true);
+    expect(list.every((r: any) => r.contentAvailable)).toBe(true);
+  });
+
+  it("serves the content of an old version", async () => {
+    await write("story.md", "draft one");
+    await write("story.md", "draft two");
+
+    const [prev] = await revisions("story.md");
+    const res = await fetch(
+      `${ch()}/revisions?path=story.md&id=${encodeURIComponent(prev.id)}`,
+      { headers: auth() },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("draft one");
+  });
+
+  it("restores an old version, and the restore is itself undoable", async () => {
+    await write("script.md", "version A");
+    await write("script.md", "version B");
+
+    const [oldest] = await revisions("script.md");
+    const res = await fetch(`${ch()}/revisions/restore`, {
+      method: "POST",
+      headers: json(),
+      body: JSON.stringify({ path: "script.md", id: oldest.id }),
+    });
+    expect(res.status).toBe(200);
+
+    expect(await fs.readFile(join(TMP2, "acme", "script.md"), "utf-8")).toBe("version A");
+
+    // "version B" must still be recoverable.
+    const after = await revisions("script.md");
+    expect(after.length).toBeGreaterThanOrEqual(2);
+    const restoredFrom = await Promise.all(
+      after.map(async (r: any) =>
+        (await fetch(`${ch()}/revisions?path=script.md&id=${encodeURIComponent(r.id)}`, { headers: auth() })).text(),
+      ),
+    );
+    expect(restoredFrom).toContain("version B");
+  });
+
+  it("keeps a copy when a file is deleted", async () => {
+    await write("temp.md", "delete me");
+    const res = await fetch(`${ch()}/files?path=temp.md`, { method: "DELETE", headers: auth() });
+    expect(res.status).toBe(200);
+
+    const list = await revisions("temp.md");
+    expect(list.some((r: any) => r.reason === "delete")).toBe(true);
+  });
+
+  it("refuses a write based on a stale read", async () => {
+    const first = await (await write("shared.md", "one")).json();
+    await write("shared.md", "changed by someone else");
+
+    const conflict = await write("shared.md", "my edit", first.revision);
+    expect(conflict.status).toBe(409);
+    // The other edit must survive.
+    expect(await fs.readFile(join(TMP2, "acme", "shared.md"), "utf-8"))
+      .toBe("changed by someone else");
+  });
+
+  it("hides the revision store from listings", async () => {
+    await write("visible.md", "x");
+    await write("visible.md", "y");
+    const body = await (await fetch(`${ch()}/files?recursive=true`, { headers: auth() })).json();
+    expect(body.entries.map((e: any) => e.path)).not.toContain(".revisions");
+  });
+
+  it("404s for an unknown revision and rejects traversal in the id", async () => {
+    await write("guard.md", "x");
+    expect((await fetch(`${ch()}/revisions?path=guard.md&id=nope`, { headers: auth() })).status).toBe(404);
+    expect((await fetch(`${ch()}/revisions?path=guard.md&id=../../etc/passwd`, { headers: auth() })).status).toBe(404);
+  });
+});
