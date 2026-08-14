@@ -36,7 +36,10 @@ const addFormats = require('ajv-formats');
 
 // ── Schema loading ──────────────────────────────────────────────────────────
 
-const SCHEMA_PATH = resolve(__dirname, '../../video-workspace-contracts/schemas/v1alpha1/pipeline-manifest.schema.json');
+// Resolved as a package, not by relative path: the schema is owned by
+// @studio/contracts (ADR-0024) and reaching across directories would break
+// the moment either package moves.
+const SCHEMA_PATH = require.resolve('@studio/contracts/schemas/v1alpha1/pipeline-manifest.schema.json');
 const RAW_SCHEMA = JSON.parse(readFileSync(SCHEMA_PATH, 'utf-8'));
 
 const ajv = new Ajv({ strict: true, allErrors: true });
@@ -48,8 +51,7 @@ const validateSchema = ajv.getSchema(`${RAW_SCHEMA.$id}#/$defs/PipelineManifest`
 
 let CANONICAL_CAPABILITIES;
 try {
-  const vocabPath = resolve(__dirname, '../../video-workspace-contracts/src/vocabulary.mjs');
-  const vocab = await import(vocabPath);
+  const vocab = await import('@studio/contracts/src/vocabulary.mjs');
   CANONICAL_CAPABILITIES = new Set(vocab.CAPABILITIES);
 } catch {
   CANONICAL_CAPABILITIES = new Set([

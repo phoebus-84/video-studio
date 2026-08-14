@@ -81,3 +81,9 @@ export { validateTimeline } from "./validator.js";
 // Canonical narration manifest projection
 export { narrationCompositionInput } from "./narration.js";
 export type { CanonicalNarrationManifest, NarrationCompositionInput } from "./narration.js";
+
+// Delivery QA. Part of this package's charter ("plus ffprobe and audio/video
+// delivery QA") but previously reachable only by importing src/qa.ts directly,
+// which forced consumers to bypass the public API.
+export { runQa } from "./qa.js";
+export type { QaCheck, QaReport, QaOptions } from "./qa.js";

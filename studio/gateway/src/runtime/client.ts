@@ -7,6 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
+import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -53,23 +54,25 @@ export class RuntimeClient {
     this.log = options.log ?? (() => {});
   }
 
-  /** Auto-discover the vpr CLI in the workspace. */
+  /**
+   * Locate the runtime CLI by resolving the package, not by guessing paths.
+   *
+   * This previously tried three hardcoded sibling directories and then fell
+   * back to bare "vpr" on PATH — so a layout change silently downgraded the
+   * gateway to whatever "vpr" happened to mean on the host, or to nothing.
+   * ADR-0026 requires package resolution; the workspace makes it exact.
+   */
   private discoverCli(): string {
-    const root = this.libraryRoot ?? process.cwd();
-    // Check relative to gateway cwd and sibling module paths
-    const candidates = [
-      resolve(root, "../../video-pipeline-runtime/src/cli.ts"),
-      resolve(process.cwd(), "video-pipeline-runtime/src/cli.ts"),
-      resolve(process.cwd(), "../video-pipeline-runtime/src/cli.ts"),
-    ];
-    for (const c of candidates) {
-      if (existsSync(c)) {
-        this.log?.(`RuntimeClient: found vpr at ${c}`);
-        return c;
-      }
+    try {
+      return createRequire(import.meta.url).resolve("@studio/runtime/cli");
+    } catch {
+      throw new Error(
+        "Cannot resolve @studio/runtime. The gateway requires the runtime as a " +
+          "workspace dependency; run `bun install` at the repository root. " +
+          "Falling back to a PATH binary is not supported because it cannot be " +
+          "version-matched to the contracts this gateway was built against.",
+      );
     }
-    this.log?.("RuntimeClient: vpr not found, using PATH fallback");
-    return "vpr";
   }
 
   /** Check if the runtime is reachable. */

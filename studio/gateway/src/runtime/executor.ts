@@ -211,15 +211,16 @@ async function handleQa(ctx: StageContext): Promise<string[]> {
   let report: Record<string, unknown>;
 
   try {
-    // Dynamically import QA from composer
-    const composerQaPath = path.resolve(ctx.episodeDir, "../../../ffmpeg-video-composer/src/qa.ts");
-    const { runQa } = await import(composerQaPath);
+    // Imported as a package. This previously resolved a path relative to the
+    // episode directory, three levels up into a sibling repository, which tied
+    // the gateway to one on-disk layout.
+    const { runQa } = await import("@av/video-composer");
 
     const qaReport = runQa(mp4Path, {
-      ffprobePath: process.env.QA_FFPROBE ??
-        require("node:child_process").execSync("ls -d /opt/homebrew/Cellar/ffmpeg-full/*/bin/ffprobe | head -1", { encoding: "utf-8" }).trim(),
-      ffmpegPath: process.env.QA_FFMPEG ??
-        require("node:child_process").execSync("ls -d /opt/homebrew/Cellar/ffmpeg-full/*/bin/ffmpeg | head -1", { encoding: "utf-8" }).trim(),
+      // Resolved from PATH, not from a Homebrew Cellar glob. The previous
+      // version only worked on an Apple-Silicon Mac with ffmpeg-full installed.
+      ffprobePath: process.env.QA_FFPROBE ?? "ffprobe",
+      ffmpegPath: process.env.QA_FFMPEG ?? "ffmpeg",
       captionsPath,
       narrationPath,
       minDurationSec: 30,
