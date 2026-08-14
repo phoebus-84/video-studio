@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Agentic Video Studio — a Pi-directed video production system. `packages/*` are reusable outside this project; `studio/*` is the product built on top of them.",
+  "description": "Agentic Video Studio \u2014 a Pi-directed video production system. `packages/*` are reusable outside this project; `studio/*` is the product built on top of them.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "bun@1.2.0",
   "workspaces": [
