@@ -14,15 +14,22 @@ declare module "fastify" {
  * Compares the `Authorization: Bearer <token>` header against a set
  * of accepted tokens using constant-time comparison.
  *
- * In development, the well-known token "dev-token" is always accepted.
+ * The well-known "dev-token" is accepted only when `allowDevToken` is true.
+ * Per ADR-0030 that defaults to false, so the ordinary path exercises real
+ * authentication. It was previously accepted unconditionally, which meant any
+ * caller sending `Bearer dev-token` authenticated against a production
+ * gateway.
  *
- * @param token The primary canonical bearer token.
+ * @param token         The primary canonical bearer token.
+ * @param allowDevToken Whether to additionally accept "dev-token".
  */
-export function createAuthMiddleware(token: string) {
+export function createAuthMiddleware(token: string, allowDevToken = false) {
   // Pre-encode accepted tokens for constant-time comparison
   const accepted = new Set([
     Buffer.from(`Bearer ${token}`).toString("base64"),
-    Buffer.from("Bearer dev-token").toString("base64"),
+    ...(allowDevToken
+      ? [Buffer.from("Bearer dev-token").toString("base64")]
+      : []),
   ]);
 
   return async function authMiddleware(
@@ -40,8 +47,6 @@ export function createAuthMiddleware(token: string) {
       });
       return;
     }
-
-    const candidateB64 = Buffer.from(authHeader).toString("base64");
 
     // Constant-time: compare lengths first, then check against accepted set
     const candidateLen = authHeader.length;

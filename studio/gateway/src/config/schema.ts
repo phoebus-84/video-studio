@@ -36,6 +36,14 @@ export const tokenConfigSchema = z.object({
    * on first start and persisted with restrictive file permissions.
    */
   preShared: z.string().optional(),
+  /**
+   * Accept the well-known "dev-token" in addition to the real token.
+   *
+   * ADR-0030: this defaults to false so the ordinary end-to-end path
+   * exercises real authentication and the web studio must present the real
+   * token. Enable it only for local development.
+   */
+  allowDevToken: z.boolean().default(false),
 });
 
 // ── Library roots ────────────────────────────────────────────────────────────

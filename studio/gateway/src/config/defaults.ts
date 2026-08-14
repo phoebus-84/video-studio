@@ -12,6 +12,8 @@ export const DEFAULTS: Partial<Config> & { host: string } = {
   allowNonLoopback: false,
   token: {
     file: ".gateway-token",
+    // ADR-0030: real authentication by default.
+    allowDevToken: false,
   },
   allowedOrigins: ["http://localhost:5199"],
   libraryRoots: ["."],
