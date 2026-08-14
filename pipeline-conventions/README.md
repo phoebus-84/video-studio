@@ -56,6 +56,14 @@ Exit codes:
 
 ## Schemas
 
-Machine-readable JSON schemas are available in `schemas/`:
-- `pipeline-manifest.schema.yaml` — validates pipeline manifests
-- `skill-frontmatter.schema.yaml` — validates skill frontmatter
+Pipeline manifests are validated against the **canonical** schema owned by
+`video-workspace-contracts` (ADR-0024), not by a schema in this repository:
+
+    video-workspace-contracts/schemas/v1alpha1/pipeline-manifest.schema.json
+
+Run `bun run lint:pipeline pipelines/*.yaml`; the linter resolves that schema
+and layers on conventions the schema cannot express (stage-ID patterns, the
+canonical capability vocabulary, anti-pattern prose checks).
+
+Skill frontmatter is validated locally:
+- `schemas/skill-frontmatter.schema.yaml` — validates skill frontmatter

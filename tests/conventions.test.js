@@ -290,13 +290,34 @@ describe('Skill frontmatter lint — edge cases', () => {
 // ============================================================================
 
 describe('Schema compliance', () => {
-  it('pipeline manifest schema file exists and is valid YAML', () => {
-    const path = resolve(ROOT, 'schemas/pipeline-manifest.schema.yaml');
-    const raw = readFileSync(path, 'utf-8');
-    const doc = yaml.load(raw);
-    assert.ok(doc, 'Schema should parse as YAML');
+  // ADR-0024: the pipeline manifest schema is owned by
+  // video-workspace-contracts. This repository must NOT carry its own copy —
+  // a stale local duplicate previously rejected all three real manifests.
+  it('does not define a competing local pipeline manifest schema', () => {
+    const stale = resolve(ROOT, 'schemas/pipeline-manifest.schema.yaml');
+    assert.ok(
+      !existsSync(stale),
+      'schemas/pipeline-manifest.schema.yaml must not exist; the canonical ' +
+        'schema lives in video-workspace-contracts (ADR-0024)',
+    );
+  });
+
+  it('canonical pipeline manifest schema is resolvable and is the one the linter uses', () => {
+    const canonical = resolve(
+      ROOT,
+      '../video-workspace-contracts/schemas/v1alpha1/pipeline-manifest.schema.json',
+    );
+    assert.ok(existsSync(canonical), 'canonical contracts schema should exist');
+    const doc = JSON.parse(readFileSync(canonical, 'utf-8'));
     assert.equal(doc.$schema, 'https://json-schema.org/draft/2020-12/schema');
-    assert.equal(doc.title, 'Pipeline Manifest');
+    assert.ok(doc.$defs?.PipelineStage, 'schema should define PipelineStage');
+
+    const linter = readFileSync(resolve(ROOT, 'lint/validate-pipeline.js'), 'utf-8');
+    assert.match(
+      linter,
+      /video-workspace-contracts\/schemas\/v1alpha1\/pipeline-manifest\.schema\.json/,
+      'linter must validate against the canonical contracts schema',
+    );
   });
 
   it('skill frontmatter schema file exists and is valid YAML', () => {
@@ -322,7 +343,6 @@ describe('Documentation completeness', () => {
     'pipeline-conventions/SERIES-OVERRIDES.md',
     'pipeline-conventions/ANTI-PATTERNS.md',
     'pipeline-conventions/README.md',
-    'schemas/pipeline-manifest.schema.yaml',
     'schemas/skill-frontmatter.schema.yaml',
   ];
 

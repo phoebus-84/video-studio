@@ -160,8 +160,10 @@ video-built-in-pipelines/
 │   ├── SERIES-OVERRIDES.md
 │   └── ANTI-PATTERNS.md
 ├── schemas/                     # Machine-readable JSON schemas
-│   ├── pipeline-manifest.schema.yaml
 │   └── skill-frontmatter.schema.yaml
+│                                # (pipeline manifests validate against the
+│                                #  canonical schema in video-workspace-contracts,
+│                                #  per ADR-0024)
 ├── lint/                        # Executable lint tools
 │   ├── validate-pipeline.js
 │   └── validate-skill.js
