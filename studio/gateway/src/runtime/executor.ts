@@ -9,7 +9,6 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { execSync } from "node:child_process";
 import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
 import { loadNarrationManifest, naturalSceneOrder, type NarrationTimingEntry } from "./narration-manifest.js";
 
@@ -387,7 +386,6 @@ function wrapText(text: string, maxLen: number): string {
 
 function getWavDuration(wavPath: string): number {
   try {
-    const buf = fs.readFileSync ? undefined : undefined;
     const stat = require("node:fs").statSync(wavPath);
     // Estimate from file size: WAV = 44 byte header + samples * channels * bytesPerSample
     const dataSize = stat.size - 44;

@@ -10,12 +10,6 @@ import type { WorkspaceService } from "../workspace/service.js";
 import { runAutopilot } from "../runtime/executor.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
 
-interface EpisodeParams {
-  channel: string;
-  series: string;
-  episode: string;
-}
-
 function parseEpisode(params: Record<string, string>): EpisodeRef {
   return {
     channel: params.channel!,
@@ -123,7 +117,7 @@ export function registerProductionRoutes(
         },
       },
     },
-  }, async (request, reply) => {
+  }, async (request, _reply) => {
     const ref = parseEpisode(request.params as Record<string, string>);
     const { pipeline: requestedPipeline, dryRun } = request.body as { pipeline?: string; dryRun?: boolean };
     const pipeline = await inheritedPipeline(workspace, ref, requestedPipeline) ?? "narrated-illustrated-video";
