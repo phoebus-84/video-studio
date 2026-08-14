@@ -534,7 +534,7 @@ export const deprecationExample: EndpointProfile = defineProfile({
 
 // ─── Nano Banana Pro ─────────────────────────────────────────────────
 
-const nanoBananaPro: EndpointProfile = Object.freeze({
+const nanoBananaPro: EndpointProfile = defineProfile({
   profileId: "fal-ai/nano-banana-pro@v1",
   endpointId: "fal-ai/nano-banana-pro",
   operation: "text-to-image",
@@ -580,8 +580,21 @@ const nanoBananaPro: EndpointProfile = Object.freeze({
       description: "Number of images to generate.",
     },
   ],
-  capabilities: ["illustration", "diagram", "text-rendering"],
-  tags: ["fast", "text-capable"],
+  capabilities: {
+    // Declared with the aspect ratios this endpoint actually accepts, which
+    // are ratio strings rather than the named sizes FLUX uses.
+    supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+    supportsSeed: false,
+    supportsReferenceImages: false,
+    maxReferenceImages: 0,
+    supportsNegativePrompt: false,
+    defaultImageSize: "16:9",
+  },
+  pricing: {
+    unit: "inference",
+    estimatedUnitCost: 0.003,
+    currency: "USD",
+  },
 });
 
 // ─── Registry ─────────────────────────────────────────────────────────
