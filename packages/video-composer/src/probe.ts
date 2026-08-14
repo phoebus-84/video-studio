@@ -44,6 +44,21 @@ export interface NormalizationChange {
 
 // ── Probe ──────────────────────────────────────────────────────────────────
 
+/**
+ * Codecs that ffprobe reports with codec_type "video" even though the stream is
+ * a single still frame. Without this a PNG is treated as a video, so its
+ * missing frame rate reads as a difference from the target and every still is
+ * needlessly re-encoded.
+ */
+const STILL_IMAGE_CODECS = new Set([
+  "png", "mjpeg", "jpeg", "jpegls", "jpeg2000", "jpegxl",
+  "bmp", "gif", "webp", "tiff", "targa", "ppm", "pgm", "pam", "qoi", "avif", "heif",
+]);
+
+function isStillImageCodec(codecName: unknown): boolean {
+  return typeof codecName === "string" && STILL_IMAGE_CODECS.has(codecName.toLowerCase());
+}
+
 export async function probeMedia(
   filePath: string,
   fileSize: number,
@@ -79,7 +94,7 @@ export async function probeMedia(
   let sampleRate: number | null = null;
   let channels: number | null = null;
 
-  if (firstStream.codec_type === "video") {
+  if (firstStream.codec_type === "video" && !isStillImageCodec(firstStream.codec_name)) {
     type = "video";
     width = firstStream.width ?? null;
     height = firstStream.height ?? null;
@@ -157,10 +172,14 @@ export async function normalizeMedia(
   args.push("-y", outPath);
   await runProcess("ffmpeg", args);
 
-  if (probe.width !== tw) changes.push({ field: "width", from: probe.width!, to: tw, reason: "target" });
-  if (probe.height !== th) changes.push({ field: "height", from: probe.height!, to: th, reason: "target" });
-  if (probe.fps !== tfps) changes.push({ field: "fps", from: probe.fps!, to: tfps, reason: "target" });
-  if (probe.sampleRate !== tsr) changes.push({ field: "sampleRate", from: probe.sampleRate!, to: tsr, reason: "target" });
+  // Only report changes to fields the medium actually has. Reporting an fps
+  // change on a still, or a sample-rate change on something with no audio,
+  // makes a no-op normalization look like it altered the asset.
+  const visual = probe.type === "image" || probe.type === "video";
+  if (visual && probe.width !== tw) changes.push({ field: "width", from: probe.width!, to: tw, reason: "target" });
+  if (visual && probe.height !== th) changes.push({ field: "height", from: probe.height!, to: th, reason: "target" });
+  if (probe.type === "video" && probe.fps !== tfps) changes.push({ field: "fps", from: probe.fps!, to: tfps, reason: "target" });
+  if (probe.type === "audio" && probe.sampleRate !== tsr) changes.push({ field: "sampleRate", from: probe.sampleRate!, to: tsr, reason: "target" });
 
   const normProbe = await probeMedia(outPath, 0);
   return { outputPath: outPath, changes, probe: normProbe };
