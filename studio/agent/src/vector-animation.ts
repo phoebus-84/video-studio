@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import * as path from "node:path";
 
 export type VectorProperty = "x" | "y" | "rotation" | "scaleX" | "scaleY" | "opacity";
@@ -292,6 +292,24 @@ async function mapConcurrent<T>(items: T[], concurrency: number, worker: (item: 
   }));
 }
 
+/**
+ * The ImageMagick entry point available on this machine.
+ *
+ * ImageMagick 7 ships a single `magick` binary. Version 6 — still what most
+ * Linux distributions package, including the Ubuntu images GitHub Actions
+ * runs — ships `convert` instead. Hardcoding `magick` meant rendering failed
+ * with ENOENT anywhere only v6 was installed.
+ */
+function imageMagick(): string {
+  for (const candidate of ["magick", "convert"]) {
+    const probe = spawnSync(candidate, ["-version"], { stdio: "ignore" });
+    if (probe.status === 0) return candidate;
+  }
+  throw new Error(
+    "ImageMagick not found. Install it and ensure `magick` (v7) or `convert` (v6) is on PATH.",
+  );
+}
+
 export async function renderVectorAnimation(options: {
   spec: VectorAnimationSpec;
   outputPath: string;
@@ -319,7 +337,7 @@ export async function renderVectorAnimation(options: {
       const svgPath = path.join(frameDir, `${stem}.svg`);
       const pngPath = path.join(frameDir, `${stem}.png`);
       await writeFile(svgPath, renderVectorSvg(spec, frame, renderScale), "utf-8");
-      await run("magick", ["-background", "none", svgPath, pngPath], options.signal);
+      await run(imageMagick(), ["-background", "none", svgPath, pngPath], options.signal);
       await rm(svgPath, { force: true });
       completed += 1;
       options.onProgress?.(completed, spec.durationInFrames);
