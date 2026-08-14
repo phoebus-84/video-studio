@@ -6,18 +6,18 @@ executed against this repository, not inferred.
 ## 0. Once: install and point at a library
 
 ```bash
-cd /Users/euripide/strange_things/video-studio
+cd /path/to/video-studio
 bun install
 npm run doctor
 ```
 
 The agent works on a **library** — the on-disk tree of channels, series and
-episodes described in [workspace.md](workspace.md). It defaults to `./library`
-relative to where you start Pi. The existing 1.7GB library currently lives in
-the old workspace, linked in:
+episodes described in [the workspace layout](./workspace). It defaults to `./library`
+relative to where you start Pi. If your library lives outside the repository — the existing 1.7GB one
+does — link it in:
 
 ```bash
-ln -sfn /Users/euripide/strange_things/avg/library library
+ln -sfn /path/to/your/library library
 ```
 
 `library/` is gitignored: it is production data, and ADR-0021 keeps generated

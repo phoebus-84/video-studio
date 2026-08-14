@@ -65,7 +65,13 @@ just the rendering packages.
 
 ## Documentation
 
-Everything is under [`docs/`](docs/README.md) — one place, one index.
+Everything is under [`docs/`](docs/index.md) — one place, one index. It is a
+VitePress site:
+
+```bash
+npm run docs:dev     # http://localhost:5173
+npm run docs:build   # also fails on any dead internal link
+```
 
 - [Install and composition](docs/install.md)
 - [Running the agent](docs/running.md)
@@ -74,7 +80,7 @@ Everything is under [`docs/`](docs/README.md) — one place, one index.
 - [Workspace layout](docs/workspace.md)
 - [Pipelines](docs/pipelines.md)
 - [Contributing](docs/contributing.md)
-- [Per-package reference](docs/README.md#packages)
+- [Per-component reference](docs/index.md#packages)
 - [Decision records](docs/adr/)
 
 ## Everyday commands

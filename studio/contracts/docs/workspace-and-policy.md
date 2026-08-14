@@ -16,7 +16,7 @@ Canonical definitions are in [`schemas/v1alpha1/workspace.schema.json`](../schem
 | `visual-bible.md` frontmatter | `VisualBibleMetadata` | Revisioned series art-direction identity |
 | `output/current.json` | `CurrentDeliverable` | Hash-backed pointer to a verified render and its report |
 
-A `WorkspaceExample` exists only for contract fixtures. Runtime code persists the constituent resources at their locations in [`WORKSPACE.md`](../../WORKSPACE.md).
+A `WorkspaceExample` exists only for contract fixtures. Runtime code persists the constituent resources at their locations in [the workspace layout](../../../docs/workspace.md).
 
 ## Explicit inheritance inputs
 

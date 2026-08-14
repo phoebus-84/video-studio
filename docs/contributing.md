@@ -65,8 +65,33 @@ is a boundary violation even when it happens to resolve.
 
 ## Documentation
 
-- Component reference pages under `docs/packages/` and `docs/studio/` are
-  **generated** — edit `compose.config.json` or the component's own README and
-  `docs/`, then run `node tools/gen-docs.mjs`.
-- Everything else in `docs/` is hand-written.
-- A decision that constrains future work gets an ADR in `docs/adr/`.
+The site is [VitePress](https://vitepress.dev):
+
+```bash
+npm run docs:dev       # local server with hot reload
+npm run docs:build     # production build; fails on any dead internal link
+npm run docs:preview   # serve the built site
+```
+
+What is hand-written and what is generated:
+
+| Path | |
+|---|---|
+| `docs/*.md`, `docs/adr/` | hand-written |
+| `docs/packages/`, `docs/studio/` | **generated** by `tools/gen-docs.mjs` from `compose.config.json` |
+| `docs/reference/` | **generated** by `tools/sync-doc-sources.mjs`, gitignored |
+
+Component reference pages take their facts — capabilities, requirements, tier,
+package name — from `compose.config.json`, so a page cannot disagree with what
+the composer will actually do. `npm run docs:check` fails if they are stale;
+run `npm run docs:generate` after changing the manifest.
+
+Each component's own Markdown stays next to its code. It is copied into
+`docs/reference/` when the site builds, with relative links rewritten to
+resolve in the site. **Edit it where it lives** — the copies are overwritten.
+
+The sidebar is derived: components come from the manifest and ADRs are read
+from disk, so neither needs registering by hand.
+
+A decision that constrains future work gets an ADR in `docs/adr/`. Number it
+sequentially and say what it supersedes, if anything.

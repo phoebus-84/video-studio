@@ -26,6 +26,24 @@ jobs:
       - run: npm run check:boundaries
       - run: npm run docs:check
 
+  # The docs site build is also a link checker: VitePress fails on a dead
+  # internal link, which catches a renamed page or a moved component doc.
+  docs:
+    name: Docs site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: npm run docs:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: docs/.vitepress/dist
+          retention-days: 7
+
   # Every profile must resolve. A profile that names a component or skill set
   # that no longer exists is a broken install for whoever picks it.
   compose:

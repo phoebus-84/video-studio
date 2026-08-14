@@ -16,7 +16,10 @@ import { join, resolve, relative } from "node:path";
 import { execSync } from "node:child_process";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const SKIP = new Set([".git", ".venv", "models", ".svelte-kit", "dist", ".beads"]);
+// `library` is deliberately allowed to be a link to data kept outside the
+// repository (it is gitignored production media); the rule this guards is that
+// *code and configuration* never depend on an absolute path.
+const SKIP = new Set([".git", ".venv", "models", ".svelte-kit", "dist", ".beads", "library"]);
 
 const problems = [];
 
