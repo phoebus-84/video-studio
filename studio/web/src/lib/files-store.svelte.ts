@@ -18,6 +18,8 @@ export interface FileEntry {
   size: number | null;
   updatedAt: string;
   contentType: string | null;
+  /** How this artifact asks to be shown; resolved against the viewer registry. */
+  presentation: { viewer: string; actions: readonly string[] } | null;
 }
 
 export interface RevisionMeta {
@@ -45,11 +47,15 @@ export function apiPrefix(ref: LevelRef): string {
   return `/api/channels/${c}/series/${s}/episodes/${encodeURIComponent(ref.episode!)}`;
 }
 
-/** Text files are editable in place; everything else is previewed or downloaded. */
-const TEXT_TYPES = /^(text\/|application\/(json|jsonl|xml|yaml))/;
-
+/**
+ * Whether a file's content should be fetched as text.
+ *
+ * Taken from the artifact's declared viewer rather than a regex over media
+ * types, so a new editable kind needs no change here.
+ */
 export function isEditable(entry: FileEntry): boolean {
-  return entry.kind === "file" && !!entry.contentType && TEXT_TYPES.test(entry.contentType);
+  const viewer = entry.presentation?.viewer;
+  return entry.kind === "file" && (viewer === "text" || viewer === "markdown");
 }
 
 class FilesStore {
@@ -63,6 +69,7 @@ class FilesStore {
   selectedContent = $state<string>("");
   selectedRevision = $state<string | null>(null);
   selectedType = $state<string | null>(null);
+  selectedPresentation = $state<{ viewer: string; actions: readonly string[] } | null>(null);
   dirty = $state(false);
   saving = $state(false);
 
@@ -99,6 +106,7 @@ class FilesStore {
     this.selectedContent = "";
     this.selectedRevision = null;
     this.selectedType = null;
+    this.selectedPresentation = null;
     this.revisions = [];
     this.viewingRevision = null;
     this.dirty = false;
@@ -109,6 +117,7 @@ class FilesStore {
     if (!this.ref || entry.kind !== "file") return;
     this.selectedPath = entry.path;
     this.selectedType = entry.contentType;
+    this.selectedPresentation = entry.presentation;
     this.viewingRevision = null;
     this.dirty = false;
 

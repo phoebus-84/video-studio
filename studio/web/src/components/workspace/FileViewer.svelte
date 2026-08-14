@@ -8,21 +8,22 @@
    * adding a case here and declaring the type, not rewriting the workspace.
    */
   import { files } from "$lib/files-store.svelte.ts";
+  import { viewerComponent, needsBytes } from "$lib/viewer-registry";
+  import { isEditableViewer } from "@studio/contracts/src/presentation.mjs";
 
   let mediaSrc = $state<string | null>(null);
   let mediaLoading = $state(false);
 
-  const type = $derived(files.selectedType ?? "");
-  const isText = $derived(/^(text\/|application\/(json|jsonl|xml|yaml))/.test(type));
-  const isImage = $derived(type.startsWith("image/"));
-  const isVideo = $derived(type.startsWith("video/"));
-  const isAudio = $derived(type.startsWith("audio/"));
-  const is3d = $derived(type.startsWith("model/"));
+  /* The artifact names its viewer; this resolves the name to a component. */
+  const viewer = $derived(files.selectedPresentation?.viewer);
+  const actions = $derived(files.selectedPresentation?.actions ?? []);
+  const Viewer = $derived(viewerComponent(viewer));
+  const editable = $derived(isEditableViewer(viewer ?? "") && actions.includes("edit"));
 
   /* Load media as a blob so the bearer token never lands in a URL. */
   $effect(() => {
     const path = files.selectedPath;
-    const needsMedia = !!path && !isText;
+    const needsMedia = !!path && needsBytes(viewer);
 
     if (!needsMedia) {
       mediaSrc = null;
@@ -87,7 +88,7 @@
           >
             Restore this version
           </button>
-        {:else if isText}
+        {:else if editable}
           <button class="fv-primary" onclick={() => files.save()} disabled={!files.dirty || files.saving}>
             {files.saving ? "Saving…" : "Save"}
           </button>
@@ -100,36 +101,17 @@
     {/if}
 
     <div class="fv-body">
-      {#if isText}
-        <textarea
-          class="fv-text"
-          value={files.selectedContent}
-          oninput={(e) => files.edit((e.target as HTMLTextAreaElement).value)}
-          readonly={!!files.viewingRevision}
-          spellcheck="true"
-          aria-label="File content"
-        ></textarea>
-      {:else if mediaLoading}
+      {#if mediaLoading}
         <p class="fv-note">Loading preview…</p>
-      {:else if isImage && mediaSrc}
-        <div class="fv-media"><img src={mediaSrc} alt={files.selectedPath} /></div>
-      {:else if isVideo && mediaSrc}
-        <div class="fv-media"><!-- svelte-ignore a11y_media_has_caption --><video src={mediaSrc} controls></video></div>
-      {:else if isAudio && mediaSrc}
-        <div class="fv-media"><audio src={mediaSrc} controls></audio></div>
-      {:else if is3d}
-        <div class="fv-note">
-          <p>3D model ({type}).</p>
-          <p class="fv-hint">
-            No viewer is registered for this type yet. It will render here once one is.
-          </p>
-          {#if mediaSrc}<a href={mediaSrc} download={files.selectedPath}>Download</a>{/if}
-        </div>
       {:else}
-        <div class="fv-note">
-          <p>No preview for {type || "this file type"}.</p>
-          {#if mediaSrc}<a href={mediaSrc} download={files.selectedPath}>Download</a>{/if}
-        </div>
+        <Viewer
+          path={files.selectedPath}
+          contentType={files.selectedType}
+          content={files.selectedContent}
+          {mediaSrc}
+          readOnly={!!files.viewingRevision}
+          onEdit={(text) => files.edit(text)}
+        />
       {/if}
     </div>
 
