@@ -7,6 +7,7 @@ Everything is here, in one place.
 | Document | What it answers |
 |---|---|
 | [install.md](install.md) | How do I install and compose this? |
+| [running.md](running.md) | How do I actually run the agent? |
 | [architecture.md](architecture.md) | How does the system behave, and where are the boundaries? |
 | [context.md](context.md) | What does each domain term mean? Read this before naming anything. |
 | [workspace.md](workspace.md) | What does the on-disk channel/series/episode layout look like? |

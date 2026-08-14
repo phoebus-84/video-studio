@@ -52,6 +52,13 @@ npm run doctor                    # check this machine can run them
 That is the whole install. See [`docs/install.md`](docs/install.md) for
 profiles, system requirements, and credentials.
 
+Then [run the agent](docs/running.md):
+
+```bash
+ln -sfn /path/to/your/library library    # once — where episodes live
+pi -e studio/agent/extensions/index.ts
+```
+
 You do not have to take all of it. `npm run compose -- --list` shows the
 profiles; `--profile=voice` gives you just the voice tool, `--profile=render`
 just the rendering packages.
@@ -61,6 +68,7 @@ just the rendering packages.
 Everything is under [`docs/`](docs/README.md) — one place, one index.
 
 - [Install and composition](docs/install.md)
+- [Running the agent](docs/running.md)
 - [Architecture](docs/architecture.md)
 - [Domain language](docs/context.md)
 - [Workspace layout](docs/workspace.md)
