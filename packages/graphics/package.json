@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit && npm test",
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "test:snapshot": "node --import tsx --test test/harness/*.test.ts"
   },
   "devDependencies": {
