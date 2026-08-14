@@ -1,0 +1,64 @@
+{
+  "name": "pi-video-agent",
+  "version": "0.1.0",
+  "description": "A distributable Pi package that turns Pi into the Agentic Video Studio executive producer",
+  "type": "module",
+  "license": "MIT",
+  "author": "",
+  "keywords": [
+    "pi-package",
+    "video",
+    "agentic-video-studio",
+    "executive-producer",
+    "ai-agent",
+    "coding-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "files": [
+    "extensions/",
+    "skills/",
+    "src/",
+    "README.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-agent-core": ">=0.74.0",
+    "@earendil-works/pi-ai": ">=0.74.0",
+    "@earendil-works/pi-coding-agent": ">=0.74.0",
+    "@earendil-works/pi-tui": ">=0.74.0",
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "typebox": ">=1.1.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "js-yaml": "^5.2.2",
+    "ws": "^8.21.1"
+  }
+}
