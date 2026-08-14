@@ -1,8 +1,35 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 
-export default defineConfig({
+/**
+ * The gateway token for local development.
+ *
+ * The gateway generates `.gateway-token` on first start and, per ADR-0030,
+ * only accepts the well-known "dev-token" when explicitly configured to. The
+ * studio used to fall back to that literal string, which meant a developer got
+ * "Invalid bearer token" while the header still claimed to be connected.
+ *
+ * Reading the gateway's own token here makes `npm run dev` work against a
+ * local gateway with no setup. It is dev-only: production builds must supply
+ * VITE_GATEWAY_TOKEN, and no token is ever baked into a build from disk.
+ */
+function devGatewayToken(): string {
+  if (process.env.VITE_GATEWAY_TOKEN) return process.env.VITE_GATEWAY_TOKEN;
+  try {
+    return readFileSync(path.resolve("../gateway/.gateway-token"), "utf-8").trim();
+  } catch {
+    return "";
+  }
+}
+
+export default defineConfig(({ command }) => ({
+  define: {
+    __GATEWAY_TOKEN__: JSON.stringify(
+      command === "serve" ? devGatewayToken() : (process.env.VITE_GATEWAY_TOKEN ?? ""),
+    ),
+  },
   plugins: [svelte()],
   resolve: {
     alias: {
@@ -19,4 +46,4 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
-});
+}));

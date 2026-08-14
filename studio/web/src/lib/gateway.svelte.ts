@@ -16,7 +16,7 @@ let _wsUrl = "";
 export function getGatewayClient(): GatewayClient {
   if (!_client) {
     const baseUrl = localStorage.getItem("vs-gateway-url") ?? "http://127.0.0.1:5198";
-    const token = localStorage.getItem("vs-gateway-token") ?? "dev-token";
+    const token = localStorage.getItem("vs-gateway-token") ?? __GATEWAY_TOKEN__;
     _client = new GatewayClient({
       baseUrl,
       tokenProvider: () => token,

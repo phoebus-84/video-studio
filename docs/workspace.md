@@ -1,53 +1,65 @@
 # Workspace contract
 
+## Layout 2
+
 ```text
 library/
 └── channel-slug/
     ├── channel.md
     ├── settings.yaml
-    └── series/
+    ├── brand/                          # channel knowledge
+    ├── characters/
+    ├── references/
+    ├── skills/
+    ├── voices/
+    └── series/                         # explicit container
         └── series-slug/
             ├── series.md
             ├── settings.yaml
-            ├── visual-bible.md
-            ├── content-plan.md                 # optional, series-level
-            ├── voice-profiles/
-            ├── pipelines/                      # definitions and overrides
-            ├── skills/                         # series-local Pi skills
-            ├── sources/                        # shared pinned source metadata/cache refs
-            └── episodes/
+            ├── visual-bible/           # series knowledge
+            ├── skills/
+            ├── templates/
+            ├── sources/
+            ├── pipelines/
+            └── episodes/               # explicit container
                 └── episode-slug/
                     ├── episode.yaml
                     ├── pipeline.snapshot.yaml
                     ├── source/
-                    │   └── source.yaml
                     ├── artifacts/
-                    │   ├── brief.md
-                    │   ├── adapted-story.md     # fairy-tale pipeline
-                    │   ├── script.md
-                    │   ├── tts-script.md
-                    │   ├── art-direction.md
-                    │   ├── scenes.yaml
-                    │   └── edit.yaml
                     ├── prompts/
-                    │   └── scene-id/
-                    │       └── attempt-id.md
                     ├── assets/
-                    │   ├── images/
-                    │   ├── graphics/
-                    │   ├── audio/
-                    │   └── manifest.json
                     ├── attempts/
-                    │   └── stage-id/
                     ├── reviews/
-                    │   └── threads.jsonl
                     ├── journal/
-                    │   └── events.jsonl
                     └── output/
-                        ├── render-id.mp4
-                        ├── render-id.report.json
-                        └── current.json
 ```
+
+**A directory inside `series/` is a series. A directory inside `episodes/` is an
+episode.** Nothing else has to be inferred.
+
+Layout 1 placed series directly inside the channel directory, mixed with the
+channel's own files, so nothing could tell a series from a support folder by
+looking. The gateway carried a hardcoded denylist of names that are *not* a
+series — which meant adding a `characters/` folder to a channel invented a
+phantom series. Explicit containers delete that class of bug, and let a channel
+grow as much knowledge as it likes.
+
+Names beginning with `.` are metadata and names beginning with `_` are reserved
+holding areas (`_media`, `_exports`). Neither is ever content, at any level.
+
+`studio/contracts/src/layout.mjs` is the single source of truth for these paths.
+Compute paths through it rather than joining strings.
+
+## Migrating
+
+```bash
+node tools/migrate-library-layout.mjs --library ./library --dry-run
+node tools/migrate-library-layout.mjs --library ./library
+```
+
+Moves are `rename` within one filesystem, so no media is copied or rewritten,
+and the script is idempotent — a library already in layout 2 is left alone.
 
 ## Inheritance
 
