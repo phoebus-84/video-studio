@@ -247,7 +247,7 @@ describe("initSeries", () => {
 
     expect(r.value.slug).toBe("season-1");
     expect(r.value.kind).toBe("series");
-    expect(r.value.path).toBe(`${channelPath}/season-1`);
+    expect(r.value.path).toBe(`${channelPath}/series/season-1`);
 
     const contractJson = await readContract(fs, r.value.path);
     const parsed = parseContractJson(contractJson);
@@ -299,9 +299,9 @@ describe("initSeries", () => {
     const opts = makeOpts({ fs });
 
     // Create an episode directly (not a series)
-    await fs.mkdir(`${channelPath}/my-episode/${WORKSPACE_DIR}`, true);
+    await fs.mkdir(`${channelPath}/series/my-episode/${WORKSPACE_DIR}`, true);
     await fs.writeText(
-      `${channelPath}/my-episode/${WORKSPACE_DIR}/${CONTRACT_FILE}`,
+      `${channelPath}/series/my-episode/${WORKSPACE_DIR}/${CONTRACT_FILE}`,
       JSON.stringify({
         schema: "video-workspace-contracts/workspace-v1",
         version: "0.1.0",
@@ -344,7 +344,7 @@ describe("initEpisode", () => {
 
     expect(r.value.slug).toBe("ep-01");
     expect(r.value.kind).toBe("episode");
-    expect(r.value.path).toBe(`${seriesPath}/ep-01`);
+    expect(r.value.path).toBe(`${seriesPath}/episodes/ep-01`);
 
     const contractJson = await readContract(fs, r.value.path);
     const parsed = parseContractJson(contractJson);

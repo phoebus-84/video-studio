@@ -217,7 +217,7 @@ describe("discoverSeries", () => {
     await initSeries(channelPath, "season-1", {}, opts);
 
     // Create a directory without contract
-    await fs.mkdir(`${channelPath}/not-a-series`, true);
+    await fs.mkdir(`${channelPath}/series/not-a-series`, true);
 
     const r = await discoverSeries(channelPath, fs);
     expect(isOk(r)).toBe(true);
@@ -241,9 +241,9 @@ describe("discoverSeries", () => {
     await initEpisode(serR.value.path, "ep-01", {}, opts);
 
     // Create an episode-typed directory directly under channel (wrong hierarchy)
-    await fs.mkdir(`${channelPath}/fake-series/${WORKSPACE_DIR}`, true);
+    await fs.mkdir(`${channelPath}/series/fake-series/${WORKSPACE_DIR}`, true);
     await fs.writeText(
-      `${channelPath}/fake-series/${WORKSPACE_DIR}/${CONTRACT_FILE}`,
+      `${channelPath}/series/fake-series/${WORKSPACE_DIR}/${CONTRACT_FILE}`,
       JSON.stringify({
         schema: "video-workspace-contracts/workspace-v1",
         version: "0.1.0",
@@ -320,7 +320,7 @@ describe("discoverEpisodes", () => {
     await initEpisode(seriesPath, "ep-01", {}, opts);
 
     // Create a non-workspace directory
-    await fs.mkdir(`${seriesPath}/output`, true);
+    await fs.mkdir(`${seriesPath}/episodes/output`, true);
 
     const r = await discoverEpisodes(seriesPath, fs);
     expect(isOk(r)).toBe(true);
@@ -341,9 +341,9 @@ describe("discoverEpisodes", () => {
     await initEpisode(seriesPath, "good-ep", {}, opts);
 
     // Manually create a corrupt episode
-    await fs.mkdir(`${seriesPath}/bad-ep/${WORKSPACE_DIR}`, true);
+    await fs.mkdir(`${seriesPath}/episodes/bad-ep/${WORKSPACE_DIR}`, true);
     await fs.writeText(
-      `${seriesPath}/bad-ep/${WORKSPACE_DIR}/${CONTRACT_FILE}`,
+      `${seriesPath}/episodes/bad-ep/${WORKSPACE_DIR}/${CONTRACT_FILE}`,
       "{{{broken}}}",
     );
 

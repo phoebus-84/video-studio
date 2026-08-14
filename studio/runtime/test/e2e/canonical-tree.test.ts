@@ -120,7 +120,7 @@ describe("canonical workspace tree", () => {
     if (epR2.ok) expect(epR2.value.existed).toBe(true);
 
     // All episode files should still exist
-    await assertPathsExist(fs, `${srR.value.path}/ep-01`, EPISODE_FILES);
+    await assertPathsExist(fs, `${srR.value.path}/episodes/ep-01`, EPISODE_FILES);
   });
 
   it("output/current.json has correct structure", async () => {

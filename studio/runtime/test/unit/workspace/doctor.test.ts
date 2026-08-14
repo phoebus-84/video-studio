@@ -50,7 +50,7 @@ describe("doctor", () => {
     await initEpisode(srR.value.path, "ep-01", {}, opts);
 
     // Remove episode.yaml
-    await fs.remove("/library/ch/s1/ep-01/episode.yaml");
+    await fs.remove("/library/ch/series/s1/episodes/ep-01/episode.yaml");
 
     const report = await doctor({ fs, libraryRoot: "/library" });
     expect(report.ok).toBe(false);
@@ -67,7 +67,7 @@ describe("doctor", () => {
     await initEpisode(srR.value.path, "ep-01", {}, opts);
 
     // Corrupt events.jsonl
-    await fs.writeText("/library/ch/s1/ep-01/journal/events.jsonl", "not-json\n");
+    await fs.writeText("/library/ch/series/s1/episodes/ep-01/journal/events.jsonl", "not-json\n");
 
     const report = await doctor({ fs, libraryRoot: "/library" });
     expect(report.ok).toBe(false);
@@ -85,7 +85,7 @@ describe("doctor", () => {
     await initEpisode(srR.value.path, "ep-01", {}, opts);
 
     // Remove episode.yaml but only check channel level
-    await fs.remove("/library/ch/s1/ep-01/episode.yaml");
+    await fs.remove("/library/ch/series/s1/episodes/ep-01/episode.yaml");
 
     const report = await doctor({ fs, libraryRoot: "/library", channel: "ch" });
     // Channel-level check should be fine

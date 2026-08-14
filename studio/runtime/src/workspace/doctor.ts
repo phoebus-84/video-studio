@@ -4,6 +4,7 @@
 
 import type { FileSystem } from "../ports/filesystem.js";
 import { TREE_BY_KIND } from "./tree.js";
+import { SERIES_CONTAINER, EPISODES_CONTAINER } from "@studio/contracts/src/layout.mjs";
 import type { WorkspaceKind } from "./types.js";
 
 // ---- Types -----------------------------------------------------------------
@@ -61,27 +62,32 @@ export async function doctor(opts: DoctorOptions): Promise<DoctorReport> {
     const channelPath = `${opts.libraryRoot}/${channelSlug}`;
     await checkLevel(opts.fs, channelPath, "channel", findings);
 
+    // Layout 2: descend through the explicit containers, so a channel's own
+    // knowledge folders are never mistaken for series, nor a series for an
+    // episode.
+    const seriesRoot = `${channelPath}/${SERIES_CONTAINER}`;
+
     if (opts.series !== undefined) {
       // Specific series requested
-      const seriesPath = `${channelPath}/${opts.series}`;
+      const seriesPath = `${seriesRoot}/${opts.series}`;
       await checkLevel(opts.fs, seriesPath, "series", findings);
 
       if (opts.episode !== undefined) {
         // Specific episode requested
-        const episodePath = `${seriesPath}/${opts.episode}`;
+        const episodePath = `${seriesPath}/${EPISODES_CONTAINER}/${opts.episode}`;
         await checkLevel(opts.fs, episodePath, "episode", findings);
       }
       // else: channel + series only — stop here
     } else if (opts.channel === undefined) {
       // No filters at all — discover and check everything
-      const seriesList = await listDirs(opts.fs, channelPath);
+      const seriesList = await listDirs(opts.fs, seriesRoot);
       for (const seriesSlug of seriesList) {
-        const seriesPath = `${channelPath}/${seriesSlug}`;
+        const seriesPath = `${seriesRoot}/${seriesSlug}`;
         await checkLevel(opts.fs, seriesPath, "series", findings);
 
-        const episodeList = await listDirs(opts.fs, seriesPath);
+        const episodeList = await listDirs(opts.fs, `${seriesPath}/${EPISODES_CONTAINER}`);
         for (const episodeSlug of episodeList) {
-          const episodePath = `${seriesPath}/${episodeSlug}`;
+          const episodePath = `${seriesPath}/${EPISODES_CONTAINER}/${episodeSlug}`;
           await checkLevel(opts.fs, episodePath, "episode", findings);
         }
       }

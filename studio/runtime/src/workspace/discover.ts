@@ -8,6 +8,8 @@
 
 import type { FileSystem } from "../ports/filesystem.js";
 import type { Logger } from "../logging.js";
+import { join as joinPath } from "node:path";
+import { SERIES_CONTAINER, EPISODES_CONTAINER } from "@studio/contracts/src/layout.mjs";
 import type { Result } from "../result.js";
 import { ok, err } from "../result.js";
 import { internalError } from "../errors.js";
@@ -67,7 +69,7 @@ export async function discoverChannels(
 /**
  * Discover series workspaces under a channel.
  *
- * Scans immediate children of `channelPath`.  Subdirectories that contain
+ * Scans `<channelPath>/series`. Subdirectories that contain
  * `.workspace/contract.json` with `type: "series"` are returned.
  */
 export async function discoverSeries(
@@ -75,13 +77,13 @@ export async function discoverSeries(
   fs: FileSystem,
   logger?: Logger,
 ): Promise<Result<DiscoveryResult, RuntimeError>> {
-  return discover("series", channelPath, fs, logger);
+  return discover("series", joinPath(channelPath, SERIES_CONTAINER), fs, logger);
 }
 
 /**
  * Discover episode workspaces under a series.
  *
- * Scans immediate children of `seriesPath`.  Subdirectories that contain
+ * Scans `<seriesPath>/episodes`. Subdirectories that contain
  * `.workspace/contract.json` with `type: "episode"` are returned.
  */
 export async function discoverEpisodes(
@@ -89,7 +91,7 @@ export async function discoverEpisodes(
   fs: FileSystem,
   logger?: Logger,
 ): Promise<Result<DiscoveryResult, RuntimeError>> {
-  return discover("episode", seriesPath, fs, logger);
+  return discover("episode", joinPath(seriesPath, EPISODES_CONTAINER), fs, logger);
 }
 
 // ---- Core discovery logic --------------------------------------------------

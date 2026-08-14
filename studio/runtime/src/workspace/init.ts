@@ -19,6 +19,13 @@ import type { Logger } from "../logging.js";
 import type { Result } from "../result.js";
 import { ok, err } from "../result.js";
 import { alreadyExists, notFound, internalError } from "../errors.js";
+import { join as joinPath } from "node:path";
+import {
+  SERIES_CONTAINER,
+  EPISODES_CONTAINER,
+  CHANNEL_KNOWLEDGE,
+  SERIES_KNOWLEDGE,
+} from "@studio/contracts/src/layout.mjs";
 import type { RuntimeError } from "../errors.js";
 // result helpers are used indirectly via returned Results
 import { validateSlug } from "./slugs.js";
@@ -100,7 +107,15 @@ export async function initSeries(
   const channelCheck = await verifyWorkspaceKind("channel", channelPath, opts.fs, opts.logger);
   if (!channelCheck.ok) return channelCheck;
 
-  return initWorkspace("series", channelPath, slugR.value, meta, opts);
+  // Layout 2: series live inside the channel's `series/` container, never
+  // loose in the channel directory next to its own knowledge folders.
+  return initWorkspace(
+    "series",
+    joinPath(channelPath, SERIES_CONTAINER),
+    slugR.value,
+    meta,
+    opts,
+  );
 }
 
 // ---- Episode ---------------------------------------------------------------
@@ -125,7 +140,14 @@ export async function initEpisode(
   const seriesCheck = await verifyWorkspaceKind("series", seriesPath, opts.fs, opts.logger);
   if (!seriesCheck.ok) return seriesCheck;
 
-  return initWorkspace("episode", seriesPath, slugR.value, meta, opts);
+  // Layout 2: episodes live inside the series' `episodes/` container.
+  return initWorkspace(
+    "episode",
+    joinPath(seriesPath, EPISODES_CONTAINER),
+    slugR.value,
+    meta,
+    opts,
+  );
 }
 
 // ---- Default channel convenience -------------------------------------------
@@ -371,6 +393,9 @@ createdAt: ${now}
     opts, `${wsPath}/settings.yaml`,
     `# Channel settings for ${slug}\n`,
   );
+
+  // Channel knowledge, plus the explicit `series/` container.
+  await makeDirs(opts, wsPath, [...CHANNEL_KNOWLEDGE, SERIES_CONTAINER]);
 }
 
 async function createSeriesSkeleton(
@@ -401,11 +426,16 @@ createdAt: ${now}
     `# Visual Bible for ${slug}\n`,
   );
 
-  // Directories
-  await opts.fs.mkdir(`${wsPath}/voice-profiles`, true).catch(() => { /* idempotent — directory may exist */ });
-  await opts.fs.mkdir(`${wsPath}/pipelines`, true).catch(() => { /* idempotent */ });
-  await opts.fs.mkdir(`${wsPath}/skills`, true).catch(() => { /* idempotent */ });
-  await opts.fs.mkdir(`${wsPath}/sources`, true).catch(() => { /* idempotent */ });
+  // Directories, including the explicit `episodes/` container that makes a
+  // directory's role unambiguous (layout 2).
+  await makeDirs(opts, wsPath, [...SERIES_KNOWLEDGE, EPISODES_CONTAINER]);
+}
+
+/** Create each directory under `wsPath`, ignoring ones that already exist. */
+async function makeDirs(opts: InitOptions, wsPath: string, names: readonly string[]): Promise<void> {
+  for (const name of names) {
+    await opts.fs.mkdir(`${wsPath}/${name}`, true).catch(() => { /* idempotent */ });
+  }
 }
 
 async function createEpisodeSkeleton(

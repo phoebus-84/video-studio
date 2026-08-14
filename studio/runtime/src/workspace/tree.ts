@@ -11,6 +11,16 @@
 export const CHANNEL_TREE = [
   "channel.md",
   "settings.yaml",
+  // Channel knowledge — what this channel is and what it knows, as opposed to
+  // the series it contains.
+  "brand",
+  "characters",
+  "references",
+  "skills",
+  "voices",
+  // Explicit container: a directory in here is a series, and nothing else has
+  // to be inferred (see studio/contracts/src/layout.mjs).
+  "series",
   ".workspace/contract.json",
   ".workspace/metadata.json",
 ] as const;
@@ -24,6 +34,9 @@ export const SERIES_TREE = [
   "pipelines",
   "skills",
   "sources",
+  "templates",
+  // Explicit container: a directory in here is an episode.
+  "episodes",
   ".workspace/contract.json",
   ".workspace/metadata.json",
 ] as const;
