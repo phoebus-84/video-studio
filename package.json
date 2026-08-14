@@ -6,6 +6,20 @@
   "engines": {
     "node": ">=20"
   },
+  "exports": {
+    ".": "./src/vocabulary.mjs",
+    "./src/*": "./src/*",
+    "./schemas/*": "./schemas/*",
+    "./fixtures/*": "./fixtures/*",
+    "./bindings/*": "./bindings/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "schemas",
+    "fixtures",
+    "bindings"
+  ],
   "scripts": {
     "check": "npm run check:compatibility && npm run check:schemas && npm run bindings:check && npm test",
     "check:compatibility": "node scripts/check-compatibility-fixtures.mjs",
