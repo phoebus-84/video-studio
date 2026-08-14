@@ -1,0 +1,36 @@
+{
+  "name": "video-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agentic Video Studio — a Pi-directed video production system. `packages/*` are reusable outside this project; `studio/*` is the product built on top of them.",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "bun@1.2.0",
+  "workspaces": [
+    "packages/fal-media",
+    "packages/graphics",
+    "packages/infographics",
+    "packages/video-composer",
+    "studio/contracts",
+    "studio/runtime",
+    "studio/pipelines",
+    "studio/agent",
+    "studio/gateway",
+    "studio/web"
+  ],
+  "scripts": {
+    "compose": "node tools/compose.mjs",
+    "postinstall": "node tools/compose.mjs --sync-skills --quiet && node tools/build-required.mjs",
+    "check:paths": "node tools/check-no-foreign-paths.mjs",
+    "check:boundaries": "node tools/check-boundaries.mjs",
+    "check": "npm run check:paths && npm run check:boundaries && npm run docs:check && npm run typecheck && npm test",
+    "test": "node tools/run-all.mjs test",
+    "typecheck": "node tools/run-all.mjs typecheck",
+    "doctor": "node tools/doctor.mjs",
+    "docs:generate": "node tools/gen-docs.mjs",
+    "docs:check": "node tools/gen-docs.mjs --check",
+    "build": "node tools/run-all.mjs build"
+  }
+}
