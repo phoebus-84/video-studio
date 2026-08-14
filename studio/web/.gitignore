@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.svelte-kit/
+.vite/
+*.local
+test-results/
+playwright-report/
+package-lock.json

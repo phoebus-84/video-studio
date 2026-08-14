@@ -1,0 +1,35 @@
+{
+  "name": "@video-studio/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --bun vite",
+    "build": "bun run check:context && bun --bun vite build && bun run check:svelte",
+    "preview": "bun --bun vite preview",
+    "check": "bun run check:context && bun run check:svelte && bun run check:types && bun run lint && bun run test",
+    "check:context": "bun scripts/check-design-context.mjs",
+    "check:svelte": "bun x svelte-check --tsconfig ./tsconfig.json",
+    "check:types": "bun x tsc --noEmit",
+    "lint": "bun x eslint --ext .ts,.svelte src test",
+    "test": "bun x vitest run",
+    "test:browser": "bun x playwright test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-svelte": "^3.5.1",
+    "svelte": "^5.38.0",
+    "svelte-check": "^4.3.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.6",
+    "vitest": "^3.1.7"
+  }
+}

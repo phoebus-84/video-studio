@@ -1,0 +1,155 @@
+/* Design tokens — Video Studio
+   Canonical values derived from DESIGN.md. The seed palette uses reserved
+   semantic roles rather than opaque hex names. Both light and dark themes
+   are first-class. */
+
+:root {
+  /* ── scale ── */
+  --vs-space-1: 4px;
+  --vs-space-2: 8px;
+  --vs-space-3: 12px;
+  --vs-space-4: 16px;
+  --vs-space-5: 24px;
+  --vs-space-6: 32px;
+  --vs-space-8: 48px;
+
+  --vs-radius-sm: 4px;
+  --vs-radius-md: 6px;
+  --vs-radius-lg: 8px;
+
+  --vs-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --vs-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* type scale */
+  --vs-text-xs: 0.6875rem; /* 11px */
+  --vs-text-sm: 0.8125rem; /* 13px */
+  --vs-text-base: 0.9375rem; /* 15px */
+  --vs-text-md: 1.0625rem; /* 17px */
+  --vs-text-lg: 1.25rem; /* 20px */
+  --vs-text-xl: 1.5rem; /* 24px */
+
+  --vs-leading-tight: 1.2;
+  --vs-leading-normal: 1.5;
+
+  --vs-font-weight-normal: 400;
+  --vs-font-weight-medium: 500;
+  --vs-font-weight-semibold: 600;
+
+  /* motion */
+  --vs-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --vs-duration-fast: 120ms;
+  --vs-duration-normal: 200ms;
+}
+
+/* ── Light theme (default) ── */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* accent — muted oxide orange */
+  --vs-accent: oklch(58% 0.14 48);
+  --vs-accent-hover: oklch(64% 0.15 48);
+  --vs-accent-subtle: oklch(58% 0.14 48 / 0.12);
+  --vs-accent-text: oklch(99% 0 0);
+
+  /* neutrals — paper alloy (warm tint) */
+  --vs-bg-canvas: oklch(98% 0.002 85);
+  --vs-bg-surface: oklch(100% 0 0);
+  --vs-bg-raised: oklch(97% 0.004 85);
+  --vs-bg-inset: oklch(95% 0.004 85);
+  --vs-bg-hover: oklch(94% 0.004 85);
+
+  --vs-border: oklch(88% 0.004 85);
+  --vs-border-focus: oklch(58% 0.14 48);
+
+  --vs-text-primary: oklch(18% 0.002 85);
+  --vs-text-secondary: oklch(42% 0.002 85);
+  --vs-text-tertiary: oklch(54% 0.002 85); /* AA 4.78:1 on canvas */
+  --vs-text-disabled: oklch(72% 0.002 85);
+
+  /* semantic states */
+  /* semantic state text colors must hold 4.5:1 on canvas (WCAG AA) */
+  --vs-state-running: oklch(50% 0.14 230);
+  --vs-state-attention: oklch(48% 0.13 85);
+  --vs-state-blocked: oklch(48% 0.17 24);
+  --vs-state-current: oklch(50% 0.14 160);
+  --vs-state-stale: oklch(52% 0.03 60);
+
+  /* darker accent for text-on-canvas and as a bg under white text (7.4:1) */
+  --vs-accent-strong: oklch(45% 0.13 48);
+  --vs-accent-strong-hover: oklch(50% 0.14 48);
+  /* text color for use on attention/running filled backgrounds */
+  --vs-on-attention: oklch(22% 0.02 85);
+
+  --vs-state-running-bg: oklch(62% 0.16 230 / 0.1);
+  --vs-state-attention-bg: oklch(65% 0.14 85 / 0.1);
+  --vs-state-blocked-bg: oklch(52% 0.18 24 / 0.1);
+  --vs-state-current-bg: oklch(58% 0.14 160 / 0.1);
+  --vs-state-stale-bg: oklch(60% 0.03 60 / 0.1);
+
+  /* shadows (tonal, reserved for floating elements) */
+  --vs-shadow-float: 0 2px 12px oklch(0% 0 0 / 0.1);
+  --vs-shadow-modal: 0 8px 32px oklch(0% 0 0 / 0.14);
+
+  /* structural */
+  --vs-region-structure-width: 260px;
+  --vs-region-inspector-width: 340px;
+  --vs-header-height: 44px;
+}
+
+/* ── Dark theme ── */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* accent — same hue, adjusted lightness for dark bg */
+  --vs-accent: oklch(66% 0.15 48);
+  --vs-accent-hover: oklch(72% 0.16 48);
+  --vs-accent-subtle: oklch(66% 0.15 48 / 0.15);
+  --vs-accent-text: oklch(15% 0.01 48);
+
+  /* neutrals — graphite alloy (cool tint) */
+  --vs-bg-canvas: oklch(15% 0.004 260);
+  --vs-bg-surface: oklch(18% 0.004 260);
+  --vs-bg-raised: oklch(21% 0.004 260);
+  --vs-bg-inset: oklch(12% 0.004 260);
+  --vs-bg-hover: oklch(23% 0.006 260);
+
+  --vs-border: oklch(28% 0.004 260);
+  --vs-border-focus: oklch(66% 0.15 48);
+
+  --vs-text-primary: oklch(94% 0.002 260);
+  --vs-text-secondary: oklch(70% 0.004 260);
+  --vs-text-tertiary: oklch(58% 0.004 260); /* AA 4.59:1 on dark canvas */
+  --vs-text-disabled: oklch(38% 0.004 260);
+
+  /* semantic states — adjusted for dark bg */
+  --vs-state-running: oklch(68% 0.12 230);
+  --vs-state-attention: oklch(68% 0.12 85);
+  --vs-state-blocked: oklch(66% 0.16 24);
+  --vs-state-current: oklch(62% 0.12 160);
+  --vs-state-stale: oklch(66% 0.02 60);
+
+  /* in dark theme the regular accent already meets AA on canvas */
+  --vs-accent-strong: oklch(66% 0.15 48);
+  --vs-accent-strong-hover: oklch(72% 0.16 48);
+  --vs-on-attention: oklch(22% 0.02 85);
+
+  --vs-state-running-bg: oklch(68% 0.12 230 / 0.12);
+  --vs-state-attention-bg: oklch(68% 0.12 85 / 0.12);
+  --vs-state-blocked-bg: oklch(58% 0.16 24 / 0.12);
+  --vs-state-current-bg: oklch(62% 0.12 160 / 0.12);
+  --vs-state-stale-bg: oklch(62% 0.02 60 / 0.12);
+
+  --vs-shadow-float: 0 2px 12px oklch(0% 0 0 / 0.3);
+  --vs-shadow-modal: 0 8px 32px oklch(0% 0 0 / 0.5);
+}
+
+/* ── reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vs-duration-fast: 0ms;
+    --vs-duration-normal: 0ms;
+  }
+}

@@ -1,0 +1,118 @@
+import type { NarrationSegment, VoiceProfile } from "$lib/narration-types";
+
+class NarrationStore {
+  segments = $state<NarrationSegment[]>([]);
+  voice = $state<VoiceProfile | null>(null);
+  playingId = $state<string | null>(null);
+  audioUrl = $state<string | null>(null);
+  synthesizing = $state(false);
+  error = $state<string | null>(null);
+
+  // Voice control settings (editable)
+  instruct = $state<string | null>(null);
+  temperature = $state<number>(0.7);
+  narratorVoice = $state<string>("default");
+
+  private ttsUrl: string = localStorage.getItem("vs-tts-url") ?? "http://127.0.0.1:5197";
+  private audioEl: HTMLAudioElement | null = null;
+
+  load(segments: NarrationSegment[], voice: VoiceProfile) {
+    this.segments = segments;
+    this.voice = voice;
+    this.playingId = null;
+    this.audioUrl = null;
+  }
+
+  markPlaying(segmentId: string | null) {
+    this.playingId = segmentId;
+  }
+
+  /** Synthesize a segment via the TTS worker and start playback. */
+  async synthesizeAndPlay(segment: NarrationSegment) {
+    this.synthesizing = true;
+    this.error = null;
+    this.markPlaying(segment.id);
+
+    try {
+      // Build text from segments or use the content field
+      const text = (segment as any).text ?? (segment as any).content ?? `Segment ${segment.id}`;
+
+      const res = await fetch(`${this.ttsUrl}/synthesize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          voice: segment.voice || this.narratorVoice,
+          speed: 1.0,
+          temperature: this.temperature,
+          ...(segment.instruct || this.instruct ? { instruct: segment.instruct || this.instruct } : {}),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error((err as any).detail ?? `TTS error ${res.status}`);
+      }
+
+      const data = await res.json() as any;
+      const wavPath = data.result?.wav_path;
+      if (!wavPath) throw new Error("No WAV path in TTS response");
+
+      // Fetch and play the WAV
+      const filename = wavPath.split("/").pop() ?? "output.wav";
+      const audioRes = await fetch(`${this.ttsUrl}/voices/default/output/${filename}`);
+      if (!audioRes.ok) {
+        // WAV not found — may have been cleaned up between restarts.
+        // The synthesis succeeded but serving failed. Retry synthesis.
+        throw new Error(`Audio file not available (${audioRes.status}). Try again.`);
+      }
+
+      const blob = await audioRes.blob();
+      this.audioUrl = URL.createObjectURL(blob);
+
+      // Play
+      if (this.audioEl) {
+        this.audioEl.pause();
+        URL.revokeObjectURL(this.audioEl.src);
+      }
+
+      this.audioEl = new Audio(this.audioUrl);
+      this.audioEl.onended = () => {
+        this.markPlaying(null);
+        this.audioUrl = null;
+      };
+      this.audioEl.onerror = () => {
+        this.error = "Playback failed";
+        this.markPlaying(null);
+      };
+
+      await this.audioEl.play();
+      this.synthesizing = false;
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : "Synthesis failed";
+      this.synthesizing = false;
+      this.markPlaying(null);
+    }
+  }
+
+  stopPlayback() {
+    if (this.audioEl) {
+      this.audioEl.pause();
+      this.audioEl = null;
+    }
+    this.playingId = null;
+    this.audioUrl = null;
+    this.synthesizing = false;
+    this.error = null;
+  }
+
+  totalDuration = $derived(
+    this.segments.reduce((sum, s) => sum + (s.durationSeconds ?? 0), 0),
+  );
+
+  readyCount = $derived(
+    this.segments.filter((s) => s.status === "ready").length,
+  );
+}
+
+export const narration = new NarrationStore();
