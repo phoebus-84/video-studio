@@ -4,6 +4,32 @@ import { resolve } from "node:path";
 import { loadConfig } from "../src/config/index.js";
 import { resolveToken, generateToken } from "../src/auth/index.js";
 import { createGateway, type GatewayInstance } from "../src/server.js";
+import WebSocket from "ws";
+
+/** Open a socket and resolve with how it closed. */
+function connectWs(
+  url: string,
+  opts: { closeAfterOpen?: boolean } = {},
+): Promise<{ opened: boolean; code: number; reason: string }> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    let opened = false;
+    const timer = setTimeout(() => {
+      socket.terminate();
+      reject(new Error(`timed out connecting to ${url}`));
+    }, 5000);
+
+    socket.on("open", () => {
+      opened = true;
+      if (opts.closeAfterOpen) socket.close(1000, "done");
+    });
+    socket.on("close", (code, reason) => {
+      clearTimeout(timer);
+      resolve({ opened, code, reason: reason.toString() });
+    });
+    socket.on("error", () => { /* close still fires */ });
+  });
+}
 
 const TMP = resolve(".test-tmp");
 
@@ -17,6 +43,7 @@ const TMP = resolve(".test-tmp");
 describe("Gateway Integration", () => {
   let gateway: GatewayInstance;
   let baseUrl: string;
+  let wsUrl: string;
   let token: string;
 
   beforeAll(async () => {
@@ -39,6 +66,7 @@ describe("Gateway Integration", () => {
     const addr = await gateway.start();
     // Fastify returns "http://127.0.0.1:PORT" for ephemeral
     baseUrl = addr;
+    wsUrl = addr.replace(/^http/, "ws");
   });
 
   afterAll(async () => {
@@ -202,10 +230,33 @@ describe("Gateway Integration", () => {
       expect(response.status).toBe(404);
     });
 
-    it("rejects websocket without token", async () => {
-      // Without token, auth middleware rejects with 401 before upgrade
+    it("is not an HTTP endpoint", async () => {
+      // /ws is deliberately in PUBLIC_PATHS: it authenticates during the
+      // WebSocket handshake by query token, not by Authorization header,
+      // because clients upgrading a socket cannot always set one. A plain GET
+      // therefore matches no HTTP route.
       const response = await fetch(`${baseUrl}/ws`);
-      expect(response.status).toBe(401);
+      expect(response.status).toBe(404);
+    });
+
+    it("closes an unauthenticated upgrade with 4001", async () => {
+      const closed = await connectWs(`${wsUrl}/ws`);
+      expect(closed.code).toBe(4001);
+      expect(closed.reason).toBe("Unauthorized");
+    });
+
+    it("closes an upgrade carrying the wrong token with 4001", async () => {
+      // "dev-token" is rejected here even though the HTTP middleware may
+      // accept it when allowDevToken is on. Assuming otherwise is what left
+      // the agent reconnecting forever.
+      const closed = await connectWs(`${wsUrl}/ws?token=dev-token`);
+      expect(closed.code).toBe(4001);
+    });
+
+    it("accepts an upgrade carrying the real token", async () => {
+      const closed = await connectWs(`${wsUrl}/ws?token=${token}`, { closeAfterOpen: true });
+      expect(closed.opened).toBe(true);
+      expect(closed.code).not.toBe(4001);
     });
   });
 
