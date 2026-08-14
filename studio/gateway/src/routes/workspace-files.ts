@@ -21,6 +21,7 @@ import {
   seriesPath,
   episodePath,
 } from "@studio/contracts/src/layout.mjs";
+import { resolvePresentation } from "@studio/contracts/src/presentation.mjs";
 import {
   recordRevision,
   listRevisions,
@@ -38,8 +39,16 @@ export interface FileEntry {
   kind: "file" | "directory";
   size: number | null;
   updatedAt: string;
-  /** Best-effort media classification, for the studio to pick a viewer. */
+  /** Best-effort media classification. */
   contentType: string | null;
+  /**
+   * How this artifact asks to be shown.
+   *
+   * The studio resolves `viewer` against a registry of components rather than
+   * branching on the content type itself, so shipping a new kind is a matter
+   * of registering a component, not editing the workspace.
+   */
+  presentation: { viewer: string; actions: readonly string[] } | null;
 }
 
 const TEXT_EXT = new Set([
@@ -140,6 +149,7 @@ async function listDirectory(dir: string, levelDir: string, recursive: boolean):
         size: isDir ? null : stat.size,
         updatedAt: stat.mtime.toISOString(),
         contentType: isDir ? null : contentTypeFor(entry.name),
+        presentation: isDir ? null : resolvePresentation(contentTypeFor(entry.name)),
       });
       if (isDir && recursive) await walk(abs);
     }
