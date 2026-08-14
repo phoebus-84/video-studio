@@ -1,4 +1,39 @@
-import { describe, it, expect } from "vitest";
+// This package runs its tests with `node --test`; this file was written
+// against vitest, so the whole file failed to load. Rather than add a second
+// test runner for one file, the two matchers it uses are shimmed onto
+// node:assert.
+import { describe, it } from "node:test";
+import { strict as assert } from "node:assert";
+
+function contains(actual: unknown, expected: string): boolean {
+  return typeof actual === "string" && actual.includes(expected);
+}
+
+function expect(actual: unknown) {
+  return {
+    toBe(expected: unknown) {
+      assert.strictEqual(actual, expected);
+    },
+    toContain(expected: string) {
+      assert.ok(
+        contains(actual, expected),
+        `expected ${JSON.stringify(actual)} to contain ${JSON.stringify(expected)}`,
+      );
+    },
+    not: {
+      toBe(expected: unknown) {
+        assert.notStrictEqual(actual, expected);
+      },
+      toContain(expected: string) {
+        assert.ok(
+          !contains(actual, expected),
+          `expected ${JSON.stringify(actual)} not to contain ${JSON.stringify(expected)}`,
+        );
+      },
+    },
+  };
+}
+
 import { renderSvg, text, rect, line, group, vstack, titleCardLayout, quoteCardLayout } from "../../src/pipeline/svg-primitives.js";
 import type { SvgDocument } from "../../src/pipeline/svg-primitives.js";
 
