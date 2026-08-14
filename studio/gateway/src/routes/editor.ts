@@ -9,8 +9,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { levelRoot, resolveInside } from "./workspace-files.js";
-import * as crypto from "node:crypto";
+import { levelRoot, resolveInside, computeRevision } from "./workspace-files.js";
 import { EventBus, createEvent } from "../events/bus.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -25,9 +24,11 @@ interface EditorRouteOptions {
 /**
  * Compute a SHA-256 revision ID for file content.
  */
-function computeRevision(content: Buffer): string {
-  return crypto.createHash("sha256").update(content).digest("hex");
-}
+// Revisions are computed in one place. There were two definitions — a full
+// sha256 here and a 16-character prefix in the workspace API — so a file read
+// through one route could never be written through the other: the
+// If-Match check compared a 64-character hash against a 16-character one and
+// always reported a conflict.
 
 /**
  * Resolve and validate an artifact path within the library root.
