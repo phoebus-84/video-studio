@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createFalClient, type FalClient } from "./client.js";
+import { createFalClient, type FalQueueClient } from "./client.js";
 import { getProfile } from "./profiles.js";
 
 interface ServerOptions {
@@ -20,7 +20,7 @@ interface ServerOptions {
 export interface FalServerHandle {
   url: string;
   stop: () => Promise<void>;
-  client: FalClient;
+  client: FalQueueClient;
 }
 
 interface GenerationRecord {
@@ -41,7 +41,6 @@ export function createFalServer(opts: ServerOptions = {}): Promise<FalServerHand
 
   const client = createFalClient();
   const generations: GenerationRecord[] = [];
-  let pendingRequests = new Map<string, string>(); // requestId → profile
 
   return new Promise((resolve, reject) => {
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
