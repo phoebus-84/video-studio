@@ -8,6 +8,8 @@ import { WorkspaceWatcher } from "./events/watcher.js";
 import { registerEditorRoutes, registerChannelFileRoutes, registerSeriesFileRoutes } from "./routes/editor.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
 import fastifyStatic from "@fastify/static";
+import fastifyMultipart from "@fastify/multipart";
+import { registerWorkspaceFileRoutes } from "./routes/workspace-files.js";
 import * as path from "node:path";
 import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
@@ -139,6 +141,11 @@ export async function createGateway(
   publisher.start(runtime, watcher);
 
   // ── Serve library assets as static files ─────────────────────────────
+  // Uploads are capped so a stray request cannot fill the library's disk.
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: 512 * 1024 * 1024, files: 20 },
+  });
+
   await app.register(fastifyStatic, {
     root: libraryRoot,
     prefix: "/library/",
@@ -153,6 +160,18 @@ export async function createGateway(
   });
   registerChannelFileRoutes(app, libraryRoot);
   registerSeriesFileRoutes(app, libraryRoot);
+
+  // ── Workspace file API ───────────────────────────────────────────────────
+  // One implementation per level: list, create, upload, move, delete. This is
+  // what lets the studio show what is actually there instead of probing a
+  // hardcoded set of filenames.
+  for (const [level, prefix] of [
+    ["channel", "/api/channels/:channel"],
+    ["series", "/api/channels/:channel/series/:series"],
+    ["episode", "/api/channels/:channel/series/:series/episodes/:episode"],
+  ] as const) {
+    registerWorkspaceFileRoutes(app, { root: libraryRoot, level, prefix });
+  }
   registerReviewRoutes(app, {
     root: libraryRoot,
     bus: events.bus,

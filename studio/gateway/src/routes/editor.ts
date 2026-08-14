@@ -9,6 +9,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { levelRoot, resolveInside } from "./workspace-files.js";
 import * as crypto from "node:crypto";
 import { EventBus, createEvent } from "../events/bus.js";
 
@@ -39,18 +40,17 @@ async function resolveArtifactPath(
   episode: string,
   artifactPath: string,
 ): Promise<string | null> {
-  // Normalize and join
-  const normalized = path.normalize(
-    path.join(root, channel, series, episode, artifactPath),
-  );
-  const rootNormalized = path.normalize(root);
+  // Levels are resolved through the layout module rather than joined by hand,
+  // so this stays correct wherever episodes live. Joining
+  // root/channel/series/episode directly was layout 1, and started returning
+  // 404 for every episode file the moment the library moved to layout 2.
+  const levelDir = episode
+    ? levelRoot(root, "episode", { channel, series, episode })
+    : series
+      ? levelRoot(root, "series", { channel, series })
+      : levelRoot(root, "channel", { channel });
 
-  // Security: ensure the resolved path is within root
-  if (!normalized.startsWith(rootNormalized)) {
-    return null;
-  }
-
-  return normalized;
+  return resolveInside(levelDir, artifactPath);
 }
 
 /**
