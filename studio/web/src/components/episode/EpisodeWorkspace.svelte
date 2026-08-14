@@ -1,11 +1,9 @@
 <script lang="ts">
   import { episode } from "$lib/episode-store.svelte.ts";
-  import { library } from "$lib/library-store.svelte.ts";
   import EpisodeHeader from "./EpisodeHeader.svelte";
   import StageRail from "./StageRail.svelte";
   import EditorWorkspace from "../editor/EditorWorkspace.svelte";
   import SceneViewer from "./SceneViewer.svelte";
-  import LevelWorkspace from "../shell/LevelWorkspace.svelte";
 
   const ep = $derived(episode.state);
 </script>
@@ -26,19 +24,6 @@
       <h2>Failed to load episode</h2>
       <p>{ep.message}</p>
     </div>
-  {:else if library.selectedChannel}
-    <LevelWorkspace
-      level="channel"
-      label={library.tree.channels.find(c => c.slug === library.selectedChannel)?.title ?? library.selectedChannel}
-      channel={library.selectedChannel}
-    />
-  {:else if library.selectedSeries}
-    <LevelWorkspace
-      level="series"
-      label={library.tree.channels.find(c => c.slug === library.selectedSeries!.channel)?.series.find(s => s.slug === library.selectedSeries!.series)?.title ?? library.selectedSeries.series}
-      channel={library.selectedSeries.channel}
-      series={library.selectedSeries.series}
-    />
   {:else}
     <EpisodeHeader episode={ep.episode} />
     <StageRail

@@ -32,6 +32,16 @@ export class GatewayClient {
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
+  /** Gateway origin, for requests this client does not wrap (uploads, media). */
+  get baseUrl(): string {
+    return this.#baseUrl;
+  }
+
+  /** Current bearer token, for the same. */
+  get token(): string | null {
+    return this.#tokenProvider();
+  }
+
   /* ── health ── */
   async health(): Promise<HealthReport> {
     return this.#get("/health", { authenticated: false });
