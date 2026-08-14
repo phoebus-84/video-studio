@@ -20,11 +20,15 @@ describe("RuntimeClient", () => {
     const result = await client.resolve({ channel: "wordless-comedy", series: "give-me-time", episode: "the-run-up" }, "wordless-rigged-short");
 
     expect(result.ok).toBe(true);
+    // --library is passed explicitly: the CLI requires it and does not read
+    // AVG_LIBRARY_ROOT.
     expect(result.data?.args).toEqual([
       "resolve",
       "wordless-comedy/give-me-time/the-run-up",
       "--pipeline",
       "wordless-rigged-short",
+      "--library",
+      root,
       "--json",
     ]);
   });

@@ -169,7 +169,11 @@ export class RuntimeClient {
         resolve(result);
       };
 
-      const fullArgs = [...args, "--json"];
+      // The CLI requires --library explicitly; it does not read
+      // AVG_LIBRARY_ROOT. Passing only the environment variable made every
+      // runtime call exit 1 with "--library <path> is required", which surfaced
+      // as runtime "down" in /health.
+      const fullArgs = [...args, "--library", this.libraryRoot, "--json"];
       const env = {
         ...process.env,
         AVG_LIBRARY_ROOT: this.libraryRoot,

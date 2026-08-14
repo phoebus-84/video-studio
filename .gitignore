@@ -23,5 +23,10 @@ __pycache__/
 # Model weights are fetched, never committed.
 models/
 
+# The workspace library is production data — channels, episodes and generated
+# media (ADR-0021: generated media is immutable and not auto-committed).
+# Point AVG_LIBRARY_ROOT elsewhere if you keep it outside the repo.
+library/
+
 .DS_Store
 .test-tmp/
