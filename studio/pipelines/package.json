@@ -1,0 +1,21 @@
+{
+  "name": "video-built-in-pipelines",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Built-in YAML pipelines and Pi skills for video production use cases",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "lint:pipeline": "node lint/validate-pipeline.js",
+    "lint:skill": "node lint/validate-skill.js",
+    "lint": "npm run lint:pipeline -- pipelines/narrated-illustrated-video.yaml pipelines/fairy-tale-adaptation.yaml pipelines/repository-documentation.yaml fixtures/valid/pipeline-basic.yaml && npm run lint:skill -- fixtures/valid/skill-basic.yaml",
+    "lint:check-anti-patterns": "npm run lint:pipeline -- fixtures/invalid/pipeline-leaked-orchestration.yaml fixtures/invalid/pipeline-empty-stages.yaml; npm run lint:skill -- fixtures/invalid/skill-missing-frontmatter.yaml",
+    "skills:sync": "node scripts/sync-skills.mjs",
+    "skills:check": "node scripts/sync-skills.mjs --check"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.1.0"
+  }
+}

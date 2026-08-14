@@ -1,0 +1,52 @@
+pipeline:
+  id: fairy-tale-adaptation
+  version: "1.0.0"
+  description: "Adapts a public-domain fairy tale for a configured child audience with safety gates"
+  extends:
+    pipeline: narrated-illustrated-video
+    version: "1.0.0"
+  capabilities:
+    - id: image.generate
+      version: "1.0.0"
+    - id: speech.synthesize
+      version: "1.0.0"
+  stages:
+    - id: safety-review
+      name: "Safety Review"
+      type: editorial
+      description: "Check script content for age-appropriate safety"
+      inputs:
+        - contract: script.md
+          version: "1.0.0"
+      outputs:
+        - contract: safety-report.json
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills:
+        - skill: safety-review
+          version: "0.1.0"
+      depends_on:
+        - script
+
+    - id: continuity-check
+      name: "Continuity Check"
+      type: editorial
+      description: "Verify visual continuity across scenes after illustration generation"
+      inputs:
+        - contract: illustrations/
+          version: "1.0.0"
+        - contract: art-direction.json
+          version: "1.0.0"
+      outputs:
+        - contract: continuity-report.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - illustrations

@@ -1,0 +1,230 @@
+pipeline:
+  id: narrated-illustrated-video
+  version: "1.0.0"
+  description: "Produces a 16:9 1080p narrated explainer with illustrations, captions, and FFmpeg editing. Targets 3-8 minute runtime."
+  capabilities:
+    - id: image.generate
+      version: "1.0.0"
+    - id: speech.synthesize
+      version: "1.0.0"
+    - id: media.probe
+      version: "1.0.0"
+    - id: video.compose
+      version: "1.0.0"
+    - id: terminal.record
+      version: "1.0.0"
+  stages:
+    - id: brief
+      name: "Creative Brief"
+      type: editorial
+      description: "Research and structure the video topic"
+      inputs: []
+      outputs:
+        - contract: brief.md
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills:
+        - skill: write-brief
+          version: "0.1.0"
+      depends_on: []
+
+    - id: script
+      name: "Script"
+      type: editorial
+      description: "Write the narration script with scene directions"
+      inputs:
+        - contract: brief.md
+          version: "1.0.0"
+      outputs:
+        - contract: script.md
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+      skills:
+        - skill: write-script
+          version: "0.1.0"
+      depends_on:
+        - brief
+
+    - id: art-direction
+      name: "Art Direction"
+      type: editorial
+      description: "Design visual style and illustration specs per scene"
+      inputs:
+        - contract: script.md
+          version: "1.0.0"
+      outputs:
+        - contract: art-direction.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills:
+        - skill: art-direction
+          version: "0.1.0"
+      depends_on:
+        - script
+
+    - id: terminal-recordings
+      name: "Terminal Recordings"
+      type: capability
+      description: "Render VHS terminal recordings for code walkthrough and CLI demo scenes"
+      capability: terminal.record
+      inputs:
+        - contract: art-direction.json
+          version: "1.0.0"
+        - contract: script.md
+          version: "1.0.0"
+      outputs:
+        - contract: tapes/
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 2
+      skills:
+        - skill: vhs-terminal-recording
+          version: "0.1.0"
+      depends_on:
+        - art-direction
+
+    - id: illustrations
+      name: "Illustrations"
+      type: capability
+      description: "Generate images for each scene based on art direction"
+      capability: image.generate
+      inputs:
+        - contract: art-direction.json
+          version: "1.0.0"
+      outputs:
+        - contract: illustrations/
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - art-direction
+
+    - id: narration
+      name: "Narration"
+      type: capability
+      description: "Generate source-mapped segments, immutable accepted attempts, and mastered narration"
+      capability: speech.synthesize
+      inputs:
+        - contract: script.md
+          version: "1.0.0"
+      outputs:
+        - contract: narration-manifest.json
+          version: "0.1.0"
+        - contract: narration-full.wav
+          version: "0.1.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - script
+
+    - id: captions
+      name: "Captions"
+      type: capability
+      description: "Generate timed captions in manifest order from measured accepted WAV durations"
+      capability: media.probe
+      inputs:
+        - contract: narration-manifest.json
+          version: "0.1.0"
+      outputs:
+        - contract: captions.srt
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - narration
+
+    - id: timing
+      name: "Scene Timing"
+      type: editorial
+      description: "Compute per-segment durations and transitions from the narration manifest"
+      inputs:
+        - contract: script.md
+          version: "1.0.0"
+        - contract: narration-manifest.json
+          version: "0.1.0"
+      outputs:
+        - contract: timing.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - script
+        - narration
+
+    - id: compose
+      name: "Compose & Render"
+      type: capability
+      description: "Assemble final video from illustrations, canonical narration manifest, captions, and timing"
+      capability: video.compose
+      inputs:
+        - contract: illustrations/
+          version: "1.0.0"
+        - contract: tapes/
+          version: "1.0.0"
+          optional: true
+        - contract: narration-manifest.json
+          version: "0.1.0"
+        - contract: captions.srt
+          version: "1.0.0"
+        - contract: timing.json
+          version: "1.0.0"
+      outputs:
+        - contract: output.mp4
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+        budget:
+          wall_time: "5m"
+          tokens: 0
+      skills:
+        - skill: compose-video
+          version: "0.1.0"
+      depends_on:
+        - illustrations
+        - terminal-recordings
+        - narration
+        - captions
+        - timing
+
+    - id: qa
+      name: "Quality Assurance"
+      type: editorial
+      description: "Review rendered video for issues"
+      inputs:
+        - contract: output.mp4
+          version: "1.0.0"
+      outputs:
+        - contract: qa-report.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - compose

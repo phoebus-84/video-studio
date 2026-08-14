@@ -1,0 +1,66 @@
+pipeline:
+  id: leaked-orchestration
+  version: "1.0.0"
+  description: "A pipeline that leaks orchestration into stage descriptions"
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      type: capability
+      capability: image.generate
+      inputs:
+        - contract: source-input
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: orphan-output
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 0
+      skills: []
+      depends_on: []
+
+    - id: stage-two
+      name: "Stage Two"
+      type: capability
+      description: >
+        If the input is a fairy tale, adapt it for children. If it is a repository,
+        extract code. Content-type branching in manifest is forbidden by AP-006.
+      capability: image.generate
+      inputs:
+        - contract: missing-input
+          version: "1.0.0"
+          source: prior-stage.nonexistent
+        - contract: content-type-indicator
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: shared-output
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - stage-one
+
+    - id: stage_3
+      name: "Stage Three"
+      type: capability
+      description: "Has an unstable stage ID using underscore"
+      capability: image.generate
+      inputs:
+        - contract: shared-output
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: shared-output
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 0
+      skills: []
+      depends_on: []

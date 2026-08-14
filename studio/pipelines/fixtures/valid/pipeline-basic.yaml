@@ -1,0 +1,55 @@
+pipeline:
+  id: basic-pipeline
+  version: "1.0.0"
+  description: "A minimal valid pipeline for testing conventions"
+  capabilities:
+    - id: image.generate
+      version: "1.0.0"
+  stages:
+    - id: stage-one
+      name: "Stage One"
+      type: capability
+      description: "First stage: normalizes inputs"
+      capability: image.generate
+      inputs:
+        - contract: source-input
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: intermediate-artifact
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 0
+      skills:
+        - skill: stage-one-producer
+          version: "1.0.0"
+      depends_on: []
+      parallelizable_group: null
+
+    - id: stage-two
+      name: "Stage Two"
+      type: capability
+      description: "Second stage: processes intermediate artifact"
+      capability: image.generate
+      inputs:
+        - contract: intermediate-artifact
+          version: "1.0.0"
+          source: upstream
+      outputs:
+        - contract: final-artifact
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: human
+        retry_on_failure: 2
+        budget:
+          wall_time: "5m"
+          tokens: 10000
+      skills:
+        - skill: stage-two-producer
+          version: "1.0.0"
+      depends_on:
+        - stage-one
+      parallelizable_group: null

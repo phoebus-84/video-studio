@@ -1,0 +1,5 @@
+pipeline:
+  id: empty-stages-pipeline
+  version: "1.0.0"
+  description: "A pipeline with no stages — invalid per AP-014"
+  stages: []
