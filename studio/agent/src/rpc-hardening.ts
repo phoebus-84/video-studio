@@ -108,26 +108,72 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let currentEpisodeSlug: string | null = null;
 
-  /** Resolve the gateway token from env or gateway config file. */
-  function resolveToken(): string {
+  /** Close code the gateway uses to reject a bad token. */
+  const WS_UNAUTHORIZED = 4001;
+  const RECONNECT_BASE_MS = 1_000;
+  const RECONNECT_MAX_MS = 60_000;
+  const RECONNECT_MAX_ATTEMPTS = 10;
+
+  let reconnectAttempts = 0;
+  /** Set when retrying is pointless, so the loop stops instead of spinning. */
+  let gatewayGaveUp = false;
+
+  /** Reconnect with exponential backoff, giving up rather than looping forever. */
+  function scheduleReconnect(): void {
+    if (wsReconnectTimer || gatewayGaveUp) return;
+
+    if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+      gatewayGaveUp = true;
+      notify({
+        type: "gateway:unavailable",
+        message:
+          `Gave up reconnecting to the gateway after ${RECONNECT_MAX_ATTEMPTS} attempts. ` +
+          `The agent works without the event stream; restart Pi once the gateway is up.`,
+      });
+      return;
+    }
+
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempts, RECONNECT_MAX_MS);
+    reconnectAttempts++;
+    wsReconnectTimer = setTimeout(() => {
+      wsReconnectTimer = null;
+      connectWs();
+    }, delay);
+  }
+
+  /**
+   * Resolve the gateway token.
+   *
+   * The gateway auto-generates `.gateway-token` in its own working directory
+   * on first start and requires an exact match on the WebSocket route — unlike
+   * the HTTP middleware, it does not accept the well-known "dev-token".
+   *
+   * Returning "dev-token" as a fallback therefore guaranteed a rejected
+   * connection while looking like a successful configuration, which is exactly
+   * what produced an endless connect/disconnect loop. Failing to resolve a
+   * token is now reported instead of disguised.
+   */
+  function resolveToken(): string | null {
     if (process.env.AVG_GATEWAY_TOKEN) return process.env.AVG_GATEWAY_TOKEN;
-    // Try reading .gateway-token relative to the extension's own location
-    // and common project layout patterns.
-    const bases = [
-      // Extension's own directory (pi-video-agent/src/ → ../video-studio-gateway/)
-      resolvePath(fileURLToPath(import.meta.url), "..", "..", "..", "video-studio-gateway", ".gateway-token"),
-      // Project root (if Pi runs from the avg/ directory)
-      resolvePath(process.cwd(), "video-studio-gateway", ".gateway-token"),
-      // Directly in cwd
+
+    // src/ → studio/agent/ → studio/ → <repo root>
+    const repoRoot = resolvePath(fileURLToPath(import.meta.url), "..", "..", "..", "..");
+    const candidates = [
+      // Where the gateway writes it when started from studio/gateway.
+      resolvePath(repoRoot, "studio", "gateway", ".gateway-token"),
+      resolvePath(process.cwd(), "studio", "gateway", ".gateway-token"),
       resolvePath(process.cwd(), ".gateway-token"),
+      // Library-scoped token, used by some workspace layouts.
+      resolvePath(process.env.AVG_LIBRARY_ROOT ?? resolvePath(process.cwd(), "library"), ".gateway-token"),
     ];
-    for (const p of bases) {
+
+    for (const p of candidates) {
       try {
         const tok = readFileSync(p, "utf-8").trim();
         if (tok) return tok;
       } catch { /* not found */ }
     }
-    return "dev-token";
+    return null;
   }
 
   const gatewayUrl = process.env.AVG_GATEWAY_URL ?? "ws://127.0.0.1:5198/ws";
@@ -166,6 +212,19 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   /** Connect WebSocket to the gateway. */
   function connectWs(): void {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    if (gatewayGaveUp) return;
+
+    if (!gatewayToken) {
+      gatewayGaveUp = true;
+      notify({
+        type: "gateway:unconfigured",
+        message:
+          "No gateway token found, so the event stream is disabled. The agent works " +
+          "without it. To enable: start the gateway (it writes studio/gateway/.gateway-token) " +
+          "or set AVG_GATEWAY_TOKEN.",
+      });
+      return;
+    }
 
     const url = `${gatewayUrl}?token=${encodeURIComponent(gatewayToken)}`;
     try {
@@ -173,6 +232,10 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
 
       ws.on("open", () => {
         monitor.markConnected();
+        // A real connection resets the backoff. Safe even though an
+        // unauthorized socket also opens briefly, because a 4001 close stops
+        // retrying outright rather than relying on this counter.
+        reconnectAttempts = 0;
         // Subscribe to relevant channels
         const subMsg: Record<string, unknown> = {
           type: "subscribe",
@@ -229,17 +292,29 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
         }
       });
 
-      ws.on("close", () => {
+      ws.on("close", (code: number, reason: Buffer) => {
         monitor.markDisconnected();
         ws = null;
-        notify({ type: "gateway:disconnected", message: "WebSocket closed" });
-        // Reconnect after 5s with backoff
-        if (!wsReconnectTimer) {
-          wsReconnectTimer = setTimeout(() => {
-            wsReconnectTimer = null;
-            connectWs();
-          }, 5000);
+        const why = reason?.toString() || "no reason given";
+
+        // 4001 is the gateway rejecting the token. Retrying cannot fix that,
+        // and doing so every 5s forever floods the session with a loop whose
+        // cause is never printed.
+        if (code === WS_UNAUTHORIZED) {
+          gatewayGaveUp = true;
+          notify({
+            type: "gateway:unauthorized",
+            message:
+              `Gateway rejected the token (${code} ${why}). Not retrying. The agent ` +
+              `works without the event stream. Fix by starting the gateway and using ` +
+              `the token it writes to studio/gateway/.gateway-token, or set ` +
+              `AVG_GATEWAY_TOKEN to match.`,
+          });
+          return;
         }
+
+        notify({ type: "gateway:disconnected", message: `WebSocket closed (${code} ${why})` });
+        scheduleReconnect();
       });
 
       ws.on("error", (err: Error) => {
@@ -249,22 +324,24 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
       });
     } catch (err) {
       monitor.markError();
-      // Retry after backoff
-      wsReconnectTimer = setTimeout(() => {
-        wsReconnectTimer = null;
-        connectWs();
-      }, 5000);
+      scheduleReconnect();
     }
   }
 
   /** Disconnect WebSocket and cancel retry. */
   function disconnectWs(): void {
+    // Setting `ws.onclose = null` does not remove a listener registered with
+    // `ws.on("close", …)`, so the close handler kept firing after shutdown and
+    // scheduled another reconnect. With the socket then holding the event loop
+    // open, `pi -p` never exited.
+    gatewayGaveUp = true;
+
     if (wsReconnectTimer) {
       clearTimeout(wsReconnectTimer);
       wsReconnectTimer = null;
     }
     if (ws) {
-      ws.onclose = null; // prevent reconnect
+      ws.removeAllListeners();
       ws.close();
       ws = null;
     }
