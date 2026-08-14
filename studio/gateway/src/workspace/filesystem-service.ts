@@ -8,7 +8,10 @@ import { promises as fs } from "node:fs";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import * as yaml from "yaml";
-import type { WorkspaceService, ChannelSummary, SeriesSummary, EpisodeSummary } from "./service.js";
+import type { WorkspaceService } from "./service.js";
+// These live in the contracts module; service.ts imports them without
+// re-exporting, so take them from the source rather than through it.
+import type { ChannelSummary, SeriesSummary, EpisodeSummary, EpisodeDetail, EpisodeStatus } from "../contracts/types.js";
 import { loadNarrationManifest } from "../runtime/narration-manifest.js";
 
 const SERIES_SUPPORT_DIRECTORIES = new Set([
@@ -111,14 +114,14 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     return episodes;
   }
 
-  async getEpisode(channel: string, series: string, episode: string): Promise<EpisodeSummary | null> {
+  async getEpisode(channel: string, series: string, episode: string): Promise<EpisodeDetail | null> {
     for (const root of this.roots) {
       const epPath = path.join(root, channel, series, episode);
       try {
         await fs.access(epPath);
         const status = await this.detectStatus(epPath);
         const pipeline = this.resolvePipeline(root, channel, series, episode);
-        const base: EpisodeSummary = {
+        const base: EpisodeDetail = {
           slug: episode,
           title: this.titleFromSlug(episode),
           status,
@@ -291,13 +294,13 @@ export class FileSystemWorkspaceService implements WorkspaceService {
           }
 
           // ── QA report (only if a real report file exists on disk) ──
-          let qaReport: unknown = null;
+          let qaReport: Record<string, unknown> | null = null;
           const reportPaths = [path.join(epPath, "artifacts", "qa-report.json")];
           if (render) {
             reportPaths.push(path.join(epPath, "output", `${path.basename(render.file as string, ".mp4")}.report.json`));
           }
           for (const rp of reportPaths) {
-            try { qaReport = JSON.parse(await fs.readFile(rp, "utf-8")); break; } catch { /* try next */ }
+            try { qaReport = JSON.parse(await fs.readFile(rp, "utf-8")) as Record<string, unknown>; break; } catch { /* try next */ }
           }
 
           return { ...base, scenes, render, qaReport, slug: episode, status, updatedAt: new Date().toISOString() };
@@ -354,7 +357,16 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     } catch { return 0; }
   }
 
-  private async detectStatus(epPath: string): Promise<string> {
+  /**
+   * Derive an episode's status from what is on disk.
+   *
+   * Returns the canonical EpisodeStatus vocabulary. This previously returned
+   * "in-progress" and "pending", neither of which is a member of that union,
+   * so the gateway was emitting statuses the browser's own types said could
+   * not occur. The mapping is: nothing started -> idle, work present but no
+   * approved render -> running, approved QA or a finished mp4 -> completed.
+   */
+  private async detectStatus(epPath: string): Promise<EpisodeStatus> {
     try {
       const qa = JSON.parse(await fs.readFile(path.join(epPath, "artifacts", "qa-report.json"), "utf-8")) as { approved?: unknown };
       if (qa.approved === true) return "completed";
@@ -364,15 +376,15 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       const pointer = JSON.parse(await fs.readFile(path.join(epPath, "output", "current.json"), "utf-8")) as { path?: unknown };
       if (typeof pointer.path === "string" && !path.isAbsolute(pointer.path) && !pointer.path.includes("..")) {
         await fs.access(path.join(epPath, "output", pointer.path));
-        return "in-progress";
+        return "running";
       }
     } catch { /* no canonical render */ }
 
     try { await fs.access(path.join(epPath, "artifacts", "output.mp4")); return "completed"; } catch {}
     for (const marker of ["production-profile.json", "visual-beats.json", "script.md"]) {
-      try { await fs.access(path.join(epPath, "artifacts", marker)); return "in-progress"; } catch {}
+      try { await fs.access(path.join(epPath, "artifacts", marker)); return "running"; } catch {}
     }
-    return "pending";
+    return "idle";
   }
 
   private titleFromSlug(slug: string): string {
@@ -420,7 +432,8 @@ interface SrtSegment {
 function parseSrtForScene(
   srt: string,
   sceneId: string,
-  sceneDuration: number,
+  /** Retained for callers; scene filtering is by ID prefix, not duration. */
+  _sceneDuration: number,
 ): Array<{ time: string; text: string }> {
   const segments: SrtSegment[] = [];
   const blocks = srt.trim().split(/\n\n+/);

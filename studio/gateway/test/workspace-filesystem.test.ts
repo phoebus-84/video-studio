@@ -51,7 +51,10 @@ describe("FileSystemWorkspaceService", () => {
     const workspace = new FileSystemWorkspaceService([root]);
     const detail = await workspace.getEpisode("wordless-comedy", "give-me-time", "the-run-up") as any;
 
-    expect(detail.status).toBe("in-progress");
+    // "running" is the canonical EpisodeStatus for work in flight. This
+    // asserted "in-progress", which is not a member of that union and which
+    // the browser's own EpisodeStatus could never represent.
+    expect(detail.status).toBe("running");
     expect(detail.qaReport).toEqual({ approved: false, validationApproved: true });
   });
 });

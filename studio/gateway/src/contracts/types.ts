@@ -44,10 +44,13 @@ export interface EpisodeSummary {
   slug: string;
   title: string;
   status: EpisodeStatus;
-  currentDeliverable: boolean;
-  blocked: boolean;
-  staleCount: number;
-  lastActivity: string;
+  currentDeliverable?: boolean;
+  blocked?: boolean;
+  staleCount?: number;
+  lastActivity?: string;
+  /** Resolved pipeline name, from the episode or its series. */
+  pipeline?: string;
+  updatedAt?: string;
 }
 
 export type StageStatus =
@@ -76,21 +79,34 @@ export interface PipelineStage {
 export interface EpisodeDetail {
   slug: string;
   title: string;
-  channel: string;
-  series: string;
   status: EpisodeStatus;
-  approvalMode: "autopilot" | "guided" | "manual";
-  budgetLimit: number | null;
-  budgetSpent: number | null;
-  stages: PipelineStage[];
-  currentDeliverable: string | null;
-  currentDeliverableValidated: boolean;
-  staleCount: number;
-  blocked: boolean;
+
+  // Everything below is optional because a filesystem workspace can only
+  // report what the episode directory actually contains. A service backed by
+  // the runtime fills in more. Callers must not assume presence.
+  channel?: string;
+  series?: string;
+  approvalMode?: "autopilot" | "guided" | "manual";
+  budgetLimit?: number | null;
+  budgetSpent?: number | null;
+  stages?: PipelineStage[];
+  currentDeliverable?: string | null;
+  currentDeliverableValidated?: boolean;
+  staleCount?: number;
+  blocked?: boolean;
   blockedReason?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
   error?: string;
+
+  /** Resolved pipeline name, from the episode or its series. */
+  pipeline?: string;
+  /** Scene records read from the episode's artifacts, when present. */
+  scenes?: Array<Record<string, unknown>>;
+  /** The current render pointer, when one exists. */
+  render?: Record<string, unknown> | null;
+  /** Parsed QA report for the current render, when one exists. */
+  qaReport?: Record<string, unknown> | null;
 }
 
 export interface ConnectionState {

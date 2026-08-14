@@ -75,7 +75,7 @@ export async function createGateway(
   configureLogging(app, config.logging);
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  const authMiddleware = createAuthMiddleware(token);
+  const authMiddleware = createAuthMiddleware(token, config.token.allowDevToken);
 
   const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/runtime/health", "/ws"]);
   const PUBLIC_PREFIXES = ["/library/"];
@@ -120,7 +120,7 @@ export async function createGateway(
 
   // ── Routes ───────────────────────────────────────────────────────────────
   // Pick workspace service: real filesystem if roots > 0, otherwise fixture
-  const ws = workspace ?? (
+  const ws: WorkspaceService = workspace ?? (
     config.libraryRoots.length > 0 && config.libraryRoots[0] !== "."
       ? new FileSystemWorkspaceService(config.libraryRoots)
       : new FixtureWorkspaceService()

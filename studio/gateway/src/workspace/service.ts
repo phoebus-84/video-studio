@@ -37,11 +37,12 @@ export interface WorkspaceService {
     channelSlug: string,
     seriesSlug: string,
   ): Promise<EpisodeSummary[]>;
+  /** Null when the episode does not exist; callers must handle it. */
   getEpisode(
     channelSlug: string,
     seriesSlug: string,
     episodeSlug: string,
-  ): Promise<EpisodeDetail>;
+  ): Promise<EpisodeDetail | null>;
   findEvents(
     ref: { channel: string; series: string; episode: string },
     query: Record<string, unknown>,
