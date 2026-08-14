@@ -111,10 +111,42 @@ for (const m of plan) {
   console.log(`  ${m.kind.padEnd(7)} ${m.label}`);
 }
 
+/**
+ * Every file under a directory, with its size. Used to prove the migration is
+ * conservative: moving directories must not change the set of files at all.
+ */
+function inventory(dir) {
+  const found = new Map();
+  const walk = (d, rel = "") => {
+    let entries;
+    try {
+      entries = readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = join(d, e.name);
+      const key = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(full, key);
+      else if (e.isFile()) {
+        try {
+          found.set(key, statSync(full).size);
+        } catch { /* vanished mid-walk */ }
+      }
+    }
+  };
+  walk(dir);
+  return found;
+}
+
 if (dryRun) {
   console.log("\n--dry-run: nothing was moved.");
   process.exit(0);
 }
+
+// Inventory before, so the result can be checked rather than trusted.
+const before = inventory(LIBRARY);
+console.log(`\nBefore: ${before.size} files, ${[...before.values()].reduce((a, b) => a + b, 0)} bytes`);
 
 console.log("\nMigrating…");
 
@@ -132,4 +164,36 @@ for (const m of plan.filter((x) => x.after)) {
   console.log(`  moved ${m.label}`);
 }
 
+// ── Integrity check ────────────────────────────────────────────────────────
+// A migration only relocates directories, so the multiset of file sizes must
+// be identical afterwards. Paths change; content must not.
+const after = inventory(LIBRARY);
+
+const sum = (m) => [...m.values()].reduce((a, b) => a + b, 0);
+const beforeBytes = sum(before);
+const afterBytes = sum(after);
+
+console.log(`After:  ${after.size} files, ${afterBytes} bytes`);
+
+if (after.size !== before.size || afterBytes !== beforeBytes) {
+  console.error(
+    `\n✗ INTEGRITY CHECK FAILED\n` +
+      `  files: ${before.size} -> ${after.size}\n` +
+      `  bytes: ${beforeBytes} -> ${afterBytes}\n` +
+      `\nThe migration must never change what is on disk, only where it lives.\n` +
+      `Restore from backup and report this.`,
+  );
+
+  // Name what went missing, by basename, so it can be found in a backup.
+  const beforeNames = new Map();
+  for (const [p, s] of before) beforeNames.set(`${p.split("/").pop()}:${s}`, p);
+  for (const [p, s] of after) beforeNames.delete(`${p.split("/").pop()}:${s}`);
+  if (beforeNames.size) {
+    console.error(`\nUnaccounted for (${beforeNames.size}):`);
+    for (const p of [...beforeNames.values()].slice(0, 40)) console.error(`  ${p}`);
+  }
+  process.exit(1);
+}
+
+console.log("✓ Integrity check passed: same files, same bytes, new locations.");
 console.log("\n✓ Migration complete.");
