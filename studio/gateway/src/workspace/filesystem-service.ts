@@ -13,22 +13,27 @@ import type { WorkspaceService } from "./service.js";
 // re-exporting, so take them from the source rather than through it.
 import type { ChannelSummary, SeriesSummary, EpisodeSummary, EpisodeDetail, EpisodeStatus } from "../contracts/types.js";
 import { loadNarrationManifest } from "../runtime/narration-manifest.js";
+import {
+  SERIES_CONTAINER,
+  EPISODES_CONTAINER,
+  seriesContainerPath,
+  episodesContainerPath,
+  episodePath,
+} from "@studio/contracts/src/layout.mjs";
 
-const SERIES_SUPPORT_DIRECTORIES = new Set([
-  "assets",
-  "pipelines",
-  "rigs",
-  "shared-assets",
-  "skills",
-  "sources",
-  "templates",
-  "voice-profiles",
-]);
-
-function isEpisodeDirectory(entry: import("node:fs").Dirent): boolean {
+/**
+ * Content directories at a level.
+ *
+ * Dot-prefixed entries are metadata and underscore-prefixed entries are
+ * reserved holding areas; neither is ever content. Nothing else needs
+ * excluding, because layout 2 puts series inside `series/` and episodes inside
+ * `episodes/`. The denylist of "names that are not a series" this replaces
+ * meant adding a `characters/` folder to a channel invented a phantom series.
+ */
+function isContentDirectory(entry: import("node:fs").Dirent): boolean {
   return entry.isDirectory()
     && !entry.name.startsWith(".")
-    && !SERIES_SUPPORT_DIRECTORIES.has(entry.name);
+    && !entry.name.startsWith("_");
 }
 
 export class FileSystemWorkspaceService implements WorkspaceService {
@@ -45,10 +50,8 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       try {
         const entries = await fs.readdir(root, { withFileTypes: true });
         for (const entry of entries) {
-          if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-
-          const channelPath = path.join(root, entry.name);
-          const seriesList = await this.countSeries(channelPath);
+          if (!isContentDirectory(entry)) continue;
+          const seriesList = await this.countSeries(path.join(root, entry.name));
 
           channels.push({
             slug: entry.name,
@@ -66,13 +69,14 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     const series: SeriesSummary[] = [];
 
     for (const root of this.roots) {
-      const channelPath = path.join(root, channel);
+      // Layout 2: series live in <channel>/series/, never loose in the channel.
+      const container = seriesContainerPath(root, channel);
       try {
-        const entries = await fs.readdir(channelPath, { withFileTypes: true });
+        const entries = await fs.readdir(container, { withFileTypes: true });
         for (const entry of entries) {
-          if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+          if (!isContentDirectory(entry)) continue;
 
-          const seriesPath = path.join(channelPath, entry.name);
+          const seriesPath = path.join(container, entry.name);
           const epCount = await this.countEpisodes(seriesPath);
 
           series.push({
@@ -91,11 +95,11 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     const episodes: EpisodeSummary[] = [];
 
     for (const root of this.roots) {
-      const seriesPath = path.join(root, channel, series);
+      const seriesPath = episodesContainerPath(root, channel, series);
       try {
         const entries = await fs.readdir(seriesPath, { withFileTypes: true });
         for (const entry of entries) {
-          if (!isEpisodeDirectory(entry)) continue;
+          if (!isContentDirectory(entry)) continue;
 
           const epPath = path.join(seriesPath, entry.name);
 
@@ -116,7 +120,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
 
   async getEpisode(channel: string, series: string, episode: string): Promise<EpisodeDetail | null> {
     for (const root of this.roots) {
-      const epPath = path.join(root, channel, series, episode);
+      const epPath = episodePath(root, channel, series, episode);
       try {
         await fs.access(epPath);
         const status = await this.detectStatus(epPath);
@@ -343,17 +347,21 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     return "narrated-illustrated-video"; // default fallback
   }
 
-  private async countSeries(channelPath: string): Promise<any[]> {
+  private async countSeries(channelPath: string): Promise<string[]> {
     try {
-      const entries = await fs.readdir(channelPath, { withFileTypes: true });
-      return entries.filter((e) => e.isDirectory() && !e.name.startsWith("."));
+      const entries = await fs.readdir(path.join(channelPath, SERIES_CONTAINER), {
+        withFileTypes: true,
+      });
+      return entries.filter(isContentDirectory).map((e) => e.name);
     } catch { return []; }
   }
 
   private async countEpisodes(seriesPath: string): Promise<number> {
     try {
-      const entries = await fs.readdir(seriesPath, { withFileTypes: true });
-      return entries.filter(isEpisodeDirectory).length;
+      const entries = await fs.readdir(path.join(seriesPath, EPISODES_CONTAINER), {
+        withFileTypes: true,
+      });
+      return entries.filter(isContentDirectory).length;
     } catch { return 0; }
   }
 

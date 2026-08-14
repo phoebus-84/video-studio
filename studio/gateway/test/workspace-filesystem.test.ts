@@ -10,12 +10,15 @@ afterEach(async () => {
 });
 
 describe("FileSystemWorkspaceService", () => {
-  it("does not expose series support directories as episodes", async () => {
+  // Layout 2 puts episodes in `episodes/`, so a support folder sitting beside
+  // them can no longer be mistaken for content. This used to require a denylist
+  // of names that are not a series.
+  it("lists only directories inside episodes/, ignoring support folders", async () => {
     const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
     roots.push(root);
-    const series = join(root, "wordless-comedy", "give-me-time");
+    const series = join(root, "wordless-comedy", "series", "give-me-time");
     await Promise.all([
-      mkdir(join(series, "the-run-up", "artifacts"), { recursive: true }),
+      mkdir(join(series, "episodes", "the-run-up", "artifacts"), { recursive: true }),
       mkdir(join(series, "skills", "plan-physical-comedy"), { recursive: true }),
       mkdir(join(series, "pipelines"), { recursive: true }),
       mkdir(join(series, "rigs"), { recursive: true }),
@@ -37,7 +40,7 @@ describe("FileSystemWorkspaceService", () => {
   it("prefers editorial QA and keeps validation renders in progress", async () => {
     const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
     roots.push(root);
-    const episode = join(root, "wordless-comedy", "give-me-time", "the-run-up");
+    const episode = join(root, "wordless-comedy", "series", "give-me-time", "episodes", "the-run-up");
     await Promise.all([
       mkdir(join(episode, "artifacts"), { recursive: true }),
       mkdir(join(episode, "output"), { recursive: true }),
