@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Real fal.ai production client
+// fal.ai queue client (legacy surface) and the contract-driven client
 // ---------------------------------------------------------------------------
 // Handles both sync (immediate response) and async (queue-based) endpoints.
 // Sync endpoints return images directly. Async endpoints return a request_id
@@ -13,7 +13,7 @@ import { FalHttpError } from "./errors.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export interface FalClientOptions {
+export interface FalQueueClientOptions {
   apiKey: string;
   baseUrl?: string;
   queueUrl?: string;
@@ -56,7 +56,7 @@ export interface DownloadResult {
 
 // ── FalClient ───────────────────────────────────────────────────────────────
 
-export class FalClient {
+export class FalQueueClient {
   private apiKey: string;
   private baseUrl: string;
   private queueUrl: string;
@@ -70,7 +70,7 @@ export class FalClient {
   /** Total submissions made. */
   get submissionCount(): number { return this._submissionCount; }
 
-  constructor(options: FalClientOptions) {
+  constructor(options: FalQueueClientOptions) {
     this.apiKey = options.apiKey;
     this.baseUrl = options.baseUrl ?? "https://fal.run";
     this.queueUrl = options.queueUrl ?? "https://queue.fal.run";
@@ -343,8 +343,214 @@ function estimateCost(profileId: string): { amount: number; currency: string } {
 }
 
 /** Create a FalClient from environment. */
-export function createFalClient(apiKey?: string): FalClient {
+export function createFalClient(apiKey?: string): FalQueueClient {
   const key = apiKey ?? process.env.FAL_KEY ?? process.env.FAL_API_KEY;
   if (!key) throw new Error("FAL_KEY or FAL_API_KEY required");
-  return new FalClient({ apiKey: key });
+  return new FalQueueClient({ apiKey: key });
+}
+
+// ---------------------------------------------------------------------------
+// Contract-driven client
+// ---------------------------------------------------------------------------
+// The surface described by this package's contracts, profiles, clock, sleeper
+// and logger modules: one `submit`, everything injectable, all parsing and
+// provenance owned by the versioned endpoint contract.
+//
+// `FalQueueClient` above is the older, batteries-included surface (polling,
+// download, health, spend counters) that `server.ts` still drives. The two
+// coexist deliberately; unifying them is separate work, because the queue
+// client provides operations this one does not.
+// ---------------------------------------------------------------------------
+
+import type { EndpointContract } from "./contracts/v1.js";
+import type {
+  Clock,
+  FalAdapterConfig,
+  GenerationInput,
+  GenerationResult,
+  Sleeper,
+} from "./types.js";
+import { SystemClock } from "./clock.js";
+import { deprecationDiagnostic } from "./profiles.js";
+import { createLogger, type Logger } from "./logger.js";
+import {
+  FalAdapterError,
+  FalCancelledError,
+  FalTimeoutError,
+  FalUnavailableError,
+} from "./errors.js";
+
+/** The contract-driven client surface. */
+export interface FalClient {
+  submit(input: GenerationInput, signal?: AbortSignal): Promise<GenerationResult>;
+}
+
+export interface FalClientImplOptions {
+  /**
+   * Resolved configuration, or a `FalUnavailableError` when a required secret
+   * is missing. Passing the error is how config resolution reports an
+   * unavailable adapter without throwing at resolution time; constructing a
+   * client from it fails immediately rather than at first use.
+   */
+  readonly config: FalAdapterConfig;
+  /** Versioned contracts, selected per request by `binding.contractVersion`. */
+  readonly contracts: readonly EndpointContract[];
+  readonly clock?: Clock;
+  readonly sleeper?: Sleeper;
+  readonly logger?: Logger;
+  readonly transport?: Transport;
+}
+
+export class FalClientImpl implements FalClient {
+  private readonly config: FalAdapterConfig;
+  private readonly contracts: Map<string, EndpointContract>;
+  private readonly clock: Clock;
+  private readonly logger: Logger;
+  private readonly transport: Transport;
+
+  constructor(options: FalClientImplOptions) {
+    if (options.config instanceof FalUnavailableError) {
+      throw options.config;
+    }
+
+    this.config = options.config;
+    this.contracts = new Map(options.contracts.map((c) => [c.version, c]));
+    this.clock = options.clock ?? new SystemClock();
+    this.logger = options.logger ?? createLogger();
+    // `sleeper` is accepted but unused: this client makes a single request and
+    // does not yet retry. It stays in the options so callers can inject a
+    // deterministic one now, rather than the signature changing when retry
+    // lands (config.maxRetries is already carried for that).
+    void options.sleeper;
+    this.transport = options.transport ?? new FetchTransport();
+  }
+
+  async submit(
+    input: GenerationInput,
+    signal?: AbortSignal,
+  ): Promise<GenerationResult> {
+    const startedMs = this.clock.nowMs();
+
+    // Cancellation and the deadline are checked before anything is sent, so a
+    // caller that has already given up never causes spend.
+    if (signal?.aborted) {
+      throw new FalCancelledError("cancelled before submit");
+    }
+    if (input.timeoutMs <= 0) {
+      throw new FalTimeoutError(input.timeoutMs);
+    }
+
+    const contract = this.contracts.get(input.binding.contractVersion);
+    if (!contract) {
+      throw new FalAdapterError(
+        `No contract registered for version "${input.binding.contractVersion}"`,
+        "FAL_UNKNOWN_CONTRACT",
+        false,
+        {
+          requested: input.binding.contractVersion,
+          available: [...this.contracts.keys()],
+        },
+      );
+    }
+
+    // A deprecated profile still runs — refusing would break working
+    // productions — but it is never silent, so a migration can be planned
+    // before the sunset date arrives.
+    const profile = contract.profile;
+    if (profile) {
+      const diagnostic = deprecationDiagnostic(profile);
+      if (diagnostic) {
+        this.logger.warn("fal deprecated profile", {
+          profileId: profile.profileId,
+          diagnostic,
+        });
+      }
+    }
+
+    const body = contract.buildRequestBody(input);
+    const url = `${this.config.baseUrl}/${input.binding.endpointId}`;
+
+    // falKey is passed so the logger's redaction is exercised on every call;
+    // it is replaced with ***REDACTED*** before the entry is written.
+    this.logger.info("fal submit", {
+      endpointId: input.binding.endpointId,
+      contractVersion: input.binding.contractVersion,
+      idempotencyKey: input.idempotencyKey,
+      falKey: this.config.falKey,
+    });
+
+    let response;
+    try {
+      response = await this.transport.request(
+        {
+          method: "POST",
+          url,
+          headers: {
+            authorization: `Key ${this.config.falKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+        signal,
+      );
+    } catch (err) {
+      if (signal?.aborted) {
+        throw new FalCancelledError("cancelled during request");
+      }
+      this.logError(err, input);
+      throw err;
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      const error = new FalHttpError(
+        response.status,
+        response.body,
+        response.status >= 500 || response.status === 429,
+      );
+      this.logError(error, input);
+      throw error;
+    }
+
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(response.body) as Record<string, unknown>;
+    } catch {
+      const error = new FalAdapterError(
+        "fal returned a body that is not valid JSON",
+        "FAL_CONTRACT_ERROR",
+        false,
+        { bodyPreview: response.body.slice(0, 200) },
+      );
+      this.logError(error, input);
+      throw error;
+    }
+
+    let result: GenerationResult;
+    try {
+      result = contract.parseResponse(input, raw);
+    } catch (err) {
+      this.logError(err, input);
+      throw err;
+    }
+
+    this.logger.info("fal completed", {
+      endpointId: input.binding.endpointId,
+      idempotencyKey: input.idempotencyKey,
+      providerRequestId: result.providerRequestId,
+      outputs: result.outputs.length,
+      costAmount: result.cost?.amount ?? null,
+      elapsedMs: this.clock.nowMs() - startedMs,
+    });
+
+    return result;
+  }
+
+  private logError(err: unknown, input: GenerationInput): void {
+    this.logger.error("fal error", {
+      endpointId: input.binding.endpointId,
+      idempotencyKey: input.idempotencyKey,
+      code: err instanceof FalAdapterError ? err.code : "FAL_UNKNOWN",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
