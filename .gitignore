@@ -14,6 +14,11 @@ composed.json
 *.token
 .gateway-token
 
+# Beads runtime locks (the database itself is tracked).
+.beads.gate.lock
+.beads/*.gate.lock
+.beads/embeddeddolt/
+
 # Python (packages/voice)
 .venv/
 __pycache__/
