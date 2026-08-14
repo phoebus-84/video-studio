@@ -1,5 +1,5 @@
 {
-  "name": "video-studio-gateway",
+  "name": "@studio/gateway",
   "version": "0.1.0",
   "private": true,
   "description": "Trusted local backend connecting browser clients, Pi RPC, and filesystem production state",
@@ -17,9 +17,11 @@
     "contract:generate": "tsx src/contract/generate.ts"
   },
   "dependencies": {
+    "@av/video-composer": "workspace:*",
     "@fastify/cors": "^9.0.1",
     "@fastify/static": "^6.12.0",
     "@fastify/websocket": "^10.0.1",
+    "@studio/runtime": "workspace:*",
     "fastify": "^4.28.0",
     "pino": "^9.3.0",
     "pino-pretty": "^11.2.0",

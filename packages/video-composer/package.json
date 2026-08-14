@@ -1,5 +1,5 @@
 {
-  "name": "ffmpeg-video-composer",
+  "name": "@av/video-composer",
   "version": "0.1.0",
   "description": "Compiler and validator for typed video edit timelines",
   "type": "module",

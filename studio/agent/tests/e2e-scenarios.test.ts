@@ -133,7 +133,9 @@ describe("Package release checks", () => {
     const url = new URL("../package.json", import.meta.url);
     const raw = await fs.readFile(url, "utf-8");
     const pkg = JSON.parse(raw);
-    expect(pkg.name).toBe("pi-video-agent");
+    // The npm package is @studio/agent; "pi-video-agent" remains the Pi
+    // extension identity that Pi registers and users see (extensions/index.ts).
+    expect(pkg.name).toBe("@studio/agent");
     expect(pkg.version).toBeTruthy();
     expect(pkg.type).toBe("module");
     expect(pkg.pi.extensions).toEqual(["./extensions"]);

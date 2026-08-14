@@ -128,7 +128,7 @@ function toPipelineDef(_fullPath: string, yaml: YamlPipeline): PipelineDefinitio
 // ── Schema validation ───────────────────────────────────────────────────────
 
 const schemaPath = require.resolve(
-  "@video-studio/workspace-contracts/schemas/v1alpha1/pipeline-manifest.schema.json",
+  "@studio/contracts/schemas/v1alpha1/pipeline-manifest.schema.json",
 );
 const pipelineManifestSchema = JSON.parse(readFileSync(schemaPath, "utf-8"));
 

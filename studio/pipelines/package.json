@@ -1,5 +1,5 @@
 {
-  "name": "video-built-in-pipelines",
+  "name": "@studio/pipelines",
   "version": "0.1.0",
   "private": true,
   "description": "Built-in YAML pipelines and Pi skills for video production use cases",
@@ -14,6 +14,7 @@
     "skills:check": "node scripts/sync-skills.mjs --check"
   },
   "dependencies": {
+    "@studio/contracts": "workspace:*",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "js-yaml": "^4.1.0"

@@ -1,5 +1,5 @@
 {
-  "name": "fal-media-adapter",
+  "name": "@av/fal-media",
   "version": "0.1.0",
   "description": "Tracked fal.ai production adapter for generated illustrations and image edits",
   "type": "module",

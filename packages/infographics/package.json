@@ -1,5 +1,5 @@
 {
-  "name": "@video-studio/remotion-infographic-renderer",
+  "name": "@av/infographics",
   "version": "0.1.0",
   "private": true,
   "type": "module",

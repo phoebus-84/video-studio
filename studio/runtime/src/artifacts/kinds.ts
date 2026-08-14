@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
 // Artifact kind mapping — file extension → canonical vocabulary kind
 // ---------------------------------------------------------------------------
-// Canonical artifact kinds are owned by @video-studio/workspace-contracts
+// Canonical artifact kinds are owned by @studio/contracts
 // (see schemas/v1alpha1/vocabulary.schema.json, src/vocabulary.mjs).
 //
 // The contract name in a pipeline manifest is a filename like "script.md"
 // or "captions.srt".  We derive the artifact kind from the extension.
 // ---------------------------------------------------------------------------
 
-import { ARTIFACT_KINDS } from "@video-studio/workspace-contracts/src/vocabulary.mjs";
+import { ARTIFACT_KINDS } from "@studio/contracts/src/vocabulary.mjs";
 
 const VALID_KINDS = new Set(ARTIFACT_KINDS as readonly string[]);
 

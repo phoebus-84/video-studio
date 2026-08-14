@@ -9,7 +9,7 @@ import type {
   ResolutionDiag,
   StageDefinition,
 } from "./types.js";
-import { CAPABILITIES } from "@video-studio/workspace-contracts/src/vocabulary.mjs";
+import { CAPABILITIES } from "@studio/contracts/src/vocabulary.mjs";
 
 const VALID_CAPABILITIES = new Set(CAPABILITIES as readonly string[]);
 
