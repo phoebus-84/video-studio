@@ -8,7 +8,6 @@
 
 import { execSync } from "node:child_process";
 import { statSync, existsSync, readFileSync } from "node:fs";
-import * as path from "node:path";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -131,7 +130,7 @@ function checkBlankFrames(
     const t = interval * i;
     try {
       // Extract frame and check for uniform color (blank detection)
-      const stdout = execSync(
+      execSync(
         `${ffprobePath} -v quiet -f lavfi -i "movie='${videoPath}':seek_point=${t}" ` +
         `-frames:v 1 -f null - 2>&1 || true`,
         { encoding: "utf-8", timeout: 5_000 },
@@ -161,7 +160,7 @@ function measureLoudness(
   videoPath: string,
 ): LoudnessResult | null {
   try {
-    const out = execSync(
+    execSync(
       `${ffmpegPath} -i "${videoPath}" -af loudnorm=print_format=json -f null /dev/null`,
       { encoding: "utf-8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] },
     );

@@ -6,7 +6,7 @@
 // text overlays, and optional narration audio track.
 // ---------------------------------------------------------------------------
 
-import { execSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
