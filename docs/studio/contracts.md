@@ -19,12 +19,12 @@ package in `packages/`, and on other studio modules.
 
 ## Reference
 
-- [Charter and overview](../../studio/contracts/README.md)
-- [compatibility-policy](../../studio/contracts/docs/compatibility-policy.md)
-- [contract-catalog](../../studio/contracts/docs/contract-catalog.md)
-- [identity-and-provenance](../../studio/contracts/docs/identity-and-provenance.md)
-- [wire-conventions](../../studio/contracts/docs/wire-conventions.md)
-- [workspace-and-policy](../../studio/contracts/docs/workspace-and-policy.md)
+- [Charter and overview](../reference/contracts/readme.md)
+- [Compatibility policy](../reference/contracts/docs/compatibility-policy.md)
+- [Contract catalog](../reference/contracts/docs/contract-catalog.md)
+- [Identity and provenance](../reference/contracts/docs/identity-and-provenance.md)
+- [Wire conventions](../reference/contracts/docs/wire-conventions.md)
+- [Workspace and policy](../reference/contracts/docs/workspace-and-policy.md)
 
 ## Commands
 

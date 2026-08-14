@@ -21,9 +21,9 @@ it grows a dependency on `studio/*`. Studio-specific integration lives in
 
 ## Reference
 
-- [Charter and overview](../../packages/video-composer/README.md)
-- [API](../../packages/video-composer/docs/API.md)
-- [CONTRIBUTING](../../packages/video-composer/docs/CONTRIBUTING.md)
+- [Charter and overview](../reference/video-composer/readme.md)
+- [API](../reference/video-composer/docs/api.md)
+- [Contributing](../reference/video-composer/docs/contributing.md)
 
 ## Commands
 

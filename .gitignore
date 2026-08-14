@@ -30,3 +30,8 @@ library/
 
 .DS_Store
 .test-tmp/
+
+# VitePress: build output, cache, and the component docs synced in at build time.
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/reference/

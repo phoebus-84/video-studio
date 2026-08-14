@@ -19,10 +19,10 @@ package in `packages/`, and on other studio modules.
 
 ## Reference
 
-- [Charter and overview](../../studio/gateway/README.md)
-- [API](../../studio/gateway/docs/API.md)
-- [CONTRIBUTING](../../studio/gateway/docs/CONTRIBUTING.md)
-- [OPERATOR](../../studio/gateway/docs/OPERATOR.md)
+- [Charter and overview](../reference/gateway/readme.md)
+- [API](../reference/gateway/docs/api.md)
+- [Contributing](../reference/gateway/docs/contributing.md)
+- [Operator](../reference/gateway/docs/operator.md)
 
 ## Commands
 

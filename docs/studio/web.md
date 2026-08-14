@@ -19,11 +19,11 @@ package in `packages/`, and on other studio modules.
 
 ## Reference
 
-- [Charter and overview](../../studio/web/README.md)
-- [CONTRACT](../../studio/web/docs/CONTRACT.md)
-- [CONTRIBUTING](../../studio/web/docs/CONTRIBUTING.md)
-- [OPERATOR](../../studio/web/docs/OPERATOR.md)
-- [SHAPE-BRIEF](../../studio/web/docs/SHAPE-BRIEF.md)
+- [Charter and overview](../reference/web/readme.md)
+- [Contract](../reference/web/docs/contract.md)
+- [Contributing](../reference/web/docs/contributing.md)
+- [Operator](../reference/web/docs/operator.md)
+- [Shape brief](../reference/web/docs/shape-brief.md)
 
 ## Commands
 

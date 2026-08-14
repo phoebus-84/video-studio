@@ -21,7 +21,7 @@ it grows a dependency on `studio/*`. Studio-specific integration lives in
 
 ## Reference
 
-- [Charter and overview](../../packages/infographics/README.md)
+- [Charter and overview](../reference/infographics/readme.md)
 
 ## Commands
 

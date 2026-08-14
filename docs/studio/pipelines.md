@@ -19,9 +19,9 @@ package in `packages/`, and on other studio modules.
 
 ## Reference
 
-- [Charter and overview](../../studio/pipelines/README.md)
-- [CONTRIBUTING](../../studio/pipelines/docs/CONTRIBUTING.md)
-- [OPERATOR-GUIDE](../../studio/pipelines/docs/OPERATOR-GUIDE.md)
+- [Charter and overview](../reference/pipelines/readme.md)
+- [Contributing](../reference/pipelines/docs/contributing.md)
+- [Operator guide](../reference/pipelines/docs/operator-guide.md)
 
 ## Commands
 

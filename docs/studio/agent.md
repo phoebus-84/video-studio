@@ -19,7 +19,7 @@ package in `packages/`, and on other studio modules.
 
 ## Reference
 
-- [Charter and overview](../../studio/agent/README.md)
+- [Charter and overview](../reference/agent/readme.md)
 
 ## Commands
 

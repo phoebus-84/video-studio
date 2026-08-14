@@ -21,9 +21,9 @@ it grows a dependency on `studio/*`. Studio-specific integration lives in
 
 ## Reference
 
-- [Charter and overview](../../packages/fal-media/README.md)
-- [CONTRACT](../../packages/fal-media/docs/CONTRACT.md)
-- [CONTRIBUTING](../../packages/fal-media/docs/CONTRIBUTING.md)
+- [Charter and overview](../reference/fal-media/readme.md)
+- [Contract](../reference/fal-media/docs/contract.md)
+- [Contributing](../reference/fal-media/docs/contributing.md)
 
 ## Commands
 

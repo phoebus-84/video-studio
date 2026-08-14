@@ -21,6 +21,27 @@ const checkOnly = process.argv.includes("--check");
 
 const drift = [];
 
+/** Terms that should keep their capitalisation in a title. */
+const ACRONYMS = new Map(
+  [
+    "API", "CLI", "TTS", "QA", "VHS", "SVG", "MP4", "RPC", "UX", "IO", "ADR",
+    "MLX", "FFmpeg", "macOS", "JSON", "YAML", "SRT",
+  ].map((a) => [a.toLowerCase(), a]),
+);
+
+/** "ADVISORY-DIAGNOSTICS.md" -> "Advisory diagnostics"; "API.md" -> "API". */
+function titleFor(filename) {
+  const words = filename.replace(/\.md$/i, "").split(/[-_]/);
+  return words
+    .map((word, i) => {
+      const known = ACRONYMS.get(word.toLowerCase());
+      if (known) return known;
+      const lower = word.toLowerCase();
+      return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+    })
+    .join(" ");
+}
+
 for (const [name, component] of Object.entries(CONFIG.components)) {
   const dir = join(ROOT, component.path);
   const pkgPath = join(dir, "package.json");
@@ -34,7 +55,12 @@ for (const [name, component] of Object.entries(CONFIG.components)) {
     ? readdirSync(join(dir, "docs")).filter((f) => f.endsWith(".md")).sort()
     : [];
 
-  const rel = (p) => `../../${component.path}/${p}`;
+  // Link into the synced copies under docs/reference/ rather than at the
+  // component's real path: VitePress can only serve files inside docs/, so a
+  // link to ../../packages/voice/docs/API.md would 404 in the built site.
+  // sync-doc-sources.mjs preserves each component's structure under
+  // docs/reference/<name>/, lowercased.
+  const rel = (p) => `../reference/${name}/${p.toLowerCase()}`;
   const tier = component.standalone ? "packages" : "studio";
 
   const lines = [];
@@ -83,7 +109,7 @@ for (const [name, component] of Object.entries(CONFIG.components)) {
   lines.push("## Reference");
   lines.push("");
   if (existsSync(join(dir, "README.md"))) lines.push(`- [Charter and overview](${rel("README.md")})`);
-  for (const doc of inTree) lines.push(`- [${doc.replace(/\.md$/, "")}](${rel(`docs/${doc}`)})`);
+  for (const doc of inTree) lines.push(`- [${titleFor(doc)}](${rel(`docs/${doc}`)})`);
   if (!inTree.length && !existsSync(join(dir, "README.md"))) {
     lines.push("_No in-tree documentation yet._");
   }

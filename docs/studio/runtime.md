@@ -19,9 +19,9 @@ package in `packages/`, and on other studio modules.
 
 ## Reference
 
-- [Charter and overview](../../studio/runtime/README.md)
-- [CONTRACTS](../../studio/runtime/docs/CONTRACTS.md)
-- [CONTRIBUTING](../../studio/runtime/docs/CONTRIBUTING.md)
+- [Charter and overview](../reference/runtime/readme.md)
+- [Contracts](../reference/runtime/docs/contracts.md)
+- [Contributing](../reference/runtime/docs/contributing.md)
 
 ## Commands
 
