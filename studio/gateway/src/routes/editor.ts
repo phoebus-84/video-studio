@@ -298,26 +298,6 @@ export function registerEditorRoutes(
 
 // ── Content type inference ──────────────────────────────────────────────────
 
-function inferContentType(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  const map: Record<string, string> = {
-    ".txt": "text/plain",
-    ".md": "text/markdown",
-    ".json": "application/json",
-    ".yaml": "text/yaml",
-    ".yml": "text/yaml",
-    ".xml": "application/xml",
-    ".html": "text/html",
-    ".css": "text/css",
-    ".js": "application/javascript",
-    ".ts": "text/typescript",
-    ".csv": "text/csv",
-    ".srt": "text/plain",
-    ".vtt": "text/vtt",
-  };
-  return map[ext] ?? "application/octet-stream";
-}
-
 // ── Shared file-serving helper for any level ────────────────────────────
 
 async function serveFile(
