@@ -1,0 +1,17 @@
+{
+  "model_type": "qwen3_tts",
+  "tts_model_type": "custom_voice",
+  "talker_config": {
+    "spk_id": {
+      "serena": 0,
+      "vivian": 1,
+      "uncle_fu": 2,
+      "ryan": 3
+    },
+    "codec_language_id": {
+      "english": 0,
+      "french": 1,
+      "japanese": 2
+    }
+  }
+}

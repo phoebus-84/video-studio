@@ -1,0 +1,737 @@
+{
+  "schema_version": "0.1.0",
+  "evaluation_id": "legacy-advisory-v1",
+  "source_run": "legacy-5957fea64c1a",
+  "environment": {
+    "platform": "macOS-15.1.1-arm64-arm-64bit",
+    "python": "3.12.9",
+    "mlx_whisper": "0.4.3",
+    "mlx": "0.32.0",
+    "numpy": "2.4.6",
+    "model_id": "mlx-community/whisper-tiny.en-mlx",
+    "model_resource": "Hugging Face cache; downloaded locally; English-only tiny checkpoint"
+  },
+  "decision": {
+    "asr": "advisory",
+    "continuity": "advisory",
+    "automatic_gate_authorized": false,
+    "reason": "No human-labeled accented/name pronunciation corpus or validated speaker embedding model; tiny.en ASR confuses intended phonetic spellings and content errors."
+  },
+  "aggregate": {
+    "segments": 18,
+    "mean_word_error_rate": 0.2744491272586874,
+    "max_word_error_rate": 1.5,
+    "segments_at_or_above_0_15_wer": 7,
+    "lexicon_targets": 16,
+    "lexicon_targets_observed_as_written": 4,
+    "boundaries": 9,
+    "boundaries_with_notes_beyond_disclaimer": 4
+  },
+  "calibration": {
+    "dataset": "deterministic synthetic transcript perturbations over quality-v1",
+    "threshold_word_error_rate": 0.15,
+    "labeled_examples": 90,
+    "true_positive": 54,
+    "false_positive": 0,
+    "true_negative": 36,
+    "false_negative": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "false_reject_rate": 0.0,
+    "limitation": "Text perturbations calibrate edit accounting only; they do not measure end-to-end ASR/accent precision."
+  },
+  "asr_reports": [
+    {
+      "segment_id": "neutral-warm-narration.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/neutral-warm-narration.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Morning light slipped through the curtains and warmed the wooden floor. Outside, a small bird tested the first clear note of its song.",
+        "transcript": " Morning light slips through the curtains and warm the wooden floor. Outside, a small bird tested the first clear note of its song.",
+        "expected_word_count": 23,
+        "transcript_word_count": 23,
+        "substitutions": 2,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.08695652173913043,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "expressive-arc.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/expressive-arc.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "At first, the forest seemed to be holding its breath.",
+        "transcript": " At first, the forest seemed to be holding its breath.",
+        "expected_word_count": 10,
+        "transcript_word_count": 10,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.0,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "expressive-arc.2",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/expressive-arc.2/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Then a branch snapped behind Lila, sharp and close.",
+        "transcript": " Then, a branch snap to behind the Lila sharp and close.",
+        "expected_word_count": 9,
+        "transcript_word_count": 11,
+        "substitutions": 1,
+        "deletions": 0,
+        "insertions": 2,
+        "word_error_rate": 0.3333333333333333,
+        "lexicon_targets": [
+          {
+            "target": "Lila",
+            "expected_tokens": [
+              "lila"
+            ],
+            "observed": true
+          }
+        ],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "expressive-arc.3",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/expressive-arc.3/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "A rabbit hopped into the moonlight, and she laughed with relief.",
+        "transcript": " A rabbit hopped into the moonlight and she laughed with relief.",
+        "expected_word_count": 11,
+        "transcript_word_count": 11,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.0,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "dialogue-attribution.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/dialogue-attribution.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Is anyone there?",
+        "transcript": " Is anyone there?",
+        "expected_word_count": 3,
+        "transcript_word_count": 3,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.0,
+        "lexicon_targets": [
+          {
+            "target": "Mira",
+            "expected_tokens": [
+              "mira"
+            ],
+            "observed": false
+          }
+        ],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "dialogue-attribution.2",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/dialogue-attribution.2/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Mira asked.",
+        "transcript": " You're at ask.",
+        "expected_word_count": 2,
+        "transcript_word_count": 3,
+        "substitutions": 2,
+        "deletions": 0,
+        "insertions": 1,
+        "word_error_rate": 1.5,
+        "lexicon_targets": [
+          {
+            "target": "Mira",
+            "expected_tokens": [
+              "mira"
+            ],
+            "observed": false
+          }
+        ],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "dialogue-attribution.3",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/dialogue-attribution.3/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "I brought the lantern!",
+        "transcript": " I brought the lantern.",
+        "expected_word_count": 4,
+        "transcript_word_count": 4,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.0,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "sentence-length-contrast.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/sentence-length-contrast.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Stop.",
+        "transcript": " Stop.",
+        "expected_word_count": 1,
+        "transcript_word_count": 1,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.0,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "sentence-length-contrast.2",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/sentence-length-contrast.2/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Although the storm had moved beyond the hills, the river, which had risen through the night and carried branches against the old bridge, was still too dangerous to cross before sunrise.",
+        "transcript": " Although the storm had moved beyond the hills, the river, which had risen through the night and carried branches against the Old Bridge, was still too dangerous to cross before sunrise.",
+        "expected_word_count": 31,
+        "transcript_word_count": 31,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.0,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "names-and-foreign-words.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/names-and-foreign-words.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Ah-nah-EES met Shi-VAWN beside the café in Woodge and thanked her with a quiet mare-SEE.",
+        "transcript": " An es mezio ben, beside the cafe in Oj, and thanked her with a quiet mercy.",
+        "expected_word_count": 15,
+        "transcript_word_count": 16,
+        "substitutions": 6,
+        "deletions": 0,
+        "insertions": 1,
+        "word_error_rate": 0.4666666666666667,
+        "lexicon_targets": [
+          {
+            "target": "Anaïs",
+            "expected_tokens": [
+              "anaïs"
+            ],
+            "observed": false
+          },
+          {
+            "target": "Siobhán",
+            "expected_tokens": [
+              "siobhán"
+            ],
+            "observed": false
+          },
+          {
+            "target": "café",
+            "expected_tokens": [
+              "café"
+            ],
+            "observed": false
+          },
+          {
+            "target": "Łódź",
+            "expected_tokens": [
+              "łódź"
+            ],
+            "observed": false
+          },
+          {
+            "target": "merci",
+            "expected_tokens": [
+              "merci"
+            ],
+            "observed": false
+          }
+        ],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "numeric-normalization.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/numeric-normalization.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "On July thirty-first, twenty twenty-six, at nine oh five a.m., Doctor Rivera paid one thousand two hundred thirty-four dollars and fifty cents for the third five kilometer sensor test.",
+        "transcript": " On July 31, 2026 and 9.05 a.m. Dr. Rivera paid $1,234 and 503430 for the third five-kilometer sensor test.",
+        "expected_word_count": 30,
+        "transcript_word_count": 22,
+        "substitutions": 10,
+        "deletions": 8,
+        "insertions": 0,
+        "word_error_rate": 0.6,
+        "lexicon_targets": [
+          {
+            "target": "Rivera",
+            "expected_tokens": [
+              "rivera"
+            ],
+            "observed": true
+          }
+        ],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "numeric-normalization.2",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/numeric-normalization.2/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Battery output rose by twelve point five percent to forty-eight volts.",
+        "transcript": " Battery output rose by 12.5% to 48 volts.",
+        "expected_word_count": 11,
+        "transcript_word_count": 9,
+        "substitutions": 3,
+        "deletions": 2,
+        "insertions": 0,
+        "word_error_rate": 0.45454545454545453,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "punctuation-prosody.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/punctuation-prosody.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Wait—listen... not to the clock, but to the space between its ticks; there—did you hear it?",
+        "transcript": " Wait! Listen, not to the clock, but to the space between its takes. There, did you hear it?",
+        "expected_word_count": 18,
+        "transcript_word_count": 18,
+        "substitutions": 1,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.05555555555555555,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "technical-explainer.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/technical-explainer.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Jaro Mail syncs eye-map over T L S one point three and stores one file per message in Maildir.",
+        "transcript": " CharoMale sinks i-map over TLS 1.3 and stores one file per message in mail deer.",
+        "expected_word_count": 19,
+        "transcript_word_count": 16,
+        "substitutions": 7,
+        "deletions": 4,
+        "insertions": 1,
+        "word_error_rate": 0.631578947368421,
+        "lexicon_targets": [
+          {
+            "target": "JaroMail",
+            "expected_tokens": [
+              "jaromail"
+            ],
+            "observed": false
+          },
+          {
+            "target": "IMAP",
+            "expected_tokens": [
+              "imap"
+            ],
+            "observed": false
+          },
+          {
+            "target": "TLS",
+            "expected_tokens": [
+              "tls"
+            ],
+            "observed": true
+          },
+          {
+            "target": "Maildir",
+            "expected_tokens": [
+              "maildir"
+            ],
+            "observed": false
+          }
+        ],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "technical-explainer.2",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/technical-explainer.2/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "To inspect issue Q T W forty-eight R, run B D show Q T W forty-eight R—not B D dash dash help—from the project root.",
+        "transcript": " To inspect issue Q2DBLU 4-8R, run Biddy Show Q2DBLU 4-8R, not Biddy Help from the Project Route.",
+        "expected_word_count": 27,
+        "transcript_word_count": 17,
+        "substitutions": 7,
+        "deletions": 10,
+        "insertions": 0,
+        "word_error_rate": 0.6296296296296297,
+        "lexicon_targets": [
+          {
+            "target": "qtw-48r",
+            "expected_tokens": [
+              "qtw-48r"
+            ],
+            "observed": false
+          },
+          {
+            "target": "bd",
+            "expected_tokens": [
+              "bd"
+            ],
+            "observed": false
+          },
+          {
+            "target": "--help",
+            "expected_tokens": [
+              "help"
+            ],
+            "observed": true
+          }
+        ],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "continuous-performance.1",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/continuous-performance.1/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "The archive belongs to you.",
+        "transcript": " The archive belongs to you.",
+        "expected_word_count": 5,
+        "transcript_word_count": 5,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.0,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "continuous-performance.2",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/continuous-performance.2/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Every message stays in an open format on your own disk.",
+        "transcript": " Every message stays in an open format on your own disc.",
+        "expected_word_count": 11,
+        "transcript_word_count": 11,
+        "substitutions": 1,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.09090909090909091,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    },
+    {
+      "segment_id": "continuous-performance.3",
+      "wav": "evaluation/runs/legacy-5957fea64c1a/attempts/continuous-performance.3/repeat-1/raw.wav",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "tool": "mlx-whisper",
+        "tool_version": "0.4.3",
+        "model_id": "mlx-community/whisper-tiny.en-mlx",
+        "expected_text": "Years later, the same search still finds the note you need.",
+        "transcript": " Years later, the same search still finds the node you need.",
+        "expected_word_count": 11,
+        "transcript_word_count": 11,
+        "substitutions": 1,
+        "deletions": 0,
+        "insertions": 0,
+        "word_error_rate": 0.09090909090909091,
+        "lexicon_targets": [],
+        "status": "advisory"
+      }
+    }
+  ],
+  "boundary_reports": [
+    {
+      "left_segment_id": "expressive-arc.1",
+      "right_segment_id": "expressive-arc.2",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/expressive-arc.1/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/expressive-arc.2/repeat-1/raw.wav",
+        "expected_same_speaker": true,
+        "left_edge_rms_dbfs": -24.90365793487747,
+        "right_edge_rms_dbfs": -22.054189010848653,
+        "rms_jump_db": 2.849468924028816,
+        "waveform_step": 0.003753662109375,
+        "spectral_centroid_jump_hz": 92.05277875014463,
+        "status": "advisory",
+        "notes": [
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "expressive-arc.2",
+      "right_segment_id": "expressive-arc.3",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/expressive-arc.2/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/expressive-arc.3/repeat-1/raw.wav",
+        "expected_same_speaker": true,
+        "left_edge_rms_dbfs": -33.38226750629734,
+        "right_edge_rms_dbfs": -24.640599632562022,
+        "rms_jump_db": 8.741667873735317,
+        "waveform_step": 0.0,
+        "spectral_centroid_jump_hz": 5981.860395566539,
+        "status": "advisory",
+        "notes": [
+          "edge RMS differs by more than 8 dB",
+          "same-speaker spectral centroid changes by more than 1500 Hz",
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "dialogue-attribution.1",
+      "right_segment_id": "dialogue-attribution.2",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/dialogue-attribution.1/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/dialogue-attribution.2/repeat-1/raw.wav",
+        "expected_same_speaker": false,
+        "left_edge_rms_dbfs": -19.260178544712762,
+        "right_edge_rms_dbfs": -21.210623021356135,
+        "rms_jump_db": 1.9504444766433728,
+        "waveform_step": 0.0,
+        "spectral_centroid_jump_hz": 49.63328673226374,
+        "status": "advisory",
+        "notes": [
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "dialogue-attribution.2",
+      "right_segment_id": "dialogue-attribution.3",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/dialogue-attribution.2/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/dialogue-attribution.3/repeat-1/raw.wav",
+        "expected_same_speaker": false,
+        "left_edge_rms_dbfs": -27.868648784465723,
+        "right_edge_rms_dbfs": -22.419805175251483,
+        "rms_jump_db": 5.44884360921424,
+        "waveform_step": 0.00054931640625,
+        "spectral_centroid_jump_hz": 6147.58839794683,
+        "status": "advisory",
+        "notes": [
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "sentence-length-contrast.1",
+      "right_segment_id": "sentence-length-contrast.2",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/sentence-length-contrast.1/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/sentence-length-contrast.2/repeat-1/raw.wav",
+        "expected_same_speaker": true,
+        "left_edge_rms_dbfs": -22.810994864986075,
+        "right_edge_rms_dbfs": -28.41831983748628,
+        "rms_jump_db": 5.607324972500205,
+        "waveform_step": 0.00048828125,
+        "spectral_centroid_jump_hz": 556.0154816419865,
+        "status": "advisory",
+        "notes": [
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "numeric-normalization.1",
+      "right_segment_id": "numeric-normalization.2",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/numeric-normalization.1/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/numeric-normalization.2/repeat-1/raw.wav",
+        "expected_same_speaker": true,
+        "left_edge_rms_dbfs": -37.233064793014556,
+        "right_edge_rms_dbfs": -22.54985896071001,
+        "rms_jump_db": 14.683205832304544,
+        "waveform_step": 0.0,
+        "spectral_centroid_jump_hz": 5158.471345866918,
+        "status": "advisory",
+        "notes": [
+          "edge RMS differs by more than 8 dB",
+          "same-speaker spectral centroid changes by more than 1500 Hz",
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "technical-explainer.1",
+      "right_segment_id": "technical-explainer.2",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/technical-explainer.1/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/technical-explainer.2/repeat-1/raw.wav",
+        "expected_same_speaker": true,
+        "left_edge_rms_dbfs": -28.89840662898228,
+        "right_edge_rms_dbfs": -27.972586459299595,
+        "rms_jump_db": 0.9258201696826838,
+        "waveform_step": 0.0,
+        "spectral_centroid_jump_hz": 3539.08732015626,
+        "status": "advisory",
+        "notes": [
+          "same-speaker spectral centroid changes by more than 1500 Hz",
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "continuous-performance.1",
+      "right_segment_id": "continuous-performance.2",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/continuous-performance.1/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/continuous-performance.2/repeat-1/raw.wav",
+        "expected_same_speaker": true,
+        "left_edge_rms_dbfs": -29.729653231659547,
+        "right_edge_rms_dbfs": -24.591182240140014,
+        "rms_jump_db": 5.138470991519533,
+        "waveform_step": 0.002655029296875,
+        "spectral_centroid_jump_hz": 402.4051213992425,
+        "status": "advisory",
+        "notes": [
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    },
+    {
+      "left_segment_id": "continuous-performance.2",
+      "right_segment_id": "continuous-performance.3",
+      "report": {
+        "schema_version": "0.1.0",
+        "diagnostics_version": "0.1.0",
+        "left_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/continuous-performance.2/repeat-1/raw.wav",
+        "right_path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/runs/legacy-5957fea64c1a/attempts/continuous-performance.3/repeat-1/raw.wav",
+        "expected_same_speaker": true,
+        "left_edge_rms_dbfs": -31.759025869872502,
+        "right_edge_rms_dbfs": -23.20495294033805,
+        "rms_jump_db": 8.554072929534453,
+        "waveform_step": 0.0,
+        "spectral_centroid_jump_hz": 4507.630119024294,
+        "status": "advisory",
+        "notes": [
+          "edge RMS differs by more than 8 dB",
+          "same-speaker spectral centroid changes by more than 1500 Hz",
+          "spectral/RMS continuity is not speaker identity; no automatic gate is authorized"
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "whisper-tiny.en is English-only and known to normalize, substitute, or omit uncommon names, accents, dialects, code tokens, and phonetic spellings",
+    "ASR disagreement cannot distinguish TTS pronunciation error from ASR recognition error",
+    "RMS, waveform step, and spectral centroid are not speaker embeddings and cannot establish identity continuity",
+    "No diagnostic changes acceptance automatically; blinded human review remains required"
+  ]
+}

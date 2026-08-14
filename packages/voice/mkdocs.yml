@@ -1,0 +1,17 @@
+site_name: Qwen TTS Worker
+site_description: Production-ready local Qwen3-TTS on Apple Silicon
+strict: true
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Install on macOS: MACOS-CLI.md
+  - Voice cloning: VOICE-CLONING.md
+  - API: API.md
+  - Operator guide: OPERATOR.md
+  - Quality architecture: TTS-QUALITY-PIPELINE.md
+  - Native batching: BATCHING.md
+  - Production evidence: PRODUCTION-ACCEPTANCE.md
+  - Blinded review: LISTENING-REVIEW.md
+  - Contributing: CONTRIBUTING.md
+  - Releasing: RELEASING.md

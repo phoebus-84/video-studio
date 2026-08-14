@@ -1,0 +1,348 @@
+{
+  "suite_id": "qtw-quality-core",
+  "schema_version": "0.1.0",
+  "fixture_version": "1.0.0",
+  "default_language": "en-US",
+  "default_repeat_count": 3,
+  "purpose": "Representative quality and reliability evaluation for the local Qwen3-TTS CustomVoice pipeline.",
+  "required_tags": [
+    "neutral-narration",
+    "expressive-narration",
+    "dialogue",
+    "questions-exclamations",
+    "long-short-sentences",
+    "names-foreign-words",
+    "numbers-dates-times-currency-abbreviations-units",
+    "punctuation-heavy",
+    "technical-text",
+    "emotional-transition",
+    "adjacent-continuity"
+  ],
+  "cases": [
+    {
+      "case_id": "neutral-warm-narration",
+      "title": "Neutral warm children's narration",
+      "tags": ["neutral-narration"],
+      "language": "en-US",
+      "source_text": "Morning light slipped through the curtains and warmed the wooden floor. Outside, a small bird tested the first clear note of its song.",
+      "normalization_decisions": [],
+      "expected_segments": [
+        {
+          "segment_id": "neutral-warm-narration.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Morning light slipped through the curtains and warmed the wooden floor. Outside, a small bird tested the first clear note of its song.",
+          "spoken_text": "Morning light slipped through the curtains and warmed the wooden floor. Outside, a small bird tested the first clear note of its song.",
+          "continuity_group": "neutral-warm-narration",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "warm", "pace": "steady", "intent": "narrate"},
+          "pronunciation_notes": []
+        }
+      ],
+      "listening_focus": ["natural phrasing", "warmth without overacting", "sentence-final cadence"]
+    },
+    {
+      "case_id": "expressive-arc",
+      "title": "Controlled wonder-to-tension-to-relief arc",
+      "tags": ["expressive-narration", "emotional-transition", "adjacent-continuity"],
+      "language": "en-US",
+      "source_text": "At first, the forest seemed to be holding its breath. Then a branch snapped behind Lila, sharp and close. A rabbit hopped into the moonlight, and she laughed with relief.",
+      "normalization_decisions": [],
+      "expected_segments": [
+        {
+          "segment_id": "expressive-arc.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "At first, the forest seemed to be holding its breath.",
+          "spoken_text": "At first, the forest seemed to be holding its breath.",
+          "continuity_group": "expressive-arc",
+          "pause_after_ms": 180,
+          "delivery": {"emotion": "curious", "intensity": "restrained", "intent": "wonder"},
+          "pronunciation_notes": []
+        },
+        {
+          "segment_id": "expressive-arc.2",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Then a branch snapped behind Lila, sharp and close.",
+          "spoken_text": "Then a branch snapped behind Lila, sharp and close.",
+          "continuity_group": "expressive-arc",
+          "pause_after_ms": 180,
+          "delivery": {"emotion": "tense", "intensity": "strong", "intent": "warn"},
+          "pronunciation_notes": [{"term": "Lila", "expected": "LYE-lah"}]
+        },
+        {
+          "segment_id": "expressive-arc.3",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "A rabbit hopped into the moonlight, and she laughed with relief.",
+          "spoken_text": "A rabbit hopped into the moonlight, and she laughed with relief.",
+          "continuity_group": "expressive-arc",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "joyful", "intensity": "moderate", "intent": "reassure"},
+          "pronunciation_notes": []
+        }
+      ],
+      "listening_focus": ["intentional emotional transition", "same speaker identity", "no reset between segments"]
+    },
+    {
+      "case_id": "dialogue-attribution",
+      "title": "Dialogue separated from narrator attribution",
+      "tags": ["dialogue", "questions-exclamations"],
+      "language": "en-US",
+      "source_text": "“Is anyone there?” Mira asked. “I brought the lantern!”",
+      "normalization_decisions": [
+        {"rule_id": "dialogue.outer-quotes", "decision": "Outer dialogue quotation marks are structural and are not spoken."}
+      ],
+      "expected_segments": [
+        {
+          "segment_id": "dialogue-attribution.1",
+          "role": "dialogue",
+          "speaker_profile": "mira-under-test",
+          "display_text": "Is anyone there?",
+          "spoken_text": "Is anyone there?",
+          "continuity_group": "dialogue-attribution",
+          "pause_after_ms": 120,
+          "delivery": {"emotion": "curious", "intent": "question", "distance": "projected"},
+          "pronunciation_notes": [{"term": "Mira", "expected": "MEER-ah"}]
+        },
+        {
+          "segment_id": "dialogue-attribution.2",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Mira asked.",
+          "spoken_text": "Mira asked.",
+          "continuity_group": "dialogue-attribution",
+          "pause_after_ms": 120,
+          "delivery": {"emotion": "neutral", "intent": "narrate"},
+          "pronunciation_notes": [{"term": "Mira", "expected": "MEER-ah"}]
+        },
+        {
+          "segment_id": "dialogue-attribution.3",
+          "role": "dialogue",
+          "speaker_profile": "mira-under-test",
+          "display_text": "I brought the lantern!",
+          "spoken_text": "I brought the lantern!",
+          "continuity_group": "dialogue-attribution",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "joyful", "intent": "exclaim", "distance": "projected"},
+          "pronunciation_notes": []
+        }
+      ],
+      "listening_focus": ["question intonation", "exclamation without shouting", "speaker transitions", "attribution in narrator voice"]
+    },
+    {
+      "case_id": "sentence-length-contrast",
+      "title": "Short line followed by a long nested sentence",
+      "tags": ["long-short-sentences"],
+      "language": "en-US",
+      "source_text": "Stop. Although the storm had moved beyond the hills, the river, which had risen through the night and carried branches against the old bridge, was still too dangerous to cross before sunrise.",
+      "normalization_decisions": [],
+      "expected_segments": [
+        {
+          "segment_id": "sentence-length-contrast.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Stop.",
+          "spoken_text": "Stop.",
+          "continuity_group": "sentence-length-contrast",
+          "pause_after_ms": 300,
+          "delivery": {"emotion": "urgent", "intensity": "strong", "intent": "warn"},
+          "pronunciation_notes": []
+        },
+        {
+          "segment_id": "sentence-length-contrast.2",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Although the storm had moved beyond the hills, the river, which had risen through the night and carried branches against the old bridge, was still too dangerous to cross before sunrise.",
+          "spoken_text": "Although the storm had moved beyond the hills, the river, which had risen through the night and carried branches against the old bridge, was still too dangerous to cross before sunrise.",
+          "continuity_group": "sentence-length-contrast",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "tense", "pace": "steady", "articulation": "crisp", "intent": "explain"},
+          "pronunciation_notes": []
+        }
+      ],
+      "listening_focus": ["short-fragment stability", "breath and clause phrasing", "no rushed sentence ending"]
+    },
+    {
+      "case_id": "names-and-foreign-words",
+      "title": "Names and foreign words with explicit lexicon notes",
+      "tags": ["names-foreign-words"],
+      "language": "en-US",
+      "source_text": "Anaïs met Siobhán beside the café in Łódź and thanked her with a quiet merci.",
+      "normalization_decisions": [
+        {"rule_id": "lexicon.anais", "decision": "Use the episode lexicon; preserve the display spelling."},
+        {"rule_id": "lexicon.siobhan", "decision": "Use the episode lexicon; preserve the display spelling."},
+        {"rule_id": "lexicon.lodz", "decision": "Use the episode lexicon; preserve the display spelling."}
+      ],
+      "expected_segments": [
+        {
+          "segment_id": "names-and-foreign-words.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Anaïs met Siobhán beside the café in Łódź and thanked her with a quiet merci.",
+          "spoken_text": "Ah-nah-EES met Shi-VAWN beside the café in Woodge and thanked her with a quiet mare-SEE.",
+          "continuity_group": "names-and-foreign-words",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "warm", "pace": "steady", "intent": "narrate"},
+          "pronunciation_notes": [
+            {"term": "Anaïs", "expected": "ah-nah-EES"},
+            {"term": "Siobhán", "expected": "shi-VAWN"},
+            {"term": "café", "expected": "ka-FAY"},
+            {"term": "Łódź", "expected": "approximately Woodge"},
+            {"term": "merci", "expected": "mare-SEE"}
+          ]
+        }
+      ],
+      "listening_focus": ["lexicon compliance", "natural integration of foreign words", "no spelling readout"]
+    },
+    {
+      "case_id": "numeric-normalization",
+      "title": "Dates, time, currency, ordinals, abbreviations, and units",
+      "tags": ["numbers-dates-times-currency-abbreviations-units"],
+      "language": "en-US",
+      "source_text": "On July 31, 2026, at 9:05 a.m., Dr. Rivera paid $1,234.50 for the 3rd 5 km sensor test. Battery output rose by 12.5% to 48 V.",
+      "normalization_decisions": [
+        {"rule_id": "date.us-month-day-year", "decision": "The written month removes numeric date ambiguity."},
+        {"rule_id": "currency.usd", "decision": "Expand dollars and cents."},
+        {"rule_id": "units.si", "decision": "Expand km and V in context."}
+      ],
+      "expected_segments": [
+        {
+          "segment_id": "numeric-normalization.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "On July 31, 2026, at 9:05 a.m., Dr. Rivera paid $1,234.50 for the 3rd 5 km sensor test.",
+          "spoken_text": "On July thirty-first, twenty twenty-six, at nine oh five a.m., Doctor Rivera paid one thousand two hundred thirty-four dollars and fifty cents for the third five kilometer sensor test.",
+          "continuity_group": "numeric-normalization",
+          "pause_after_ms": 180,
+          "delivery": {"emotion": "neutral", "articulation": "crisp", "intent": "explain"},
+          "pronunciation_notes": [{"term": "Rivera", "expected": "ree-VAIR-ah"}]
+        },
+        {
+          "segment_id": "numeric-normalization.2",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Battery output rose by 12.5% to 48 V.",
+          "spoken_text": "Battery output rose by twelve point five percent to forty-eight volts.",
+          "continuity_group": "numeric-normalization",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "neutral", "articulation": "crisp", "intent": "explain"},
+          "pronunciation_notes": []
+        }
+      ],
+      "listening_focus": ["number accuracy", "date and time rhythm", "currency and unit expansion"]
+    },
+    {
+      "case_id": "punctuation-prosody",
+      "title": "Prosodic punctuation without literal formatting speech",
+      "tags": ["punctuation-heavy"],
+      "language": "en-US",
+      "source_text": "Wait—listen... not to the clock, but to the space between its ticks; there—did you hear it?",
+      "normalization_decisions": [],
+      "expected_segments": [
+        {
+          "segment_id": "punctuation-prosody.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Wait—listen... not to the clock, but to the space between its ticks; there—did you hear it?",
+          "spoken_text": "Wait—listen... not to the clock, but to the space between its ticks; there—did you hear it?",
+          "continuity_group": "punctuation-prosody",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "curious", "pace": "slower", "distance": "intimate", "intent": "question"},
+          "pronunciation_notes": []
+        }
+      ],
+      "listening_focus": ["dash and ellipsis timing", "semicolon phrasing", "question rise", "absence of exaggerated pauses"]
+    },
+    {
+      "case_id": "technical-explainer",
+      "title": "Technical names, versions, flags, paths, and initialisms",
+      "tags": ["technical-text"],
+      "language": "en-US",
+      "source_text": "JaroMail syncs IMAP over TLS 1.3 and stores one file per message in Maildir. To inspect issue qtw-48r, run `bd show qtw-48r`—not `bd --help`—from the project root.",
+      "normalization_decisions": [
+        {"rule_id": "lexicon.project-terms", "decision": "Use project lexicon entries for JaroMail, IMAP, TLS, and Maildir."},
+        {"rule_id": "code.inline-command", "decision": "Remove code formatting, preserve command tokens, and speak option dashes."}
+      ],
+      "expected_segments": [
+        {
+          "segment_id": "technical-explainer.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "JaroMail syncs IMAP over TLS 1.3 and stores one file per message in Maildir.",
+          "spoken_text": "Jaro Mail syncs eye-map over T L S one point three and stores one file per message in Maildir.",
+          "continuity_group": "technical-explainer",
+          "pause_after_ms": 180,
+          "delivery": {"emotion": "neutral", "articulation": "crisp", "intent": "explain"},
+          "pronunciation_notes": [
+            {"term": "JaroMail", "expected": "JAR-oh Mail"},
+            {"term": "IMAP", "expected": "EYE-map"},
+            {"term": "TLS", "expected": "T L S"},
+            {"term": "Maildir", "expected": "MAIL-dir"}
+          ]
+        },
+        {
+          "segment_id": "technical-explainer.2",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "To inspect issue qtw-48r, run `bd show qtw-48r`—not `bd --help`—from the project root.",
+          "spoken_text": "To inspect issue Q T W forty-eight R, run B D show Q T W forty-eight R—not B D dash dash help—from the project root.",
+          "continuity_group": "technical-explainer",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "neutral", "articulation": "crisp", "intent": "explain"},
+          "pronunciation_notes": [
+            {"term": "qtw-48r", "expected": "Q T W forty-eight R"},
+            {"term": "bd", "expected": "B D"},
+            {"term": "--help", "expected": "dash dash help"}
+          ]
+        }
+      ],
+      "listening_focus": ["technical pronunciation", "command intelligibility", "continuity despite dense tokens"]
+    },
+    {
+      "case_id": "continuous-performance",
+      "title": "Three adjacent neutral segments that must form one performance",
+      "tags": ["adjacent-continuity"],
+      "language": "en-US",
+      "source_text": "The archive belongs to you. Every message stays in an open format on your own disk. Years later, the same search still finds the note you need.",
+      "normalization_decisions": [],
+      "expected_segments": [
+        {
+          "segment_id": "continuous-performance.1",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "The archive belongs to you.",
+          "spoken_text": "The archive belongs to you.",
+          "continuity_group": "continuous-performance",
+          "pause_after_ms": 160,
+          "delivery": {"emotion": "warm", "pace": "steady", "intent": "explain"},
+          "pronunciation_notes": []
+        },
+        {
+          "segment_id": "continuous-performance.2",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Every message stays in an open format on your own disk.",
+          "spoken_text": "Every message stays in an open format on your own disk.",
+          "continuity_group": "continuous-performance",
+          "pause_after_ms": 160,
+          "delivery": {"emotion": "warm", "pace": "steady", "intent": "explain"},
+          "pronunciation_notes": []
+        },
+        {
+          "segment_id": "continuous-performance.3",
+          "role": "narrator",
+          "speaker_profile": "narrator-under-test",
+          "display_text": "Years later, the same search still finds the note you need.",
+          "spoken_text": "Years later, the same search still finds the note you need.",
+          "continuity_group": "continuous-performance",
+          "pause_after_ms": 0,
+          "delivery": {"emotion": "warm", "pace": "steady", "intent": "explain"},
+          "pronunciation_notes": []
+        }
+      ],
+      "listening_focus": ["same identity", "matched level and pace", "no phrase-initial reset", "natural boundaries"]
+    }
+  ]
+}
