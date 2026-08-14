@@ -37,7 +37,7 @@ curl -sS http://127.0.0.1:8000/voices/enroll \
   -d @- <<'JSON'
 {
   "name": "My local narrator",
-  "reference_audio_path": "/Users/me/recordings/reference.wav",
+  "reference_audio_path": "/absolute/path/to/recordings/reference.wav",
   "reference_text": "This is the exact text spoken in my reference recording.",
   "language": "en-US",
   "consent": {

@@ -38,7 +38,7 @@ Evidence labels used below:
 - **Upstream-confirmed:** documented by the official Qwen3-TTS project.
 - **Assumption to test:** plausible but not established for this hardware/model/runtime combination.
 
-Two requested guidance files, `./preprocessor.md` and `./qwen3-voice-director.md`, are not present anywhere under `/Users/alcibiade/strange_things`. Their recommendations therefore could not be evaluated. The available `.pi/skills/narration.md` was reviewed as secondary guidance. Missing files are an input gap, not grounds to invent requirements.
+Two requested guidance files, `./preprocessor.md` and `./qwen3-voice-director.md`, are not present anywhere in the workspace. Their recommendations therefore could not be evaluated. The available `.pi/skills/narration.md` was reviewed as secondary guidance. Missing files are an input gap, not grounds to invent requirements.
 
 ## 2. Executive findings
 
