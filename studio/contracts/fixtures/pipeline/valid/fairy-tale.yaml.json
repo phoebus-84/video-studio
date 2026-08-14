@@ -1,0 +1,102 @@
+{
+  "pipeline": {
+    "id": "fairy-tale-adaptation",
+    "version": "1.0.0",
+    "description": "Adapts a public-domain fairy tale for a configured child audience with safety gates",
+    "extends": {
+      "pipeline": "narrated-illustrated-video",
+      "version": "1.0.0"
+    },
+    "capabilities": [
+      { "id": "image.generate", "version": "1.0.0" },
+      { "id": "speech.synthesize", "version": "1.0.0" },
+      { "id": "video.compose", "version": "1.0.0" }
+    ],
+    "stages": [
+      {
+        "id": "ingest",
+        "name": "Fairy Tale Ingest",
+        "description": "Ingest and structure the public-domain source text",
+        "type": "editorial",
+        "inputs": [
+          { "contract": "source.txt", "version": "1.0.0" }
+        ],
+        "outputs": [
+          { "contract": "structured-story.json", "version": "1.0.0" }
+        ],
+        "gates": {
+          "autopilot": true,
+          "review": "none",
+          "retry_on_failure": 1
+        },
+        "skills": [
+          { "skill": "fairy-tale-ingest", "version": "0.1.0" }
+        ],
+        "depends_on": []
+      },
+      {
+        "id": "adapt",
+        "name": "Audience Adaptation",
+        "description": "Adapt story content and language for the target child age group",
+        "type": "editorial",
+        "inputs": [
+          { "contract": "structured-story.json", "version": "1.0.0" }
+        ],
+        "outputs": [
+          { "contract": "adapted-story.md", "version": "1.0.0" }
+        ],
+        "gates": {
+          "autopilot": false,
+          "review": "human",
+          "retry_on_failure": 2
+        },
+        "skills": [
+          { "skill": "audience-adaptation", "version": "0.1.0" }
+        ],
+        "depends_on": ["ingest"]
+      },
+      {
+        "id": "illustrate",
+        "name": "Generate Illustrations",
+        "description": "Generate scene illustrations via image generation capability",
+        "type": "capability",
+        "capability": "image.generate",
+        "inputs": [
+          { "contract": "art-direction.json", "version": "1.0.0" }
+        ],
+        "outputs": [
+          { "contract": "illustrations/", "version": "1.0.0" }
+        ],
+        "gates": {
+          "autopilot": false,
+          "review": "auto",
+          "retry_on_failure": 3
+        },
+        "skills": [],
+        "depends_on": ["art-direction"]
+      },
+      {
+        "id": "compose",
+        "name": "Compose Final Video",
+        "description": "Compose the final video from illustrations, narration, and captions",
+        "type": "capability",
+        "capability": "video.compose",
+        "inputs": [
+          { "contract": "illustrations/", "version": "1.0.0" },
+          { "contract": "narration.mp3", "version": "1.0.0" },
+          { "contract": "captions.srt", "version": "1.0.0" }
+        ],
+        "outputs": [
+          { "contract": "final.mp4", "version": "1.0.0" }
+        ],
+        "gates": {
+          "autopilot": true,
+          "review": "human",
+          "retry_on_failure": 1
+        },
+        "skills": [],
+        "depends_on": ["illustrations", "narration", "captions"]
+      }
+    ]
+  }
+}

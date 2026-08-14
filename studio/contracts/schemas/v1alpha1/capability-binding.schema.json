@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/capability-binding.schema.json",
+  "title": "Video Studio capability binding schema",
+  "description": "Canonical schema for capability bindings — the concrete provider binding Pi records before a paid or consequential capability call. Frozen in the episode's pipeline.snapshot.yaml. Owned by video-workspace-contracts per ADR-0026/0028.",
+  "$defs": {
+    "AdapterTransport": {
+      "type": "string",
+      "enum": ["in-proc", "http"]
+    },
+    "BindingDecision": {
+      "type": "string",
+      "enum": ["pi", "user", "default"]
+    },
+    "CapabilityBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "capability", "provider", "adapter", "profile", "decidedBy", "decidedAt"],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "studio.video/v1alpha1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "CapabilityBinding"
+        },
+        "capability": {
+          "type": "string",
+          "enum": [
+            "image.generate",
+            "image.edit",
+            "speech.synthesize",
+            "graphics.render",
+            "terminal.record",
+            "video.compose",
+            "media.probe"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Provider identifier (e.g. 'fal-ai', 'qwen-tts', 'studio-graphics-renderer')."
+        },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["package", "version", "transport"],
+          "properties": {
+            "package": {
+              "type": "string",
+              "minLength": 1,
+              "examples": ["fal-media-adapter", "qwen-tts-worker", "studio-graphics-renderer"]
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transport": { "$ref": "#/$defs/AdapterTransport" },
+            "endpoint": {
+              "type": "string",
+              "format": "uri",
+              "description": "Required when transport is 'http'. The remote endpoint URL."
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "transport": { "const": "http" } }, "required": ["transport"] },
+              "then": { "required": ["endpoint"], "properties": { "endpoint": { "type": "string", "format": "uri" } } }
+            }
+          ]
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model/profile identifier (e.g. 'fal-ai/nano-banana-pro@v1', 'qwen3-tts/v1')."
+        },
+        "decidedBy": { "$ref": "#/$defs/BindingDecision" },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "approvalRef": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional reference to the approval event or review thread that authorized this binding."
+        }
+      }
+    }
+  }
+}

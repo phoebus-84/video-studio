@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/identity.schema.json",
+  "title": "Video Studio identity and provenance primitives",
+  "$defs": {
+    "ChannelId": {
+      "type": "string",
+      "pattern": "^chn_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "SeriesId": {
+      "type": "string",
+      "pattern": "^ser_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "EpisodeId": {
+      "type": "string",
+      "pattern": "^ep_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "AttemptId": {
+      "type": "string",
+      "pattern": "^att_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "AssetId": {
+      "type": "string",
+      "pattern": "^ast_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "JobId": {
+      "type": "string",
+      "pattern": "^job_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ReviewThreadId": {
+      "type": "string",
+      "pattern": "^rth_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "EventId": {
+      "type": "string",
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "StableId": {
+      "oneOf": [
+        { "$ref": "#/$defs/ChannelId" },
+        { "$ref": "#/$defs/SeriesId" },
+        { "$ref": "#/$defs/EpisodeId" },
+        { "$ref": "#/$defs/ArtifactId" },
+        { "$ref": "#/$defs/AttemptId" },
+        { "$ref": "#/$defs/AssetId" },
+        { "$ref": "#/$defs/JobId" },
+        { "$ref": "#/$defs/ReviewThreadId" },
+        { "$ref": "#/$defs/EventId" }
+      ]
+    },
+    "Slug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "RevisionNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "PortableRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*//)[^/\\u0000-\\u001F\\u007F]+(?:/[^/\\u0000-\\u001F\\u007F]+)*$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "RevisionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": { "$ref": "#/$defs/StableId" },
+        "revision": { "$ref": "#/$defs/RevisionNumber" },
+        "contentHash": { "$ref": "#/$defs/ContentHash" }
+      }
+    },
+    "MediaHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contentHash", "byteLength"],
+      "properties": {
+        "contentHash": { "$ref": "#/$defs/ContentHash" },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "SourceUri": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 4096,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+    },
+    "SourceRevisionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "revision"],
+      "properties": {
+        "uri": { "$ref": "#/$defs/SourceUri" },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "contentHash": { "$ref": "#/$defs/ContentHash" }
+      }
+    },
+    "ProviderIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/:-]*$"
+        },
+        "endpointRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "Money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "micros"],
+      "properties": {
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "micros": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["createdAt"],
+      "properties": {
+        "createdAt": { "$ref": "#/$defs/Timestamp" },
+        "source": { "$ref": "#/$defs/SourceRevisionRef" },
+        "generator": { "$ref": "#/$defs/ProviderIdentity" },
+        "requestHash": { "$ref": "#/$defs/ContentHash" },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RevisionRef" },
+          "uniqueItems": true
+        }
+      },
+      "anyOf": [
+        { "required": ["source"], "properties": { "source": true } },
+        { "required": ["generator"], "properties": { "generator": true } },
+        { "required": ["inputs"], "properties": { "inputs": true } }
+      ]
+    }
+  }
+}

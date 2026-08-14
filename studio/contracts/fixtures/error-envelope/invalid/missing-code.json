@@ -1,0 +1,10 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ErrorEnvelope",
+  "error": {
+    "message": "Something went wrong but I forgot to say what",
+    "retryable": true
+  },
+  "correlationId": "corr-bad1",
+  "at": "2026-07-30T14:32:00Z"
+}

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/asset.schema.json",
+  "title": "Video Studio asset and attempt contracts",
+  "$defs": {
+    "AssetKind": {
+      "type": "string",
+      "enum": ["image", "audio", "video"],
+      "description": "Discriminated asset kind. 'image' for illustrations and graphics, 'audio' for narration segments, 'video' for terminal recordings and screencasts."
+    },
+    "AssetState": {
+      "type": "string",
+      "enum": ["idle", "ready", "generating", "failed"],
+      "description": "Asset generation lifecycle state."
+    },
+    "ImageMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "format": {
+          "type": "string",
+          "enum": ["png", "jpg", "jpeg", "webp"]
+        }
+      }
+    },
+    "AudioMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["durationSeconds", "sampleRate", "channels"],
+      "properties": {
+        "durationSeconds": { "type": "number", "minimum": 0, "maximum": 3600 },
+        "sampleRate": { "type": "integer", "enum": [16000, 22050, 24000, 44100, 48000] },
+        "channels": { "type": "integer", "enum": [1, 2] },
+        "codec": { "type": "string", "enum": ["pcm_s16le", "pcm_f32le", "aac", "mp3"] }
+      }
+    },
+    "VideoMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "durationSeconds", "framerate", "codec"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "durationSeconds": { "type": "number", "minimum": 0, "maximum": 3600 },
+        "framerate": { "type": "number", "minimum": 1, "maximum": 120 },
+        "codec": {
+          "type": "string",
+          "enum": ["h264", "h265", "vp8", "vp9", "av1"]
+        },
+        "loopable": {
+          "type": "boolean",
+          "description": "Whether the video can be seamlessly looped (e.g., terminal recordings with static end state)."
+        },
+        "bitrateKbps": { "type": "integer", "minimum": 0, "maximum": 500000 }
+      }
+    },
+    "AssetAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sceneId", "kind", "state", "filePath", "provenance"],
+      "properties": {
+        "id": { "$ref": "identity.schema.json#/$defs/AssetId" },
+        "sceneId": {
+          "type": "string",
+          "pattern": "^s[0-9]+[a-z]?$",
+          "description": "Scene identifier (e.g., s1, s4a)"
+        },
+        "kind": { "$ref": "#/$defs/AssetKind" },
+        "state": { "$ref": "#/$defs/AssetState" },
+        "provider": { "$ref": "identity.schema.json#/$defs/ProviderIdentity" },
+        "prompt": {
+          "type": "string",
+          "maxLength": 32000,
+          "description": "Generation prompt for AI-generated assets; null for deterministic renders."
+        },
+        "referenceImages": {
+          "type": "array",
+          "items": { "$ref": "identity.schema.json#/$defs/PortableRelativePath" },
+          "uniqueItems": true,
+          "maxItems": 10
+        },
+        "seed": { "type": ["integer", "null"], "minimum": 0, "maximum": 4294967295 },
+        "image": { "$ref": "#/$defs/ImageMetadata" },
+        "audio": { "$ref": "#/$defs/AudioMetadata" },
+        "video": { "$ref": "#/$defs/VideoMetadata" },
+        "cost": { "$ref": "identity.schema.json#/$defs/Money" },
+        "license": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "License or usage terms for the generated asset."
+        },
+        "filePath": { "$ref": "identity.schema.json#/$defs/PortableRelativePath" },
+        "fileAvailable": { "type": "boolean", "default": false },
+        "selected": { "type": "boolean", "default": false },
+        "provenance": { "$ref": "identity.schema.json#/$defs/Provenance" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "image" } } },
+          "then": { "required": ["image"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "audio" } } },
+          "then": { "required": ["audio"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "video" } } },
+          "then": { "required": ["video"] }
+        }
+      ]
+    },
+    "AssetGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sceneId", "sceneTitle", "attempts"],
+      "properties": {
+        "sceneId": { "type": "string", "pattern": "^s[0-9]+[a-z]?$" },
+        "sceneTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "attempts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AssetAttempt" }
+        }
+      }
+    },
+    "AssetManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assets", "updatedAt"],
+      "properties": {
+        "assets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AssetAttempt" }
+        },
+        "updatedAt": { "$ref": "identity.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "AssetExample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageAttempt", "audioAttempt", "videoAttempt", "assetGroup", "assetManifest"],
+      "properties": {
+        "imageAttempt": { "$ref": "#/$defs/AssetAttempt" },
+        "audioAttempt": { "$ref": "#/$defs/AssetAttempt" },
+        "videoAttempt": { "$ref": "#/$defs/AssetAttempt" },
+        "assetGroup": { "$ref": "#/$defs/AssetGroup" },
+        "assetManifest": { "$ref": "#/$defs/AssetManifest" }
+      }
+    }
+  }
+}

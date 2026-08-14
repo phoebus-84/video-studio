@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/journal-event.schema.json",
+  "title": "Video Studio journal event schema",
+  "description": "Canonical schema for execution journal events. Owned by video-workspace-contracts per ADR-0028. Every event is an immutable, append-only record in an episode's journal/events.jsonl.",
+  "$defs": {
+    "EpisodeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "series", "episode"],
+      "properties": {
+        "channel": { "type": "string", "minLength": 1 },
+        "series": { "type": "string", "minLength": 1 },
+        "episode": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Actor": {
+      "type": "string",
+      "enum": ["pi", "gateway", "runtime", "human", "system"]
+    },
+    "EventType": {
+      "type": "string",
+      "enum": [
+        "stage-leased",
+        "stage-started",
+        "stage-completed",
+        "stage-failed",
+        "attempt-recorded",
+        "approval-granted",
+        "approval-requested",
+        "comment-added",
+        "artifact-written",
+        "staleness-marked",
+        "supersession-recorded",
+        "deliverable-current-changed",
+        "episode.created",
+        "episode.status_changed",
+        "stage.started",
+        "stage.completed",
+        "stage.failed",
+        "artifact.created",
+        "artifact.updated",
+        "budget.updated",
+        "review.created",
+        "review.resolved",
+        "settings.changed",
+        "snapshot.created"
+      ]
+    },
+    "EventData": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Type-specific event payload. Shape varies by event type."
+    },
+    "JournalEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "id", "episodeRef", "at", "actor", "type", "data"],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "studio.video/v1alpha1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "JournalEvent"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "episodeRef": { "$ref": "#/$defs/EpisodeRef" },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor": { "$ref": "#/$defs/Actor" },
+        "type": { "$ref": "#/$defs/EventType" },
+        "data": { "$ref": "#/$defs/EventData" },
+        "correlationId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional correlation ID linking causally related events."
+        },
+        "causationId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional causation ID — the event that directly caused this one."
+        }
+      }
+    }
+  }
+}

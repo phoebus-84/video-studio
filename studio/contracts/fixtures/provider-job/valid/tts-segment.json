@@ -1,0 +1,33 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ProviderJob",
+  "id": "job_BBBBBBBBBBBBBBBBBBBBBBBBBB",
+  "capability": "speech.synthesize",
+  "provider": "qwen3-tts",
+  "profile": "qwen3-tts/v1",
+  "requestId": "tts-req-def456ghi",
+  "submittedAt": "2026-07-30T14:05:00Z",
+  "completedAt": "2026-07-30T14:05:08Z",
+  "status": "completed",
+  "params": {
+    "text": "Once upon a time, in a village by the woods, there lived a little girl.",
+    "voice": "gentle-female-narrator",
+    "speed": 1.0
+  },
+  "outputs": [
+    {
+      "path": "assets/audio/narration-scene-01.mp3",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "bytes": 102400,
+      "contentType": "audio/mpeg"
+    }
+  ],
+  "cost": {
+    "amount": 0.001,
+    "currency": "USD"
+  },
+  "sourceRevisions": {
+    "artifacts/narration-script.md": "2"
+  },
+  "idempotencyKey": "ep_red-riding-hood__narration-scene-01__v1"
+}

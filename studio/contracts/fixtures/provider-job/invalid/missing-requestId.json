@@ -1,0 +1,11 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ProviderJob",
+  "id": "job_CCCCCCCCCCCCCCCCCCCCCCCCCC",
+  "capability": "image.generate",
+  "provider": "fal",
+  "profile": "fal-ai/nano-banana-pro@v1",
+  "submittedAt": "2026-07-30T14:00:00Z",
+  "status": "submitted",
+  "idempotencyKey": "ep_test__missing-request-id"
+}

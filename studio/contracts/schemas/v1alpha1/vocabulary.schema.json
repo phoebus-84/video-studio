@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/vocabulary.schema.json",
+  "title": "Video Studio canonical capability and artifact-kind vocabulary",
+  "description": "Owned by video-workspace-contracts per ADR-0025/0028. Capabilities are what stages request; artifact kinds are what pipeline contracts produce and consume. Single source of truth — runtime and pipelines validate against these enums.",
+  "$defs": {
+    "Capability": {
+      "type": "string",
+      "enum": [
+        "image.generate",
+        "image.edit",
+        "speech.synthesize",
+        "graphics.render",
+        "terminal.record",
+        "video.compose",
+        "media.probe"
+      ]
+    },
+    "ArtifactKind": {
+      "type": "string",
+      "enum": [
+        "markdown",
+        "json",
+        "yaml",
+        "audio",
+        "video",
+        "image",
+        "captions",
+        "tape",
+        "directory"
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "EditTimeline",
+  "episodeRef": {
+    "channel": "tech",
+    "series": "repo-docs",
+    "episode": "intro"
+  },
+  "revision": 1,
+  "fps": 30,
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "segments": [
+    {
+      "id": "bad-segment",
+      "sourceAsset": "assets/images/bad.png",
+      "sourceKind": "image",
+      "startSec": -1.5,
+      "durationSec": 5.0
+    }
+  ]
+}

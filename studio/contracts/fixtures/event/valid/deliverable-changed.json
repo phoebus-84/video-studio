@@ -1,0 +1,18 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "JournalEvent",
+  "id": "evt_EEEEEEEEEEEEEEEEEEEEEEEEEE",
+  "episodeRef": {
+    "channel": "tech",
+    "series": "repo-docs",
+    "episode": "intro"
+  },
+  "at": "2026-07-30T12:00:00Z",
+  "actor": "gateway",
+  "type": "deliverable-current-changed",
+  "data": {
+    "previousRenderId": "att_OLD01EXAMPLE00000000000000",
+    "newRenderId": "att_NEW01EXAMPLE00000000000000",
+    "mediaPath": "output/att_NEW01EXAMPLE00000000000000.mp4"
+  }
+}

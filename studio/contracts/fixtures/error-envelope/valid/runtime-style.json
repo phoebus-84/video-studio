@@ -1,0 +1,16 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ErrorEnvelope",
+  "error": {
+    "code": "pipeline.capability-unbound",
+    "message": "Stage 'illustrate' requires capability 'image.generate' but no capability binding was recorded for this episode",
+    "retryable": false,
+    "details": {
+      "stageId": "illustrate",
+      "capability": "image.generate",
+      "episodeId": "ep_EXAMPLE00000000000000000000"
+    }
+  },
+  "correlationId": "corr-ghi789",
+  "at": "2026-07-30T14:31:00Z"
+}

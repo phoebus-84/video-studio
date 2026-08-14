@@ -1,0 +1,16 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "JournalEvent",
+  "id": "evt_GGGGGGGGGGGGGGGGGGGGGGGGGG",
+  "episodeRef": {
+    "channel": "childrens",
+    "series": "fairy-tales",
+    "episode": "red-riding-hood"
+  },
+  "at": "2026-07-30T13:00:00Z",
+  "type": "stage-started",
+  "data": {
+    "stageId": "ingest",
+    "attemptNumber": 1
+  }
+}

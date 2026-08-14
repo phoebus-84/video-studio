@@ -1,0 +1,15 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ReviewThread",
+  "id": "rth_DDDDDDDDDDDDDDDDDDDDDDDDDD",
+  "createdAt": "2026-07-30T14:00:00Z",
+  "status": "open",
+  "comments": [
+    {
+      "id": "cmt_EEEEEEEEEEEEEEEEEEEEEEEEEE",
+      "at": "2026-07-30T14:05:00Z",
+      "author": "human",
+      "body": "This needs review."
+    }
+  ]
+}

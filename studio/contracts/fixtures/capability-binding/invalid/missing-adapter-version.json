@@ -1,0 +1,13 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "CapabilityBinding",
+  "capability": "image.generate",
+  "provider": "fal-ai",
+  "adapter": {
+    "package": "fal-media-adapter",
+    "transport": "in-proc"
+  },
+  "profile": "fal-ai/nano-banana-pro@v1",
+  "decidedBy": "pi",
+  "decidedAt": "2026-07-30T14:00:00Z"
+}

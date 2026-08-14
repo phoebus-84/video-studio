@@ -1,0 +1,14 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "JournalEvent",
+  "id": "evt_FFFFFFFFFFFFFFFFFFFFFFFFFF",
+  "episodeRef": {
+    "channel": "childrens",
+    "series": "fairy-tales",
+    "episode": "red-riding-hood"
+  },
+  "at": "2026-07-30T13:00:00Z",
+  "actor": "pi",
+  "type": "not-a-real-event-type",
+  "data": {}
+}

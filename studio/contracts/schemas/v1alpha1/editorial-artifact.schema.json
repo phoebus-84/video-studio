@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/editorial-artifact.schema.json",
+  "title": "Video Studio editorial artifact contracts",
+  "description": "Editorial artifacts are human- or agent-authored documents that drive production. Each has a typed envelope with frontmatter, a revision number, and content.",
+  "$defs": {
+    "ArtifactType": {
+      "type": "string",
+      "enum": [
+        "brief",
+        "adapted-story",
+        "script",
+        "tts-script",
+        "art-direction",
+        "narration-script",
+        "tape",
+        "scene-plan",
+        "edit-timeline"
+      ],
+      "description": "Discriminated artifact type. 'tape' is a VHS terminal recording script (.tape file)."
+    },
+    "TapeMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sceneId"],
+      "properties": {
+        "sceneId": {
+          "type": "string",
+          "pattern": "^s[0-9]+[a-z]?$",
+          "description": "Scene this tape produces a recording for."
+        },
+        "outputFormat": {
+          "type": "string",
+          "enum": ["mp4", "gif", "webm", "png"],
+          "default": "mp4"
+        },
+        "vhsVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "VHS version used to render. Recorded in the tape file or added at render time."
+        },
+        "themeId": {
+          "type": "string",
+          "description": "Reference to the VHS theme used (e.g., 'dyne'). Inlined in the tape, tracked here for search."
+        },
+        "estimatedDurationSeconds": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 600
+        }
+      }
+    },
+    "EditorialArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "artifactId", "kind", "revision", "path", "provenance"],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "studio.video/v1alpha1"
+        },
+        "artifactId": { "$ref": "identity.schema.json#/$defs/ArtifactId" },
+        "kind": { "$ref": "#/$defs/ArtifactType" },
+        "revision": { "$ref": "identity.schema.json#/$defs/RevisionNumber" },
+        "path": { "$ref": "identity.schema.json#/$defs/PortableRelativePath" },
+        "contentHash": { "$ref": "identity.schema.json#/$defs/ContentHash" },
+        "tape": { "$ref": "#/$defs/TapeMetadata" },
+        "provenance": { "$ref": "identity.schema.json#/$defs/Provenance" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "tape" } } },
+          "then": { "required": ["tape"] }
+        }
+      ]
+    },
+    "ArtifactCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifacts", "updatedAt"],
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EditorialArtifact" },
+          "uniqueItems": true
+        },
+        "updatedAt": { "$ref": "identity.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "EditorialExample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["briefArtifact", "scriptArtifact", "tapeArtifact", "catalog"],
+      "properties": {
+        "briefArtifact": { "$ref": "#/$defs/EditorialArtifact" },
+        "scriptArtifact": { "$ref": "#/$defs/EditorialArtifact" },
+        "tapeArtifact": { "$ref": "#/$defs/EditorialArtifact" },
+        "catalog": { "$ref": "#/$defs/ArtifactCatalog" }
+      }
+    }
+  }
+}

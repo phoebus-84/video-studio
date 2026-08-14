@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/workspace.schema.json",
+  "title": "Video Studio workspace and policy contracts",
+  "$defs": {
+    "ResourceVersion": {
+      "type": "string",
+      "const": "studio.video/v1alpha1"
+    },
+    "ResourceKind": {
+      "type": "string",
+      "enum": [
+        "Channel",
+        "Series",
+        "Episode",
+        "RepositorySourceSnapshot",
+        "TextSourceSnapshot",
+        "VoiceProfileMetadata",
+        "VisualBibleMetadata",
+        "CurrentDeliverable",
+        "ChannelSettings",
+        "SeriesSettings"
+      ]
+    },
+    "CredentialFreeSourceUri": {
+      "allOf": [
+        { "$ref": "identity.schema.json#/$defs/SourceUri" },
+        { "type": "string", "pattern": "^(?![A-Za-z][A-Za-z0-9+.-]*://[^/]*@)" }
+      ]
+    },
+    "CredentialFreeSourceRevisionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "revision", "contentHash"],
+      "properties": {
+        "uri": { "$ref": "#/$defs/CredentialFreeSourceUri" },
+        "revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "contentHash": { "$ref": "identity.schema.json#/$defs/ContentHash" }
+      }
+    },
+    "LicenseMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commercialUse", "attributionRequired"],
+      "properties": {
+        "spdxId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9.+-]+(?: (?:AND|OR|WITH) [A-Za-z0-9.+-]+)*$"
+        },
+        "licenseUrl": { "$ref": "identity.schema.json#/$defs/SourceUri" },
+        "commercialUse": {
+          "type": "string",
+          "enum": ["allowed", "restricted", "unknown"]
+        },
+        "attributionRequired": { "type": "boolean" },
+        "attributionText": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "evidencePath": { "$ref": "identity.schema.json#/$defs/PortableRelativePath" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "attributionRequired": { "const": true } }, "required": ["attributionRequired"] },
+          "then": { "required": ["attributionText"], "properties": { "attributionText": true } }
+        }
+      ]
+    },
+    "ApprovalPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "onPaidAction",
+        "onBudgetExceeded",
+        "onMaterialDowngrade",
+        "onCapabilityUnavailable",
+        "onValidationFailure",
+        "onConflict",
+        "onLicenseOrSafetyBlocker"
+      ],
+      "properties": {
+        "mode": { "type": "string", "enum": ["autopilot", "guided", "manual"] },
+        "onPaidAction": { "type": "string", "enum": ["continue", "requireApproval"] },
+        "onBudgetExceeded": { "type": "string", "const": "requireApproval" },
+        "onMaterialDowngrade": { "type": "string", "const": "requireApproval" },
+        "onCapabilityUnavailable": { "type": "string", "const": "requireApproval" },
+        "onValidationFailure": { "type": "string", "const": "requireApproval" },
+        "onConflict": { "type": "string", "const": "requireApproval" },
+        "onLicenseOrSafetyBlocker": { "type": "string", "const": "requireApproval" }
+      }
+    },
+    "BudgetEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "limitMicros", "warnAtMicros", "reservationRequired"],
+      "properties": {
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "limitMicros": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "warnAtMicros": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "reservationRequired": { "type": "boolean" }
+      }
+    },
+    "OutputProfileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "width", "height", "frameRate"],
+      "properties": {
+        "id": { "type": "string", "enum": ["youtube-1080p-30"] },
+        "width": { "type": "integer", "const": 1920 },
+        "height": { "type": "integer", "const": 1080 },
+        "frameRate": { "type": "integer", "const": 30 }
+      }
+    },
+    "SettingsLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalPolicy", "budget", "outputProfile"],
+      "properties": {
+        "approvalPolicy": { "$ref": "#/$defs/ApprovalPolicy" },
+        "budget": { "$ref": "#/$defs/BudgetEnvelope" },
+        "outputProfile": { "$ref": "#/$defs/OutputProfileRef" },
+        "locale": { "type": "string", "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
+        "extensions": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$" },
+          "additionalProperties": true
+        }
+      }
+    },
+    "ChannelSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "channelId", "values"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "ChannelSettings" },
+        "channelId": { "$ref": "identity.schema.json#/$defs/ChannelId" },
+        "values": { "$ref": "#/$defs/SettingsLayer" }
+      }
+    },
+    "SeriesSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "seriesId", "values"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "SeriesSettings" },
+        "seriesId": { "$ref": "identity.schema.json#/$defs/SeriesId" },
+        "values": { "$ref": "#/$defs/SettingsLayer" }
+      }
+    },
+    "ChannelProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "channelId", "slug", "title", "audience"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "Channel" },
+        "channelId": { "$ref": "identity.schema.json#/$defs/ChannelId" },
+        "slug": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "audience": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "metadata": { "type": "object", "additionalProperties": true },
+        "extensions": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "SeriesProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "seriesId", "channelId", "slug", "title", "format"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "Series" },
+        "seriesId": { "$ref": "identity.schema.json#/$defs/SeriesId" },
+        "channelId": { "$ref": "identity.schema.json#/$defs/ChannelId" },
+        "slug": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "format": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "metadata": { "type": "object", "additionalProperties": true },
+        "extensions": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "CurrentDeliverable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "episodeId", "renderAttemptId", "media", "renderReport", "updatedAt"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "CurrentDeliverable" },
+        "episodeId": { "$ref": "identity.schema.json#/$defs/EpisodeId" },
+        "renderAttemptId": { "$ref": "identity.schema.json#/$defs/AttemptId" },
+        "media": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash"],
+          "properties": {
+            "path": { "$ref": "identity.schema.json#/$defs/PortableRelativePath" },
+            "hash": { "$ref": "identity.schema.json#/$defs/MediaHash" }
+          }
+        },
+        "renderReport": { "$ref": "identity.schema.json#/$defs/RevisionRef" },
+        "updatedAt": { "$ref": "identity.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "EpisodeMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "episodeId", "seriesId", "slug", "title", "settings"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "Episode" },
+        "episodeId": { "$ref": "identity.schema.json#/$defs/EpisodeId" },
+        "seriesId": { "$ref": "identity.schema.json#/$defs/SeriesId" },
+        "slug": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "settings": { "$ref": "#/$defs/SettingsLayer" },
+        "sourceSnapshotRefs": {
+          "type": "array",
+          "items": { "$ref": "identity.schema.json#/$defs/RevisionRef" },
+          "uniqueItems": true
+        },
+        "currentDeliverablePath": {
+          "allOf": [
+            { "$ref": "identity.schema.json#/$defs/PortableRelativePath" },
+            { "type": "string", "const": "output/current.json" }
+          ]
+        },
+        "metadata": { "type": "object", "additionalProperties": true },
+        "extensions": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "RepositorySourceSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "artifactId", "revision", "originUri", "commit", "treeHash", "license", "capturedAt", "analysisPolicy"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "RepositorySourceSnapshot" },
+        "artifactId": { "$ref": "identity.schema.json#/$defs/ArtifactId" },
+        "revision": { "$ref": "identity.schema.json#/$defs/RevisionNumber" },
+        "originUri": { "$ref": "#/$defs/CredentialFreeSourceUri" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "treeHash": { "$ref": "identity.schema.json#/$defs/ContentHash" },
+        "license": { "$ref": "#/$defs/LicenseMetadata" },
+        "capturedAt": { "$ref": "identity.schema.json#/$defs/Timestamp" },
+        "analysisPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["readOnly", "allowRepositoryExecution"],
+          "properties": {
+            "readOnly": { "const": true },
+            "allowRepositoryExecution": { "const": false }
+          }
+        }
+      }
+    },
+    "TextSourceSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "artifactId", "revision", "source", "license", "capturedAt"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "TextSourceSnapshot" },
+        "artifactId": { "$ref": "identity.schema.json#/$defs/ArtifactId" },
+        "revision": { "$ref": "identity.schema.json#/$defs/RevisionNumber" },
+        "source": { "$ref": "#/$defs/CredentialFreeSourceRevisionRef" },
+        "license": { "$ref": "#/$defs/LicenseMetadata" },
+        "capturedAt": { "$ref": "identity.schema.json#/$defs/Timestamp" },
+        "sourceLanguage": { "type": "string", "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" }
+      }
+    },
+    "VoiceProfileMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "artifactId", "revision", "name", "voiceMode", "language", "createdAt"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "VoiceProfileMetadata" },
+        "artifactId": { "$ref": "identity.schema.json#/$defs/ArtifactId" },
+        "revision": { "$ref": "identity.schema.json#/$defs/RevisionNumber" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "voiceMode": { "type": "string", "enum": ["preset", "clone", "design"] },
+        "language": { "type": "string", "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
+        "createdAt": { "$ref": "identity.schema.json#/$defs/Timestamp" },
+        "referenceSource": { "$ref": "identity.schema.json#/$defs/RevisionRef" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "voiceMode": { "const": "clone" } }, "required": ["voiceMode"] },
+          "then": { "required": ["referenceSource"], "properties": { "referenceSource": true } }
+        }
+      ]
+    },
+    "VisualBibleMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "artifactId", "revision", "seriesId", "themeId", "createdAt"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "VisualBibleMetadata" },
+        "artifactId": { "$ref": "identity.schema.json#/$defs/ArtifactId" },
+        "revision": { "$ref": "identity.schema.json#/$defs/RevisionNumber" },
+        "seriesId": { "$ref": "identity.schema.json#/$defs/SeriesId" },
+        "themeId": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "createdAt": { "$ref": "identity.schema.json#/$defs/Timestamp" },
+        "referenceAssets": {
+          "type": "array",
+          "items": { "$ref": "identity.schema.json#/$defs/RevisionRef" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "WorkspaceExample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "channelSettings", "series", "seriesSettings", "episode", "sourceSnapshot", "voiceProfile", "visualBible", "currentDeliverable"],
+      "properties": {
+        "channel": { "$ref": "#/$defs/ChannelProfile" },
+        "channelSettings": { "$ref": "#/$defs/ChannelSettings" },
+        "series": { "$ref": "#/$defs/SeriesProfile" },
+        "seriesSettings": { "$ref": "#/$defs/SeriesSettings" },
+        "episode": { "$ref": "#/$defs/EpisodeMetadata" },
+        "sourceSnapshot": {
+          "oneOf": [
+            { "$ref": "#/$defs/RepositorySourceSnapshot" },
+            { "$ref": "#/$defs/TextSourceSnapshot" }
+          ]
+        },
+        "voiceProfile": { "$ref": "#/$defs/VoiceProfileMetadata" },
+        "visualBible": { "$ref": "#/$defs/VisualBibleMetadata" },
+        "currentDeliverable": { "$ref": "#/$defs/CurrentDeliverable" }
+      }
+    }
+  }
+}

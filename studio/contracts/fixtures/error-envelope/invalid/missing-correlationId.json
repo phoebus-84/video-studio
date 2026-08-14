@@ -1,0 +1,10 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ErrorEnvelope",
+  "error": {
+    "code": "GENERIC_ERROR",
+    "message": "An error occurred",
+    "retryable": false
+  },
+  "at": "2026-07-30T14:33:00Z"
+}

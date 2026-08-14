@@ -1,0 +1,23 @@
+[
+  {"definition":"ChannelId","value":"chn_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"SeriesId","value":"ser_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"EpisodeId","value":"ep_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"ArtifactId","value":"art_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"AttemptId","value":"att_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"AssetId","value":"ast_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"JobId","value":"job_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"ReviewThreadId","value":"rth_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"EventId","value":"evt_01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+  {"definition":"Slug","value":"the-frog-prince"},
+  {"definition":"RevisionNumber","value":1},
+  {"definition":"ContentHash","value":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+  {"definition":"PortableRelativePath","value":"channels/fairy-tales/series/classics/episodes/frog-prince/script.md"},
+  {"definition":"Timestamp","value":"2026-07-27T12:34:56.123Z"},
+  {"definition":"RevisionRef","value":{"id":"art_01ARZ3NDEKTSV4RRFFQ69G5FAV","revision":3,"contentHash":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}},
+  {"definition":"MediaHash","value":{"contentHash":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","byteLength":42000}},
+  {"definition":"SourceUri","value":"https://github.com/example/project.git"},
+  {"definition":"SourceRevisionRef","value":{"uri":"https://github.com/example/project.git","revision":"0123456789abcdef0123456789abcdef01234567","contentHash":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}},
+  {"definition":"ProviderIdentity","value":{"provider":"fal","model":"fal-ai/flux/dev","endpointRevision":"2026-07-01"}},
+  {"definition":"Money","value":{"currency":"USD","micros":1250000}},
+  {"definition":"Provenance","value":{"createdAt":"2026-07-27T12:34:56Z","generator":{"provider":"fal","model":"fal-ai/flux/dev"},"requestHash":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","inputs":[{"id":"art_01ARZ3NDEKTSV4RRFFQ69G5FAV","revision":3}]}}
+]

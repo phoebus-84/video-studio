@@ -1,0 +1,20 @@
+{
+  "pipeline": {
+    "id": "evil-pipeline",
+    "version": "3.0.0",
+    "description": "Stage missing the required type field",
+    "stages": [
+      {
+        "id": "bad-brief",
+        "name": "Bad Brief",
+        "description": "Missing the type field entirely — neither editorial nor capability",
+        "inputs": [
+          { "contract": "repo/", "version": "1.0.0" }
+        ],
+        "outputs": [
+          { "contract": "brief.md", "version": "1.0.0" }
+        ]
+      }
+    ]
+  }
+}

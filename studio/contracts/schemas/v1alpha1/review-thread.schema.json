@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/review-thread.schema.json",
+  "title": "Video Studio review thread schema",
+  "description": "Canonical schema for review threads — persistent conversations anchored to a specific revision and location within an episode. Owned by video-workspace-contracts per ADR-0028.",
+  "$defs": {
+    "ThreadStatus": {
+      "type": "string",
+      "enum": ["open", "resolved", "wontfix"]
+    },
+    "TargetType": {
+      "type": "string",
+      "enum": ["artifact", "scene", "asset-attempt", "narration-segment", "deliverable"]
+    },
+    "AnchorLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "timecodeSec": { "type": "number", "minimum": 0 },
+        "sceneId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ReviewAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetType", "targetPath"],
+      "properties": {
+        "targetType": { "$ref": "#/$defs/TargetType" },
+        "targetPath": { "type": "string", "minLength": 1 },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": { "$ref": "#/$defs/AnchorLocation" }
+      }
+    },
+    "CommentAuthor": {
+      "type": "string",
+      "enum": ["human", "pi", "system"]
+    },
+    "ReviewComment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "at", "author", "body"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^cmt_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "author": { "$ref": "#/$defs/CommentAuthor" },
+        "body": { "type": "string", "minLength": 1 },
+        "sentToPi": { "type": "boolean", "default": false }
+      }
+    },
+    "ReviewThread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "id", "createdAt", "status", "anchor", "comments"],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "studio.video/v1alpha1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ReviewThread"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^rth_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": { "$ref": "#/$defs/ThreadStatus" },
+        "anchor": { "$ref": "#/$defs/ReviewAnchor" },
+        "comments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ReviewComment" }
+        }
+      }
+    }
+  }
+}

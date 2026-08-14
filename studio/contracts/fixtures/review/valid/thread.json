@@ -1,0 +1,32 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ReviewThread",
+  "id": "rth_AAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "createdAt": "2026-07-30T14:00:00Z",
+  "status": "open",
+  "anchor": {
+    "targetType": "artifact",
+    "targetPath": "artifacts/script.md",
+    "revision": "3",
+    "location": {
+      "line": 42,
+      "sceneId": "scene-01-woods"
+    }
+  },
+  "comments": [
+    {
+      "id": "cmt_BBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "at": "2026-07-30T14:05:00Z",
+      "author": "human",
+      "body": "The wolf's dialogue feels too threatening for the 4–6 age group. Can we soften the language?",
+      "sentToPi": true
+    },
+    {
+      "id": "cmt_CCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "at": "2026-07-30T14:10:00Z",
+      "author": "pi",
+      "body": "Revised the wolf's lines to be more playful than menacing. The new text retains the narrative tension but uses gentler vocabulary appropriate for the target audience.",
+      "sentToPi": false
+    }
+  ]
+}

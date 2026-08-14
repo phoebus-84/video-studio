@@ -1,0 +1,143 @@
+{
+  "imageAttempt": {
+    "id": "ast_VALID01EXAMPLE000000000000",
+    "sceneId": "s2",
+    "kind": "image",
+    "state": "ready",
+    "provider": {
+      "provider": "fal",
+      "model": "flux/dev"
+    },
+    "prompt": "Split-screen illustration showing encrypted vs unencrypted storage",
+    "seed": 42,
+    "image": {
+      "width": 1920,
+      "height": 1080,
+      "format": "jpg"
+    },
+    "cost": { "currency": "USD", "micros": 4000 },
+    "license": "Generated with fal.ai Flux/dev; CC0 output",
+    "filePath": "assets/images/s2.jpg",
+    "fileAvailable": true,
+    "selected": true,
+    "provenance": {
+      "createdAt": "2026-07-29T10:00:00Z",
+      "generator": { "provider": "fal", "model": "flux/dev" },
+      "requestHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "audioAttempt": {
+    "id": "ast_VALID02EXAMPLE000000000000",
+    "sceneId": "s3",
+    "kind": "audio",
+    "state": "ready",
+    "provider": {
+      "provider": "qwen3-tts",
+      "model": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit"
+    },
+    "audio": {
+      "durationSeconds": 42.4,
+      "sampleRate": 24000,
+      "channels": 1,
+      "codec": "pcm_s16le"
+    },
+    "cost": null,
+    "license": "Local TTS; no usage restrictions",
+    "filePath": "artifacts/narration/s3.wav",
+    "fileAvailable": true,
+    "selected": true,
+    "provenance": {
+      "createdAt": "2026-07-29T10:01:00Z",
+      "generator": {
+        "provider": "qwen3-tts",
+        "model": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit"
+      }
+    }
+  },
+  "videoAttempt": {
+    "id": "ast_VALID03EXAMPLE000000000000",
+    "sceneId": "s5",
+    "kind": "video",
+    "state": "ready",
+    "provider": {
+      "provider": "vhs",
+      "model": "0.11.0"
+    },
+    "prompt": null,
+    "video": {
+      "width": 1920,
+      "height": 1080,
+      "durationSeconds": 36.6,
+      "framerate": 30,
+      "codec": "h264",
+      "loopable": true,
+      "bitrateKbps": 800
+    },
+    "cost": null,
+    "license": "Local VHS render; no usage restrictions",
+    "filePath": "assets/tapes/s5.mp4",
+    "fileAvailable": true,
+    "selected": true,
+    "provenance": {
+      "createdAt": "2026-07-29T10:02:00Z",
+      "generator": { "provider": "vhs", "model": "0.11.0" },
+      "inputs": [
+        { "id": "art_VALID03EXAMPLE000000000000", "revision": 1 }
+      ]
+    }
+  },
+  "assetGroup": {
+    "sceneId": "s5",
+    "sceneTitle": "Use Case: Securing a Project",
+    "attempts": [
+      {
+        "id": "ast_VALID04EXAMPLE000000000000",
+        "sceneId": "s5",
+        "kind": "video",
+        "state": "ready",
+        "provider": { "provider": "vhs", "model": "0.11.0" },
+        "video": {
+          "width": 1920,
+          "height": 1080,
+          "durationSeconds": 36.6,
+          "framerate": 30,
+          "codec": "h264",
+          "loopable": true
+        },
+        "filePath": "assets/tapes/s5.mp4",
+        "fileAvailable": true,
+        "selected": true,
+        "provenance": {
+          "createdAt": "2026-07-29T10:02:00Z",
+          "generator": { "provider": "vhs", "model": "0.11.0" }
+        }
+      },
+      {
+        "id": "ast_VALID05EXAMPLE000000000000",
+        "sceneId": "s5",
+        "kind": "video",
+        "state": "failed",
+        "provider": { "provider": "vhs", "model": "0.11.0" },
+        "video": {
+          "width": 1920,
+          "height": 1080,
+          "durationSeconds": 0,
+          "framerate": 30,
+          "codec": "h264",
+          "loopable": false
+        },
+        "filePath": "assets/tapes/s5.mp4",
+        "fileAvailable": false,
+        "selected": false,
+        "provenance": {
+          "createdAt": "2026-07-29T09:58:00Z",
+          "generator": { "provider": "vhs", "model": "0.11.0" }
+        }
+      }
+    ]
+  },
+  "assetManifest": {
+    "assets": [],
+    "updatedAt": "2026-07-29T10:02:00Z"
+  }
+}
