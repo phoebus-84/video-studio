@@ -1,11 +1,16 @@
 // ---------------------------------------------------------------------------
-// Live fal integration test
+// Live fal integration script — NOT part of the test suite
+// ---------------------------------------------------------------------------
+// Hits the real fal.ai API and costs money, so it is deliberately named
+// .manual.ts: vitest only collects test/**/*.test.ts. Run it by hand:
+//
+//   FAL_KEY=... npx tsx test/live-fal.manual.ts
 // ---------------------------------------------------------------------------
 
-import { FalClient } from "../src/client.js";
+import { FalQueueClient } from "../src/client.js";
 
 async function main() {
-  const client = new FalClient({ apiKey: process.env.FAL_KEY! });
+  const client = new FalQueueClient({ apiKey: process.env.FAL_KEY! });
 
   console.log("Testing fal health...");
   const health = await client.health();
