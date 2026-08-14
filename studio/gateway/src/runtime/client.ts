@@ -6,9 +6,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
-import { resolve } from "node:path";
 import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
