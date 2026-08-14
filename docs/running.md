@@ -163,3 +163,24 @@ error; the CLI requires that flag.
 **A capability fails mid-session** — check `npm run doctor`. The agent is
 designed to fail rather than substitute a provider, so an unmet requirement
 surfaces as an error, not a quietly worse video.
+
+**`gateway:unauthorized … Gateway rejected the token (4001)`** — the agent and
+the gateway disagree about the token. Almost always a gateway from an older
+checkout still holding port 5198 with its own token:
+
+```bash
+lsof -ti:5198 | xargs -r ps -o pid=,command=   # see who owns the port
+lsof -ti:5198 | xargs -r kill                  # stop it
+```
+
+Then start the gateway from this repository. It writes
+`studio/gateway/.gateway-token`, which is the first place the agent looks. To
+be explicit:
+
+```bash
+export AVG_GATEWAY_TOKEN="$(cat studio/gateway/.gateway-token)"
+```
+
+The agent no longer retries after a 4001 — a rejected token will not fix itself
+— and it keeps working without the event stream, so this is a degraded mode
+rather than a stopped one.
