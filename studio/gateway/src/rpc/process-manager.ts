@@ -8,6 +8,11 @@
 import { PiRpcClient } from "../rpc/client.js";
 import type { RpcState, RpcEvent } from "../rpc/client.js";
 import { EventBus, createEvent } from "../events/bus.js";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { createRequire } from "node:module";
+import { episodePath } from "@studio/contracts/src/layout.mjs";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -25,6 +30,10 @@ export interface SessionIdentity {
 }
 
 export interface ProcessManagerOptions {
+  /** Path to the Pi executable. Resolved when omitted. */
+  piCommand?: string;
+  /** Studio extension Pi loads, giving it the production tools. */
+  agentExtension?: string;
   /** Library root for working directories. */
   libraryRoot: string;
   /** Event bus for publishing state changes. */
@@ -53,6 +62,36 @@ export interface SessionHandle {
 
 // ── Implementation ──────────────────────────────────────────────────────────
 
+/**
+ * Locate the Pi executable.
+ *
+ * spawn() does not go through a shell, so a `pi` shell function or an alias is
+ * invisible to it. The common install locations are checked before falling
+ * back to the bare name for a real binary on PATH.
+ */
+function resolvePiCommand(): string {
+  const candidates = [
+    join(homedir(), ".bun", "bin", "pi"),
+    join(homedir(), ".local", "bin", "pi"),
+    "/usr/local/bin/pi",
+    "/opt/homebrew/bin/pi",
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return "pi";
+}
+
+/** The studio extension Pi must load to have any production tools at all. */
+function resolveAgentExtension(): string {
+  try {
+    const manifest = createRequire(import.meta.url).resolve("@studio/agent/package.json");
+    return manifest.replace(/package\.json$/, "extensions/index.ts");
+  } catch {
+    return "";
+  }
+}
+
 export class PiProcessManager {
   private libraryRoot: string;
   private bus: EventBus;
@@ -61,10 +100,18 @@ export class PiProcessManager {
   private sessions = new Map<string, SessionInstance>();
   private evictionTimer: ReturnType<typeof setInterval> | null = null;
   private evictionScanMs: number;
+  private piCommand: string;
+  private agentExtension: string;
 
   constructor(options: ProcessManagerOptions) {
     this.libraryRoot = options.libraryRoot;
     this.bus = options.bus;
+    // `pi` is frequently a shell function or a bun-installed script rather than
+    // a binary on PATH, and spawn() does not consult the shell — so spawning
+    // the bare name failed with ENOENT. Resolve it, and let an operator
+    // override.
+    this.piCommand = options.piCommand ?? process.env.AVG_PI_COMMAND ?? resolvePiCommand();
+    this.agentExtension = options.agentExtension ?? process.env.AVG_AGENT_EXTENSION ?? resolveAgentExtension();
     this.idleTimeoutMs = options.idleTimeoutMs ?? 300_000; // 5 minutes
     this.maxProcesses = options.maxProcesses ?? 4;
     this.evictionScanMs = options.evictionScanMs ?? 60_000; // 1 minute
@@ -115,15 +162,23 @@ export class PiProcessManager {
     }
 
     // Spawn new Pi process
-    const sessionDir = `${this.libraryRoot}/${episodeSlug}`;
+    // Layout 2: an episode is not `<library>/<channel>/<series>/<episode>`.
+    // Joining that by hand pointed Pi at a directory that does not exist.
+    const [channel, series, episode] = episodeSlug.split("/");
+    const sessionDir = channel && series && episode
+      ? episodePath(this.libraryRoot, channel, series, episode)
+      : `${this.libraryRoot}/${episodeSlug}`;
     const sessionId = `pi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
     const client = new PiRpcClient({
-      piCommand: "pi",
+      piCommand: this.piCommand,
       piArgs: [
         "--mode", "rpc",
         "--session-id", sessionId,
         "--session-dir", sessionDir,
+        // Without the studio extension Pi starts with none of the production
+        // tools, so a session would connect and be unable to do anything.
+        ...(this.agentExtension ? ["-e", this.agentExtension] : []),
       ],
       cwd: sessionDir,
       defaultTimeoutMs: 30_000,

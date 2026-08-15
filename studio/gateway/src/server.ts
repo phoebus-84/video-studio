@@ -4,6 +4,7 @@ import fastifyCors from "@fastify/cors";
 import type { Config } from "./config/schema.js";
 import { registerRoutes } from "./routes/index.js";
 import { EventStreamManager } from "./events/bus.js";
+import { PiProcessManager } from "./rpc/process-manager.js";
 import { WorkspaceWatcher } from "./events/watcher.js";
 import { registerEditorRoutes, registerChannelFileRoutes, registerSeriesFileRoutes } from "./routes/editor.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
@@ -117,6 +118,15 @@ export async function createGateway(
   const { PiRpcHealth } = await import("./rpc/health.js");
   const piHealth = new PiRpcHealth();
 
+  // Owns Pi processes for the lifetime of the gateway: one manager, sessions
+  // per episode, idle ones evicted. The start route used to build a throwaway
+  // manager per request and never spawn anything.
+  const piManager = new PiProcessManager({
+    libraryRoot,
+    bus: events.bus,
+  });
+  piManager.start();
+
   // ── Adapter bridge health ──────────────────────────────────────────────
   const { AdapterBridge } = await import("./rpc/adapter-bridge.js");
   const adapterBridge = new AdapterBridge();
@@ -154,7 +164,7 @@ export async function createGateway(
     maxAge: 0,  // Disable browser caching — assets regenerate frequently
   });
 
-  registerRoutes(app, config, ws, runtime, piHealth, adapterBridge);
+  registerRoutes(app, config, ws, runtime, piHealth, adapterBridge, piManager);
   registerEditorRoutes(app, {
     root: libraryRoot,
     bus: events.bus,
@@ -202,6 +212,9 @@ export async function createGateway(
     },
     stop: async () => {
       publisher.stop();
+      // Shut down Pi sessions before the gateway goes away, or they outlive it
+      // holding episode leases with nothing left to talk to.
+      await piManager.stop();
       await watcher.stop();
       await app.close();
     },

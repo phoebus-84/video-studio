@@ -9,6 +9,7 @@ import { registerRuntimeRoutes } from "./runtime.js";
 import { registerProductionRoutes } from "./production.js";
 import type { PiRpcHealth } from "../rpc/health.js";
 import type { AdapterBridge } from "../rpc/adapter-bridge.js";
+import type { PiProcessManager } from "../rpc/process-manager.js";
 
 /**
  * Register all REST API routes.
@@ -20,6 +21,8 @@ export function registerRoutes(
   runtime: RuntimeClient,
   piHealth?: PiRpcHealth,
   adapterBridge?: AdapterBridge,
+  /** Owns Pi processes; created once by the server, not per request. */
+  piManager?: PiProcessManager,
 ): void {
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/health", {
@@ -102,18 +105,33 @@ export function registerRoutes(
         description: "Start the Pi agent process and connect via RPC.",
         tags: ["pi"],
       } as any,
-    }, async (_request, reply) => {
-      try {
-        // Import PiProcessManager dynamically
-        const { PiProcessManager } = await import("../rpc/process-manager.js");
-        const manager = new PiProcessManager({
-          libraryRoot: _config.libraryRoots?.[0] ?? ".",
-          bus: (await import("../events/bus.js")).EventBus.prototype as any,
+    }, async (request, reply) => {
+      // This used to construct a manager, call nothing on it, and report "Pi
+      // agent process spawned and RPC connected" — while handing it
+      // EventBus.prototype instead of the bus. Nothing was ever spawned.
+      if (!piManager) {
+        return reply.status(503).send({
+          error: "PI_UNAVAILABLE",
+          message: "No Pi process manager is configured on this gateway.",
         });
-        piHealth.setManager(manager);
+      }
+
+      const body = (request.body ?? {}) as { episode?: string };
+      if (!body.episode) {
+        return reply.status(400).send({
+          error: "BAD_REQUEST",
+          message: "episode is required, as <channel>/<series>/<episode>: Pi sessions are per episode.",
+        });
+      }
+
+      try {
+        const session = await piManager.session(body.episode);
+        piHealth.setManager(piManager);
         return reply.send({
           status: "started",
-          detail: "Pi agent process spawned and RPC connected.",
+          episode: body.episode,
+          sessionId: session.identity.sessionId,
+          pid: session.identity.pid,
         });
       } catch (err: any) {
         piHealth.setError(err.message);
@@ -123,12 +141,27 @@ export function registerRoutes(
 
     app.post("/api/pi/stop", {
       schema: {
-        description: "Stop the Pi agent process.",
+        description: "Stop a Pi agent session, or all of them.",
         tags: ["pi"],
       } as any,
-    }, async (_request, reply) => {
+    }, async (request, reply) => {
+      const body = (request.body ?? {}) as { episode?: string };
+
+      if (piManager) {
+        // Actually stop the process. Reporting "stopped" while it kept running
+        // left orphaned agents holding episode leases.
+        if (body.episode) await piManager.shutdownSession(body.episode);
+        else await piManager.stop();
+      }
+
       piHealth.setError("Pi stopped by operator.");
-      return reply.send({ status: "stopped" });
+      return reply.send({ status: "stopped", episode: body.episode ?? "all" });
+    });
+
+    app.get("/api/pi/sessions", {
+      schema: { description: "List running Pi sessions.", tags: ["pi"] } as any,
+    }, async (_request, reply) => {
+      return reply.send({ sessions: piManager?.listSessions() ?? [] });
     });
   }
 
