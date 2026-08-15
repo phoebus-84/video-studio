@@ -7,10 +7,11 @@
   import ReviewInbox from "../review/ReviewInbox.svelte";
   import ProgressPanel from "../status/ProgressPanel.svelte";
   import StalenessPanel from "../status/StalenessPanel.svelte";
+  import ProductionPanel from "../episode/ProductionPanel.svelte";
 
   import { untrack } from "svelte";
 
-  type Tab = "assets" | "reviews" | "status";
+  type Tab = "assets" | "reviews" | "run" | "status";
   let tab = $state<Tab>("assets");
 
   // Build asset groups from the gateway-enriched episode scenes. Every field
@@ -155,6 +156,14 @@
     <button
       class="ci-tab"
       role="tab"
+      aria-selected={tab === "run"}
+      onclick={() => tab = "run"}
+    >
+      Run
+    </button>
+    <button
+      class="ci-tab"
+      role="tab"
       aria-selected={tab === "status"}
       onclick={() => tab = "status"}
     >
@@ -167,6 +176,8 @@
       <AssetPanel />
     {:else if tab === "reviews"}
       <ReviewInbox />
+    {:else if tab === "run"}
+      <ProductionPanel />
     {:else if tab === "status"}
       <ProgressPanel />
       <StalenessPanel />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { production } from "$lib/production-store.svelte.ts";
   import { episode } from "$lib/episode-store.svelte.ts";
   import { getGatewayClient } from "$lib/gateway.svelte.ts";
   import { reviews as refresh } from "$lib/refresh.svelte.ts";
@@ -203,6 +204,32 @@
         </button>
 
         {#if expandedId === thread.id}
+          {@const stage = production.stageProducing(thread.anchor.targetId)}
+          {#if stage}
+            <!-- A comment on an artifact can offer the stage that produced it:
+                 stages declare what they produce, so the connection is data,
+                 not a guess. Without this a review was a note with nowhere to
+                 go. -->
+            <div class="inbox-act">
+              <span class="inbox-act-what">
+                produced by <code>{stage.id}</code> · {stage.state}
+              </span>
+              <button
+                class="inbox-act-btn"
+                onclick={() => production.runStage(stage.id)}
+                disabled={production.busyStage !== null}
+                title="Run {stage.id} again to address this review"
+              >
+                {production.busyStage === stage.id ? "regenerating…" : "regenerate"}
+              </button>
+            </div>
+            {#if production.error}
+              <p class="inbox-act-error" role="alert">{production.error}</p>
+            {:else if production.lastMessage}
+              <p class="inbox-act-said" role="status">{production.lastMessage}</p>
+            {/if}
+          {/if}
+
           <div class="inbox-messages">
             {#each thread.messages as msg (msg.id)}
               <div class="inbox-msg" data-author={msg.author}>
@@ -257,6 +284,55 @@
 </div>
 
 <style>
+  .inbox-act {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--vs-bg-hover, #f5f5f5);
+    border-top: 1px solid var(--vs-border-subtle, #eee);
+  }
+
+  .inbox-act-what {
+    flex: 1;
+    font-size: 11px;
+    color: var(--vs-text-secondary, #777);
+  }
+
+  .inbox-act-btn {
+    font: inherit;
+    font-size: 11px;
+    padding: 2px 8px;
+    border: 1px solid var(--vs-accent, #b3510a);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--vs-accent, #b3510a);
+    cursor: pointer;
+  }
+
+  .inbox-act-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .inbox-act-error,
+  .inbox-act-said {
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: var(--vs-font-mono, monospace);
+    white-space: pre-wrap;
+  }
+
+  .inbox-act-error {
+    color: var(--vs-danger, #c0392b);
+    background: var(--vs-danger-subtle, #fdeceb);
+  }
+
+  .inbox-act-said {
+    color: var(--vs-text-secondary, #555);
+  }
+
   .inbox {
     padding: var(--vs-space-3);
   }
