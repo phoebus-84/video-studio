@@ -7,17 +7,17 @@
 // Every path is relative to the workspace root at its level.
 // ---------------------------------------------------------------------------
 
-/** Files and directories created at the channel level. */
+/**
+ * What a channel must have to be a channel.
+ *
+ * Kept to what the contract genuinely depends on. Knowledge folders are
+ * created for convenience but are not required: a channel with no
+ * `characters/` is perfectly valid, and demanding one would condemn every
+ * library created before those folders existed.
+ */
 export const CHANNEL_TREE = [
   "channel.md",
   "settings.yaml",
-  // Channel knowledge — what this channel is and what it knows, as opposed to
-  // the series it contains.
-  "brand",
-  "characters",
-  "references",
-  "skills",
-  "voices",
   // Explicit container: a directory in here is a series, and nothing else has
   // to be inferred (see studio/contracts/src/layout.mjs).
   "series",
@@ -25,16 +25,10 @@ export const CHANNEL_TREE = [
   ".workspace/metadata.json",
 ] as const;
 
-/** Files and directories created at the series level. */
+/** What a series must have to be a series. See CHANNEL_TREE on knowledge folders. */
 export const SERIES_TREE = [
   "series.md",
   "settings.yaml",
-  "visual-bible.md",
-  "voice-profiles",
-  "pipelines",
-  "skills",
-  "sources",
-  "templates",
   // Explicit container: a directory in here is an episode.
   "episodes",
   ".workspace/contract.json",
