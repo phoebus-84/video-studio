@@ -248,30 +248,6 @@ export function registerProductionRoutes(
     return { ok: result.ok, data: result.data, error: result.error };
   });
 
-  // ── Budget ────────────────────────────────────────────────────────────────
-  app.get("/api/channels/:channel/series/:series/episodes/:episode/budget", {
-    schema: {
-      description: "Get budget status.",
-      tags: ["production"],
-      params: {
-        type: "object",
-        required: ["channel", "series", "episode"],
-        properties: {
-          channel: { type: "string" },
-          series: { type: "string" },
-          episode: { type: "string" },
-        },
-      },
-    },
-  }, async () => {
-    return {
-      currency: "USD",
-      limitMicros: 5_000_000,  // $5.00 default
-      consumedMicros: 0,
-      remainingMicros: 5_000_000,
-    };
-  });
-
   // ── Journal ───────────────────────────────────────────────────────────────
   app.get("/api/channels/:channel/series/:series/episodes/:episode/journal", {
     schema: {

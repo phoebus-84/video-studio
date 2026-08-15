@@ -12,6 +12,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
 import { registerWorkspaceFileRoutes } from "./routes/workspace-files.js";
 import { registerAssetRoutes } from "./routes/assets.js";
+import { registerBudgetRoutes } from "./routes/budget.js";
 import * as path from "node:path";
 import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
@@ -186,6 +187,9 @@ export async function createGateway(
 
   // Choosing which attempt fulfils a production role, persisted.
   registerAssetRoutes(app, libraryRoot);
+
+  // Budget read from disk, replacing a handler that returned a fixed $5.
+  registerBudgetRoutes(app, libraryRoot);
   registerReviewRoutes(app, {
     root: libraryRoot,
     bus: events.bus,
