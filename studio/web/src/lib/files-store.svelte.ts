@@ -76,6 +76,12 @@ class FilesStore {
   revisions = $state<RevisionMeta[]>([]);
   /** Revision being previewed, or null when viewing the live file. */
   viewingRevision = $state<string | null>(null);
+  /** Revision being compared against the live file, or null when not comparing. */
+  comparingRevision = $state<string | null>(null);
+  /** Content of the compared revision. */
+  comparisonContent = $state<string>("");
+  /** Live content, held while a comparison is open. */
+  liveContent = $state<string>("");
 
   /** Load the whole tree for a level. Recursive, so folders can be expanded client-side. */
   async load(ref: LevelRef): Promise<void> {
@@ -109,6 +115,9 @@ class FilesStore {
     this.selectedPresentation = null;
     this.revisions = [];
     this.viewingRevision = null;
+    this.comparingRevision = null;
+    this.comparisonContent = "";
+    this.liveContent = "";
     this.dirty = false;
   }
 
@@ -184,6 +193,45 @@ class FilesStore {
     }
   }
 
+  /** Fetch one revision's text. */
+  async #revisionText(id: string): Promise<string | null> {
+    if (!this.ref || !this.selectedPath) return null;
+    const client = getGatewayClient();
+    const res = await fetch(
+      `${client.baseUrl}${apiPrefix(this.ref)}/revisions` +
+        `?path=${encodeURIComponent(this.selectedPath)}&id=${encodeURIComponent(id)}`,
+      { headers: { authorization: `Bearer ${client.token ?? ""}` } },
+    );
+    if (!res.ok) return null;
+    return res.text();
+  }
+
+  /**
+   * Compare a version against the live file.
+   *
+   * A version list answers "when did this change"; only a comparison answers
+   * "what changed".
+   */
+  async compare(id: string): Promise<void> {
+    const text = await this.#revisionText(id);
+    if (text === null) {
+      this.error = "Could not read that version";
+      return;
+    }
+    this.liveContent = this.selectedContent;
+    this.comparisonContent = text;
+    this.comparingRevision = id;
+    this.viewingRevision = null;
+  }
+
+  /** Close the comparison and go back to the live file. */
+  stopComparing(): void {
+    this.comparingRevision = null;
+    this.comparisonContent = "";
+    this.selectedContent = this.liveContent || this.selectedContent;
+    this.liveContent = "";
+  }
+
   /** Preview an older version without touching the live file. */
   async viewRevision(id: string): Promise<void> {
     if (!this.ref || !this.selectedPath) return;
@@ -196,6 +244,7 @@ class FilesStore {
       if (!res.ok) throw new Error(`Could not read revision (${res.status})`);
       this.selectedContent = await res.text();
       this.viewingRevision = id;
+      this.comparingRevision = null;
       this.dirty = false;
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);

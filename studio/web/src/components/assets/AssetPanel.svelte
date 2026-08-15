@@ -7,12 +7,9 @@
 
   const group = $derived(assets.selectedGroup);
 
+  /** Choosing a take now persists; the store rolls back if the gateway refuses. */
   function select(attempt: AssetAttempt) {
-    if (group) {
-      for (const a of group.attempts) {
-        a.selected = a.id === attempt.id;
-      }
-    }
+    assets.select(attempt.id);
   }
 
   function formatDate(iso: string | null): string | null {
@@ -196,6 +193,9 @@
 
 {#if group}
   <div class="asset-panel" aria-label="Asset attempts for {group.sceneTitle}">
+    {#if assets.error}
+      <p class="ap-error" role="alert">{assets.error}</p>
+    {/if}
     <h4 class="ap-title">Assets — {group.sceneTitle}</h4>
 
     <ol class="ap-list">
@@ -345,6 +345,14 @@
 {/if}
 
 <style>
+  .ap-error {
+    margin: 0;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--vs-danger, #c0392b);
+    background: var(--vs-danger-subtle, #fdeceb);
+  }
+
   .asset-panel {
     padding: var(--vs-space-3);
   }

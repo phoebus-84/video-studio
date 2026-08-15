@@ -10,6 +10,7 @@
   import { files } from "$lib/files-store.svelte.ts";
   import { viewerComponent, needsBytes } from "$lib/viewer-registry";
   import { isEditableViewer } from "@studio/contracts/src/presentation.mjs";
+  import DiffViewer from "../viewers/DiffViewer.svelte";
 
   let mediaSrc = $state<string | null>(null);
   let mediaLoading = $state(false);
@@ -79,7 +80,16 @@
       </div>
 
       <div class="fv-actions">
-        {#if files.viewingRevision}
+        {#if files.comparingRevision}
+          <button onclick={() => files.stopComparing()}>Close comparison</button>
+          <button
+            class="fv-primary"
+            onclick={() => files.restore(files.comparingRevision!)}
+            title="Restore the older version. The current content is kept, so this is undoable."
+          >
+            Restore the older version
+          </button>
+        {:else if files.viewingRevision}
           <button onclick={() => files.viewLive()}>Back to current</button>
           <button
             class="fv-primary"
@@ -101,7 +111,14 @@
     {/if}
 
     <div class="fv-body">
-      {#if mediaLoading}
+      {#if files.comparingRevision}
+        <DiffViewer
+          left={files.comparisonContent}
+          right={files.liveContent}
+          leftLabel="version {formatWhen(files.revisions.find((r) => r.id === files.comparingRevision)?.createdAt ?? '')}"
+          rightLabel="current"
+        />
+      {:else if mediaLoading}
         <p class="fv-note">Loading preview…</p>
       {:else}
         <Viewer
@@ -132,6 +149,15 @@
                 <span class="fv-meta">{formatSize(rev.size)}</span>
                 <span class="fv-reason">{rev.reason}</span>
               </button>
+              {#if rev.contentAvailable && editable}
+                <button
+                  class="fv-compare"
+                  onclick={() => files.compare(rev.id)}
+                  title="Compare this version with the current file"
+                >
+                  compare
+                </button>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -309,14 +335,30 @@
     padding: 0 0 8px;
   }
 
-  .fv-history li.active button {
+  .fv-history li {
+    display: flex;
+    align-items: center;
+  }
+
+  .fv-compare {
+    flex-shrink: 0;
+    margin-right: 10px;
+    font-size: 10px;
+    padding: 1px 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .fv-history li.active > button:first-child {
     background: var(--vs-bg-selected, #fdf0e6);
   }
 
-  .fv-history button {
+  /* The timestamp button takes the space; compare sits beside it. */
+  .fv-history li > button:first-child {
+    flex: 1;
     display: flex;
     gap: 10px;
-    width: 100%;
+    min-width: 0;
     border: none;
     border-radius: 0;
     padding: 4px 12px;
