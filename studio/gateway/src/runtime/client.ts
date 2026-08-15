@@ -52,6 +52,16 @@ export class RuntimeClient {
     this.log = options.log ?? (() => {});
   }
 
+  /** Built-in pipeline definitions, resolved as a package rather than guessed. */
+  private static builtinPipelines(): string {
+    try {
+      const manifest = createRequire(import.meta.url).resolve("@studio/pipelines/package.json");
+      return manifest.replace(/package\.json$/, "pipelines");
+    } catch {
+      return "";
+    }
+  }
+
   /**
    * Locate the runtime CLI by resolving the package, not by guessing paths.
    *
@@ -175,6 +185,10 @@ export class RuntimeClient {
       const env = {
         ...process.env,
         AVG_LIBRARY_ROOT: this.libraryRoot,
+        // Where the built-in pipeline definitions live. Without this the
+        // runtime searches only the library and reports "Pipeline not found"
+        // for every episode, because no series carries its own copy.
+        AVG_BUILTIN_PIPELINES: process.env.AVG_BUILTIN_PIPELINES ?? RuntimeClient.builtinPipelines(),
       };
 
       this.log?.(`RuntimeClient: vpr ${fullArgs.join(" ")}`);
