@@ -341,3 +341,34 @@ function optionalNumber(val: unknown): number | null {
   if (typeof val !== "number") return null;
   return val;
 }
+
+// ── Video-producing endpoints ───────────────────────────────────────────────
+
+/**
+ * A profile-backed contract whose endpoint returns one video rather than an
+ * array of images.
+ *
+ * MiniMax H3 answers `{ video: { url, content_type, file_name, file_size } }`.
+ * The default parser looks for `images`, so without this every H3 generation
+ * would report zero outputs and the render would find nothing to use.
+ */
+export class VideoProfileContract extends ProfileContract {
+  protected override parseOutputs(
+    result: Record<string, unknown>,
+  ): OutputAsset[] {
+    const video = result["video"];
+    if (!video || typeof video !== "object" || Array.isArray(video)) {
+      throw new FalContractError("video", "object", typeof video);
+    }
+
+    const file = video as Record<string, unknown>;
+    return [
+      {
+        url: asString(file["url"], "video.url"),
+        contentType: asString(file["content_type"] ?? "video/mp4", "video.content_type"),
+        contentLength: optionalNumber(file["file_size"]),
+        sha256: optionalString(file["sha256"]),
+      },
+    ];
+  }
+}

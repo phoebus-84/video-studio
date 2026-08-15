@@ -128,12 +128,26 @@ export interface FalAdapterConfig {
 // ─── Endpoint profiles ────────────────────────────────────────────────
 
 /** Supported image-generation operations. */
-export type ProfileOperation = "text-to-image" | "image-edit";
+export type ProfileOperation =
+  | "text-to-image"
+  | "image-edit"
+  // Video-producing operations. These are separate from image ones because
+  // they return a single file rather than an array and are billed per second.
+  | "text-to-video"
+  | "image-to-video"
+  | "reference-to-video";
 
 /** A single parameter definition in an endpoint profile. */
 export interface ParameterField {
   readonly name: string;
-  readonly type: "string" | "number" | "boolean" | "enum" | "integer";
+  readonly type:
+    | "string"
+    | "number"
+    | "boolean"
+    | "enum"
+    | "integer"
+    /** A list of values, e.g. the reference URL arrays H3 takes. */
+    | "array";
   readonly required: boolean;
   readonly defaultValue?: unknown;
   readonly enumValues?: readonly string[];

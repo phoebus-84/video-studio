@@ -196,6 +196,27 @@ function validateField(
       }
       return { value: raw };
 
+    case "array":
+      // Reference URL lists. The count limit matters before a request is made:
+      // exceeding it is a paid failure, and the provider's own message would
+      // arrive after the spend.
+      if (!Array.isArray(raw)) {
+        return {
+          error: `Parameter "${field.name}" must be an array, got ${typeof raw}.`,
+        };
+      }
+      if (raw.some((item) => typeof item !== "string")) {
+        return {
+          error: `Parameter "${field.name}" must contain only strings (URLs).`,
+        };
+      }
+      if (field.max !== undefined && raw.length > field.max) {
+        return {
+          error: `Parameter "${field.name}" accepts at most ${field.max} item(s), got ${raw.length}.`,
+        };
+      }
+      return { value: raw };
+
     default:
       return {
         error: `Internal: unknown field type "${field.type}" for "${field.name}".`,
@@ -597,12 +618,174 @@ const nanoBananaPro: EndpointProfile = defineProfile({
   },
 });
 
+
+// ─── MiniMax H3 ──────────────────────────────────────────────────────────
+//
+// Three endpoints, one model. Parameters and enums are taken from the live
+// fal API documentation rather than assumed; the skill in skills/studio tells
+// Pi how to write for it, and reminds it to check the live interface, whose
+// limits always win over any snapshot.
+
+/** Shared across all three H3 endpoints. */
+const H3_COMMON: ParameterField[] = [
+  {
+    name: "prompt",
+    type: "string",
+    required: true,
+    description: "Scene description. Reference assets are addressed by modality and order (Image1, Video1, Audio1).",
+  },
+  {
+    name: "duration",
+    type: "integer",
+    required: false,
+    defaultValue: 5,
+    min: 4,
+    max: 15,
+    description: "Seconds of video.",
+  },
+  {
+    name: "resolution",
+    type: "enum",
+    required: false,
+    defaultValue: "2K",
+    enumValues: ["480P", "768P", "2K", "4K"],
+    description: "Output resolution.",
+  },
+  {
+    name: "seed",
+    type: "integer",
+    required: false,
+    description: "Fixing this makes a generation reproducible.",
+  },
+  {
+    name: "enable_prompt_expansion",
+    type: "boolean",
+    required: false,
+    defaultValue: true,
+    description: "Let a vision-language model expand the prompt. Turn off when the prompt is already exact and must not drift.",
+  },
+  {
+    name: "enable_safety_checker",
+    type: "boolean",
+    required: false,
+    defaultValue: true,
+    description: "Provider-side safety filter.",
+  },
+];
+
+const H3_CAPABILITIES: EndpointCapabilities = {
+  supportedAspectRatios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+  supportsSeed: true,
+  supportsReferenceImages: false,
+  maxReferenceImages: 0,
+  supportsNegativePrompt: false,
+  defaultImageSize: "16:9",
+};
+
+/** Pricing is per generation and varies with duration and resolution. */
+const H3_PRICING = {
+  unit: "inference" as const,
+  estimatedUnitCost: 0.48,
+  currency: "USD",
+};
+
+/** MiniMax H3 — text to video. */
+export const minimaxH3TextToVideo: EndpointProfile = defineProfile({
+  profileId: "minimax/h3/text-to-video@v1",
+  endpointId: "minimax/h3/text-to-video",
+  operation: "text-to-video",
+  contractVersion: "v1",
+  parameterSchema: [
+    ...H3_COMMON,
+    {
+      name: "aspect_ratio",
+      type: "enum",
+      required: false,
+      defaultValue: "16:9",
+      enumValues: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      description: "Frame shape.",
+    },
+  ],
+  capabilities: H3_CAPABILITIES,
+  pricing: H3_PRICING,
+});
+
+/** MiniMax H3 — image to video, including first/last frame. */
+export const minimaxH3ImageToVideo: EndpointProfile = defineProfile({
+  profileId: "minimax/h3/image-to-video@v1",
+  endpointId: "minimax/h3/image-to-video",
+  operation: "image-to-video",
+  contractVersion: "v1",
+  parameterSchema: [
+    ...H3_COMMON,
+    {
+      name: "image_url",
+      type: "string",
+      required: true,
+      description: "Opening frame.",
+    },
+    {
+      name: "last_image_url",
+      type: "string",
+      required: false,
+      description: "Closing frame. Supplying it turns the generation into a transition between two exact boundary states.",
+    },
+  ],
+  capabilities: { ...H3_CAPABILITIES, supportsReferenceImages: true, maxReferenceImages: 2 },
+  pricing: H3_PRICING,
+});
+
+/** MiniMax H3 — reference to video, driven by multimodal references. */
+export const minimaxH3ReferenceToVideo: EndpointProfile = defineProfile({
+  profileId: "minimax/h3/reference-to-video@v1",
+  endpointId: "minimax/h3/reference-to-video",
+  operation: "reference-to-video",
+  contractVersion: "v1",
+  parameterSchema: [
+    ...H3_COMMON,
+    {
+      name: "aspect_ratio",
+      type: "enum",
+      required: false,
+      defaultValue: "adaptive",
+      enumValues: ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      description: "Frame shape. Adaptive follows the references.",
+    },
+    {
+      name: "reference_image_urls",
+      type: "array",
+      required: false,
+      max: 9,
+      description: "Subject and style references, addressed in order as Image1, Image2, …",
+    },
+    {
+      name: "reference_video_urls",
+      type: "array",
+      required: false,
+      max: 3,
+      description: "Motion and camera references, 2-15s each, addressed as Video1, …",
+    },
+    {
+      name: "reference_audio_urls",
+      type: "array",
+      required: false,
+      max: 3,
+      description: "Voice references, 2-15s each, addressed as Audio1, … Requires at least one image or video.",
+    },
+  ],
+  capabilities: { ...H3_CAPABILITIES, supportsReferenceImages: true, maxReferenceImages: 9 },
+  pricing: H3_PRICING,
+});
+
 // ─── Registry ─────────────────────────────────────────────────────────
 
 const PROFILES: readonly EndpointProfile[] = Object.freeze([
   fluxDevV1,
   fluxFillV1,
   nanoBananaPro,
+  minimaxH3TextToVideo,
+  minimaxH3ImageToVideo,
+  minimaxH3ReferenceToVideo,
   deprecationExample,
 ]);
 

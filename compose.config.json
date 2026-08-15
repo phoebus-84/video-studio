@@ -1,23 +1,36 @@
 {
   "$comment": "Declares every composable piece and the profiles that assemble them. `npm run compose -- --profile=<name>` writes composed.json, which the agent and gateway read to learn which capabilities are actually available. Nothing here decides HOW a capability behaves; it decides WHETHER it is wired.",
-
   "components": {
     "voice": {
       "path": "packages/voice",
       "kind": "python",
       "standalone": true,
       "summary": "Speech synthesis and voice cloning on MLX. Usable on its own as a voice tool; knows nothing about episodes or pipelines.",
-      "capabilities": ["speech.synthesize"],
-      "requires": { "system": ["python3"] },
+      "capabilities": [
+        "speech.synthesize"
+      ],
+      "requires": {
+        "system": [
+          "python3"
+        ]
+      },
       "docs": "docs/packages/voice.md"
     },
     "fal-media": {
       "path": "packages/fal-media",
       "kind": "node",
       "standalone": true,
-      "summary": "Tracked image generation and editing jobs against fal.ai, with provenance and cost.",
-      "capabilities": ["image.generate", "image.edit"],
-      "requires": { "env": ["FAL_KEY"] },
+      "summary": "Tracked image and video generation jobs against fal.ai, with provenance and cost. Video is MiniMax H3.",
+      "capabilities": [
+        "image.generate",
+        "image.edit",
+        "video.generate"
+      ],
+      "requires": {
+        "env": [
+          "FAL_KEY"
+        ]
+      },
       "docs": "docs/packages/fal-media.md"
     },
     "graphics": {
@@ -25,7 +38,9 @@
       "kind": "node",
       "standalone": true,
       "summary": "Deterministic SVG/PNG rendering of code frames, diagrams, callouts and titles.",
-      "capabilities": ["graphics.render"],
+      "capabilities": [
+        "graphics.render"
+      ],
       "requires": {},
       "docs": "docs/packages/graphics.md"
     },
@@ -34,8 +49,14 @@
       "kind": "node",
       "standalone": true,
       "summary": "Frame-accurate animated infographics rendered through Remotion.",
-      "capabilities": ["graphics.animate"],
-      "requires": { "system": ["ffmpeg"] },
+      "capabilities": [
+        "graphics.animate"
+      ],
+      "requires": {
+        "system": [
+          "ffmpeg"
+        ]
+      },
       "docs": "docs/packages/infographics.md"
     },
     "video-composer": {
@@ -43,11 +64,18 @@
       "kind": "node",
       "standalone": true,
       "summary": "Compiles a typed edit timeline into an FFmpeg filter graph; probes and QAs the result.",
-      "capabilities": ["video.compose", "media.probe"],
-      "requires": { "system": ["ffmpeg", "ffprobe"] },
+      "capabilities": [
+        "video.compose",
+        "media.probe"
+      ],
+      "requires": {
+        "system": [
+          "ffmpeg",
+          "ffprobe"
+        ]
+      },
       "docs": "docs/packages/video-composer.md"
     },
-
     "contracts": {
       "path": "studio/contracts",
       "kind": "node",
@@ -103,7 +131,6 @@
       "docs": "docs/studio/web.md"
     }
   },
-
   "skillSets": {
     "shared": {
       "path": "skills/shared",
@@ -114,34 +141,80 @@
       "summary": "Production-stage skills bound to the studio pipelines."
     }
   },
-
   "profiles": {
     "full": {
       "summary": "Everything: the studio product plus every reusable package.",
-      "components": ["voice", "fal-media", "graphics", "infographics", "video-composer", "contracts", "runtime", "pipelines", "agent", "gateway", "web"],
-      "skills": ["shared", "studio"]
+      "components": [
+        "voice",
+        "fal-media",
+        "graphics",
+        "infographics",
+        "video-composer",
+        "contracts",
+        "runtime",
+        "pipelines",
+        "agent",
+        "gateway",
+        "web"
+      ],
+      "skills": [
+        "shared",
+        "studio"
+      ]
     },
     "studio": {
       "summary": "The video studio without the local MLX voice worker (use a remote speech capability).",
-      "components": ["fal-media", "graphics", "infographics", "video-composer", "contracts", "runtime", "pipelines", "agent", "gateway", "web"],
-      "skills": ["shared", "studio"]
+      "components": [
+        "fal-media",
+        "graphics",
+        "infographics",
+        "video-composer",
+        "contracts",
+        "runtime",
+        "pipelines",
+        "agent",
+        "gateway",
+        "web"
+      ],
+      "skills": [
+        "shared",
+        "studio"
+      ]
     },
     "headless": {
-      "summary": "Production core with no browser studio — CLI and agent only.",
-      "components": ["fal-media", "graphics", "video-composer", "contracts", "runtime", "pipelines", "agent"],
-      "skills": ["shared", "studio"]
+      "summary": "Production core with no browser studio \u2014 CLI and agent only.",
+      "components": [
+        "fal-media",
+        "graphics",
+        "video-composer",
+        "contracts",
+        "runtime",
+        "pipelines",
+        "agent"
+      ],
+      "skills": [
+        "shared",
+        "studio"
+      ]
     },
     "voice": {
       "summary": "Only the standalone voice tool. No studio, no pipelines.",
-      "components": ["voice"],
+      "components": [
+        "voice"
+      ],
       "skills": []
     },
     "render": {
       "summary": "Only the deterministic rendering and composition packages, for reuse in another project.",
-      "components": ["graphics", "infographics", "video-composer"],
-      "skills": ["shared"]
+      "components": [
+        "graphics",
+        "infographics",
+        "video-composer"
+      ],
+      "skills": [
+        "shared"
+      ]
     }
   },
-
   "defaultProfile": "full"
 }

@@ -12,6 +12,9 @@ export const CAPABILITIES = Object.freeze([
   "speech.synthesize",
   "graphics.render",
   "terminal.record",
+  // Generating new footage from a prompt and references, as opposed to
+  // composing existing footage into a timeline.
+  "video.generate",
   "video.compose",
   "media.probe",
 ]);
