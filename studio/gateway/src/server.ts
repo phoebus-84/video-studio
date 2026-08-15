@@ -10,6 +10,7 @@ import { registerReviewRoutes } from "./routes/reviews.js";
 import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
 import { registerWorkspaceFileRoutes } from "./routes/workspace-files.js";
+import { registerAssetRoutes } from "./routes/assets.js";
 import * as path from "node:path";
 import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
@@ -172,6 +173,9 @@ export async function createGateway(
   ] as const) {
     registerWorkspaceFileRoutes(app, { root: libraryRoot, level, prefix });
   }
+
+  // Choosing which attempt fulfils a production role, persisted.
+  registerAssetRoutes(app, libraryRoot);
   registerReviewRoutes(app, {
     root: libraryRoot,
     bus: events.bus,
