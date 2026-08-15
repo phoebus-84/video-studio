@@ -19,6 +19,10 @@ import {
 import type { PipelineLoader } from "./pipeline/types.js";
 import { doctor } from "./workspace/doctor.js";
 import { NodeFileSystem } from "./ports/filesystem.js";
+import { SystemClock } from "./ports/clock.js";
+import { FileSystemSnapshotStore } from "./pipeline/fs-snapshot-store.js";
+import { episodePath } from "@studio/contracts/src/layout.mjs";
+import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
 import { artifactExists } from "./artifacts/discovery.js";
 
 // ── Exit codes ──────────────────────────────────────────────────────────────
@@ -74,8 +78,35 @@ function emptyLayer() {
   return { approvalPolicy: undefined, budget: undefined, outputProfile: undefined, locale: undefined, extensions: undefined };
 }
 
-function makeLoader(): PipelineLoader {
-  const libraryRoot = process.env.AVG_LIBRARY_ROOT;
+/**
+ * Resolve the library root from `--library`, falling back to the environment.
+ *
+ * Every command documents `--library`, but pipeline loading used to read only
+ * AVG_LIBRARY_ROOT — so passing the flag alone silently produced an empty
+ * in-memory loader and every episode reported "Pipeline not found".
+ */
+function libraryFrom(args: string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--library" && args[i + 1]) return args[i + 1]!;
+  }
+  return process.env.AVG_LIBRARY_ROOT ?? "";
+}
+
+/**
+ * Snapshot store rooted at a library.
+ *
+ * Episode slugs are `<channel>/<series>/<episode>`; the layout module turns
+ * that into a path, so this does not need to know about containers.
+ */
+function makeSnapshotStore(libraryRoot: string): FileSystemSnapshotStore {
+  return new FileSystemSnapshotStore(new NodeFileSystem(), (slug) => {
+    const [channel, series, episode] = slug.split("/");
+    return episodePath(libraryRoot, channel!, series!, episode!);
+  });
+}
+
+function makeLoader(args: string[] = []): PipelineLoader {
+  const libraryRoot = libraryFrom(args);
   if (libraryRoot) {
     return createDefaultLoader(libraryRoot) as unknown as PipelineLoader;
   }
@@ -140,6 +171,17 @@ async function cmdDoctor(ctx: CliContext, args: string[]): Promise<number> {
 
 // ── init ────────────────────────────────────────────────────────────────────
 
+/**
+ * Create a channel, series and episode workspace.
+ *
+ * This used to parse the path, print "Workspace initialized" and return without
+ * touching the disk — the whole implementation in workspace/init.ts, with its
+ * contracts and canonical tree, was never called. Anything downstream that
+ * expected a workspace contract (status, resolve, the studio) therefore failed
+ * on episodes this command claimed to have created.
+ *
+ * Each level is idempotent, so re-running against an existing tree is safe.
+ */
 async function cmdInit(ctx: CliContext, args: string[]): Promise<number> {
   if (args.length < 1) {
     emit(ctx, { error: "Missing path. Usage: vpr init <channel>/<series>/<episode>" });
@@ -150,11 +192,49 @@ async function cmdInit(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: `Invalid path "${args[0]}". Expected: <channel>/<series>/<episode>` });
     return EX_USAGE;
   }
+
+  let libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "";
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--library" && args[i + 1]) libraryRoot = args[++i]!;
+  }
+  if (!libraryRoot) {
+    emit(ctx, { error: "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
+    return EX_USAGE;
+  }
+
   if (ctx.dryRun) {
-    emit(ctx, { message: `[DRY RUN] Would init: ${parsed.channel}/${parsed.series}/${parsed.episode}`, dryRun: true });
+    emit(ctx, {
+      message: `[DRY RUN] Would init: ${parsed.channel}/${parsed.series}/${parsed.episode}`,
+      dryRun: true,
+    });
     return EX_OK;
   }
-  emit(ctx, { message: `Workspace initialized: ${parsed.channel}/${parsed.series}/${parsed.episode}`, ...parsed });
+
+  const opts = { fs: new NodeFileSystem(), clock: new SystemClock(), logger: ctx.logger };
+
+  const channelR = await initChannel(libraryRoot, parsed.channel, {}, opts);
+  if (!channelR.ok) {
+    emit(ctx, { error: `Init failed at channel: ${channelR.error.message}` });
+    return EX_RUNTIME;
+  }
+
+  const seriesR = await initSeries(channelR.value.path, parsed.series, {}, opts);
+  if (!seriesR.ok) {
+    emit(ctx, { error: `Init failed at series: ${seriesR.error.message}` });
+    return EX_RUNTIME;
+  }
+
+  const episodeR = await initEpisode(seriesR.value.path, parsed.episode, {}, opts);
+  if (!episodeR.ok) {
+    emit(ctx, { error: `Init failed at episode: ${episodeR.error.message}` });
+    return EX_RUNTIME;
+  }
+
+  emit(ctx, {
+    message: `Workspace initialized: ${parsed.channel}/${parsed.series}/${parsed.episode}`,
+    ...parsed,
+    path: episodeR.value.path,
+  });
   return EX_OK;
 }
 
@@ -177,7 +257,7 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
       series: emptyLayer(),
       episode: emptyLayer(),
     });
-    const loader = makeLoader();
+    const loader = makeLoader(args);
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
     const snapshot = await createSnapshot({
       episodeSlug: `${parsed.channel}/${parsed.series}/${parsed.episode}`,
@@ -187,6 +267,14 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
       sources: [],
       skillIds: [],
     });
+
+    // Persist it. Without this the resolved contract died with the process and
+    // every later command reported "Pipeline not found".
+    const libraryRoot = libraryFrom(args);
+    if (libraryRoot) {
+      const store = makeSnapshotStore(libraryRoot);
+      await store.save(snapshot);
+    }
 
     emit(ctx, {
       message: `Snapshot created: ${snapshot.snapshotId}`,
@@ -223,11 +311,11 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
       series: emptyLayer(),
       episode: emptyLayer(),
     });
-    const loader = makeLoader();
+    const loader = makeLoader(args);
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
     // ── Detect completed stages by checking for output artifacts ──────────
-    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
+    const libraryRoot = libraryFrom(args) || ".";
     const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
 
     function checkArtifact(label: string): string {
@@ -284,7 +372,7 @@ async function cmdValidate(ctx: CliContext, args: string[]): Promise<number> {
     }
     try {
       resolveSettings({ channel: emptyLayer(), series: emptyLayer(), episode: emptyLayer() });
-      const loader = makeLoader();
+      const loader = makeLoader(args);
       const pipeline = await resolvePipeline(loader, DEFAULT_PIPELINE);
       emit(ctx, {
         message: "Pipeline validation passed",
@@ -349,10 +437,10 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
   const stageId: string | null = stageIdx >= 0 ? remaining[stageIdx + 1] ?? null : null;
 
   try {
-    const loader = makeLoader();
+    const loader = makeLoader(args);
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
-    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? ".";
+    const libraryRoot = libraryFrom(args) || ".";
     const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
 
     // Find the first non-completed stage using the same provider-neutral

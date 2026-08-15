@@ -237,9 +237,26 @@ export class FileSystemPipelineLoader implements PipelineLoader {
 }
 
 /** Create a loader that searches both built-in and library paths. */
+/**
+ * Loader searching the built-in pipelines and then the library.
+ *
+ * The built-in path was hardcoded to `../video-built-in-pipelines/pipelines`,
+ * a sibling directory from the pre-monorepo layout that no longer exists — so
+ * no built-in pipeline could ever be found and every episode reported
+ * "Pipeline not found".
+ *
+ * It is a parameter rather than a package import because pipelines depend on
+ * the runtime's contracts, not the other way round; inverting that to satisfy
+ * a lookup would be the wrong trade. Callers that know where the built-ins
+ * live pass the path, and AVG_BUILTIN_PIPELINES covers the operator case.
+ *
+ * A series may also carry its own `pipelines/` directory, which is why the
+ * library root is always searched too.
+ */
 export function createDefaultLoader(libraryRoot: string, builtinPath?: string): FileSystemPipelineLoader {
+  const builtin = builtinPath ?? process.env.AVG_BUILTIN_PIPELINES;
   const paths = [
-    builtinPath ?? path.resolve(libraryRoot, "../video-built-in-pipelines/pipelines"),
+    ...(builtin ? [path.resolve(builtin)] : []),
     path.resolve(libraryRoot),
   ];
   return new FileSystemPipelineLoader(paths);
