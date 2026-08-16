@@ -16,15 +16,6 @@ import { listProfiles } from "./profiles.js";
 import type { Transport } from "./types.js";
 import { FalHttpError } from "./errors.js";
 
-// ── Types ───────────────────────────────────────────────────────────────────
-
-export interface DownloadResult {
-  data: Buffer;
-  contentType: string;
-  contentLength: number;
-  url: string;
-}
-
 /**
  * A client for every registered profile, from the environment.
  *
