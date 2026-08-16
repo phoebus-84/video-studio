@@ -33,6 +33,18 @@
       },
       "docs": "docs/packages/fal-media.md"
     },
+    "codex-image": {
+      "path": "packages/codex-image",
+      "kind": "node",
+      "standalone": true,
+      "summary": "Image generation and editing through an OpenAI ChatGPT/Codex subscription, or the Images API. A second provider for image.generate, billed against a plan rather than per image.",
+      "capabilities": [
+        "image.generate",
+        "image.edit"
+      ],
+      "requires": {},
+      "docs": "docs/packages/codex-image.md"
+    },
     "graphics": {
       "path": "packages/graphics",
       "kind": "node",
@@ -162,6 +174,7 @@
       "components": [
         "voice",
         "fal-media",
+        "codex-image",
         "graphics",
         "terminal-recorder",
         "infographics",
@@ -176,12 +189,18 @@
       "skills": [
         "shared",
         "studio"
-      ]
+      ],
+      "defaultProviders": {
+        "image.generate": "fal-media",
+        "image.edit": "fal-media"
+      },
+      "$comment": "image.generate has two providers. fal-media is the default because it is metered per image and predictable; codex-image bills against a ChatGPT plan and is selected per series with `image.provider: openai-codex` in pipeline.yaml."
     },
     "studio": {
       "summary": "The video studio without the local MLX voice worker (use a remote speech capability).",
       "components": [
         "fal-media",
+        "codex-image",
         "graphics",
         "terminal-recorder",
         "infographics",
@@ -196,12 +215,17 @@
       "skills": [
         "shared",
         "studio"
-      ]
+      ],
+      "defaultProviders": {
+        "image.generate": "fal-media",
+        "image.edit": "fal-media"
+      }
     },
     "headless": {
       "summary": "Production core with no browser studio \u2014 CLI and agent only.",
       "components": [
         "fal-media",
+        "codex-image",
         "graphics",
         "terminal-recorder",
         "video-composer",
@@ -213,7 +237,11 @@
       "skills": [
         "shared",
         "studio"
-      ]
+      ],
+      "defaultProviders": {
+        "image.generate": "fal-media",
+        "image.edit": "fal-media"
+      }
     },
     "voice": {
       "summary": "Only the standalone voice tool. No studio, no pipelines.",

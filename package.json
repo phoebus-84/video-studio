@@ -9,6 +9,7 @@
   },
   "packageManager": "bun@1.2.0",
   "workspaces": [
+    "packages/codex-image",
     "packages/fal-media",
     "packages/graphics",
     "packages/infographics",

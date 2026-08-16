@@ -68,6 +68,7 @@ jobs:
       fail-fast: false
       matrix:
         module:
+          - packages/codex-image
           - packages/fal-media
           - packages/graphics
           - packages/terminal-recorder

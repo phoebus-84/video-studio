@@ -61,6 +61,7 @@
     "@av/terminal-recorder": "workspace:*",
     "@av/video-composer": "workspace:*",
     "js-yaml": "^5.2.2",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "@av/codex-image": "workspace:*"
   }
 }

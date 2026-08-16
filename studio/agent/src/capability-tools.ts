@@ -25,34 +25,48 @@ import {
   composeMultitrackVideo,
   loadSoundCueSheet,
 } from "./multitrack-compose.js";
+import { CodexImageClient } from "@av/codex-image";
+import {
+  CODEX_PROVIDER,
+  DEFAULT_FAL_MODEL,
+  resolveImageProvider,
+} from "./image-provider.js";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
-const DEFAULT_MODEL = "fal-ai/flux/dev";
+const DEFAULT_MODEL = DEFAULT_FAL_MODEL;
 
-async function resolveModel(channel: string, series: string): Promise<string> {
-  // Try to read pipeline config from series or channel level
-  const { readFileSync, existsSync } = await import("node:fs");
-  const { join } = await import("node:path");
-  const { load } = await import("js-yaml");
-
-  const LIBRARY = process.env.AVG_LIBRARY_ROOT || join(process.cwd(), "library");
-
-  // Check series level first, then channel level
-  for (const yamlPath of [
-    join(LIBRARY, channel, series, "pipeline.yaml"),
-    join(LIBRARY, channel, "pipeline.yaml"),
-  ]) {
-    if (existsSync(yamlPath)) {
-      try {
-        const raw = readFileSync(yamlPath, "utf-8");
-        const config = load(raw) as any;
-        const model = config?.image?.provider || config?.providers?.imageGeneration;
-        if (model && typeof model === "string") return model;
-      } catch { /* skip malformed yaml */ }
-    }
+/**
+ * Generate through an OpenAI ChatGPT/Codex plan.
+ *
+ * The token lives in Pi's model registry — it is the login the user already
+ * did, and it is the one thing @av/codex-image cannot fetch for itself, which
+ * is precisely why this glue is here and not in the package.
+ */
+async function generateImageViaCodex(
+  prompt: string,
+  model: string,
+  registry: { getApiKeyForProvider(provider: string): Promise<string | undefined> },
+  signal?: AbortSignal,
+): Promise<{ data: Buffer; model: string; provider: string; revisedPrompt?: string; extension: string }> {
+  const token = await registry.getApiKeyForProvider(CODEX_PROVIDER);
+  if (!token) {
+    throw new Error(
+      `No ${CODEX_PROVIDER} credential. Run /login in Pi and pick ChatGPT Plus/Pro, ` +
+        `or set this series' image.provider back to a fal model.`,
+    );
   }
-  return DEFAULT_MODEL;
+
+  const client = new CodexImageClient({ transport: { kind: "subscription", token } });
+  const image = await client.generate({ prompt, model, outputFormat: "png" }, signal);
+
+  return {
+    data: image.data,
+    model: image.model,
+    provider: image.provider,
+    ...(image.revisedPrompt ? { revisedPrompt: image.revisedPrompt } : {}),
+    extension: "png",
+  };
 }
 
 async function generateImage(
@@ -346,12 +360,15 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     },
   });
 
-  // --- Tool: pva_generate_image (via fal.ai) ------------------------------
+  // --- Tool: pva_generate_image (fal.ai or an OpenAI plan) -----------------
 
   pi.registerTool({
     name: "pva_generate_image",
     label: "Generate Image",
-    description: "Generate an image using the series-configured fal.ai model. Saves directly to episode assets/images/.",
+    description:
+      "Generate an image with the provider this series configured — a fal.ai model, or gpt-image through an " +
+      "OpenAI ChatGPT/Codex plan when pipeline.yaml sets image.provider to openai-codex. Saves directly to " +
+      "episode assets/images/.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -359,20 +376,54 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       sceneId: Type.String({ description: "Scene ID (e.g. s1, s2)" }),
       prompt: Type.String({ description: "Image generation prompt" }),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {
         const dir = episodeDir(params.channel, params.series, params.episode);
         const imgDir = join(dir, "assets", "images");
         mkdirSync(imgDir, { recursive: true });
 
-        const model = await resolveModel(params.channel, params.series);
-        const result = await generateImage(params.prompt, model);
-        const outPath = join(imgDir, `${params.sceneId}.jpg`);
+        const libraryRoot = process.env["AVG_LIBRARY_ROOT"] || join(process.cwd(), "library");
+        const provider = resolveImageProvider(libraryRoot, params.channel, params.series);
+
+        // The two providers return different encodings, so the extension comes
+        // from the result rather than being assumed — the previous code wrote
+        // every image as .jpg whatever the bytes actually were.
+        const result =
+          provider.kind === "codex"
+            ? await generateImageViaCodex(params.prompt, provider.model, ctx.modelRegistry, signal)
+            : await (async () => {
+                const fal = await generateImage(params.prompt, provider.model);
+                return {
+                  data: fal.data,
+                  model: fal.model,
+                  provider: "fal",
+                  seed: fal.seed,
+                  extension: "jpg",
+                } as const;
+              })();
+
+        const fileName = `${params.sceneId}.${result.extension}`;
+        const outPath = join(imgDir, fileName);
         writeFileSync(outPath, result.data);
 
+        const seed = "seed" in result ? result.seed : undefined;
+        const summary = [
+          `✅ ${fileName} — ${(result.data.length / 1024).toFixed(0)}KB`,
+          `(${result.provider}/${result.model}${seed !== undefined ? `, seed: ${seed}` : ""})`,
+        ].join(" ");
+
         return {
-          content: [{ type: "text" as const, text: `✅ ${params.sceneId}.jpg — ${(result.data.length / 1024).toFixed(0)}KB (seed: ${result.seed}, model: ${result.model})` }],
-          details: { path: outPath, size: result.data.length, seed: result.seed, model: result.model },
+          content: [{ type: "text" as const, text: summary }],
+          details: {
+            path: outPath,
+            size: result.data.length,
+            provider: result.provider,
+            model: result.model,
+            ...(seed !== undefined ? { seed } : {}),
+            ...("revisedPrompt" in result && result.revisedPrompt
+              ? { revisedPrompt: result.revisedPrompt }
+              : {}),
+          },
         };
       } catch (err) {
         return {
