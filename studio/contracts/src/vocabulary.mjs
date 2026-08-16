@@ -11,6 +11,10 @@ export const CAPABILITIES = Object.freeze([
   "image.edit",
   "speech.synthesize",
   "graphics.render",
+  // Motion graphics rendered frame-accurately, as distinct from a still
+  // graphic: a different provider, different outputs, and a stage should be
+  // able to ask for one without getting the other.
+  "graphics.animate",
   "terminal.record",
   // Generating new footage from a prompt and references, as opposed to
   // composing existing footage into a timeline.

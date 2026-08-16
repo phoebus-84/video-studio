@@ -21,6 +21,11 @@
       "model": "v1"
     },
     {
+      "capability": "graphics.animate",
+      "provider": "remotion-infographic-renderer",
+      "model": "v1"
+    },
+    {
       "capability": "terminal.record",
       "provider": "vhs",
       "model": "vhs-v0.11"

@@ -12,6 +12,7 @@
     "packages/fal-media",
     "packages/graphics",
     "packages/infographics",
+    "packages/terminal-recorder",
     "packages/video-composer",
     "studio/contracts",
     "studio/runtime",

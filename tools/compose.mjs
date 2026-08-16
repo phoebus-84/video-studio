@@ -22,6 +22,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, cpSync, readdirSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { execFileSync } from "node:child_process";
+import { isCapability, CAPABILITIES } from "@studio/contracts/src/vocabulary.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const CONFIG = JSON.parse(readFileSync(join(ROOT, "compose.config.json"), "utf-8"));
@@ -116,6 +117,19 @@ for (const name of profile.components) {
   });
 
   for (const capability of component.capabilities) {
+    // A capability is a contract with the runtime, which validates stage
+    // requests against the canonical vocabulary. Composing a name that is not
+    // in it produces a component that resolves and reports ready while no
+    // stage can ever request it — which is exactly how graphics.animate sat
+    // wired-but-unrequestable.
+    if (!isCapability(capability)) {
+      problems.push(
+        `component "${name}" declares unknown capability "${capability}". ` +
+          `Known: ${CAPABILITIES.join(", ")}`,
+      );
+      continue;
+    }
+
     // Two components claiming one capability is an ambiguity the operator must
     // resolve; the composer refuses to pick a winner (ADR-0015).
     if (capabilities[capability]) {

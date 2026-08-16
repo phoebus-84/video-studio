@@ -44,6 +44,21 @@
       "requires": {},
       "docs": "docs/packages/graphics.md"
     },
+    "terminal-recorder": {
+      "path": "packages/terminal-recorder",
+      "kind": "node",
+      "standalone": true,
+      "summary": "Records a terminal session to video from a VHS tape. Useful on its own; knows nothing about episodes.",
+      "capabilities": [
+        "terminal.record"
+      ],
+      "requires": {
+        "system": [
+          "vhs"
+        ]
+      },
+      "docs": "docs/packages/terminal-recorder.md"
+    },
     "infographics": {
       "path": "packages/infographics",
       "kind": "node",
@@ -148,6 +163,7 @@
         "voice",
         "fal-media",
         "graphics",
+        "terminal-recorder",
         "infographics",
         "video-composer",
         "contracts",
@@ -167,6 +183,7 @@
       "components": [
         "fal-media",
         "graphics",
+        "terminal-recorder",
         "infographics",
         "video-composer",
         "contracts",
@@ -186,6 +203,7 @@
       "components": [
         "fal-media",
         "graphics",
+        "terminal-recorder",
         "video-composer",
         "contracts",
         "runtime",

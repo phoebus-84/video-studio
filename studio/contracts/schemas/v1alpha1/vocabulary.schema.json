@@ -11,6 +11,7 @@
         "image.edit",
         "speech.synthesize",
         "graphics.render",
+        "graphics.animate",
         "terminal.record",
         "video.generate",
         "video.compose",

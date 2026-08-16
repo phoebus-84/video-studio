@@ -70,6 +70,7 @@ jobs:
         module:
           - packages/fal-media
           - packages/graphics
+          - packages/terminal-recorder
           - packages/infographics
           - packages/video-composer
           - studio/contracts
