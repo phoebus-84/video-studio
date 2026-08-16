@@ -255,8 +255,14 @@ export function renderVectorSvg(spec: VectorAnimationSpec, frame: number, render
     const scaleX = current(node, "scaleX", 1);
     const scaleY = current(node, "scaleY", 1);
     const opacity = current(node, "opacity", 1);
+    const radians = rotation * Math.PI / 180;
+    const cosine = Math.cos(radians);
+    const sine = Math.sin(radians);
+    // A single affine matrix avoids ImageMagick MSVG applying transform-list
+    // operations in the wrong order for nested rigs.
+    const transform = `matrix(${cosine * scaleX} ${sine * scaleX} ${-sine * scaleY} ${cosine * scaleY} ${x} ${y})`;
     const body = `${node.shape ? shapeMarkup(node.shape) : ""}${(children.get(node.id) ?? []).map(renderNode).join("")}`;
-    return `<g id="${node.id}" opacity="${opacity}" transform="translate(${x} ${y}) rotate(${rotation}) scale(${scaleX} ${scaleY})">${body}</g>`;
+    return `<g id="${node.id}" opacity="${opacity}" transform="${transform}">${body}</g>`;
   };
 
   const width = Math.round(spec.width * renderScale);

@@ -58,6 +58,8 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@av/terminal-recorder": "workspace:*",
+    "@av/video-composer": "workspace:*",
     "js-yaml": "^5.2.2",
     "ws": "^8.21.1"
   }

@@ -45,6 +45,8 @@ describe("vector animation", () => {
     const svg = renderVectorSvg(value, 12, 0.5);
     expect(svg).toContain('width="160" height="284"');
     expect(svg).toContain('id="worm"');
+    expect(svg).toContain('transform="matrix(');
+    expect(svg).not.toContain('transform="translate(');
     expect(svg).toContain("<ellipse");
   });
 

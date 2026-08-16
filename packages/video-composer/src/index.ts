@@ -87,3 +87,9 @@ export type { CanonicalNarrationManifest, NarrationCompositionInput } from "./na
 // which forced consumers to bypass the public API.
 export { runQa } from "./qa.js";
 export type { QaCheck, QaReport, QaOptions } from "./qa.js";
+
+// Media probing. This package provides the media.probe capability, but the
+// function behind it was reachable only by importing src/probe.ts directly,
+// so callers inlined their own ffprobe instead.
+export { probeMedia, normalizeMedia } from "./probe.js";
+export type { MediaProbe, NormalizeOptions, NormalizeResult } from "./probe.js";

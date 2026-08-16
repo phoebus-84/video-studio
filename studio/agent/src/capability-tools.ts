@@ -516,60 +516,61 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       tapePath: Type.Optional(Type.String({ description: "Path to existing .tape file relative to episode" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      // Recording is done by @av/terminal-recorder. This used to shell out to
+      // vhs here, with the tape handling, the Output directive, the move into
+      // assets/ and the ffprobe all inlined — none of which is studio work.
+      // What is left is studio work: where an episode keeps its tapes, and how
+      // the result is reported to Pi.
       try {
         const dir = episodeDir(params.channel, params.series, params.episode);
-        const tapesDir = join(dir, "artifacts", "tapes");
-        mkdirSync(tapesDir, { recursive: true });
 
-        // Determine tape content
-        let tapeContent: string;
+        let tape: { content: string } | { path: string };
         if (params.tapeContent) {
-          tapeContent = params.tapeContent;
+          tape = { content: params.tapeContent };
         } else if (params.tapePath) {
-          const { readFileSync } = await import("node:fs");
-          tapeContent = readFileSync(join(dir, params.tapePath), "utf-8");
+          tape = { path: join(dir, params.tapePath) };
         } else {
           throw new Error("Either tapeContent or tapePath is required");
         }
 
-        // Write .tape file
-        const tapeFile = join(tapesDir, `${params.sceneId}.tape`);
-        writeFileSync(tapeFile, tapeContent, "utf-8");
+        const { record } = await import("@av/terminal-recorder");
+        const recording = record({
+          tape,
+          outputPath: join(dir, "assets", "tapes", `${params.sceneId}.mp4`),
+        });
 
-        // Run VHS from within the tapes directory
-        const { execSync } = await import("node:child_process");
-        const cwd = tapesDir;
-        execSync(`vhs ${params.sceneId}.tape`, { cwd, stdio: "pipe", timeout: 120_000 });
-
-        // Move output to assets/tapes/
-        const assetsTapesDir = join(dir, "assets", "tapes");
-        mkdirSync(assetsTapesDir, { recursive: true });
-        const srcMp4 = join(tapesDir, `${params.sceneId}.mp4`);
-        const destMp4 = join(assetsTapesDir, `${params.sceneId}.mp4`);
-
-        if (!existsSync(srcMp4)) {
-          throw new Error(`VHS render did not produce ${params.sceneId}.mp4`);
-        }
-
-        const { copyFileSync, statSync } = await import("node:fs");
-        copyFileSync(srcMp4, destMp4);
-
-        // Probe duration
-        const probeOut = execSync(
-          `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1 "${destMp4}"`,
-          { encoding: "utf-8" },
-        ).toString();
-        const durMatch = probeOut.match(/duration=([\d.]+)/);
-        const durationSec = durMatch ? parseFloat(durMatch[1]!) : 0;
-        const fileSize = statSync(destMp4).size;
+        // Probing is the media.probe capability, provided by the composer.
+        // Inlining ffprobe here again would be the same mistake in miniature.
+        const { probeMedia } = await import("@av/video-composer");
+        const probed = await probeMedia(recording.outputPath, recording.bytes);
+        const durationSec = probed.durationSec ?? 0;
 
         return {
-          content: [{ type: "text" as const, text: `✅ ${params.sceneId} — ${durationSec.toFixed(1)}s, ${(fileSize / 1024).toFixed(0)}KB → assets/tapes/${params.sceneId}.mp4` }],
-          details: { outputPath: destMp4, tapePath: tapeFile, durationSec, fileSize },
+          content: [{
+            type: "text" as const,
+            text: `✅ ${params.sceneId} — ${durationSec.toFixed(1)}s, ` +
+              `${(recording.bytes / 1024).toFixed(0)}KB → assets/tapes/${params.sceneId}.mp4`,
+          }],
+          details: {
+            outputPath: recording.outputPath,
+            tapePath: recording.tapePath,
+            durationSec,
+            fileSize: recording.bytes,
+          },
         };
       } catch (err) {
+        // The recorder's errors already say what to do about them — a missing
+        // vhs names the install command — so they are passed through rather
+        // than flattened into "failed".
+        const detail = err && typeof err === "object" && "detail" in err
+          ? String((err as { detail: unknown }).detail)
+          : "";
+        const message = err instanceof Error ? err.message : String(err);
         return {
-          content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
+          content: [{
+            type: "text" as const,
+            text: `❌ Failed: ${message}${detail ? `\n${detail}` : ""}`,
+          }],
           details: {},
           isError: true as unknown as boolean,
         };
@@ -725,11 +726,16 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
 
       // VHS terminal recording
       try {
-        const { execSync } = await import("node:child_process");
-        const vhsVer = execSync("vhs --version 2>&1", { encoding: "utf-8" }).toString().trim();
-        caps["terminal-recording"] = { available: true, detail: vhsVer || "vhs available" };
-      } catch {
-        caps["terminal-recording"] = { available: false, detail: "vhs not installed (brew install vhs ttyd)" };
+        // The recorder answers this itself, including what to install when it
+        // is missing. Asking vhs directly meant the agent owned a second, and
+        // slightly different, opinion about the same thing.
+        const { probe } = await import("@av/terminal-recorder");
+        caps["terminal-recording"] = probe();
+      } catch (err) {
+        caps["terminal-recording"] = {
+          available: false,
+          detail: err instanceof Error ? err.message : String(err),
+        };
       }
 
       // Graphics
