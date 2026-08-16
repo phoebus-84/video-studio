@@ -130,14 +130,54 @@ for (const name of profile.components) {
       continue;
     }
 
-    // Two components claiming one capability is an ambiguity the operator must
-    // resolve; the composer refuses to pick a winner (ADR-0015).
+    // A capability may legitimately have several providers — an image can come
+    // from fal.ai per-image or from an OpenAI plan — so alternatives are
+    // recorded rather than rejected. What the composer still refuses to do is
+    // pick the winner (ADR-0015): if more than one component provides a
+    // capability, the profile must name the default, below.
+    const ready = present && missing.length === 0;
     if (capabilities[capability]) {
-      problems.push(
-        `capability "${capability}" is claimed by both "${capabilities[capability].provider}" and "${name}"`,
-      );
+      capabilities[capability].providers.push({ name, ready });
+    } else {
+      capabilities[capability] = { provider: name, ready, providers: [{ name, ready }] };
     }
-    capabilities[capability] = { provider: name, ready: present && missing.length === 0 };
+  }
+}
+
+// ── Default provider selection ──────────────────────────────────────────────
+//
+// Where a capability has alternatives, the profile says which one a stage gets
+// when it asks for the capability without naming a provider. An unresolved
+// choice is a composition problem: the alternative to failing here is picking
+// silently, and "silently picked the metered provider" is a billing surprise.
+
+const defaults = profile.defaultProviders ?? {};
+
+for (const [capability, chosen] of Object.entries(defaults)) {
+  const entry = capabilities[capability];
+  if (!entry) {
+    problems.push(
+      `profile "${profileName}" names a default provider for "${capability}", which no composed component provides`,
+    );
+    continue;
+  }
+  if (!entry.providers.some((p) => p.name === chosen)) {
+    problems.push(
+      `profile "${profileName}" defaults "${capability}" to "${chosen}", which is not among its providers: ` +
+        entry.providers.map((p) => p.name).join(", "),
+    );
+    continue;
+  }
+  entry.provider = chosen;
+  entry.ready = entry.providers.find((p) => p.name === chosen).ready;
+}
+
+for (const [capability, entry] of Object.entries(capabilities)) {
+  if (entry.providers.length > 1 && !defaults[capability]) {
+    problems.push(
+      `capability "${capability}" is provided by ${entry.providers.map((p) => `"${p.name}"`).join(" and ")}; ` +
+        `profile "${profileName}" must name one in "defaultProviders"`,
+    );
   }
 }
 

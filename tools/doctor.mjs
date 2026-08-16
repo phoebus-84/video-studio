@@ -57,7 +57,13 @@ for (const key of ["FAL_KEY"]) {
 
 console.log("\nCapabilities:");
 for (const [cap, info] of Object.entries(composed.capabilities)) {
-  console.log(`  ${info.ready ? "✓" : "!"} ${cap.padEnd(20)} <- ${info.provider}`);
+  // Alternatives matter operationally: when the default is not ready, the
+  // question is always "is there another provider I could switch to?"
+  const alternates = (info.providers ?? [])
+    .filter((p) => p.name !== info.provider)
+    .map((p) => `${p.name}${p.ready ? "" : " (not ready)"}`);
+  const suffix = alternates.length ? `  (or: ${alternates.join(", ")})` : "";
+  console.log(`  ${info.ready ? "✓" : "!"} ${cap.padEnd(20)} <- ${info.provider}${suffix}`);
 }
 
 const notReady = composed.components.filter((c) => !c.ready);
