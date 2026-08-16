@@ -14,6 +14,8 @@ export interface MockRoute {
   body?: string | object;
   /** Delay before responding (ms).  Default 0. */
   delayMs?: number;
+  /** Set once served, so multiple matches play as a sequence. */
+  consumed?: boolean;
 }
 
 export interface ReceivedRequest {
@@ -61,6 +63,7 @@ export class MockServer {
     opts?: { headers?: Record<string, string>; delayMs?: number },
   ): void {
     this.routes.push({
+      consumed: false,
       method: method.toUpperCase(),
       path,
       status,
@@ -116,9 +119,15 @@ export class MockServer {
     };
     this._received.push(received);
 
-    const route = this.routes.find(
+    // Matching routes are consumed in order, so a test can script a sequence —
+    // a poll that answers IN_PROGRESS and then COMPLETED. Once every match is
+    // used the last one repeats, which keeps a single expectation behaving as
+    // a standing answer.
+    const matches = this.routes.filter(
       (r) => r.method === req.method && r.path === path,
     );
+    const route = matches.find((r) => !r.consumed) ?? matches[matches.length - 1];
+    if (route && matches.length > 1) route.consumed = true;
 
     if (!route) {
       res.writeHead(404, { "Content-Type": "application/json" });

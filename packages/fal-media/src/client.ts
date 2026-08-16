@@ -1,51 +1,22 @@
 // ---------------------------------------------------------------------------
-// fal.ai queue client (legacy surface) and the contract-driven client
+// fal.ai client
 // ---------------------------------------------------------------------------
-// Handles both sync (immediate response) and async (queue-based) endpoints.
-// Sync endpoints return images directly. Async endpoints return a request_id
-// that must be polled via the queue endpoint.
+// One client, two paths to the same result. `submit` is a single request, for
+// endpoints that answer immediately. `submitAndWait` goes through fal's queue,
+// which anything video must, and polls until the job finishes.
+//
+// Both hand the completed payload to the same versioned contract, so an
+// endpoint is understood the same way whichever path it took. A second client
+// used to own the queue path and parsed `images` out of the poll response
+// itself, which meant a video endpoint completed with no outputs at all.
 // ---------------------------------------------------------------------------
 
 import { FetchTransport } from "./transport.js";
-import { getProfile, requireValidParameters } from "./profiles.js";
-import type { HttpRequest, Transport } from "./types.js";
+import { listProfiles } from "./profiles.js";
+import type { Transport } from "./types.js";
 import { FalHttpError } from "./errors.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
-
-export interface FalQueueClientOptions {
-  apiKey: string;
-  baseUrl?: string;
-  queueUrl?: string;
-  transport?: Transport;
-}
-
-export interface SubmitOptions {
-  profile: string;
-  params: Record<string, unknown>;
-  /** Force async mode even for sync endpoints. */
-  async?: boolean;
-}
-
-export interface FalJob {
-  requestId?: string;
-  status: "COMPLETED" | "IN_PROGRESS" | "IN_QUEUE" | "FAILED";
-  images?: FalImage[];
-  resultUrl?: string;
-  progress?: number;
-  timings?: { inference?: number };
-  seed?: number;
-  error?: string;
-  cost?: { amount: number; currency: string };
-  raw: Record<string, unknown>;
-}
-
-export interface FalImage {
-  url: string;
-  width: number;
-  height: number;
-  contentType: string;
-}
 
 export interface DownloadResult {
   data: Buffer;
@@ -54,315 +25,41 @@ export interface DownloadResult {
   url: string;
 }
 
-// ── FalClient ───────────────────────────────────────────────────────────────
-
-export class FalQueueClient {
-  private apiKey: string;
-  private baseUrl: string;
-  private queueUrl: string;
-  private transport: Transport;
-  private _totalSpendUsd = 0;
-  private _submissionCount = 0;
-
-  /** Cumulative spend since client creation (USD). */
-  get totalSpendUsd(): number { return this._totalSpendUsd; }
-  
-  /** Total submissions made. */
-  get submissionCount(): number { return this._submissionCount; }
-
-  constructor(options: FalQueueClientOptions) {
-    this.apiKey = options.apiKey;
-    this.baseUrl = options.baseUrl ?? "https://fal.run";
-    this.queueUrl = options.queueUrl ?? "https://queue.fal.run";
-    this.transport = options.transport ?? new FetchTransport();
-  }
-
-  private headers(): Record<string, string> {
-    return {
-      Authorization: `Key ${this.apiKey}`,
-      "Content-Type": "application/json",
-    };
-  }
-
-  // ── Generate image (sync) ─────────────────────────────────────────────
-
-  /**
-   * Generate an image using a sync endpoint (e.g. flux/dev).
-   * Returns immediately with the generated images.
-   */
-  async generate(options: SubmitOptions): Promise<FalJob> {
-    const profile = getProfile(options.profile);
-    if (!profile) throw new Error(`Unknown profile: ${options.profile}`);
-
-    const params = requireValidParameters(profile, options.params);
-    const url = `${this.baseUrl}/${profile.endpointId}`;
-
-    const req: HttpRequest = {
-      method: "POST",
-      url,
-      headers: this.headers(),
-      body: JSON.stringify({ ...params, sync: !options.async }),
-    };
-
-    const res = await this.transport.request(req);
-    if (res.status >= 400) {
-      const body = safeJson(res.body);
-      throw new Error(`fal API error ${res.status}: ${body?.detail ?? body?.message ?? res.body}`);
-    }
-
-    const data = safeJson(res.body) ?? {};
-
-    // Sync response: has images directly
-    if (data.images) {
-      return {
-        status: "COMPLETED",
-        images: (data.images as any[]).map((img: any) => ({
-          url: img.url as string,
-          width: (img.width ?? 0) as number,
-          height: (img.height ?? 0) as number,
-          contentType: (img.content_type ?? "image/jpeg") as string,
-        })),
-        timings: data.timings as { inference?: number },
-        seed: data.seed as number,
-        raw: data,
-      };
-    }
-
-    // Async response: has request_id
-    if (data.request_id) {
-      return {
-        requestId: data.request_id as string,
-        status: (data.status as FalJob["status"]) ?? "IN_QUEUE",
-        raw: data,
-      };
-    }
-
-    throw new Error(`Unexpected fal response: ${JSON.stringify(data).substring(0, 200)}`);
-  }
-
-  // ── Submit and wait (for async endpoints) ──────────────────────────────
-
-  /**
-   * Submit a job and poll the queue until completion.
-   */
-  async submitAndWait(
-    options: SubmitOptions,
-    pollMs: number = 2000,
-    maxWaitMs: number = 300_000,
-    signal?: AbortSignal,
-  ): Promise<FalJob> {
-    // Force async
-    const job = await this.generate({ ...options, async: true });
-
-    // If sync (unlikely with async:true), return immediately
-    if (job.status === "COMPLETED") {
-      const cost = estimateCost(options.profile);
-      this._totalSpendUsd += cost.amount;
-      this._submissionCount++;
-      return { ...job, cost };
-    }
-    if (!job.requestId) throw new Error("No request_id in async response");
-
-    const profile = getProfile(options.profile)!;
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < maxWaitMs) {
-      if (signal?.aborted) throw new Error("Cancelled");
-
-      const status = await this.pollStatus(profile.endpointId, job.requestId);
-
-      if (status.status === "COMPLETED") {
-        const cost = estimateCost(options.profile);
-        this._totalSpendUsd += cost.amount;
-        this._submissionCount++;
-        return { ...status, cost };
-      }
-      if (status.status === "FAILED") {
-        throw new Error(`fal job ${job.requestId} failed: ${status.error ?? "Unknown error"}`);
-      }
-
-      await sleep(pollMs);
-      pollMs = Math.min(pollMs * 1.5, 15_000);
-    }
-
-    throw new Error(`fal job ${job.requestId} timed out after ${maxWaitMs}ms`);
-  }
-
-  // ── Poll queue status ──────────────────────────────────────────────────
-
-  private async pollStatus(endpointId: string, requestId: string): Promise<FalJob> {
-    const url = `${this.queueUrl}/${endpointId}/requests/${requestId}`;
-    const req: HttpRequest = {
-      method: "GET",
-      url,
-      headers: this.headers(),
-    };
-
-    const res = await this.transport.request(req);
-    const data = safeJson(res.body) ?? {};
-
-    const status = (data.status as string) ?? "IN_PROGRESS";
-
-    // If completed, extract images if available
-    if (status === "COMPLETED") {
-      // Direct images in poll response (sync-compatible endpoints)
-      if (data.images) {
-        return {
-          requestId,
-          status: "COMPLETED",
-          images: (data.images as any[])?.map((img: any) => ({
-            url: img.url as string,
-            width: (img.width ?? 0) as number,
-            height: (img.height ?? 0) as number,
-            contentType: (img.content_type ?? "image/jpeg") as string,
-          })),
-          timings: data.timings as { inference?: number },
-          seed: data.seed as number,
-          raw: data,
-        };
-      }
-
-      // Async endpoints: fetch the response_url to get images
-      if (data.response_url) {
-        const imgRes = await fetch(data.response_url as string);
-        if (imgRes.ok) {
-          const imgData = await imgRes.json() as any;
-          if (imgData.images) {
-            return {
-              requestId,
-              status: "COMPLETED",
-              images: (imgData.images as any[])?.map((img: any) => ({
-                url: img.url as string,
-                width: (img.width ?? 0) as number,
-                height: (img.height ?? 0) as number,
-                contentType: (img.content_type ?? "image/jpeg") as string,
-              })),
-              timings: data.timings as { inference?: number },
-              seed: data.seed as number,
-              raw: imgData,
-            };
-          }
-        }
-      }
-
-      // Fallback: return with resultUrl
-      return {
-        requestId,
-        status: "COMPLETED",
-        resultUrl: (data.response_url ?? data.result_url) as string | undefined,
-        raw: data,
-      };
-    }
-
-    return {
-      requestId,
-      status: mapStatus(status),
-      resultUrl: (data.response_url ?? data.result_url) as string | undefined,
-      progress: data.progress as number | undefined,
-      error: data.error as string | undefined,
-      raw: data,
-    };
-  }
-
-  // ── Download ───────────────────────────────────────────────────────────
-
-  async download(imageUrl: string): Promise<DownloadResult> {
-    // Use native fetch for binary downloads (transport corrupts binary)
-    const res = await fetch(imageUrl);
-    if (!res.ok) {
-      throw new Error(`Failed to download ${imageUrl}: ${res.status}`);
-    }
-
-    const buf = Buffer.from(await res.arrayBuffer());
-    return {
-      data: buf,
-      contentType: res.headers.get("content-type") ?? "image/jpeg",
-      contentLength: buf.length,
-      url: imageUrl,
-    };
-  }
-
-  // ── Health ─────────────────────────────────────────────────────────────
-
-  async health(): Promise<{ ok: boolean; detail: string }> {
-    try {
-      // Lightweight: try a sync generation with minimal steps
-      const url = `${this.baseUrl}/fal-ai/flux/dev`;
-      const req: HttpRequest = {
-        method: "POST",
-        url,
-        headers: this.headers(),
-        body: JSON.stringify({
-          prompt: "test",
-          image_size: "square_hd",
-          num_inference_steps: 1,
-        }),
-      };
-
-      const res = await this.transport.request(req, AbortSignal.timeout(15_000));
-      return { ok: res.status < 400, detail: `Status ${res.status}` };
-    } catch (err) {
-      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
-    }
-  }
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function safeJson(body: string): Record<string, unknown> | null {
-  try { return JSON.parse(body); } catch { return null; }
-}
-
-function mapStatus(s: string): FalJob["status"] {
-  switch (s.toUpperCase()) {
-    case "COMPLETED": return "COMPLETED";
-    case "IN_PROGRESS": return "IN_PROGRESS";
-    case "IN_QUEUE": return "IN_QUEUE";
-    case "FAILED": return "FAILED";
-    default: return "IN_PROGRESS";
-  }
-}
-
 /**
- * Estimate cost for a fal.ai generation based on the model profile.
- * Uses publicly listed pricing (fal.ai/pricing).
+ * A client for every registered profile, from the environment.
+ *
+ * Each profile gets a contract; video-producing profiles get one that knows to
+ * read a `video` file rather than an `images` array.
  */
-function estimateCost(profileId: string): { amount: number; currency: string } {
-  const PRICING: Record<string, number> = {
-    "fal-ai/flux/dev": 0.005,
-    "fal-ai/flux/dev@v1": 0.005,
-    "fal-ai/nano-banana-pro": 0.003,
-    "fal-ai/nano-banana-pro@v1": 0.003,
-  };
-  const amount = PRICING[profileId] ?? PRICING[profileId.replace(/@v\d+$/, "")] ?? 0.005;
-  return { amount, currency: "USD" };
-}
-
-/** Create a FalClient from environment. */
-export function createFalClient(apiKey?: string): FalQueueClient {
-  const key = apiKey ?? process.env.FAL_KEY ?? process.env.FAL_API_KEY;
+export function createFalClient(apiKey?: string): FalClientImpl {
+  const key = apiKey ?? process.env["FAL_KEY"] ?? process.env["FAL_API_KEY"];
   if (!key) throw new Error("FAL_KEY or FAL_API_KEY required");
-  return new FalQueueClient({ apiKey: key });
+
+  return new FalClientImpl({
+    config: {
+      falKey: key,
+      baseUrl: process.env["FAL_BASE_URL"] ?? "https://fal.run",
+      defaultTimeoutMs: 600_000,
+      maxRetries: 3,
+    },
+    contracts: listProfiles().map((profile) =>
+      profile.operation.endsWith("-to-video")
+        ? new VideoProfileContract(profile)
+        : new ProfileContract(profile),
+    ),
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Contract-driven client
 // ---------------------------------------------------------------------------
 // The surface described by this package's contracts, profiles, clock, sleeper
-// and logger modules: one `submit`, everything injectable, all parsing and
-// provenance owned by the versioned endpoint contract.
-//
-// `FalQueueClient` above is the older, batteries-included surface (polling,
-// download, health, spend counters) that `server.ts` still drives. The two
-// coexist deliberately; unifying them is separate work, because the queue
-// client provides operations this one does not.
+// and logger modules: everything injectable, all parsing and provenance owned
+// by the versioned endpoint contract.
 // ---------------------------------------------------------------------------
 
 import type { EndpointContract } from "./contracts/v1.js";
+import { ProfileContract, VideoProfileContract } from "./contracts/v1.js";
 import type {
   Clock,
   FalAdapterConfig,
@@ -371,6 +68,7 @@ import type {
   Sleeper,
 } from "./types.js";
 import { SystemClock } from "./clock.js";
+import { SystemSleeper } from "./sleeper.js";
 import { deprecationDiagnostic } from "./profiles.js";
 import { createLogger, type Logger } from "./logger.js";
 import {
@@ -383,6 +81,16 @@ import {
 /** The contract-driven client surface. */
 export interface FalClient {
   submit(input: GenerationInput, signal?: AbortSignal): Promise<GenerationResult>;
+}
+
+/** fal's queue host, where asynchronous jobs live. */
+const DEFAULT_QUEUE_URL = "https://queue.fal.run";
+
+export interface SubmitAndWaitOptions {
+  /** First poll delay; backs off from here to at most 15s. */
+  pollMs?: number;
+  /** Give up after this long. Defaults to the input's own timeout. */
+  maxWaitMs?: number;
 }
 
 export interface FalClientImplOptions {
@@ -399,14 +107,27 @@ export interface FalClientImplOptions {
   readonly sleeper?: Sleeper;
   readonly logger?: Logger;
   readonly transport?: Transport;
+  /** Queue host for asynchronous jobs. */
+  readonly queueUrl?: string;
 }
 
 export class FalClientImpl implements FalClient {
   private readonly config: FalAdapterConfig;
   private readonly contracts: Map<string, EndpointContract>;
   private readonly clock: Clock;
+  private readonly sleeper: Sleeper;
   private readonly logger: Logger;
   private readonly transport: Transport;
+  private readonly queueUrl: string;
+
+  private _totalSpendUsd = 0;
+  private _submissionCount = 0;
+
+  /** Recorded spend since this client was created, from profile pricing. */
+  get totalSpendUsd(): number { return this._totalSpendUsd; }
+
+  /** How many generations completed through this client. */
+  get submissionCount(): number { return this._submissionCount; }
 
   constructor(options: FalClientImplOptions) {
     if (options.config instanceof FalUnavailableError) {
@@ -414,14 +135,22 @@ export class FalClientImpl implements FalClient {
     }
 
     this.config = options.config;
-    this.contracts = new Map(options.contracts.map((c) => [c.version, c]));
+    // Keyed by endpoint *and* version, not version alone. Every fal profile
+    // declares contractVersion "v1", so keying by version meant registering a
+    // second contract silently replaced the first — and a request for one
+    // endpoint was answered by another endpoint's contract, with its schema,
+    // its parser and its price.
+    this.contracts = new Map();
+    for (const contract of options.contracts) {
+      const endpointId = contract.profile?.endpointId;
+      this.contracts.set(endpointId ? `${endpointId}@${contract.version}` : contract.version, contract);
+    }
     this.clock = options.clock ?? new SystemClock();
+    // The sleeper paces queue polling, which is what it was always for: a test
+    // must not wait real seconds to prove a job completed.
+    this.sleeper = options.sleeper ?? new SystemSleeper();
     this.logger = options.logger ?? createLogger();
-    // `sleeper` is accepted but unused: this client makes a single request and
-    // does not yet retry. It stays in the options so callers can inject a
-    // deterministic one now, rather than the signature changing when retry
-    // lands (config.maxRetries is already carried for that).
-    void options.sleeper;
+    this.queueUrl = options.queueUrl ?? DEFAULT_QUEUE_URL;
     this.transport = options.transport ?? new FetchTransport();
   }
 
@@ -440,32 +169,9 @@ export class FalClientImpl implements FalClient {
       throw new FalTimeoutError(input.timeoutMs);
     }
 
-    const contract = this.contracts.get(input.binding.contractVersion);
-    if (!contract) {
-      throw new FalAdapterError(
-        `No contract registered for version "${input.binding.contractVersion}"`,
-        "FAL_UNKNOWN_CONTRACT",
-        false,
-        {
-          requested: input.binding.contractVersion,
-          available: [...this.contracts.keys()],
-        },
-      );
-    }
+    const contract = this.contractFor(input);
 
-    // A deprecated profile still runs — refusing would break working
-    // productions — but it is never silent, so a migration can be planned
-    // before the sunset date arrives.
-    const profile = contract.profile;
-    if (profile) {
-      const diagnostic = deprecationDiagnostic(profile);
-      if (diagnostic) {
-        this.logger.warn("fal deprecated profile", {
-          profileId: profile.profileId,
-          diagnostic,
-        });
-      }
-    }
+    this.warnIfDeprecated(contract);
 
     const body = contract.buildRequestBody(input);
     const url = `${this.config.baseUrl}/${input.binding.endpointId}`;
@@ -525,6 +231,54 @@ export class FalClientImpl implements FalClient {
       throw error;
     }
 
+    return this.finish(contract, input, raw, startedMs);
+  }
+
+  /** The contract for a binding, or a typed refusal naming what is available. */
+  private contractFor(input: GenerationInput): EndpointContract {
+    // Prefer the contract registered for this exact endpoint; fall back to one
+    // registered by version alone, which is how a hand-written contract with no
+    // profile is still usable.
+    const contract =
+      this.contracts.get(`${input.binding.endpointId}@${input.binding.contractVersion}`) ??
+      this.contracts.get(input.binding.contractVersion);
+    if (!contract) {
+      throw new FalAdapterError(
+        `No contract registered for version "${input.binding.contractVersion}"`,
+        "FAL_UNKNOWN_CONTRACT",
+        false,
+        {
+          requested: input.binding.contractVersion,
+          available: [...this.contracts.keys()],
+        },
+      );
+    }
+    return contract;
+  }
+
+  /** A deprecated profile still runs, but never silently. */
+  private warnIfDeprecated(contract: EndpointContract): void {
+    const profile = contract.profile;
+    if (!profile) return;
+    const diagnostic = deprecationDiagnostic(profile);
+    if (diagnostic) {
+      this.logger.warn("fal deprecated profile", { profileId: profile.profileId, diagnostic });
+    }
+  }
+
+  /**
+   * Parse a completed payload, record the spend, and log the outcome.
+   *
+   * Cost comes from the profile's own pricing rather than a table kept beside
+   * the client, which was the last place in this package where a number about
+   * an endpoint lived somewhere other than its profile.
+   */
+  private finish(
+    contract: EndpointContract,
+    input: GenerationInput,
+    raw: Record<string, unknown>,
+    startedMs: number,
+  ): GenerationResult {
     let result: GenerationResult;
     try {
       result = contract.parseResponse(input, raw);
@@ -532,6 +286,10 @@ export class FalClientImpl implements FalClient {
       this.logError(err, input);
       throw err;
     }
+
+    const recorded = result.cost?.amount ?? contract.profile?.pricing.estimatedUnitCost ?? 0;
+    this._totalSpendUsd += recorded;
+    this._submissionCount++;
 
     this.logger.info("fal completed", {
       endpointId: input.binding.endpointId,
@@ -543,6 +301,176 @@ export class FalClientImpl implements FalClient {
     });
 
     return result;
+  }
+
+  /**
+   * Submit through the queue and wait for the result.
+   *
+   * Long generations — anything video — cannot complete inside one request, so
+   * they go through fal's queue. The legacy client did this too, but parsed
+   * `images` out of the poll response itself, which meant a video endpoint
+   * returned no outputs at all. Here the completed payload goes to the same
+   * versioned contract that parses a synchronous response, so every endpoint
+   * is understood the same way whichever path it took.
+   */
+  async submitAndWait(
+    input: GenerationInput,
+    signal?: AbortSignal,
+    options: SubmitAndWaitOptions = {},
+  ): Promise<GenerationResult> {
+    const startedMs = this.clock.nowMs();
+    let pollMs = options.pollMs ?? 2_000;
+    const maxWaitMs = options.maxWaitMs ?? input.timeoutMs;
+
+    if (signal?.aborted) throw new FalCancelledError("cancelled before submit");
+    if (maxWaitMs <= 0) throw new FalTimeoutError(maxWaitMs);
+
+    const contract = this.contractFor(input);
+    const body = contract.buildRequestBody(input);
+    this.warnIfDeprecated(contract);
+
+    this.logger.info("fal submit", {
+      endpointId: input.binding.endpointId,
+      contractVersion: input.binding.contractVersion,
+      idempotencyKey: input.idempotencyKey,
+      queued: true,
+      falKey: this.config.falKey,
+    });
+
+    const queued = await this.request(
+      "POST",
+      `${this.queueUrl}/${input.binding.endpointId}`,
+      JSON.stringify(body),
+      input,
+      signal,
+    );
+
+    const requestId = queued["request_id"];
+    if (typeof requestId !== "string" || !requestId) {
+      const error = new FalAdapterError(
+        "fal accepted the job but returned no request_id",
+        "FAL_CONTRACT_ERROR",
+        false,
+        { endpointId: input.binding.endpointId },
+      );
+      this.logError(error, input);
+      throw error;
+    }
+
+    const statusUrl = `${this.queueUrl}/${input.binding.endpointId}/requests/${requestId}`;
+
+    let sleptMs = 0;
+    // The deadline uses whichever has advanced further, the clock or the time
+    // actually spent sleeping. A coarse or frozen clock would otherwise poll
+    // forever, which is exactly what a stuck job looks like.
+    while (Math.max(this.clock.nowMs() - startedMs, sleptMs) < maxWaitMs) {
+      if (signal?.aborted) {
+        // A cancelled wait leaves the job running at the provider; say so
+        // rather than implying the spend was avoided.
+        this.logger.warn("fal wait cancelled", { requestId, note: "job may still be running" });
+        throw new FalCancelledError(`cancelled while waiting for ${requestId}`);
+      }
+
+      const status = await this.request("GET", statusUrl, undefined, input, signal);
+      const state = String(status["status"] ?? "IN_PROGRESS").toUpperCase();
+
+      if (state === "COMPLETED") {
+        // The queue answers with the result inline, or points at it.
+        const payload = status["result"] !== undefined
+          ? status
+          : { ...status, result: await this.fetchResult(status, statusUrl, input, signal) };
+
+        const result = this.finish(contract, input, { ...payload, request_id: requestId, status: "COMPLETED" }, startedMs);
+        return result;
+      }
+
+      if (state === "FAILED" || state === "ERROR") {
+        const error = new FalAdapterError(
+          `fal job ${requestId} failed`,
+          "FAL_JOB_FAILED",
+          false,
+          { requestId, detail: status["error"] ?? null },
+        );
+        this.logError(error, input);
+        throw error;
+      }
+
+      await this.sleeper.sleep(pollMs, signal);
+      sleptMs += pollMs;
+      // Back off, so a slow job does not generate hundreds of requests.
+      pollMs = Math.min(pollMs * 1.5, 15_000);
+    }
+
+    const timeout = new FalTimeoutError(maxWaitMs);
+    this.logError(timeout, input);
+    throw timeout;
+  }
+
+  /** Fetch a completed job's payload when the queue points elsewhere. */
+  async #fetchResultAt(url: string, input: GenerationInput, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.request("GET", url, undefined, input, signal);
+  }
+
+  private async fetchResult(
+    status: Record<string, unknown>,
+    statusUrl: string,
+    input: GenerationInput,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    const pointer = status["response_url"] ?? status["result_url"];
+    return this.#fetchResultAt(typeof pointer === "string" ? pointer : statusUrl, input, signal);
+  }
+
+  /** One HTTP round trip, with the adapter's error vocabulary. */
+  private async request(
+    method: string,
+    url: string,
+    body: string | undefined,
+    input: GenerationInput,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    let response;
+    try {
+      response = await this.transport.request(
+        {
+          method,
+          url,
+          headers: {
+            authorization: `Key ${this.config.falKey}`,
+            "content-type": "application/json",
+          },
+          ...(body === undefined ? {} : { body }),
+        },
+        signal,
+      );
+    } catch (err) {
+      if (signal?.aborted) throw new FalCancelledError("cancelled during request");
+      this.logError(err, input);
+      throw err;
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      const error = new FalHttpError(
+        response.status,
+        response.body,
+        response.status >= 500 || response.status === 429,
+      );
+      this.logError(error, input);
+      throw error;
+    }
+
+    try {
+      return JSON.parse(response.body) as Record<string, unknown>;
+    } catch {
+      const error = new FalAdapterError(
+        "fal returned a body that is not valid JSON",
+        "FAL_CONTRACT_ERROR",
+        false,
+        { bodyPreview: response.body.slice(0, 200) },
+      );
+      this.logError(error, input);
+      throw error;
+    }
   }
 
   private logError(err: unknown, input: GenerationInput): void {

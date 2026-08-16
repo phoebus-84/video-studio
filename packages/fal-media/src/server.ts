@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createFalClient, type FalQueueClient } from "./client.js";
+import { createFalClient, type FalClientImpl } from "./client.js";
 import { getProfile } from "./profiles.js";
 
 interface ServerOptions {
@@ -20,7 +20,7 @@ interface ServerOptions {
 export interface FalServerHandle {
   url: string;
   stop: () => Promise<void>;
-  client: FalQueueClient;
+  client: FalClientImpl;
 }
 
 interface GenerationRecord {
@@ -117,18 +117,36 @@ export function createFalServer(opts: ServerOptions = {}): Promise<FalServerHand
           const body = await readBody(req);
           const { profile, params, num_images = 1 } = JSON.parse(body);
 
+          // The contract-driven client validates against the profile before
+          // spending, and parses whatever the endpoint returns — images or a
+          // video — because the contract knows, rather than this handler.
+          const resolved = getProfile(profile);
+          if (!resolved) {
+            res.writeHead(400, { ...corsHeaders, "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: `Unknown profile: ${profile}` }));
+            return;
+          }
+
           const job = await client.submitAndWait({
-            profile,
-            params: { ...params, num_images },
+            idempotencyKey: `srv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            binding: {
+              endpointId: resolved.endpointId,
+              contractVersion: resolved.contractVersion,
+              baseUrl: "",
+            },
+            parameters: { ...params, num_images },
+            timeoutMs: 600_000,
           });
 
           const record: GenerationRecord = {
             profile,
-            cost: job.cost ?? { amount: 0, currency: "USD" },
+            cost: job.cost
+              ? { amount: job.cost.amount, currency: job.cost.currency }
+              : { amount: resolved.pricing.estimatedUnitCost, currency: resolved.pricing.currency },
             status: job.status,
             timestamp: new Date().toISOString(),
-            requestId: job.requestId,
-            imageCount: job.images?.length,
+            requestId: job.providerRequestId,
+            imageCount: job.outputs.length,
           };
           generations.push(record);
 
@@ -136,8 +154,11 @@ export function createFalServer(opts: ServerOptions = {}): Promise<FalServerHand
           res.end(JSON.stringify({
             status: job.status,
             cost: job.cost,
-            images: job.images?.map((img: any) => img.url) ?? [],
-            requestId: job.requestId,
+            // Outputs, not images: the same field carries a video URL when
+            // the endpoint produced one.
+            outputs: job.outputs.map((o) => o.url),
+            images: job.outputs.map((o) => o.url),
+            requestId: job.providerRequestId,
           }));
           return;
         }
