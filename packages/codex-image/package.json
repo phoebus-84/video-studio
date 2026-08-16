@@ -1,0 +1,21 @@
+{
+  "name": "@av/codex-image",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Image generation and editing through an OpenAI ChatGPT/Codex subscription or the OpenAI Images API. Knows nothing about episodes, pipelines or Pi.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
