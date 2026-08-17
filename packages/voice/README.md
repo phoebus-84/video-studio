@@ -20,6 +20,14 @@ python3.12 -m venv .venv
 .venv/bin/qwen-tts serve
 ```
 
+**Python 3.12 specifically.** `requirements.txt` is hash-pinned and was
+compiled with `uv pip compile --python-version 3.12`; those hashes are for
+cp312 wheels. On any other interpreter the install dies partway through with
+`No matching distribution found` for whichever pin lacks a wheel for your
+version — a message that reads like a broken dependency rather than a wrong
+`python3`. If `python3.12` is not on your machine, `mise install` in the
+repository root fetches it.
+
 API docs: `http://127.0.0.1:8000/docs`. For a private per-user LaunchAgent, diagnostics, synthesis, and cloning commands, follow [the macOS CLI guide](docs/MACOS-CLI.md).
 
 ## Tests

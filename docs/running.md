@@ -7,9 +7,17 @@ executed against this repository, not inferred.
 
 ```bash
 cd /path/to/video-studio
+mise install      # node, bun and python at the pinned versions
 bun install
 npm run doctor
 ```
+
+`mise install` is not optional politeness. The runtimes are pinned in
+`mise.toml` because they are not interchangeable — `packages/voice` pins its
+Python dependencies with hashes compiled against CPython 3.12, and installing
+them under a different Python fails partway through with a missing wheel, which
+reads like a broken package rather than a wrong interpreter. If you do not use
+mise, match the versions in `mise.toml` by hand.
 
 The agent works on a **library** — the on-disk tree of channels, series and
 episodes described in [the workspace layout](./workspace). It defaults to `./library`
@@ -85,6 +93,44 @@ Production: `pva_generate_image`, `pva_synthesize_speech`,
 A tool whose capability is not ready will fail rather than silently degrade.
 `npm run doctor` tells you which are ready; `pva_capability_status` tells the
 agent the same thing from inside a session.
+
+### Speech: start the voice worker first
+
+`speech.synthesize` is the one capability that is a **separate long-running
+process**. Everything else the agent calls is either in-process or a remote
+API; the TTS worker keeps MLX models warm, so it is started once and left
+running — not spawned per tool call.
+
+Once, to set it up:
+
+```bash
+mise run voice-setup                    # venv + pinned deps, on Python 3.12
+cd packages/voice
+.venv/bin/qwen-tts install 1.7B --profile custom_voice   # ~GBs, one time
+```
+
+Then, in its own terminal, before or alongside the agent:
+
+```bash
+mise run voice-serve
+```
+
+Confirm it is up and that both sides agree on where it is:
+
+```bash
+cd packages/voice && .venv/bin/qwen-tts doctor
+```
+
+Ports are the thing to watch. The worker's own default is **8000**; the studio
+looks for speech on **5197** (`AVG_TTS_WORKER_URL`, and the gateway's health
+probe). `mise.toml` sets `QTW_PORT` and `QTW_URL` to 5197 so the worker, its
+CLI and the studio all agree. Running `qwen-tts serve` outside a mise
+environment binds 8000, and the studio reports `tts: down` while the worker is
+plainly running.
+
+There is no supervisor that starts the worker for you: the agent will report
+`speech.synthesize` as unavailable rather than launching a multi-gigabyte model
+server behind your back.
 
 ## 2. Agent plus gateway plus web studio
 

@@ -19,10 +19,16 @@ Credentials are environment-only (ADR-0030) — never committed:
 ## The three commands
 
 ```bash
+mise install                       # node, bun and python at the pinned versions
 bun install                        # one install for every module
 npm run compose -- --profile=full  # decide which pieces are wired
 npm run doctor                     # check this machine can run them
 ```
+
+Runtimes are pinned in `mise.toml` and are not interchangeable — most sharply
+for `packages/voice`, whose hash-pinned Python dependencies exist only as cp312
+wheels. Without mise, match those versions by hand; a newer `python3` fails
+midway through the voice install with what looks like a broken dependency.
 
 `bun install` runs `compose` automatically afterwards, so a plain
 `bun install` leaves you with a working default composition. Running `compose`

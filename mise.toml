@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Runtime versions, pinned per directory.
+#
+# The studio spans three runtimes and they are not interchangeable. In
+# particular packages/voice pins its Python dependencies with hashes, compiled
+# against CPython 3.12 — installing them under any other Python fails partway
+# through with a missing wheel, which reads like a broken package rather than a
+# wrong interpreter.
+#
+#   mise install     # fetch every runtime below
+#   mise current     # show what is active here
+#
+# Without mise, `python3` is whatever the machine happens to have.
+# ---------------------------------------------------------------------------
+
+[tools]
+# Matches the CI matrix (actions/setup-node with node-version 22).
+node = "22"
+# Matches "packageManager" in package.json.
+bun = "1.2.0"
+# packages/voice/requirements.txt was compiled with
+# `uv pip compile --python-version 3.12`. This is not a preference.
+python = "3.12"
+
+[env]
+# The voice worker defaults to port 8000, but the studio looks for speech at
+# 127.0.0.1:5197 (the AVG_TTS_WORKER_URL default, also hardcoded as the
+# gateway's health probe). Binding the worker where the studio already looks
+# keeps the two from having to be corrected into agreement by hand — and 8000
+# is contested by every other dev server on the machine.
+QTW_PORT = "5197"
+# The worker's own CLI (`qwen-tts doctor`, `synthesize`, `voices`) talks to
+# 8000 unless told otherwise, so it has to be moved too or the doctor reports
+# a running worker as unreachable.
+QTW_URL = "http://127.0.0.1:5197"
+
+[tasks.voice-setup]
+description = "Create the voice worker venv and install its pinned dependencies"
+dir = "packages/voice"
+run = """
+python -m venv .venv
+.venv/bin/pip install --require-hashes -r requirements.txt
+.venv/bin/pip install --no-deps -e .
+"""
+
+[tasks.voice-serve]
+description = "Run the TTS worker in the foreground, on the port the studio expects"
+dir = "packages/voice"
+run = ".venv/bin/qwen-tts serve"
