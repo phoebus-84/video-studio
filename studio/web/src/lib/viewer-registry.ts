@@ -20,6 +20,7 @@
 
 import type { Component } from "svelte";
 import TextViewer from "$components/viewers/TextViewer.svelte";
+import YamlViewer from "$components/viewers/YamlViewer.svelte";
 import ImageViewer from "$components/viewers/ImageViewer.svelte";
 import VideoViewer from "$components/viewers/VideoViewer.svelte";
 import AudioViewer from "$components/viewers/AudioViewer.svelte";
@@ -44,6 +45,7 @@ export interface ViewerProps {
 const REGISTRY: Record<string, Component<ViewerProps>> = {
   text: TextViewer,
   markdown: TextViewer,
+  yaml: YamlViewer,
   image: ImageViewer,
   video: VideoViewer,
   audio: AudioViewer,
@@ -56,6 +58,32 @@ const REGISTRY: Record<string, Component<ViewerProps>> = {
 /** The component for a viewer name, or the download card when none is registered. */
 export function viewerComponent(name: string | undefined): Component<ViewerProps> {
   return (name && REGISTRY[name]) || DownloadViewer;
+}
+
+/**
+ * Refine a declared viewer using what the file actually is.
+ *
+ * The contract lets an artifact name its viewer, and the gateway reports plain
+ * `text` for anything textual — so a pipeline manifest and a changelog arrive
+ * indistinguishable. Rather than teach the gateway about every format, this
+ * narrows `text` when the media type or extension is unambiguous. It only ever
+ * *narrows*: an artifact that explicitly asked for a viewer keeps it, so the
+ * "the artifact names its viewer" rule still holds where it was used.
+ */
+export function resolveViewer(
+  name: string | undefined,
+  contentType: string | null,
+  path: string | null,
+): string | undefined {
+  if (name !== "text") return name;
+
+  const type = contentType?.toLowerCase() ?? "";
+  const extension = path?.toLowerCase().split(".").pop() ?? "";
+
+  if (type.includes("yaml") || extension === "yaml" || extension === "yml") {
+    return "yaml";
+  }
+  return name;
 }
 
 /** Whether a component is registered for this name. */

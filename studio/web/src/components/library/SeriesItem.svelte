@@ -7,14 +7,25 @@
     channelSlug: string;
     series: ResolvedSeries;
     autoExpand?: boolean;
+    /** Hold the branch open regardless of local state, e.g. while filtering. */
+    forceExpand?: boolean;
   }
 
-  let { channelSlug, series, autoExpand = false }: Props = $props();
+  let {
+    channelSlug,
+    series,
+    autoExpand = false,
+    forceExpand = false,
+  }: Props = $props();
 
-  let expanded = $state(autoExpand);
+  /* null means the creator has not decided, so `autoExpand` still applies.
+     Once they open or close it themselves their choice wins and stays put. */
+  let openedByUser = $state<boolean | null>(null);
+
+  const expanded = $derived(forceExpand || (openedByUser ?? autoExpand));
 
   function toggle() {
-    expanded = !expanded;
+    openedByUser = !expanded;
   }
 
   function selectSeries() {
@@ -28,11 +39,11 @@
     }
     if (e.key === "ArrowRight" && !expanded) {
       e.preventDefault();
-      expanded = true;
+      openedByUser = true;
     }
     if (e.key === "ArrowLeft" && expanded) {
       e.preventDefault();
-      expanded = false;
+      openedByUser = false;
     }
   }
 </script>

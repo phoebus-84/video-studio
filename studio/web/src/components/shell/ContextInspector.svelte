@@ -1,190 +1,121 @@
 <script lang="ts">
-  import { assets as assetStore } from "$lib/asset-store.svelte.ts";
+  /**
+   * The inspector answers questions about whatever the canvas is showing:
+   * where it came from, how it changed, what happened, and what was said.
+   *
+   * The subject line at the top is load-bearing. Without it the panel is four
+   * tabs of context with no statement of what they are context *for*, and the
+   * inspector silently retargets as the selection moves.
+   *
+   * "Run" keeps the asset, review and progress panels the studio already had.
+   * They answer a different question — what is this production doing — and
+   * folding them in here keeps them reachable rather than deleting working
+   * surfaces to match a screen that did not mention them.
+   */
+  import { studio, type InspectorTab } from "$lib/studio-store.svelte.ts";
+  import { files } from "$lib/files-store.svelte.ts";
+  import { library } from "$lib/library-store.svelte.ts";
   import { episode } from "$lib/episode-store.svelte.ts";
-  import type { AssetGroup } from "$lib/asset-types";
-  import { scenes } from "$lib/scene-store.svelte.ts";
-  import AssetPanel from "../assets/AssetPanel.svelte";
+
+  import ProvenancePanel from "../inspector/ProvenancePanel.svelte";
+  import VersionsPanel from "../inspector/VersionsPanel.svelte";
+  import LogsPanel from "../inspector/LogsPanel.svelte";
   import ReviewInbox from "../review/ReviewInbox.svelte";
+  import AssetPanel from "../assets/AssetPanel.svelte";
+  import ProductionPanel from "../episode/ProductionPanel.svelte";
   import ProgressPanel from "../status/ProgressPanel.svelte";
   import StalenessPanel from "../status/StalenessPanel.svelte";
-  import ProductionPanel from "../episode/ProductionPanel.svelte";
-
+  import { buildAssetGroups } from "$lib/asset-groups";
+  import { assets as assetStore } from "$lib/asset-store.svelte.ts";
+  import { scenes } from "$lib/scene-store.svelte.ts";
   import { untrack } from "svelte";
 
-  type Tab = "assets" | "reviews" | "run" | "status";
-  let tab = $state<Tab>("assets");
-
-  // Build asset groups from the gateway-enriched episode scenes. Every field
-  // comes from disk truth: files the gateway found, real mtimes, real
-  // narration text. Nothing is fabricated; unknown fields stay null and the
-  // panel hides them.
+  /* Keep the asset store in step with the episode's scenes. Every field comes
+     from disk truth: files the gateway found, real mtimes, real narration text.
+     Unknown fields stay null and the panel hides them. */
   $effect(() => {
     if (episode.state.phase !== "ready") return;
-    const epScenes = episode.state.episode.scenes as any[];
+    const epScenes = (episode.state.episode.scenes ?? []) as Record<string, unknown>[];
     if (epScenes.length === 0) return;
 
     const texts = episode.narrationTexts;
+    const base = episode.assets;
+    untrack(() => assetStore.load(buildAssetGroups(epScenes, texts, base)));
+  });
+
+  /* Selecting a scene is a request to look at its assets. */
+  $effect(() => {
+    const sceneId = scenes.selectedSceneId;
+    if (!sceneId) return;
     untrack(() => {
-      const generated: AssetGroup[] = epScenes.map((scene) => {
-        const sid = scene.id as string;
-        const attempts: import("$lib/asset-types").AssetAttempt[] = [];
-        const asset = scene.asset as { kind: string; url: string; size: number; generatedAt: string } | null;
-        const nar = scene.narration as { url: string; durationSeconds: number; voice: string; status: string; generatedAt: string | null; size: number | null } | null;
-        const base = episode.assets;
-
-        // Video attempt (terminal recordings etc.) — only when a file exists.
-        if (asset?.kind === "video") {
-          attempts.push({
-            id: `vid-${sid}`,
-            sceneId: sid,
-            kind: "video" as const,
-            prompt: (scene.intent as string) ?? "",
-            instruct: null,
-            referenceImages: [],
-            provider: null,
-            model: null,
-            seed: null,
-            dimensions: null,
-            durationSeconds: null,
-            fileSize: asset.size ?? null,
-            cost: null,
-            license: "",
-            createdAt: asset.generatedAt ?? null,
-            selected: false,
-            imageUrl: null,
-            videoUrl: base.videos[sid] ?? null,
-            audioUrl: null,
-            filePath: null,
-            fileAvailable: true,
-            state: "ready" as const,
-            anchorType: "assets" as const,
-          });
-        }
-
-        // Image attempt — always listed so a missing image is visible.
-        const imgUrl = asset?.kind === "image" ? (base.images[sid] ?? null) : null;
-        attempts.push({
-          id: `img-${sid}`,
-          sceneId: sid,
-          kind: "image" as const,
-          prompt: (scene.intent as string) ?? "",
-          instruct: null,
-          referenceImages: [],
-          provider: null,
-          model: null,
-          seed: null,
-          dimensions: null,
-          durationSeconds: null,
-          fileSize: asset?.kind === "image" ? (asset.size ?? null) : null,
-          cost: null,
-          license: "",
-          createdAt: asset?.kind === "image" ? (asset.generatedAt ?? null) : null,
-          selected: true,
-          imageUrl: imgUrl,
-          videoUrl: null,
-          audioUrl: null,
-          filePath: null,
-          fileAvailable: imgUrl != null,
-          state: imgUrl ? ("ready" as const) : ("idle" as const),
-          anchorType: "assets" as const,
-        });
-
-        // Narration audio attempt — always listed, text/instruct editable.
-        const narReady = nar?.status === "completed" && nar.url;
-        attempts.push({
-          id: `nar-${sid}`,
-          sceneId: sid,
-          kind: "audio" as const,
-          prompt: texts[sid] ?? "",
-          instruct: (scene.instruct as string) ?? null,
-          referenceImages: [],
-          provider: "Qwen3-TTS",
-          model: null,
-          seed: null,
-          dimensions: null,
-          durationSeconds: nar?.durationSeconds ?? null,
-          fileSize: nar?.size ?? null,
-          cost: null,
-          license: "",
-          createdAt: nar?.generatedAt ?? null,
-          selected: false,
-          imageUrl: null,
-          videoUrl: null,
-          audioUrl: narReady ? (base.narration[sid] ?? null) : null,
-          filePath: null,
-          fileAvailable: Boolean(narReady),
-          state: narReady ? ("ready" as const) : ("idle" as const),
-          anchorType: "narration" as const,
-        });
-
-        return { sceneId: sid, sceneTitle: scene.title ?? sid, attempts };
-      });
-      assetStore.load(generated);
+      assetStore.selectGroup(sceneId);
+      studio.inspectorTab = "run";
     });
   });
 
-  // Select the asset group when a scene is selected
-  $effect(() => {
-    const sceneId = scenes.selectedSceneId;
-    if (sceneId) {
-      untrack(() => {
-        assetStore.selectGroup(sceneId);
-        tab = "assets";
-      });
+  const TABS: { key: InspectorTab; label: string }[] = [
+    { key: "provenance", label: "Provenance" },
+    { key: "versions", label: "Versions" },
+    { key: "logs", label: "Logs" },
+    { key: "comments", label: "Comments" },
+    { key: "run", label: "Run" },
+  ];
+
+  /** What the panel is currently about, named exactly. */
+  const subject = $derived.by(() => {
+    if (studio.view === "files" && files.selectedPath) return files.selectedPath;
+    if (studio.level === "episode") {
+      const ep = episode.state.phase === "ready" ? episode.state.episode : null;
+      const stage = episode.selectedStageId;
+      if (ep && stage) return `${ep.slug} · ${stage}`;
+      if (ep) return `episode · ${ep.slug}`;
+      return "no episode selected";
     }
+    if (studio.level === "series" && library.selectedSeries) {
+      return `series · ${library.selectedSeries.series}`;
+    }
+    if (studio.level === "channel" && library.selectedChannel) {
+      return `channel · ${library.selectedChannel}`;
+    }
+    return "nothing selected";
   });
 </script>
 
 <aside class="context-inspector" aria-label="Contextual inspector">
   <div class="ci-tabs" role="tablist" aria-label="Inspector panels">
-    <button
-      class="ci-tab"
-      role="tab"
-      aria-selected={tab === "assets"}
-      onclick={() => tab = "assets"}
-    >
-      Assets
-    </button>
-    <button
-      class="ci-tab"
-      role="tab"
-      aria-selected={tab === "reviews"}
-      onclick={() => tab = "reviews"}
-    >
-      Reviews
-    </button>
-    <button
-      class="ci-tab"
-      role="tab"
-      aria-selected={tab === "run"}
-      onclick={() => tab = "run"}
-    >
-      Run
-    </button>
-    <button
-      class="ci-tab"
-      role="tab"
-      aria-selected={tab === "status"}
-      onclick={() => tab = "status"}
-    >
-      Status
-    </button>
+    {#each TABS as tabDef (tabDef.key)}
+      <button
+        class="ci-tab"
+        role="tab"
+        aria-selected={studio.inspectorTab === tabDef.key}
+        onclick={() => (studio.inspectorTab = tabDef.key)}
+      >
+        {tabDef.label}
+      </button>
+    {/each}
+  </div>
+
+  <div class="ci-subject">
+    <span class="ci-subject-label">about</span>
+    <span class="ci-subject-value" title={subject}>{subject}</span>
   </div>
 
   <div class="ci-content">
-    {#if tab === "assets" && assetStore.selectedGroup}
-      <AssetPanel />
-    {:else if tab === "reviews"}
+    {#if studio.inspectorTab === "provenance"}
+      <ProvenancePanel />
+    {:else if studio.inspectorTab === "versions"}
+      <VersionsPanel />
+    {:else if studio.inspectorTab === "logs"}
+      <LogsPanel />
+    {:else if studio.inspectorTab === "comments"}
       <ReviewInbox />
-    {:else if tab === "run"}
+    {:else}
+      {#if assetStore.selectedGroup}
+        <AssetPanel />
+      {/if}
       <ProductionPanel />
-    {:else if tab === "status"}
       <ProgressPanel />
       <StalenessPanel />
-    {:else}
-      <div class="inspector-empty">
-        <p>Select a scene to inspect assets.</p>
-      </div>
     {/if}
   </div>
 </aside>
@@ -193,19 +124,21 @@
   .context-inspector {
     background: var(--vs-bg-surface);
     border-left: 1px solid var(--vs-border);
-    overflow-y: auto;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-height: 0;
   }
 
   .ci-tabs {
     display: flex;
     border-bottom: 1px solid var(--vs-border);
+    flex-shrink: 0;
   }
 
   .ci-tab {
     flex: 1;
-    padding: var(--vs-space-2);
+    padding: 9px 2px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
@@ -221,20 +154,41 @@
   }
 
   .ci-tab[aria-selected="true"] {
-    color: var(--vs-accent);
-    border-bottom-color: var(--vs-accent);
+    color: var(--vs-accent-strong);
+    border-bottom-color: var(--vs-accent-strong);
+  }
+
+  .ci-subject {
+    display: flex;
+    align-items: center;
+    gap: var(--vs-space-1);
+    padding: 7px var(--vs-space-3);
+    border-bottom: 1px solid var(--vs-border-subtle);
+    min-width: 0;
+    flex-shrink: 0;
+  }
+
+  .ci-subject-label {
+    font-size: var(--vs-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--vs-text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .ci-subject-value {
+    font-family: var(--vs-font-mono);
+    font-size: var(--vs-text-xs);
+    color: var(--vs-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .ci-content {
     flex: 1;
     overflow-y: auto;
-  }
-
-  .inspector-empty {
-    padding: var(--vs-space-4);
-    font-size: var(--vs-text-sm);
-    color: var(--vs-text-secondary);
-    text-align: center;
+    min-height: 0;
   }
 
   @media (max-width: 1024px) {
