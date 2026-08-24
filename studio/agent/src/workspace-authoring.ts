@@ -4,12 +4,29 @@
 // Creates channels, series, and episodes in the canonical library. Operations
 // are idempotent, never overwrite existing metadata, and only accept safe slug
 // components so all writes remain below the configured library root.
+//
+// Every path here comes from `@studio/contracts/src/layout.mjs`. This file used
+// to join its own — `channel/<series>` and `channel/<series>/<episode>`, the
+// pre-migration layout — which put series loose in the channel directory and
+// episodes loose in the series. Discovery looks under `series/` and
+// `episodes/`, so a channel authored this way came back empty: the studio
+// listed nothing while a finished episode sat on disk. Build paths with the
+// helpers below and the two cannot drift again.
 // ---------------------------------------------------------------------------
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import * as path from "node:path";
 import { load as loadYaml } from "js-yaml";
+import {
+  channelPath,
+  seriesPath,
+  episodePath,
+  CHANNEL_KNOWLEDGE,
+  SERIES_KNOWLEDGE,
+  SERIES_CONTAINER,
+  EPISODES_CONTAINER,
+} from "@studio/contracts/src/layout.mjs";
 import { resolveConfig } from "./config.js";
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -138,7 +155,7 @@ export async function createChannelWorkspace(input: CreateChannelInput, libraryR
   validatePipelineYaml(input.pipelineYaml);
 
   const root = libraryRoot ?? (await resolveConfig()).libraryRoot;
-  const dir = path.join(root, input.slug);
+  const dir = channelPath(root, input.slug);
   assertContained(root, dir);
   await mkdir(dir, { recursive: true });
 
@@ -161,6 +178,12 @@ export async function createChannelWorkspace(input: CreateChannelInput, libraryR
   const now = new Date().toISOString();
   await writeExclusive(root, path.join(dir, "channel.md"), `---\nchannelId: ${input.slug}\ntitle: ${input.title.trim()}\ncreatedAt: ${now}\n---\n`, result);
   await writeExclusive(root, path.join(dir, "settings.yaml"), `# Channel settings for ${input.slug}\n`, result);
+  // The channel's own knowledge folders, plus the container its series live in.
+  // `series/` is created up front so an empty channel still looks like Layout 2
+  // rather than like a channel whose series happen to be missing.
+  for (const relative of [...CHANNEL_KNOWLEDGE, SERIES_CONTAINER]) {
+    await mkdir(path.join(dir, relative), { recursive: true });
+  }
   if (input.pipelineYaml !== undefined) {
     await writeExclusive(root, path.join(dir, "pipeline.yaml"), `${input.pipelineYaml.trim()}\n`, result);
   }
@@ -176,14 +199,16 @@ export async function createSeriesWorkspace(input: CreateSeriesInput, libraryRoo
   validatePipelineYaml(input.pipelineYaml);
 
   const root = libraryRoot ?? (await resolveConfig()).libraryRoot;
-  const channelDir = path.join(root, input.channel);
+  const channelDir = channelPath(root, input.channel);
   if (!(await pathExists(path.join(channelDir, "channel.json")))) {
     throw new Error(`Channel does not exist: ${input.channel}`);
   }
 
-  const dir = path.join(channelDir, input.slug);
+  // `<root>/<channel>/series/<slug>` — inside the container, not beside the
+  // channel's own knowledge folders.
+  const dir = seriesPath(root, input.channel, input.slug);
   assertContained(root, dir);
-  await mkdir(path.join(dir, "skills"), { recursive: true });
+  await mkdir(dir, { recursive: true });
 
   const result: WorkspaceCreateResult = {
     kind: "series",
@@ -206,7 +231,8 @@ export async function createSeriesWorkspace(input: CreateSeriesInput, libraryRoo
   await writeExclusive(root, path.join(dir, "series.md"), `---\nseriesId: ${input.slug}\ntitle: ${input.title.trim()}\ncreatedAt: ${now}\n---\n`, result);
   await writeExclusive(root, path.join(dir, "settings.yaml"), `# Series settings for ${input.slug}\n`, result);
   await writeExclusive(root, path.join(dir, "visual-bible.md"), `# Visual Bible for ${input.title.trim()}\n`, result);
-  for (const relative of ["voice-profiles", "pipelines", "sources"]) {
+  // Series knowledge folders, plus the container its episodes live in.
+  for (const relative of [...SERIES_KNOWLEDGE, EPISODES_CONTAINER]) {
     await mkdir(path.join(dir, relative), { recursive: true });
   }
   if (input.pipelineYaml !== undefined) {
@@ -225,12 +251,13 @@ export async function createEpisodeWorkspace(input: CreateEpisodeInput, libraryR
   validatePipelineYaml(input.pipelineYaml);
 
   const root = libraryRoot ?? (await resolveConfig()).libraryRoot;
-  const seriesDir = path.join(root, input.channel, input.series);
+  const seriesDir = seriesPath(root, input.channel, input.series);
   if (!(await pathExists(path.join(seriesDir, "series.json")))) {
     throw new Error(`Series does not exist: ${input.channel}/${input.series}`);
   }
 
-  const dir = path.join(seriesDir, input.slug);
+  // `<root>/<channel>/series/<series>/episodes/<slug>`.
+  const dir = episodePath(root, input.channel, input.series, input.slug);
   assertContained(root, dir);
   for (const relative of ["artifacts", "assets/animation", "assets/audio", "output", "production", "reviews"]) {
     await mkdir(path.join(dir, relative), { recursive: true });

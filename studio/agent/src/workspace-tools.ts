@@ -8,6 +8,7 @@
 import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { join } from "node:path";
+import { channelPath, seriesPath, episodePath } from "@studio/contracts/src/layout.mjs";
 import type { StudioConfig } from "../src/config.js";
 import { resolveConfig } from "../src/config.js";
 import {
@@ -74,7 +75,7 @@ export function registerWorkspaceTools(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params) {
       const config = await resolveConfig();
-      const mutationPath = join(config.libraryRoot, params.slug, "channel.json");
+      const mutationPath = join(channelPath(config.libraryRoot, params.slug), "channel.json");
       return withFileMutationQueue(mutationPath, async () => {
         const result = await createChannelWorkspace(params);
         return {
@@ -100,7 +101,7 @@ export function registerWorkspaceTools(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params) {
       const config = await resolveConfig();
-      const mutationPath = join(config.libraryRoot, params.channel, params.slug, "series.json");
+      const mutationPath = join(seriesPath(config.libraryRoot, params.channel, params.slug), "series.json");
       return withFileMutationQueue(mutationPath, async () => {
         const result = await createSeriesWorkspace(params);
         return {
@@ -128,7 +129,10 @@ export function registerWorkspaceTools(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params) {
       const config = await resolveConfig();
-      const mutationPath = join(config.libraryRoot, params.channel, params.series, params.slug, "episode.json");
+      const mutationPath = join(
+        episodePath(config.libraryRoot, params.channel, params.series, params.slug),
+        "episode.json",
+      );
       return withFileMutationQueue(mutationPath, async () => {
         const result = await createEpisodeWorkspace(params);
         return {
