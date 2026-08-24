@@ -191,6 +191,51 @@ export async function resolveConfig(): Promise<StudioConfig> {
 }
 
 /**
+ * Is the agent's library root one the gateway actually serves?
+ *
+ * The two resolve their libraries independently — the agent from
+ * `AVG_LIBRARY_ROOT` or `./library` relative to wherever Pi was started, the
+ * gateway from `libraryRoots` in its config — and nothing has ever compared
+ * them. Starting Pi from the wrong directory therefore produced into a library
+ * the studio does not serve: a complete episode, images and narration and a
+ * finished render, invisible in a workspace that reported itself empty. Neither
+ * side errored, because from each side alone nothing was wrong.
+ *
+ * Paths are compared as already-resolved strings; callers pass real paths.
+ */
+export function describeLibraryVisibility(
+  libraryRoot: string,
+  gatewayRoots: string[],
+): { visible: boolean; message: string } {
+  if (gatewayRoots.length === 0) {
+    return { visible: false, message: "Gateway reports no library roots" };
+  }
+  const contained = gatewayRoots.some(
+    (root) => libraryRoot === root || libraryRoot.startsWith(`${root}${path.sep}`),
+  );
+  if (contained) {
+    return { visible: true, message: `Served by the gateway (${libraryRoot})` };
+  }
+  return {
+    visible: false,
+    message:
+      `Library root ${libraryRoot} is NOT served by the gateway ` +
+      `(serving: ${gatewayRoots.join(", ")}). Work produced here will not appear ` +
+      `in the studio. Set AVG_LIBRARY_ROOT, or start Pi from the directory whose ` +
+      `library the gateway serves.`,
+  };
+}
+
+/** Resolve a path for comparison, tolerating one that does not exist yet. */
+async function realpathOrSelf(target: string): Promise<string> {
+  try {
+    return await fs.realpath(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+/**
  * Check health of all configured services.
  * No background processes are started — each check is a single probe.
  */
@@ -220,6 +265,33 @@ export async function checkServiceHealth(
     };
   } catch {
     health["gateway"] = { available: false, message: "Unreachable", checkedAt: now };
+  }
+
+  // Does the gateway serve the library this agent writes to? Only answerable
+  // when the gateway is up; an unreachable gateway is already reported above.
+  if (health["gateway"]?.available) {
+    try {
+      const res = await fetch(`${config.gatewayUrl}/`, {
+        headers: config.gatewayToken ? { Authorization: `Bearer ${config.gatewayToken}` } : {},
+        signal: AbortSignal.timeout(2000),
+      });
+      const info = (await res.json()) as { libraryRoots?: unknown };
+      const roots = Array.isArray(info.libraryRoots)
+        ? info.libraryRoots.filter((r): r is string => typeof r === "string")
+        : [];
+      const verdict = describeLibraryVisibility(await realpathOrSelf(config.libraryRoot), roots);
+      health["library-visibility"] = {
+        available: verdict.visible,
+        message: verdict.message,
+        checkedAt: now,
+      };
+    } catch {
+      health["library-visibility"] = {
+        available: false,
+        message: "Could not read the gateway's library roots",
+        checkedAt: now,
+      };
+    }
   }
 
   // TTS worker

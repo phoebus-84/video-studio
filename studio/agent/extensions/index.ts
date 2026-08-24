@@ -130,6 +130,25 @@ export default function (pi: ExtensionAPI): void {
     }
 
     ctx.ui.setStatus("pva", `pva ${packageVersion} (${status})`);
+
+    // Say up front whether the studio can see what this session will produce.
+    // The agent resolves its library root from the working directory unless
+    // AVG_LIBRARY_ROOT says otherwise, so starting Pi one directory over sends
+    // a whole episode somewhere the gateway does not serve — silently, because
+    // from the agent's side nothing is wrong. Probed rather than awaited: a
+    // slow or absent gateway must not delay the session.
+    void (async () => {
+      try {
+        const config = await resolveConfig();
+        const { health } = await checkServiceHealth(config);
+        const visibility = health["library-visibility"];
+        if (visibility && !visibility.available) {
+          ctx.ui.notify(visibility.message, "warning");
+        }
+      } catch {
+        // Advisory only. Never fail a session over a diagnostic.
+      }
+    })();
   });
 
   // --- Lifecycle: session_shutdown -------------------------------------
