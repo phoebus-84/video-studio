@@ -37,6 +37,21 @@ describe("FileSystemWorkspaceService", () => {
     expect(episodes.map((episode) => episode.slug)).toEqual(["the-run-up"]);
   });
 
+  it("resolves pipeline.yaml from the layout-2 series directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
+    roots.push(root);
+    const series = join(root, "wordless-comedy", "series", "give-me-time");
+    await mkdir(join(series, "episodes", "the-run-up", "artifacts"), { recursive: true });
+    await writeFile(join(series, "pipeline.yaml"), "pipeline: wordless-keyframed-h3-short\n");
+
+    const workspace = new FileSystemWorkspaceService([root]);
+    const episodes = await workspace.listEpisodes("wordless-comedy", "give-me-time");
+    const detail = await workspace.getEpisode("wordless-comedy", "give-me-time", "the-run-up");
+
+    expect(episodes[0]?.pipeline).toBe("wordless-keyframed-h3-short");
+    expect(detail?.pipeline).toBe("wordless-keyframed-h3-short");
+  });
+
   it("prefers editorial QA and keeps validation renders in progress", async () => {
     const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
     roots.push(root);
@@ -59,5 +74,44 @@ describe("FileSystemWorkspaceService", () => {
     // the browser's own EpisodeStatus could never represent.
     expect(detail.status).toBe("running");
     expect(detail.qaReport).toEqual({ approved: false, validationApproved: true });
+  });
+
+  // Asset URLs were built with template literals that omitted the `series/`
+  // and `episodes/` containers. The static route serves the canonical path, so
+  // every image, narration clip and render 404'd — in the browser that reads
+  // as "nothing was generated" rather than "the URL is wrong".
+  it("addresses assets and renders at their canonical library URL", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
+    roots.push(root);
+    const episode = join(root, "wordless-comedy", "series", "give-me-time", "episodes", "the-run-up");
+    await Promise.all([
+      mkdir(join(episode, "artifacts", "narration"), { recursive: true }),
+      mkdir(join(episode, "assets", "images"), { recursive: true }),
+      mkdir(join(episode, "output"), { recursive: true }),
+    ]);
+    await writeFile(
+      join(episode, "artifacts", "episode.json"),
+      JSON.stringify({ scenes: [{ id: "s1", durationSeconds: 4 }] }),
+    );
+    await writeFile(join(episode, "assets", "images", "s1.png"), "png");
+    await writeFile(join(episode, "artifacts", "narration", "s1.json"), JSON.stringify({ duration_sec: 4 }));
+    await writeFile(join(episode, "artifacts", "narration", "s1.wav"), "wav");
+    await writeFile(join(episode, "output", "render-1.mp4"), "media");
+
+    const workspace = new FileSystemWorkspaceService([root]);
+    const detail = await workspace.getEpisode("wordless-comedy", "give-me-time", "the-run-up") as any;
+
+    const prefix = "/library/wordless-comedy/series/give-me-time/episodes/the-run-up";
+    expect(detail.scenes[0].asset.url).toBe(`${prefix}/assets/images/s1.png`);
+    expect(detail.render.url).toBe(`${prefix}/output/render-1.mp4`);
+
+    // The pre-migration shape, which is what the studio was actually requesting.
+    const urls = [detail.scenes[0].asset.url, detail.render.url, detail.scenes[0].narration?.url]
+      .filter((u): u is string => typeof u === "string");
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url.startsWith(prefix)).toBe(true);
+      expect(url).not.toContain("/library/wordless-comedy/give-me-time/");
+    }
   });
 });

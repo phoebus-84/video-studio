@@ -16,10 +16,13 @@ import { loadNarrationManifest } from "../runtime/narration-manifest.js";
 import {
   SERIES_CONTAINER,
   EPISODES_CONTAINER,
+  channelPath,
   seriesContainerPath,
+  seriesPath,
   episodesContainerPath,
   episodePath,
 } from "@studio/contracts/src/layout.mjs";
+import { libraryUrlPath } from "@studio/contracts/src/library-url.mjs";
 
 /**
  * Content directories at a level.
@@ -121,6 +124,13 @@ export class FileSystemWorkspaceService implements WorkspaceService {
   async getEpisode(channel: string, series: string, episode: string): Promise<EpisodeDetail | null> {
     for (const root of this.roots) {
       const epPath = episodePath(root, channel, series, episode);
+      // Every asset URL below goes through this. Hand-built template literals
+      // here once omitted the `series/` and `episodes/` containers, so the
+      // studio requested layout-1 paths and got 404 on every image, narration
+      // clip and render — which in the browser reads as "the asset was never
+      // generated" rather than "the URL is wrong".
+      const urlFor = (relative: string): string =>
+        libraryUrlPath({ channel, series, episode }, relative) ?? "";
       try {
         await fs.access(epPath);
         const status = await this.detectStatus(epPath);
@@ -161,7 +171,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
               enriched.narration = {
                 segmentId: canonicalEntry.segmentId,
                 file: path.basename(canonicalEntry.wavPath),
-                url: `/library/${channel}/${series}/${episode}/${canonicalEntry.wavPath}`,
+                url: urlFor(canonicalEntry.wavPath),
                 durationSeconds: canonicalEntry.durationSeconds,
                 pauseAfterMs: canonicalEntry.pauseAfterMs,
                 acceptedAttemptId: canonicalEntry.acceptedAttemptId,
@@ -180,7 +190,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
                 try { wavStat = await fs.stat(wavPath); } catch {}
                 enriched.narration = {
                   file: `${sid}.wav`,
-                  url: `/library/${channel}/${series}/${episode}/artifacts/narration/${sid}.wav`,
+                  url: urlFor(`artifacts/narration/${sid}.wav`),
                   durationSeconds: (narMeta.duration_sec as number) ?? scene.durationSeconds ?? 0,
                   voice: (narMeta.voice as string) || "default",
                   jobId: narMeta.job_id as string,
@@ -214,7 +224,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
                   const stat = await fs.stat(videoPath);
                   foundAsset = {
                     file: `${sid}.${ext}`,
-                    url: `/library/${channel}/${series}/${episode}/assets/tapes/${sid}.${ext}`,
+                    url: urlFor(`assets/tapes/${sid}.${ext}`),
                     size: stat.size,
                     generatedAt: stat.mtime.toISOString(),
                     kind: "video",
@@ -232,7 +242,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
                       const stat = await fs.stat(imgPath);
                       foundAsset = {
                         file: `${sid}.${ext}`,
-                        url: `/library/${channel}/${series}/${episode}/${path.relative(epPath, path.dirname(imgPath))}/${sid}.${ext}`,
+                        url: urlFor(`${path.relative(epPath, path.dirname(imgPath))}/${sid}.${ext}`),
                         size: stat.size,
                         generatedAt: stat.mtime.toISOString(),
                         kind: "image",
@@ -272,12 +282,12 @@ export class FileSystemWorkspaceService implements WorkspaceService {
               const outDir = path.join(epPath, "output");
               for (const f of (await fs.readdir(outDir)).filter((f) => f.endsWith(".mp4"))) {
                 const p = path.join(outDir, f);
-                candidates.push({ p, url: `/library/${channel}/${series}/${episode}/output/${f}`, mtime: (await fs.stat(p)).mtimeMs });
+                candidates.push({ p, url: urlFor(`output/${f}`), mtime: (await fs.stat(p)).mtimeMs });
               }
             } catch { /* no output dir */ }
             try {
               const p = path.join(epPath, "artifacts", "final.mp4");
-              candidates.push({ p, url: `/library/${channel}/${series}/${episode}/artifacts/final.mp4`, mtime: (await fs.stat(p)).mtimeMs });
+              candidates.push({ p, url: urlFor("artifacts/final.mp4"), mtime: (await fs.stat(p)).mtimeMs });
             } catch { /* no legacy render */ }
             const latest = candidates.sort((a, b) => b.mtime - a.mtime)[0];
             if (latest) {
@@ -321,7 +331,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
   /** Resolve the pipeline name for an episode by reading series pipeline.yaml. */
   private resolvePipeline(root: string, channel: string, series: string, episode: string): string {
     // 1. Try episode-level pipeline.yaml
-    const epPipeline = path.join(root, channel, series, episode, "pipeline.yaml");
+    const epPipeline = path.join(episodePath(root, channel, series, episode), "pipeline.yaml");
     try {
       const raw = readFileSync(epPipeline, "utf-8");
       const doc = yaml.parse(raw) as Record<string, unknown> | null;
@@ -329,7 +339,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     } catch { /* no episode pipeline */ }
 
     // 2. Try series-level pipeline.yaml
-    const seriesPipeline = path.join(root, channel, series, "pipeline.yaml");
+    const seriesPipeline = path.join(seriesPath(root, channel, series), "pipeline.yaml");
     try {
       const raw = readFileSync(seriesPipeline, "utf-8");
       const doc = yaml.parse(raw) as Record<string, unknown> | null;
@@ -337,7 +347,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     } catch { /* no series pipeline */ }
 
     // 3. Try channel-level pipeline.yaml
-    const chPipeline = path.join(root, channel, "pipeline.yaml");
+    const chPipeline = path.join(channelPath(root, channel), "pipeline.yaml");
     try {
       const raw = readFileSync(chPipeline, "utf-8");
       const doc = yaml.parse(raw) as Record<string, unknown> | null;
