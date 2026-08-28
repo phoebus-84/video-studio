@@ -9,8 +9,9 @@ import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-cod
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, existsSync, readFileSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { extname, join } from "node:path";
 import { resolveConfig } from "./config.js";
 import { guardEpisodePath } from "./trust-guards.js";
 import {
@@ -26,6 +27,7 @@ import {
   loadSoundCueSheet,
 } from "./multitrack-compose.js";
 import { CodexImageClient } from "@av/codex-image";
+import { createFalClient, getProfile } from "@av/fal-media";
 import {
   CODEX_PROVIDER,
   DEFAULT_FAL_MODEL,
@@ -43,10 +45,16 @@ const DEFAULT_MODEL = DEFAULT_FAL_MODEL;
  * did, and it is the one thing @av/codex-image cannot fetch for itself, which
  * is precisely why this glue is here and not in the package.
  */
+interface CodexReferenceImage {
+  data: Buffer;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+}
+
 async function generateImageViaCodex(
   prompt: string,
   model: string,
   registry: { getApiKeyForProvider(provider: string): Promise<string | undefined> },
+  referenceImages: CodexReferenceImage[] = [],
   signal?: AbortSignal,
 ): Promise<{ data: Buffer; model: string; provider: string; revisedPrompt?: string; extension: string }> {
   const token = await registry.getApiKeyForProvider(CODEX_PROVIDER);
@@ -58,7 +66,12 @@ async function generateImageViaCodex(
   }
 
   const client = new CodexImageClient({ transport: { kind: "subscription", token } });
-  const image = await client.generate({ prompt, model, outputFormat: "png" }, signal);
+  const image = await client.generate({
+    prompt,
+    model,
+    outputFormat: "png",
+    ...(referenceImages.length > 0 ? { inputImages: referenceImages } : {}),
+  }, signal);
 
   return {
     data: image.data,
@@ -67,6 +80,25 @@ async function generateImageViaCodex(
     ...(image.revisedPrompt ? { revisedPrompt: image.revisedPrompt } : {}),
     extension: "png",
   };
+}
+
+function imageMimeType(filePath: string): CodexReferenceImage["mimeType"] {
+  switch (extname(filePath).toLowerCase()) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".png":
+      return "image/png";
+    default:
+      throw new Error(`Unsupported reference image type: ${extname(filePath) || "no extension"}`);
+  }
+}
+
+function asDataUrl(filePath: string): string {
+  const mimeType = imageMimeType(filePath);
+  return `data:${mimeType};base64,${readFileSync(filePath).toString("base64")}`;
 }
 
 async function generateImage(
@@ -375,22 +407,54 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       episode: Type.String({ description: "Episode slug" }),
       sceneId: Type.String({ description: "Scene ID (e.g. s1, s2)" }),
       prompt: Type.String({ description: "Image generation prompt" }),
+      outputWidth: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096, description: "Optional normalized output width" })),
+      outputHeight: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096, description: "Optional normalized output height" })),
+      referenceImagePaths: Type.Optional(Type.Array(Type.String(), {
+        maxItems: 5,
+        description: "Existing episode-relative images used as continuity references (Codex provider only)",
+      })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {
+        if (!params.sceneId.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)) {
+          throw new Error("sceneId must contain only letters, numbers, underscores, and hyphens");
+        }
+        if ((params.outputWidth === undefined) !== (params.outputHeight === undefined)) {
+          throw new Error("outputWidth and outputHeight must be supplied together");
+        }
         const dir = episodeDir(params.channel, params.series, params.episode);
         const imgDir = join(dir, "assets", "images");
         mkdirSync(imgDir, { recursive: true });
 
         const libraryRoot = process.env["AVG_LIBRARY_ROOT"] || join(process.cwd(), "library");
         const provider = resolveImageProvider(libraryRoot, params.channel, params.series);
+        const referenceImages: CodexReferenceImage[] = [];
+        for (const relativePath of params.referenceImagePaths ?? []) {
+          const guard = await guardEpisodePath(
+            LIBRARY_ROOT,
+            params.channel,
+            params.series,
+            params.episode,
+            relativePath,
+          );
+          if (!guard.allowed) throw new Error(guard.reason ?? "Reference image path rejected");
+          const fullPath = join(dir, relativePath);
+          if (!existsSync(fullPath)) throw new Error(`Reference image not found: ${relativePath}`);
+          referenceImages.push({
+            data: readFileSync(fullPath),
+            mimeType: imageMimeType(fullPath),
+          });
+        }
+        if (provider.kind === "fal" && referenceImages.length > 0) {
+          throw new Error("referenceImagePaths requires image.provider: openai-codex");
+        }
 
         // The two providers return different encodings, so the extension comes
         // from the result rather than being assumed — the previous code wrote
         // every image as .jpg whatever the bytes actually were.
         const result =
           provider.kind === "codex"
-            ? await generateImageViaCodex(params.prompt, provider.model, ctx.modelRegistry, signal)
+            ? await generateImageViaCodex(params.prompt, provider.model, ctx.modelRegistry, referenceImages, signal)
             : await (async () => {
                 const fal = await generateImage(params.prompt, provider.model);
                 return {
@@ -404,11 +468,29 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
 
         const fileName = `${params.sceneId}.${result.extension}`;
         const outPath = join(imgDir, fileName);
-        writeFileSync(outPath, result.data);
+        if (params.outputWidth !== undefined && params.outputHeight !== undefined) {
+          const sourceDir = join(imgDir, "source");
+          mkdirSync(sourceDir, { recursive: true });
+          const sourcePath = join(sourceDir, fileName);
+          writeFileSync(sourcePath, result.data);
+          const normalized = spawnSync("ffmpeg", [
+            "-y",
+            "-i", sourcePath,
+            "-vf", `scale=${params.outputWidth}:${params.outputHeight}:force_original_aspect_ratio=increase,crop=${params.outputWidth}:${params.outputHeight}`,
+            "-frames:v", "1",
+            outPath,
+          ], { encoding: "utf-8" });
+          if (normalized.status !== 0 || !existsSync(outPath)) {
+            throw new Error(`Image normalization failed: ${(normalized.stderr || normalized.stdout).trim().slice(-1000)}`);
+          }
+        } else {
+          writeFileSync(outPath, result.data);
+        }
 
+        const outputSize = statSync(outPath).size;
         const seed = "seed" in result ? result.seed : undefined;
         const summary = [
-          `✅ ${fileName} — ${(result.data.length / 1024).toFixed(0)}KB`,
+          `✅ ${fileName} — ${(outputSize / 1024).toFixed(0)}KB`,
           `(${result.provider}/${result.model}${seed !== undefined ? `, seed: ${seed}` : ""})`,
         ].join(" ");
 
@@ -416,8 +498,11 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           content: [{ type: "text" as const, text: summary }],
           details: {
             path: outPath,
-            size: result.data.length,
+            size: outputSize,
             provider: result.provider,
+            ...(params.outputWidth !== undefined && params.outputHeight !== undefined
+              ? { dimensions: `${params.outputWidth}x${params.outputHeight}` }
+              : {}),
             model: result.model,
             ...(seed !== undefined ? { seed } : {}),
             ...("revisedPrompt" in result && result.revisedPrompt
@@ -429,6 +514,223 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
           details: {},
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  // --- Tool: pva_generate_minimax_h3_video (via fal.ai) -------------------
+
+  pi.registerTool({
+    name: "pva_generate_minimax_h3_video",
+    label: "Generate MiniMax H3 Video",
+    description:
+      "Animate one opening keyframe, optionally toward an exact closing keyframe, with MiniMax H3 through fal.ai. " +
+      "Saves one clip and provenance sidecar under episode assets/video/.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      shotId: Type.String({ description: "Safe shot ID used as the MP4 filename" }),
+      prompt: Type.String({ description: "MiniMax H3 production prompt" }),
+      firstFramePath: Type.String({ description: "Episode-relative opening keyframe path" }),
+      lastFramePath: Type.Optional(Type.String({ description: "Episode-relative closing keyframe path" })),
+      durationSeconds: Type.Integer({ minimum: 4, maximum: 15, default: 5 }),
+      resolution: Type.Optional(StringEnum(["480P", "768P", "2K", "4K"] as const, { default: "2K" })),
+      seed: Type.Optional(Type.Integer()),
+      enablePromptExpansion: Type.Optional(Type.Boolean({ default: false })),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate) {
+      try {
+        if (!params.shotId.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)) {
+          throw new Error("shotId must contain only letters, numbers, underscores, and hyphens");
+        }
+
+        const dir = episodeDir(params.channel, params.series, params.episode);
+        const framePaths: string[] = [params.firstFramePath];
+        if (params.lastFramePath) framePaths.push(params.lastFramePath);
+        const resolvedFrames: string[] = [];
+        for (const relativePath of framePaths) {
+          const guard = await guardEpisodePath(
+            LIBRARY_ROOT,
+            params.channel,
+            params.series,
+            params.episode,
+            relativePath,
+          );
+          if (!guard.allowed) throw new Error(guard.reason ?? "Keyframe path rejected");
+          const fullPath = join(dir, relativePath);
+          if (!existsSync(fullPath)) throw new Error(`Keyframe not found: ${relativePath}`);
+          imageMimeType(fullPath);
+          resolvedFrames.push(fullPath);
+        }
+
+        const config = await resolveConfig();
+        if (!config.falKeyRef) throw new Error("FAL_KEY env var not set");
+        const profile = getProfile("minimax/h3/image-to-video@v1");
+        if (!profile) throw new Error("MiniMax H3 image-to-video profile is not installed");
+
+        const parameters: Record<string, unknown> = {
+          prompt: params.prompt,
+          duration: params.durationSeconds,
+          resolution: params.resolution ?? "2K",
+          image_url: asDataUrl(resolvedFrames[0]!),
+          enable_prompt_expansion: params.enablePromptExpansion ?? false,
+          enable_safety_checker: true,
+          ...(resolvedFrames[1] ? { last_image_url: asDataUrl(resolvedFrames[1]) } : {}),
+          ...(params.seed === undefined ? {} : { seed: params.seed }),
+        };
+        const requestHash = createHash("sha256")
+          .update(params.prompt)
+          .update(readFileSync(resolvedFrames[0]!))
+          .update(resolvedFrames[1] ? readFileSync(resolvedFrames[1]) : Buffer.alloc(0))
+          .digest("hex")
+          .slice(0, 20);
+
+        onUpdate?.({
+          content: [{ type: "text" as const, text: `Submitting ${params.shotId} to MiniMax H3…` }],
+          details: { shotId: params.shotId, profileId: profile.profileId },
+        });
+
+        const client = createFalClient(config.falKeyRef);
+        const result = await client.submitAndWait({
+          idempotencyKey: `${params.channel}-${params.series}-${params.episode}-${params.shotId}-${requestHash}`,
+          binding: {
+            endpointId: profile.endpointId,
+            contractVersion: profile.contractVersion,
+            baseUrl: "",
+          },
+          parameters,
+          timeoutMs: 900_000,
+        }, signal, { maxWaitMs: 900_000 });
+
+        const output = result.outputs.find((candidate) => candidate.contentType.startsWith("video/")) ?? result.outputs[0];
+        if (!output) throw new Error("MiniMax H3 completed without a video output");
+        const download = await fetch(output.url, { signal });
+        if (!download.ok) throw new Error(`Failed to download MiniMax H3 output: ${download.status}`);
+        const data = Buffer.from(await download.arrayBuffer());
+
+        const videoDir = join(dir, "assets", "video");
+        mkdirSync(videoDir, { recursive: true });
+        const outputPath = join(videoDir, `${params.shotId}.mp4`);
+        const provenancePath = join(videoDir, `${params.shotId}.provenance.json`);
+        writeFileSync(outputPath, data);
+        writeFileSync(provenancePath, JSON.stringify({
+          version: 1,
+          provider: "fal.ai",
+          profileId: result.profileId,
+          schemaFingerprint: result.schemaFingerprint,
+          providerRequestId: result.providerRequestId,
+          idempotencyKey: result.idempotencyKey,
+          prompt: params.prompt,
+          firstFramePath: params.firstFramePath,
+          ...(params.lastFramePath ? { lastFramePath: params.lastFramePath } : {}),
+          durationSeconds: params.durationSeconds,
+          resolution: params.resolution ?? "2K",
+          seed: params.seed ?? null,
+          cost: result.cost,
+          outputSha256: createHash("sha256").update(data).digest("hex"),
+          completedAt: result.completedAt.toISOString(),
+        }, null, 2));
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `✅ ${params.shotId}.mp4 — ${(data.length / 1024 / 1024).toFixed(1)}MB (${result.profileId})`,
+          }],
+          details: {
+            outputPath,
+            provenancePath,
+            size: data.length,
+            profileId: result.profileId,
+            providerRequestId: result.providerRequestId,
+            cost: result.cost,
+          },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  // --- Tool: pva_stitch_video_clips --------------------------------------
+
+  pi.registerTool({
+    name: "pva_stitch_video_clips",
+    label: "Stitch Video Clips",
+    description:
+      "Concatenate generated episode clips in the supplied order, remove provider audio, and normalize to a 1080x1920 30 fps H.264 visual master.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      clipPaths: Type.Array(Type.String(), { minItems: 1, description: "Ordered episode-relative MP4 paths" }),
+      outputName: Type.Optional(Type.String({ default: "visuals.mp4", description: "Output filename under assets/animation" })),
+    }),
+    async execute(_toolCallId, params) {
+      try {
+        const outputName = params.outputName ?? "visuals.mp4";
+        if (!outputName.match(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.mp4$/)) {
+          throw new Error("outputName must be a safe .mp4 filename");
+        }
+        const dir = episodeDir(params.channel, params.series, params.episode);
+        const resolvedClips: string[] = [];
+        for (const relativePath of params.clipPaths) {
+          const guard = await guardEpisodePath(
+            LIBRARY_ROOT,
+            params.channel,
+            params.series,
+            params.episode,
+            relativePath,
+          );
+          if (!guard.allowed) throw new Error(guard.reason ?? "Clip path rejected");
+          const fullPath = join(dir, relativePath);
+          if (!existsSync(fullPath)) throw new Error(`Clip not found: ${relativePath}`);
+          resolvedClips.push(fullPath);
+        }
+
+        const animationDir = join(dir, "assets", "animation");
+        const artifactsDir = join(dir, "artifacts");
+        mkdirSync(animationDir, { recursive: true });
+        mkdirSync(artifactsDir, { recursive: true });
+        const concatPath = join(artifactsDir, "minimax-concat.txt");
+        const quoteForConcat = (value: string) => value.replace(/'/g, "'\\''");
+        writeFileSync(concatPath, resolvedClips.map((clip) => `file '${quoteForConcat(clip)}'`).join("\n") + "\n");
+
+        const outputPath = join(animationDir, outputName);
+        const ffmpeg = spawnSync("ffmpeg", [
+          "-y",
+          "-f", "concat",
+          "-safe", "0",
+          "-i", concatPath,
+          "-an",
+          "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p",
+          "-c:v", "libx264",
+          "-preset", "medium",
+          "-crf", "18",
+          "-movflags", "+faststart",
+          outputPath,
+        ], { encoding: "utf-8" });
+        if (ffmpeg.status !== 0 || !existsSync(outputPath)) {
+          throw new Error(`FFmpeg clip assembly failed: ${(ffmpeg.stderr || ffmpeg.stdout).trim().slice(-1000)}`);
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `✅ ${resolvedClips.length} clips → assets/animation/${outputName} (${(statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB)`,
+          }],
+          details: { outputPath, clipCount: resolvedClips.length, fileSize: statSync(outputPath).size },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {} as { outputPath: string; clipCount: number; fileSize: number },
           isError: true as unknown as boolean,
         };
       }
@@ -742,15 +1044,19 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
       const caps: Record<string, { available: boolean; detail: string }> = {};
 
-      // fal.ai
+      // Generated media. Image generation may also be supplied by the
+      // openai-codex login; H3 video generation specifically requires fal.ai.
       try {
         if ((await resolveConfig()).falKeyRef) {
-          caps["image-generation"] = { available: true, detail: "fal.ai configured" };
+          caps["image-generation"] = { available: true, detail: "fal.ai configured; openai-codex selectable per series" };
+          caps["video-generation"] = { available: true, detail: "fal.ai MiniMax H3 configured" };
         } else {
-          caps["image-generation"] = { available: false, detail: "FAL_KEY not set" };
+          caps["image-generation"] = { available: false, detail: "FAL_KEY not set (openai-codex may still be available in Pi)" };
+          caps["video-generation"] = { available: false, detail: "FAL_KEY not set" };
         }
       } catch {
-        caps["image-generation"] = { available: false, detail: "fal client unavailable" };
+        caps["image-generation"] = { available: false, detail: "generated-media clients unavailable" };
+        caps["video-generation"] = { available: false, detail: "fal client unavailable" };
       }
 
       // TTS
