@@ -259,20 +259,23 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
     });
     const loader = makeLoader(args);
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
+    const episodeSlug = `${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const libraryRoot = libraryFrom(args);
+    const store = libraryRoot ? makeSnapshotStore(libraryRoot) : null;
+    const previous = store ? await store.loadLatest(episodeSlug) : null;
     const snapshot = await createSnapshot({
-      episodeSlug: `${parsed.channel}/${parsed.series}/${parsed.episode}`,
+      episodeSlug,
       pipeline,
       settings,
       providerBindings: [],
       sources: [],
       skillIds: [],
+      previousVersion: previous?.version,
     });
 
     // Persist it. Without this the resolved contract died with the process and
     // every later command reported "Pipeline not found".
-    const libraryRoot = libraryFrom(args);
-    if (libraryRoot) {
-      const store = makeSnapshotStore(libraryRoot);
+    if (store) {
       await store.save(snapshot);
     }
 
@@ -316,7 +319,7 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
 
     // ── Detect completed stages by checking for output artifacts ──────────
     const libraryRoot = libraryFrom(args) || ".";
-    const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const episodeDir = episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode);
 
     function checkArtifact(label: string): string {
       return artifactExists(episodeDir, label) ? "completed" : "pending";
@@ -441,7 +444,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
     const libraryRoot = libraryFrom(args) || ".";
-    const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const episodeDir = episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode);
 
     // Find the first non-completed stage using the same provider-neutral
     // artifact discovery as status. An explicit stage remains a forced run.
