@@ -24,6 +24,7 @@ import {
 } from "@studio/contracts/src/layout.mjs";
 import { libraryUrlPath } from "@studio/contracts/src/library-url.mjs";
 import { materializeSceneSpine, readSceneSpine } from "./scene-spine.js";
+import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 
 /**
  * Content directories at a level.
@@ -270,7 +271,11 @@ export class FileSystemWorkspaceService implements WorkspaceService {
             try {
               const srtPath = path.join(epPath, "artifacts", "captions.srt");
               const srtRaw = await fs.readFile(srtPath, "utf-8");
-              const captions = parseSrtForScene(srtRaw, sid, scene.durationSeconds as number || 0);
+              const captions = parseSrtForScene(
+                srtRaw,
+                (scene.startSeconds as number) || 0,
+                (scene.durationSeconds as number) || 0,
+              );
               enriched.captions = captions.length > 0 ? { segments: captions, count: captions.length } : null;
             } catch {
               enriched.captions = null;
@@ -419,29 +424,35 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
+  /**
+   * The episode's journal.
+   *
+   * This used to look in `reviews/` for loose `.json` files, at a hand-joined
+   * pre-migration path, in the first root only — so it never opened
+   * `journal/events.jsonl`, which is the file the schema describes, the route
+   * advertises and the Pi tool asks for. Between that and the missing writer,
+   * the journal was unreadable and unwritten at the same time, and each half
+   * hid the other.
+   */
   async findEvents(
     ref: { channel: string; series: string; episode: string },
-    _query: Record<string, unknown>,
+    query: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> {
-    const episodeDir = path.join(
-      this.roots[0]!,
-      ref.channel,
-      ref.series,
-      ref.episode,
-    );
-    const events: Array<Record<string, unknown>> = [];
-    // Read review files
-    const reviewsDir = path.join(episodeDir, "reviews");
-    try {
-      const files = await fs.readdir(reviewsDir);
-      for (const f of files.slice(0, 50)) {
-        if (f.endsWith(".json")) {
-          const content = await fs.readFile(path.join(reviewsDir, f), "utf-8");
-          events.push(JSON.parse(content));
-        }
-      }
-    } catch { /* skip */ }
-    return events;
+    const type = typeof query.type === "string" ? query.type : undefined;
+    const rawLimit = Number(query.limit);
+    const limit = Number.isFinite(rawLimit) && rawLimit >= 0 ? rawLimit : 50;
+
+    for (const root of this.roots) {
+      const journal = path.join(
+        episodePath(root, ref.channel, ref.series, ref.episode),
+        JOURNAL_RELATIVE_PATH,
+      );
+      try {
+        const events = parseJournal(await fs.readFile(journal, "utf-8"), { type, limit });
+        return events as unknown as Array<Record<string, unknown>>;
+      } catch { /* not in this root */ }
+    }
+    return [];
   }
 }
 
@@ -457,9 +468,10 @@ interface SrtSegment {
 /** Parse an SRT file and filter segments for a specific scene prefix. */
 function parseSrtForScene(
   srt: string,
-  sceneId: string,
-  /** Retained for callers; scene filtering is by ID prefix, not duration. */
-  _sceneDuration: number,
+  /** Where the scene begins on the episode timeline, in seconds. */
+  sceneStart: number,
+  /** How long it runs. Zero means the episode has no timing to match against. */
+  sceneDuration: number,
 ): Array<{ time: string; text: string }> {
   const segments: SrtSegment[] = [];
   const blocks = srt.trim().split(/\n\n+/);
@@ -475,31 +487,39 @@ function parseSrtForScene(
     segments.push({ index, start: timeMatch[1]!, end: timeMatch[2]!, text });
   }
 
-  // Heuristic: match captions to scene by checking if the text references
-  // scene-related content or simply return all for now (SRT spans entire video)
-  // For SRT files keyed to scene, return segments whose start time falls within
-  // the scene's duration window.
-  
-  // For now, return segments proportioned to scene index
   if (segments.length === 0) return [];
-  
-  // Simple approach: if sceneId is like s1, s2 etc, estimate time window
-  const sceneNum = parseInt(sceneId.replace(/^s/, ""), 10);
-  if (isNaN(sceneNum) || segments.length < 8) {
-    // Return all segments — whole-video SRT
-    return segments.filter(s => s.index > 0).map(s => ({
-      time: s.start,
-      text: s.text,
-    }));
-  }
 
-  // Distribute SRT segments across scenes by index proportion
-  const perScene = Math.ceil(segments.length / 8); // assume 8 scenes
-  const startIdx = (sceneNum - 1) * perScene;
-  const endIdx = sceneNum * perScene;
+  // Cues are assigned to the scene whose window contains them. This used to
+  // divide them by index across a hardcoded eight scenes —
+  // `Math.ceil(segments.length / 8) // assume 8 scenes` — so an eleven-scene
+  // episode gave its first eight scenes five cues each and scenes nine, ten and
+  // eleven none at all, indexing past the end of the list. The cues carry real
+  // timestamps and the scene carries a real window, so neither has to be
+  // guessed at.
+  const start = sceneStart;
+  const end = sceneDuration > 0 ? sceneStart + sceneDuration : Infinity;
+  const within = segments.filter((segment) => {
+    const at = srtSecondsOf(segment.start);
+    return at !== null && at >= start - CAPTION_EDGE_TOLERANCE_SECONDS && at < end;
+  });
 
-  return segments.slice(startIdx, endIdx).map(s => ({
-    time: s.start,
-    text: s.text,
-  }));
+  // A scene with no window to match against — no timing anywhere in the
+  // episode — still shows the whole transcript rather than nothing.
+  const chosen = sceneDuration > 0 ? within : segments;
+  return chosen.map((segment) => ({ time: segment.start, text: segment.text }));
+}
+
+/** A cue that begins a hair before its scene still belongs to it. */
+const CAPTION_EDGE_TOLERANCE_SECONDS = 0.001;
+
+/** `00:01:29,833` — SRT allows either a comma or a dot before the milliseconds. */
+export function srtSecondsOf(stamp: string): number | null {
+  const match = /^(\d{2}):(\d{2}):(\d{2})[.,](\d{3})$/.exec(stamp.trim());
+  if (!match) return null;
+  return (
+    Number(match[1]) * 3600
+    + Number(match[2]) * 60
+    + Number(match[3])
+    + Number(match[4]) / 1000
+  );
 }
