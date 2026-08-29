@@ -18,6 +18,12 @@ import type { GenerationInput, FalAdapterConfig } from "../src/types.js";
  * itself, so a video endpoint completed successfully with no outputs at all.
  * Here the completed payload goes to the same versioned contract that parses a
  * synchronous response, which is the whole point of converging the two.
+ *
+ * The queue speaks through two distinct endpoints, and the submit response
+ * names both: `status_url` at `.../requests/<id>/status` answers how the job is
+ * going, `response_url` at `.../requests/<id>` holds the finished payload.
+ * These tests once modelled a single URL serving both, which let the client
+ * poll the result endpoint for status and still pass.
  */
 describe("queue submission", () => {
   let server: MockServer;
@@ -47,6 +53,23 @@ describe("queue submission", () => {
     timeoutMs: 60_000,
   });
 
+  /** The paths fal serves for a queued job, and the URLs it hands back. */
+  const queue = (endpointId: string, requestId: string) => {
+    const resultPath = `/${endpointId}/requests/${requestId}`;
+    return {
+      resultPath,
+      statusPath: `${resultPath}/status`,
+      /** What the submit response carries, as fal actually sends it. */
+      urls: {
+        response_url: `${server.url}${resultPath}`,
+        status_url: `${server.url}${resultPath}/status`,
+      },
+    };
+  };
+
+  const pathsHit = (method: string): string[] =>
+    server.received.filter((r) => r.method === method).map((r) => r.path);
+
   beforeAll(async () => {
     server = new MockServer();
     await server.start();
@@ -61,22 +84,22 @@ describe("queue submission", () => {
     logs = [];
   });
 
-  it("polls until a video job completes and parses its output", async () => {
+  it("polls the status endpoint and fetches the result the queue points at", async () => {
+    const q = queue("minimax/h3/text-to-video", "req-q-1");
     server.expect("POST", "/minimax/h3/text-to-video", 200, {
       request_id: "req-q-1",
       status: "IN_QUEUE",
+      ...q.urls,
     });
-    server.expect("GET", "/minimax/h3/text-to-video/requests/req-q-1", 200, {
-      status: "IN_PROGRESS",
-    });
-    server.expect("GET", "/minimax/h3/text-to-video/requests/req-q-1", 200, {
-      status: "COMPLETED",
-      result: {
-        video: {
-          url: "https://fal.media/files/scene.mp4",
-          content_type: "video/mp4",
-          file_size: 9_100_000,
-        },
+    server.expect("GET", q.statusPath, 200, { status: "IN_PROGRESS" });
+    // A completed job reports completion and nothing else; the payload lives at
+    // the result endpoint.
+    server.expect("GET", q.statusPath, 200, { status: "COMPLETED" });
+    server.expect("GET", q.resultPath, 200, {
+      video: {
+        url: "https://fal.media/files/scene.mp4",
+        content_type: "video/mp4",
+        file_size: 9_100_000,
       },
     });
 
@@ -87,15 +110,104 @@ describe("queue submission", () => {
     expect(result.outputs[0]!.url).toBe("https://fal.media/files/scene.mp4");
     expect(result.outputs[0]!.contentType).toBe("video/mp4");
     expect(result.providerRequestId).toBe("req-q-1");
+
+    // Status twice, then the result once — and the result endpoint is never
+    // polled for status, which is what the single-URL client did.
+    expect(pathsHit("GET")).toEqual([q.statusPath, q.statusPath, q.resultPath]);
+  });
+
+  it("derives both URLs when the queue names neither", async () => {
+    // Not every endpoint returns the pointers. The derived pair must still be
+    // two distinct endpoints, not one URL used for both jobs.
+    const q = queue("minimax/h3/text-to-video", "req-q-7");
+    server.expect("POST", "/minimax/h3/text-to-video", 200, {
+      request_id: "req-q-7",
+      status: "IN_QUEUE",
+    });
+    server.expect("GET", q.statusPath, 200, { status: "COMPLETED" });
+    server.expect("GET", q.resultPath, 200, {
+      video: { url: "https://fal.media/derived.mp4", content_type: "video/mp4" },
+    });
+
+    const result = await client().submitAndWait(input());
+
+    expect(result.outputs[0]!.url).toBe("https://fal.media/derived.mp4");
+    expect(pathsHit("GET")).toEqual([q.statusPath, q.resultPath]);
+  });
+
+  it("obeys the URLs fal sends rather than the ones it could derive", async () => {
+    // fal is free to serve a job from somewhere other than the conventional
+    // path. Deriving the URL anyway would poll a job that is not this one.
+    const derived = queue("minimax/h3/text-to-video", "req-q-8");
+    server.expect("POST", "/minimax/h3/text-to-video", 200, {
+      request_id: "req-q-8",
+      status: "IN_QUEUE",
+      status_url: `${server.url}/elsewhere/req-q-8/status`,
+      response_url: `${server.url}/elsewhere/req-q-8`,
+    });
+    server.expect("GET", "/elsewhere/req-q-8/status", 200, { status: "COMPLETED" });
+    server.expect("GET", "/elsewhere/req-q-8", 200, {
+      video: { url: "https://fal.media/elsewhere.mp4", content_type: "video/mp4" },
+    });
+
+    const result = await client().submitAndWait(input());
+
+    expect(result.outputs[0]!.url).toBe("https://fal.media/elsewhere.mp4");
+    expect(pathsHit("GET")).not.toContain(derived.statusPath);
+    expect(pathsHit("GET")).not.toContain(derived.resultPath);
+  });
+
+  it("follows a result pointer the status body carries", async () => {
+    // The status response can redirect the result fetch mid-flight; that
+    // pointer wins over the one the submit response named.
+    const q = queue("minimax/h3/text-to-video", "req-q-9");
+    server.expect("POST", "/minimax/h3/text-to-video", 200, {
+      request_id: "req-q-9",
+      status: "IN_QUEUE",
+      ...q.urls,
+    });
+    server.expect("GET", q.statusPath, 200, {
+      status: "COMPLETED",
+      response_url: `${server.url}/moved/req-q-9`,
+    });
+    server.expect("GET", "/moved/req-q-9", 200, {
+      video: { url: "https://fal.media/moved.mp4", content_type: "video/mp4" },
+    });
+
+    const result = await client().submitAndWait(input());
+
+    expect(result.outputs[0]!.url).toBe("https://fal.media/moved.mp4");
+    expect(pathsHit("GET")).toContain("/moved/req-q-9");
+  });
+
+  it("takes the result inline when the status carries it", async () => {
+    // Some endpoints answer status with the payload already attached. Fetching
+    // the result endpoint as well would be a wasted round trip.
+    const q = queue("minimax/h3/text-to-video", "req-q-10");
+    server.expect("POST", "/minimax/h3/text-to-video", 200, {
+      request_id: "req-q-10",
+      status: "IN_QUEUE",
+      ...q.urls,
+    });
+    server.expect("GET", q.statusPath, 200, {
+      status: "COMPLETED",
+      result: { video: { url: "https://fal.media/inline.mp4", content_type: "video/mp4" } },
+    });
+
+    const result = await client().submitAndWait(input());
+
+    expect(result.outputs[0]!.url).toBe("https://fal.media/inline.mp4");
+    expect(pathsHit("GET")).toEqual([q.statusPath]);
   });
 
   it("records spend from the profile rather than a table beside the client", async () => {
+    const q = queue("minimax/h3/text-to-video", "req-q-2");
     server.expect("POST", "/minimax/h3/text-to-video", 200, {
       request_id: "req-q-2",
-      status: "COMPLETED",
-      result: { video: { url: "https://fal.media/a.mp4", content_type: "video/mp4" } },
+      status: "IN_QUEUE",
+      ...q.urls,
     });
-    server.expect("GET", "/minimax/h3/text-to-video/requests/req-q-2", 200, {
+    server.expect("GET", q.statusPath, 200, {
       status: "COMPLETED",
       result: { video: { url: "https://fal.media/a.mp4", content_type: "video/mp4" } },
     });
@@ -116,11 +228,13 @@ describe("queue submission", () => {
   });
 
   it("surfaces a failed job rather than waiting out the timeout", async () => {
+    const q = queue("minimax/h3/text-to-video", "req-q-3");
     server.expect("POST", "/minimax/h3/text-to-video", 200, {
       request_id: "req-q-3",
       status: "IN_QUEUE",
+      ...q.urls,
     });
-    server.expect("GET", "/minimax/h3/text-to-video/requests/req-q-3", 200, {
+    server.expect("GET", q.statusPath, 200, {
       status: "FAILED",
       error: "content policy",
     });
@@ -156,12 +270,13 @@ describe("queue submission", () => {
   });
 
   it("redacts the key when queuing, as the synchronous path does", async () => {
+    const q = queue("minimax/h3/text-to-video", "req-q-5");
     server.expect("POST", "/minimax/h3/text-to-video", 200, {
       request_id: "req-q-5",
-      status: "COMPLETED",
-      result: { video: { url: "https://fal.media/b.mp4", content_type: "video/mp4" } },
+      status: "IN_QUEUE",
+      ...q.urls,
     });
-    server.expect("GET", "/minimax/h3/text-to-video/requests/req-q-5", 200, {
+    server.expect("GET", q.statusPath, 200, {
       status: "COMPLETED",
       result: { video: { url: "https://fal.media/b.mp4", content_type: "video/mp4" } },
     });
@@ -175,10 +290,15 @@ describe("queue submission", () => {
   });
 
   it("carries images through the queue too, not only video", async () => {
-    server.expect("POST", "/fal-ai/flux/dev", 200, { request_id: "req-q-6", status: "IN_QUEUE" });
-    server.expect("GET", "/fal-ai/flux/dev/requests/req-q-6", 200, {
-      status: "COMPLETED",
-      result: { images: [{ url: "https://fal.media/i.png", content_type: "image/png" }] },
+    const q = queue("fal-ai/flux/dev", "req-q-6");
+    server.expect("POST", "/fal-ai/flux/dev", 200, {
+      request_id: "req-q-6",
+      status: "IN_QUEUE",
+      ...q.urls,
+    });
+    server.expect("GET", q.statusPath, 200, { status: "COMPLETED" });
+    server.expect("GET", q.resultPath, 200, {
+      images: [{ url: "https://fal.media/i.png", content_type: "image/png" }],
     });
 
     const result = await client().submitAndWait(input("fal-ai/flux/dev"));
