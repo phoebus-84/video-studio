@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { extname, join } from "node:path";
-import { resolveConfig } from "./config.js";
+import { resolveConfig, DEFAULT_TTS_WORKER_URL } from "./config.js";
 import { guardEpisodePath } from "./trust-guards.js";
 import {
   loadVectorAnimationSpec,
@@ -39,6 +39,7 @@ import {
   buildNarrationManifest,
   findFinalWav,
   naturalSegmentOrder,
+  silenceFromLegacyManifest,
   validateNarrationManifest,
   writeNarrationManifest,
   type NarrationSegmentInput,
@@ -166,7 +167,7 @@ async function generateImage(
 // ── TTS synthesis ──────────────────────────────────────────────────────────
 
 async function synthesizeSpeech(text: string, voice: string, speed: number, instruct?: string): Promise<{ audioPath: string; durationSec: number }> {
-  const ttsUrl = process.env.AVG_TTS_WORKER_URL || "http://127.0.0.1:5197";
+  const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
 
   const reqBody: Record<string, unknown> = { text, voice, speed };
   if (instruct) reqBody.instruct = instruct;
@@ -890,10 +891,22 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           );
         }
 
+        // Silence at either end is part of the mastered WAV, and a manifest
+        // that omits it disagrees with the audio it describes by exactly that
+        // much. An existing manifest records it; so does the first segment's
+        // start offset.
+        let existing: unknown;
+        try {
+          existing = JSON.parse(readFileSync(
+            join(dir, "artifacts", "narration", "narration-manifest.json"), "utf-8",
+          ));
+        } catch { /* no earlier manifest to learn from */ }
+
         const document = buildNarrationManifest(dir, {
           episodeId: `${params.channel}/${params.series}/${params.episode}`,
           segments,
           finalWavPath: findFinalWav(dir, params.finalWavPath),
+          ...silenceFromLegacyManifest(existing),
         });
         const written = writeNarrationManifest(dir, document);
 
@@ -1206,7 +1219,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
 
       // TTS
       try {
-        const ttsUrl = process.env.AVG_TTS_WORKER_URL || "http://127.0.0.1:5197";
+        const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
         const res = await fetch(`${ttsUrl}/health`);
         const health = await res.json() as any;
         caps["text-to-speech"] = {

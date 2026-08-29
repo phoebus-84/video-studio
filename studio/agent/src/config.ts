@@ -65,7 +65,17 @@ export interface ServiceHealth {
 
 const DEFAULT_LIBRARY_ROOT = path.resolve(process.cwd(), "library");
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:5198";
-const DEFAULT_TTS_WORKER_URL = "http://127.0.0.1:5199";
+/**
+ * Where the voice worker listens.
+ *
+ * This said 5199 while the two places that actually synthesize speech said
+ * 5197, and mise binds the worker to 5197 precisely so the studio and the
+ * worker agree. The health check was therefore probing a port nothing listens
+ * on: `pva_health` reported the TTS worker unreachable while synthesis worked
+ * perfectly, which reads as a broken worker rather than a wrong number.
+ * Exported so the synthesis paths share it instead of repeating it.
+ */
+export const DEFAULT_TTS_WORKER_URL = "http://127.0.0.1:5197";
 
 /**
  * Read environment overrides (never logs values).
