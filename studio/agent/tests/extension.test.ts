@@ -129,7 +129,7 @@ describe("extensions/index.ts — tool registration", () => {
   });
 
   it("registers the expected suite of production tools", () => {
-    expect(mockPi.tools.length).toBe(35);
+    expect(mockPi.tools.length).toBe(36);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "pva_approve",
@@ -167,6 +167,7 @@ describe("extensions/index.ts — tool registration", () => {
       "pva_synthesize_nonverbal_audio",
       "pva_synthesize_speech",
       "pva_version",
+      "pva_write_narration_manifest",
     ]);
   });
 

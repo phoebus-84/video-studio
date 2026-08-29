@@ -33,6 +33,15 @@ import {
   DEFAULT_FAL_MODEL,
   resolveImageProvider,
 } from "./image-provider.js";
+import { episodePath } from "@studio/contracts/src/layout.mjs";
+import {
+  assembleNarrationSegments,
+  buildNarrationManifest,
+  findFinalWav,
+  validateNarrationManifest,
+  writeNarrationManifest,
+  type NarrationSegmentInput,
+} from "./narration-manifest.js";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
@@ -188,6 +197,19 @@ export function canonicalNarrationPath(episodeDir: string): string | null {
   }
   const resolved = finalWav.path.startsWith("/") ? finalWav.path : join(episodeDir, finalWav.path);
   if (!existsSync(resolved)) throw new Error(`Canonical narration final WAV is missing: ${resolved}`);
+
+  // Composition needs only the final WAV, so a manifest that names one is
+  // usable here even when the rest of it is not canonical. Everything else
+  // reading this episode needs `entries`, and skips a manifest without them
+  // without saying so — which is how a manifest describing eleven complete
+  // segments read, everywhere but here, as no narration at all.
+  const problems = validateNarrationManifest(manifest);
+  if (problems.length > 0) {
+    console.warn(
+      `narration-manifest.json is not canonical and will be ignored by the studio: ${problems.join("; ")}. `
+      + "Run pva_write_narration_manifest to rewrite it.",
+    );
+  }
   return resolved;
 }
 
@@ -284,8 +306,12 @@ async function composeEpisodeVideo(
 export function registerCapabilityTools(pi: ExtensionAPI): void {
   const LIBRARY_ROOT = process.env.AVG_LIBRARY_ROOT || join(process.cwd(), "library");
 
+  // Layout 2 puts a series inside `series/` and an episode inside `episodes/`.
+  // Joining the four names by hand was the pre-migration layout, so every tool
+  // here wrote its images, narration and renders beside the episode rather than
+  // into it — coherent only while workspace authoring made the same mistake.
   function episodeDir(channel: string, series: string, episode: string): string {
-    return join(LIBRARY_ROOT, channel, series, episode);
+    return episodePath(LIBRARY_ROOT, channel, series, episode);
   }
 
   // --- Tool: pva_render_vector_animation ---------------------------------
@@ -768,6 +794,86 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: `✅ ${params.sceneId} — ${result.durationSec.toFixed(1)}s → ${destPath}` }],
           details: { audioPath: destPath, durationSec: result.durationSec },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  // --- Tool: pva_write_narration_manifest ---------------------------------
+
+  pi.registerTool({
+    name: "pva_write_narration_manifest",
+    label: "Write Narration Manifest",
+    description:
+      "Write the canonical artifacts/narration/narration-manifest.json for an episode, measuring each WAV. Call this after synthesizing narration: the studio, the scene spine, and the timing and caption stages all read the episode's narration through this file, and skip it silently if it is not canonical. Segments default to the WAVs already on disk, or to the segments of a manifest written in an older shape.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      segments: Type.Optional(Type.Array(
+        Type.Object({
+          segmentId: Type.String({ description: "Segment ID (e.g. s1, s4a)" }),
+          wavPath: Type.String({ description: "Episode-relative path to the segment WAV" }),
+          text: Type.Optional(Type.String({ description: "Spoken text; becomes the caption cue" })),
+          pauseAfterMs: Type.Optional(Type.Integer({ minimum: 0, description: "Silence after this segment" })),
+        }),
+        { description: "Segments in playback order. Defaults to what the episode already has." },
+      )),
+      finalWavPath: Type.Optional(Type.String({ description: "Episode-relative path to the assembled narration WAV" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const dir = episodeDir(params.channel, params.series, params.episode);
+
+        // Every path in the document names a file inside the episode, so each
+        // one is caller-supplied input that has to be checked before it is read.
+        const explicit = params.segments as NarrationSegmentInput[] | undefined;
+        for (const relative of [
+          ...(explicit ?? []).map((s) => s.wavPath),
+          ...(params.finalWavPath ? [params.finalWavPath] : []),
+        ]) {
+          const guard = await guardEpisodePath(
+            LIBRARY_ROOT, params.channel, params.series, params.episode, relative,
+          );
+          if (!guard.allowed) throw new Error(guard.reason ?? `Path rejected: ${relative}`);
+        }
+
+        const segments = assembleNarrationSegments(dir, explicit);
+        if (segments.length === 0) {
+          throw new Error(
+            "No narration segments found. Synthesize speech first, or pass segments explicitly.",
+          );
+        }
+
+        const document = buildNarrationManifest(dir, {
+          episodeId: `${params.channel}/${params.series}/${params.episode}`,
+          segments,
+          finalWavPath: findFinalWav(dir, params.finalWavPath),
+        });
+        const written = writeNarrationManifest(dir, document);
+
+        const entries = document.entries as Array<{ wav: { durationSeconds: number } }>;
+        const captions = (document.captions as unknown[] | undefined)?.length ?? 0;
+        const spoken = entries.reduce((total, e) => total + e.wav.durationSeconds, 0);
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `✅ ${entries.length} segments (${spoken.toFixed(1)}s spoken, ${captions} captions) → ${written}`,
+          }],
+          details: {
+            manifestPath: written,
+            segmentCount: entries.length,
+            captionCount: captions,
+            spokenSeconds: spoken,
+            finalWav: (document.finalWav as { path?: string } | undefined)?.path ?? null,
+          },
         };
       } catch (err) {
         return {
