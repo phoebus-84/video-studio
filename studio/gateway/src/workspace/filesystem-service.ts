@@ -23,6 +23,7 @@ import {
   episodePath,
 } from "@studio/contracts/src/layout.mjs";
 import { libraryUrlPath } from "@studio/contracts/src/library-url.mjs";
+import { materializeSceneSpine, readSceneSpine } from "./scene-spine.js";
 
 /**
  * Content directories at a level.
@@ -143,14 +144,21 @@ export class FileSystemWorkspaceService implements WorkspaceService {
           updatedAt: new Date().toISOString(),
         };
 
-        // Try to read episode.json for richer data (in artifacts/ subdir)
+        // The scene list is derived from whatever production left on disk, not
+        // read out of artifacts/episode.json. That file is authored empty and
+        // nothing ever wrote scenes back into it, so requiring it meant a
+        // finished episode displayed no scenes at all — the enrichment below
+        // was correct, it simply had nothing to enrich.
+        //
+        // Materialising first gives the studio's own edits somewhere to land:
+        // it saves a prompt by finding the scene by ID in that file, and an
+        // empty file drops the write silently. It only ever fills a gap.
         try {
-          const metaPath = path.join(epPath, "artifacts", "episode.json");
-          const raw = await fs.readFile(metaPath, "utf-8");
-          const meta = JSON.parse(raw);
-          // episode.json is a scenes array — wrap it
-          const rawScenes = Array.isArray(meta) ? meta : (meta.scenes ?? []);
+          await materializeSceneSpine(epPath);
+        } catch { /* Advisory. A read-only library still displays correctly. */ }
+        const rawScenes = await readSceneSpine(epPath);
 
+        try {
           // ── Enrich each scene with narration, asset, captions, and transition data ──
           const canonicalNarration = await loadNarrationManifest(epPath);
           const narrationBySegment = new Map(

@@ -114,4 +114,64 @@ describe("FileSystemWorkspaceService", () => {
       expect(url).not.toContain("/library/wordless-comedy/give-me-time/");
     }
   });
+
+  // artifacts/episode.json is authored once, empty, and nothing ever wrote
+  // scenes back into it. Building the scene list from that file alone meant a
+  // finished episode displayed nothing: the enrichment below was right, it just
+  // had no scenes to enrich.
+  it("shows the scenes of an episode whose episode.json was never written", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
+    roots.push(root);
+    const episode = join(root, "wordless-comedy", "series", "give-me-time", "episodes", "the-run-up");
+    await Promise.all([
+      mkdir(join(episode, "artifacts", "narration"), { recursive: true }),
+      mkdir(join(episode, "assets", "images"), { recursive: true }),
+      mkdir(join(episode, "output"), { recursive: true }),
+    ]);
+    // Exactly as workspace authoring leaves it.
+    await writeFile(join(episode, "artifacts", "episode.json"), JSON.stringify({ scenes: [] }));
+    await writeFile(join(episode, "artifacts", "timing.json"), JSON.stringify({
+      version: 2,
+      scenes: [
+        { sceneId: "s1", startSeconds: 0, durationSeconds: 4 },
+        { sceneId: "s2", startSeconds: 4, durationSeconds: 6 },
+      ],
+    }));
+    await writeFile(join(episode, "assets", "images", "s1.png"), "png");
+    await writeFile(join(episode, "assets", "images", "s2.png"), "png");
+    await writeFile(join(episode, "artifacts", "narration", "s1.wav"), "wav");
+    await writeFile(join(episode, "artifacts", "narration", "s1.json"), JSON.stringify({ duration_sec: 4 }));
+    await writeFile(join(episode, "output", "render-1.mp4"), "media");
+
+    const workspace = new FileSystemWorkspaceService([root]);
+    const detail = await workspace.getEpisode("wordless-comedy", "give-me-time", "the-run-up") as any;
+
+    expect(detail.scenes.map((s: any) => s.id)).toEqual(["s1", "s2"]);
+    // And the enrichment lands on them, which is the whole point.
+    const prefix = "/library/wordless-comedy/series/give-me-time/episodes/the-run-up";
+    expect(detail.scenes[0].asset.url).toBe(`${prefix}/assets/images/s1.png`);
+    expect(detail.scenes[0].narration.url).toBe(`${prefix}/artifacts/narration/s1.wav`);
+    expect(detail.render.url).toBe(`${prefix}/output/render-1.mp4`);
+  });
+
+  // The render and the QA report were discovered inside the same try block as
+  // the episode.json read, so an episode without that file lost them too --
+  // a finished MP4 reported as no render at all.
+  it("still finds the render when there is no episode.json", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
+    roots.push(root);
+    const episode = join(root, "wordless-comedy", "series", "give-me-time", "episodes", "the-run-up");
+    await Promise.all([
+      mkdir(join(episode, "assets", "images"), { recursive: true }),
+      mkdir(join(episode, "output"), { recursive: true }),
+    ]);
+    await writeFile(join(episode, "assets", "images", "s1.png"), "png");
+    await writeFile(join(episode, "output", "render-1.mp4"), "media");
+
+    const workspace = new FileSystemWorkspaceService([root]);
+    const detail = await workspace.getEpisode("wordless-comedy", "give-me-time", "the-run-up") as any;
+
+    expect(detail.scenes.map((s: any) => s.id)).toEqual(["s1"]);
+    expect(detail.render.file).toBe("render-1.mp4");
+  });
 });
