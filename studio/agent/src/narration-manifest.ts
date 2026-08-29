@@ -56,6 +56,16 @@ export interface NarrationManifestInput {
   segments: NarrationSegmentInput[];
   /** Episode-relative path to the assembled narration. */
   finalWavPath?: string;
+  /**
+   * Silence before the first word and after the last.
+   *
+   * The contract had no way to say a narration opens with a beat of quiet, so
+   * an episode mastered with a quarter second at each end could never satisfy
+   * the rule that speech plus pauses equals the measured final — it was
+   * rejected for being correctly mastered.
+   */
+  leadInSilenceSeconds?: number;
+  leadOutSilenceSeconds?: number;
 }
 
 // ── WAV facts ───────────────────────────────────────────────────────────────
@@ -142,7 +152,11 @@ export function buildNarrationManifest(
   const seen = new Set<string>();
   const entries: Record<string, unknown>[] = [];
   const captions: Record<string, unknown>[] = [];
-  let cursor = 0;
+  const leadIn = Math.max(0, input.leadInSilenceSeconds ?? 0);
+  const leadOut = Math.max(0, input.leadOutSilenceSeconds ?? 0);
+  // The timeline starts after the lead-in silence, so the first caption
+  // appears when the first word is spoken rather than at zero.
+  let cursor = leadIn;
 
   input.segments.forEach((segment, index) => {
     if (!segment.segmentId) throw new Error(`Segment ${index} has no segmentId`);
@@ -183,6 +197,8 @@ export function buildNarrationManifest(
   if (input.episodeId) document.episodeId = input.episodeId;
   if (input.sourceRevision) document.sourceRevision = input.sourceRevision;
   if (captions.length > 0) document.captions = captions;
+  if (leadIn > 0) document.leadInSilenceSeconds = leadIn;
+  if (leadOut > 0) document.leadOutSilenceSeconds = leadOut;
 
   if (input.finalWavPath) {
     const recorded = episodeRelative(episodeDir, input.finalWavPath);
@@ -290,6 +306,36 @@ export function segmentsFromLegacyManifest(document: unknown): NarrationSegmentI
       pauseAfterMs: Math.round(gap * 1000),
     };
   });
+}
+
+/**
+ * Lead-in and lead-out silence recovered from an episode's existing manifest.
+ *
+ * The improvised shape recorded these as `introSilenceSeconds` and
+ * `outroSilenceSeconds`, and the first segment's `startSeconds` says the same
+ * thing about the lead-in. Dropping them would make the manifest disagree with
+ * the WAV it describes by exactly that much.
+ */
+export function silenceFromLegacyManifest(
+  document: unknown,
+): { leadInSilenceSeconds?: number; leadOutSilenceSeconds?: number } {
+  const doc = document as Record<string, unknown> | null;
+  if (!doc || typeof doc !== "object") return {};
+
+  const number = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+
+  const first = Array.isArray(doc.segments)
+    ? (doc.segments[0] as Record<string, unknown> | undefined)
+    : undefined;
+
+  const leadIn = number(doc.introSilenceSeconds) ?? number(first?.startSeconds);
+  const leadOut = number(doc.outroSilenceSeconds);
+
+  const out: { leadInSilenceSeconds?: number; leadOutSilenceSeconds?: number } = {};
+  if (leadIn !== undefined && leadIn > 0) out.leadInSilenceSeconds = leadIn;
+  if (leadOut !== undefined && leadOut > 0) out.leadOutSilenceSeconds = leadOut;
+  return out;
 }
 
 /** Narration texts the studio persists, keyed by segment. */

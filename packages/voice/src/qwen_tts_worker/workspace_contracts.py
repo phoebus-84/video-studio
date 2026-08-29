@@ -155,7 +155,9 @@ def canonical_narration_manifest(
     if [entry.segment_id for entry in manifest.entries] != [segment.segment_id for segment in segments]:
         raise WorkspaceContractError("segment plan order must exactly match narration manifest")
     captions: list[dict[str, Any]] = []
-    cursor = 0.0
+    # The timeline starts after the lead-in silence, so the first caption
+    # appears when the first word is spoken rather than at zero.
+    cursor = manifest.lead_in_silence_seconds
     entries = []
     for index, entry in enumerate(manifest.entries, 1):
         segment = by_id[entry.segment_id]
@@ -180,9 +182,16 @@ def canonical_narration_manifest(
             }
         )
         cursor = end + entry.pause_after_ms / 1000
-    if abs(cursor - manifest.final_wav.duration_seconds) > 1 / manifest.final_wav.sample_rate:
+    # The last segment's trailing pause and the lead-out silence are the same
+    # quiet, so only the longer of the two is heard.
+    accounted = max(cursor, cursor - entries[-1]["pauseAfterMs"] / 1000 + manifest.lead_out_silence_seconds)
+    if abs(accounted - manifest.final_wav.duration_seconds) > 1 / manifest.final_wav.sample_rate:
         raise WorkspaceContractError(
-            "manifest speech/pause duration does not match measured final WAV"
+            "manifest speech/pause duration does not match measured final WAV: "
+            f"accounted for {accounted:.3f}s (including "
+            f"{manifest.lead_in_silence_seconds:.3f}s lead-in and "
+            f"{manifest.lead_out_silence_seconds:.3f}s lead-out) against a "
+            f"{manifest.final_wav.duration_seconds:.3f}s final WAV"
         )
     return {
         "schemaVersion": manifest.schema_version,
@@ -192,6 +201,8 @@ def canonical_narration_manifest(
         "entries": entries,
         "masteringProfileId": manifest.mastering_profile_id,
         "finalWav": canonical_wav(manifest.final_wav),
+        "leadInSilenceSeconds": manifest.lead_in_silence_seconds,
+        "leadOutSilenceSeconds": manifest.lead_out_silence_seconds,
         "mastering": {
             "integratedLufs": manifest.mastering.integrated_lufs,
             "truePeakDbtp": manifest.mastering.true_peak_dbtp,

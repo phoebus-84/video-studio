@@ -11,6 +11,7 @@ import {
   findFinalWav,
   writeNarrationManifest,
   naturalSegmentOrder,
+  silenceFromLegacyManifest,
 } from "../src/narration-manifest.js";
 
 /**
@@ -160,6 +161,48 @@ describe("narration manifest writer", () => {
 
     it("refuses to build nothing", () => {
       expect(() => buildNarrationManifest(dir, { segments: [] })).toThrow("at least one segment");
+    });
+  });
+
+  describe("silence at either end", () => {
+    it("starts the timeline after the lead-in, not at zero", () => {
+      const doc = buildNarrationManifest(dir, {
+        segments: [{ segmentId: "s1", wavPath: seed("s1", 2), text: "First." }],
+        leadInSilenceSeconds: 0.25,
+        leadOutSilenceSeconds: 0.25,
+      });
+      const captions = doc.captions as Array<Record<string, number>>;
+      expect(captions[0]!.startSeconds).toBeCloseTo(0.25, 5);
+      expect(captions[0]!.endSeconds).toBeCloseTo(2.25, 5);
+      expect(doc.leadInSilenceSeconds).toBe(0.25);
+      expect(doc.leadOutSilenceSeconds).toBe(0.25);
+    });
+
+    it("says nothing about silence when there is none", () => {
+      const doc = buildNarrationManifest(dir, {
+        segments: [{ segmentId: "s1", wavPath: seed("s1", 2) }],
+      });
+      expect(doc.leadInSilenceSeconds).toBeUndefined();
+      expect(doc.leadOutSilenceSeconds).toBeUndefined();
+    });
+
+    it("recovers the silence an older manifest recorded", () => {
+      // The improvised shape wrote introSilenceSeconds/outroSilenceSeconds.
+      expect(silenceFromLegacyManifest({
+        introSilenceSeconds: 0.25,
+        outroSilenceSeconds: 0.25,
+        segments: [{ sceneId: "s1", startSeconds: 0.25 }],
+      })).toEqual({ leadInSilenceSeconds: 0.25, leadOutSilenceSeconds: 0.25 });
+    });
+
+    it("reads the lead-in from the first segment's start when it is not named", () => {
+      expect(silenceFromLegacyManifest({ segments: [{ sceneId: "s1", startSeconds: 0.4 }] }))
+        .toEqual({ leadInSilenceSeconds: 0.4 });
+    });
+
+    it("reports no silence for a narration that starts on the first word", () => {
+      expect(silenceFromLegacyManifest({ segments: [{ sceneId: "s1", startSeconds: 0 }] })).toEqual({});
+      expect(silenceFromLegacyManifest(null)).toEqual({});
     });
   });
 
