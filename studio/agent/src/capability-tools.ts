@@ -38,10 +38,12 @@ import {
   assembleNarrationSegments,
   buildNarrationManifest,
   findFinalWav,
+  naturalSegmentOrder,
   validateNarrationManifest,
   writeNarrationManifest,
   type NarrationSegmentInput,
 } from "./narration-manifest.js";
+import { concatScript, resolveSceneFrames } from "./scene-images.js";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
@@ -223,23 +225,33 @@ async function composeEpisodeVideo(
   const narrationManifestPath = join(episodeDir, "artifacts", "narration", "narration-manifest.json");
   narrationFile = canonicalNarrationPath(episodeDir) ?? narrationFile;
 
-  // Use Python PIL for image preprocessing via a quick inline call
   const { execSync: es } = await import("node:child_process");
 
-  // Simple approach: use ffmpeg directly with still images and audio
-  const imgFiles = (await import("node:fs")).readdirSync(scenesDir)
-    .filter(f => f.match(/^s\d+\.jpg$/))
-    .sort();
-
-  if (imgFiles.length === 0) throw new Error("No scene images found");
+  // The scenes to render, each with the time it is on screen. Selecting them
+  // used to be `filter(f => f.match(/^s\d+\.jpg$/)).sort()`, which found no
+  // images at all in an episode drawn as PNG, dropped any scene numbered `s4a`,
+  // and ordered `s10` between `s1` and `s2`.
+  const frames = resolveSceneFrames(episodeDir);
+  if (frames.length === 0) {
+    const present = existsSync(scenesDir)
+      ? (await import("node:fs")).readdirSync(scenesDir).length
+      : 0;
+    throw new Error(
+      present > 0
+        ? `No scene images found in assets/images: ${present} file(s) are there, but none are named like a scene (s1.png, s4a.jpg, …)`
+        : "No scene images found in assets/images",
+    );
+  }
 
   // Concatenate scene narration files if present
   const narrationDir = join(episodeDir, "artifacts", "narration");
   if (!existsSync(narrationManifestPath) && existsSync(narrationDir) && !existsSync(narrationFile)) {
     console.warn("DEPRECATED: composing narration by scene WAV filenames; write narration-manifest.json");
+    // Same defect as the images: `^s\d+\.wav$` silently drops the narration for
+    // a scene numbered `s4a`, leaving the audio shorter than the picture.
     const wavFiles = (await import("node:fs")).readdirSync(narrationDir)
-      .filter(f => f.match(/^s\d+\.wav$/))
-      .sort((a, b) => Number(a.match(/\d+/)?.[0] ?? 0) - Number(b.match(/\d+/)?.[0] ?? 0));
+      .filter(f => /^(?:s|scene-?)\d+[a-z]?\.wav$/i.test(f))
+      .sort((a, b) => naturalSegmentOrder(a.replace(/\.wav$/i, ""), b.replace(/\.wav$/i, "")));
     if (wavFiles.length > 0) {
       const concatList = join(episodeDir, "artifacts", "narration", "concat.txt");
       const listContent = wavFiles.map(f => `file '${join(narrationDir, f)}'`).join("\n");
@@ -248,31 +260,58 @@ async function composeEpisodeVideo(
     }
   }
 
-  // Build frame PNGs
+  // Normalise every scene to one frame size, whatever it was drawn at.
   const frameDir = join(episodeDir, "artifacts", "frames");
   mkdirSync(frameDir, { recursive: true });
 
-  // Convert jpgs to numbered png frames
-  for (let i = 0; i < imgFiles.length; i++) {
-    const src = join(scenesDir, imgFiles[i]!);
-    const dst = join(frameDir, `frame${String(i + 1).padStart(3, "0")}.png`);
-    if (!existsSync(dst)) {
-      es(`ffmpeg -y -i "${src}" -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2" -frames:v 1 "${dst}" 2>/dev/null`);
+  // Run through spawnSync rather than a shell string: these paths come from
+  // the episode directory, and a filename holding a quote would otherwise be
+  // pasted straight into a command line.
+  const ffmpeg = (args: string[]): void => {
+    const result = spawnSync("ffmpeg", args, { encoding: "utf-8" });
+    if (result.status !== 0) {
+      throw new Error(`FFmpeg failed: ${(result.stderr || result.stdout || "").trim().slice(-800)}`);
     }
+  };
+
+  const normalized: Array<{ path: string; durationSeconds: number }> = [];
+  for (const [index, frame] of frames.entries()) {
+    const src = join(scenesDir, frame.file);
+    const dst = join(frameDir, `frame${String(index + 1).padStart(3, "0")}.png`);
+    if (!existsSync(dst)) {
+      ffmpeg([
+        "-y", "-i", src,
+        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+        "-frames:v", "1", dst,
+      ]);
+    }
+    normalized.push({ path: dst, durationSeconds: frame.durationSeconds });
   }
 
-  // Compose video with narration
+  // A concat script rather than a fixed framerate: `-framerate 1/10` holds
+  // every scene for ten seconds whatever its narration says, so the picture
+  // and the audio drift apart and `-shortest` amputates whichever ends first.
+  const concatPath = join(frameDir, "frames.concat.txt");
+  (await import("node:fs")).writeFileSync(concatPath, concatScript(normalized));
+
   const args = [
     "-y",
-    "-framerate", "1/10",
-    "-i", `${frameDir}/frame%03d.png`,
+    "-f", "concat",
+    "-safe", "0",
+    "-i", concatPath,
   ];
+
+  // The concat script repeats its final entry so the closing scene is not one
+  // frame long, and that repeat is then held for a further beat of its own.
+  // Capping the output at the scenes' own total trims it back off.
+  const sceneTotalSeconds = normalized.reduce((total, f) => total + f.durationSeconds, 0);
 
   if (existsSync(narrationFile)) {
     args.push("-i", narrationFile);
   }
 
   args.push(
+    "-t", sceneTotalSeconds.toFixed(6),
     "-vf", "fps=30,format=yuv420p",
     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
     "-pix_fmt", "yuv420p", "-movflags", "+faststart",
@@ -283,7 +322,7 @@ async function composeEpisodeVideo(
   }
 
   args.push(outputPath);
-  es(`ffmpeg ${args.join(" ")} 2>/dev/null`);
+  ffmpeg(args);
 
   // Probe duration
   const probeOut = es(
