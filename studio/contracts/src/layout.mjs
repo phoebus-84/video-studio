@@ -29,14 +29,19 @@
 
 import { join } from "node:path";
 
+/* The container names are shared with the browser, which cannot import this
+   module because of `node:path` above. They are defined once, next to the URL
+   builder that needs them, and re-exported here so on-disk and in-URL layout
+   cannot drift apart. */
+import {
+  SERIES_CONTAINER,
+  EPISODES_CONTAINER,
+} from "./library-url.mjs";
+
+export { SERIES_CONTAINER, EPISODES_CONTAINER };
+
 /** Current layout version, recorded in each workspace contract. */
 export const LAYOUT_VERSION = 2;
-
-/** Directory inside a channel that holds its series. */
-export const SERIES_CONTAINER = "series";
-
-/** Directory inside a series that holds its episodes. */
-export const EPISODES_CONTAINER = "episodes";
 
 /**
  * Knowledge folders created at the channel level.

@@ -19,6 +19,10 @@ composed.json
 .beads/*.gate.lock
 .beads/embeddeddolt/
 
+# Voice scratch: reference clips, cloned samples and worker logs. Generated
+# media is not committed (ADR-0021), and these are working files besides.
+packages/voice/tmp/
+
 # Python (packages/voice)
 .venv/
 __pycache__/

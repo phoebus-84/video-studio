@@ -20,7 +20,60 @@ import { spawnSync } from "node:child_process";
 const ROOT = resolve(import.meta.dirname, "..");
 
 /** Workspaces whose `exports` resolve into `dist/`. */
-const REQUIRED = ["packages/video-composer", "studio/runtime"];
+const REQUIRED = ["packages/fal-media", "packages/video-composer", "studio/runtime"];
+
+/**
+ * Nothing must depend on a `dist/` that install does not build.
+ *
+ * `@av/fal-media` publishes through `dist/`, the agent began importing it, and
+ * it was not on this list. Every existing checkout already had a `dist/` from
+ * some earlier build, so it resolved everywhere it was tried and failed only on
+ * a fresh clone — where `tsc` reported `Cannot find module '@av/fal-media'`,
+ * and then a second, unrelated-looking implicit-`any` error from the inference
+ * that module was carrying.
+ *
+ * The list stays explicit, for the reason above. This only refuses to let a new
+ * omission be discovered by CI on someone else's machine.
+ */
+function checkListIsComplete(workspaces) {
+  const declared = new Set(REQUIRED);
+  const missing = [];
+
+  for (const [dir, pkg] of workspaces) {
+    const publishesDist = JSON.stringify(pkg.exports ?? pkg.main ?? "").includes("dist/");
+    if (!publishesDist || declared.has(dir)) continue;
+
+    const dependents = workspaces
+      .filter(([otherDir, other]) =>
+        otherDir !== dir
+        && Object.keys({ ...other.dependencies, ...other.devDependencies }).includes(pkg.name))
+      .map(([, other]) => other.name);
+
+    if (dependents.length > 0) missing.push({ dir, name: pkg.name, dependents });
+  }
+
+  if (missing.length === 0) return;
+  for (const { dir, name, dependents } of missing) {
+    console.error(
+      `${name} publishes through dist/ and is imported by ${dependents.join(", ")}, `
+      + `but "${dir}" is not in REQUIRED. A fresh clone cannot resolve it.`,
+    );
+  }
+  process.exit(1);
+}
+
+function allWorkspaces() {
+  const root = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8"));
+  return (root.workspaces ?? []).map((dir) => {
+    try {
+      return [dir, JSON.parse(readFileSync(join(ROOT, dir, "package.json"), "utf-8"))];
+    } catch {
+      return null;
+    }
+  }).filter((entry) => entry !== null);
+}
+
+checkListIsComplete(allWorkspaces());
 
 let failed = 0;
 

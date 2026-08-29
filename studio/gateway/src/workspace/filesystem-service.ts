@@ -16,10 +16,15 @@ import { loadNarrationManifest } from "../runtime/narration-manifest.js";
 import {
   SERIES_CONTAINER,
   EPISODES_CONTAINER,
+  channelPath,
   seriesContainerPath,
+  seriesPath,
   episodesContainerPath,
   episodePath,
 } from "@studio/contracts/src/layout.mjs";
+import { libraryUrlPath } from "@studio/contracts/src/library-url.mjs";
+import { materializeSceneSpine, readSceneSpine } from "./scene-spine.js";
+import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 
 /**
  * Content directories at a level.
@@ -121,6 +126,13 @@ export class FileSystemWorkspaceService implements WorkspaceService {
   async getEpisode(channel: string, series: string, episode: string): Promise<EpisodeDetail | null> {
     for (const root of this.roots) {
       const epPath = episodePath(root, channel, series, episode);
+      // Every asset URL below goes through this. Hand-built template literals
+      // here once omitted the `series/` and `episodes/` containers, so the
+      // studio requested layout-1 paths and got 404 on every image, narration
+      // clip and render — which in the browser reads as "the asset was never
+      // generated" rather than "the URL is wrong".
+      const urlFor = (relative: string): string =>
+        libraryUrlPath({ channel, series, episode }, relative) ?? "";
       try {
         await fs.access(epPath);
         const status = await this.detectStatus(epPath);
@@ -133,14 +145,21 @@ export class FileSystemWorkspaceService implements WorkspaceService {
           updatedAt: new Date().toISOString(),
         };
 
-        // Try to read episode.json for richer data (in artifacts/ subdir)
+        // The scene list is derived from whatever production left on disk, not
+        // read out of artifacts/episode.json. That file is authored empty and
+        // nothing ever wrote scenes back into it, so requiring it meant a
+        // finished episode displayed no scenes at all — the enrichment below
+        // was correct, it simply had nothing to enrich.
+        //
+        // Materialising first gives the studio's own edits somewhere to land:
+        // it saves a prompt by finding the scene by ID in that file, and an
+        // empty file drops the write silently. It only ever fills a gap.
         try {
-          const metaPath = path.join(epPath, "artifacts", "episode.json");
-          const raw = await fs.readFile(metaPath, "utf-8");
-          const meta = JSON.parse(raw);
-          // episode.json is a scenes array — wrap it
-          const rawScenes = Array.isArray(meta) ? meta : (meta.scenes ?? []);
+          await materializeSceneSpine(epPath);
+        } catch { /* Advisory. A read-only library still displays correctly. */ }
+        const rawScenes = await readSceneSpine(epPath);
 
+        try {
           // ── Enrich each scene with narration, asset, captions, and transition data ──
           const canonicalNarration = await loadNarrationManifest(epPath);
           const narrationBySegment = new Map(
@@ -161,7 +180,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
               enriched.narration = {
                 segmentId: canonicalEntry.segmentId,
                 file: path.basename(canonicalEntry.wavPath),
-                url: `/library/${channel}/${series}/${episode}/${canonicalEntry.wavPath}`,
+                url: urlFor(canonicalEntry.wavPath),
                 durationSeconds: canonicalEntry.durationSeconds,
                 pauseAfterMs: canonicalEntry.pauseAfterMs,
                 acceptedAttemptId: canonicalEntry.acceptedAttemptId,
@@ -180,7 +199,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
                 try { wavStat = await fs.stat(wavPath); } catch {}
                 enriched.narration = {
                   file: `${sid}.wav`,
-                  url: `/library/${channel}/${series}/${episode}/artifacts/narration/${sid}.wav`,
+                  url: urlFor(`artifacts/narration/${sid}.wav`),
                   durationSeconds: (narMeta.duration_sec as number) ?? scene.durationSeconds ?? 0,
                   voice: (narMeta.voice as string) || "default",
                   jobId: narMeta.job_id as string,
@@ -214,7 +233,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
                   const stat = await fs.stat(videoPath);
                   foundAsset = {
                     file: `${sid}.${ext}`,
-                    url: `/library/${channel}/${series}/${episode}/assets/tapes/${sid}.${ext}`,
+                    url: urlFor(`assets/tapes/${sid}.${ext}`),
                     size: stat.size,
                     generatedAt: stat.mtime.toISOString(),
                     kind: "video",
@@ -232,7 +251,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
                       const stat = await fs.stat(imgPath);
                       foundAsset = {
                         file: `${sid}.${ext}`,
-                        url: `/library/${channel}/${series}/${episode}/${path.relative(epPath, path.dirname(imgPath))}/${sid}.${ext}`,
+                        url: urlFor(`${path.relative(epPath, path.dirname(imgPath))}/${sid}.${ext}`),
                         size: stat.size,
                         generatedAt: stat.mtime.toISOString(),
                         kind: "image",
@@ -252,7 +271,11 @@ export class FileSystemWorkspaceService implements WorkspaceService {
             try {
               const srtPath = path.join(epPath, "artifacts", "captions.srt");
               const srtRaw = await fs.readFile(srtPath, "utf-8");
-              const captions = parseSrtForScene(srtRaw, sid, scene.durationSeconds as number || 0);
+              const captions = parseSrtForScene(
+                srtRaw,
+                (scene.startSeconds as number) || 0,
+                (scene.durationSeconds as number) || 0,
+              );
               enriched.captions = captions.length > 0 ? { segments: captions, count: captions.length } : null;
             } catch {
               enriched.captions = null;
@@ -272,12 +295,12 @@ export class FileSystemWorkspaceService implements WorkspaceService {
               const outDir = path.join(epPath, "output");
               for (const f of (await fs.readdir(outDir)).filter((f) => f.endsWith(".mp4"))) {
                 const p = path.join(outDir, f);
-                candidates.push({ p, url: `/library/${channel}/${series}/${episode}/output/${f}`, mtime: (await fs.stat(p)).mtimeMs });
+                candidates.push({ p, url: urlFor(`output/${f}`), mtime: (await fs.stat(p)).mtimeMs });
               }
             } catch { /* no output dir */ }
             try {
               const p = path.join(epPath, "artifacts", "final.mp4");
-              candidates.push({ p, url: `/library/${channel}/${series}/${episode}/artifacts/final.mp4`, mtime: (await fs.stat(p)).mtimeMs });
+              candidates.push({ p, url: urlFor("artifacts/final.mp4"), mtime: (await fs.stat(p)).mtimeMs });
             } catch { /* no legacy render */ }
             const latest = candidates.sort((a, b) => b.mtime - a.mtime)[0];
             if (latest) {
@@ -321,7 +344,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
   /** Resolve the pipeline name for an episode by reading series pipeline.yaml. */
   private resolvePipeline(root: string, channel: string, series: string, episode: string): string {
     // 1. Try episode-level pipeline.yaml
-    const epPipeline = path.join(root, channel, series, episode, "pipeline.yaml");
+    const epPipeline = path.join(episodePath(root, channel, series, episode), "pipeline.yaml");
     try {
       const raw = readFileSync(epPipeline, "utf-8");
       const doc = yaml.parse(raw) as Record<string, unknown> | null;
@@ -329,7 +352,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     } catch { /* no episode pipeline */ }
 
     // 2. Try series-level pipeline.yaml
-    const seriesPipeline = path.join(root, channel, series, "pipeline.yaml");
+    const seriesPipeline = path.join(seriesPath(root, channel, series), "pipeline.yaml");
     try {
       const raw = readFileSync(seriesPipeline, "utf-8");
       const doc = yaml.parse(raw) as Record<string, unknown> | null;
@@ -337,7 +360,7 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     } catch { /* no series pipeline */ }
 
     // 3. Try channel-level pipeline.yaml
-    const chPipeline = path.join(root, channel, "pipeline.yaml");
+    const chPipeline = path.join(channelPath(root, channel), "pipeline.yaml");
     try {
       const raw = readFileSync(chPipeline, "utf-8");
       const doc = yaml.parse(raw) as Record<string, unknown> | null;
@@ -401,29 +424,35 @@ export class FileSystemWorkspaceService implements WorkspaceService {
       .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
+  /**
+   * The episode's journal.
+   *
+   * This used to look in `reviews/` for loose `.json` files, at a hand-joined
+   * pre-migration path, in the first root only — so it never opened
+   * `journal/events.jsonl`, which is the file the schema describes, the route
+   * advertises and the Pi tool asks for. Between that and the missing writer,
+   * the journal was unreadable and unwritten at the same time, and each half
+   * hid the other.
+   */
   async findEvents(
     ref: { channel: string; series: string; episode: string },
-    _query: Record<string, unknown>,
+    query: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> {
-    const episodeDir = path.join(
-      this.roots[0]!,
-      ref.channel,
-      ref.series,
-      ref.episode,
-    );
-    const events: Array<Record<string, unknown>> = [];
-    // Read review files
-    const reviewsDir = path.join(episodeDir, "reviews");
-    try {
-      const files = await fs.readdir(reviewsDir);
-      for (const f of files.slice(0, 50)) {
-        if (f.endsWith(".json")) {
-          const content = await fs.readFile(path.join(reviewsDir, f), "utf-8");
-          events.push(JSON.parse(content));
-        }
-      }
-    } catch { /* skip */ }
-    return events;
+    const type = typeof query.type === "string" ? query.type : undefined;
+    const rawLimit = Number(query.limit);
+    const limit = Number.isFinite(rawLimit) && rawLimit >= 0 ? rawLimit : 50;
+
+    for (const root of this.roots) {
+      const journal = path.join(
+        episodePath(root, ref.channel, ref.series, ref.episode),
+        JOURNAL_RELATIVE_PATH,
+      );
+      try {
+        const events = parseJournal(await fs.readFile(journal, "utf-8"), { type, limit });
+        return events as unknown as Array<Record<string, unknown>>;
+      } catch { /* not in this root */ }
+    }
+    return [];
   }
 }
 
@@ -439,9 +468,10 @@ interface SrtSegment {
 /** Parse an SRT file and filter segments for a specific scene prefix. */
 function parseSrtForScene(
   srt: string,
-  sceneId: string,
-  /** Retained for callers; scene filtering is by ID prefix, not duration. */
-  _sceneDuration: number,
+  /** Where the scene begins on the episode timeline, in seconds. */
+  sceneStart: number,
+  /** How long it runs. Zero means the episode has no timing to match against. */
+  sceneDuration: number,
 ): Array<{ time: string; text: string }> {
   const segments: SrtSegment[] = [];
   const blocks = srt.trim().split(/\n\n+/);
@@ -457,31 +487,39 @@ function parseSrtForScene(
     segments.push({ index, start: timeMatch[1]!, end: timeMatch[2]!, text });
   }
 
-  // Heuristic: match captions to scene by checking if the text references
-  // scene-related content or simply return all for now (SRT spans entire video)
-  // For SRT files keyed to scene, return segments whose start time falls within
-  // the scene's duration window.
-  
-  // For now, return segments proportioned to scene index
   if (segments.length === 0) return [];
-  
-  // Simple approach: if sceneId is like s1, s2 etc, estimate time window
-  const sceneNum = parseInt(sceneId.replace(/^s/, ""), 10);
-  if (isNaN(sceneNum) || segments.length < 8) {
-    // Return all segments — whole-video SRT
-    return segments.filter(s => s.index > 0).map(s => ({
-      time: s.start,
-      text: s.text,
-    }));
-  }
 
-  // Distribute SRT segments across scenes by index proportion
-  const perScene = Math.ceil(segments.length / 8); // assume 8 scenes
-  const startIdx = (sceneNum - 1) * perScene;
-  const endIdx = sceneNum * perScene;
+  // Cues are assigned to the scene whose window contains them. This used to
+  // divide them by index across a hardcoded eight scenes —
+  // `Math.ceil(segments.length / 8) // assume 8 scenes` — so an eleven-scene
+  // episode gave its first eight scenes five cues each and scenes nine, ten and
+  // eleven none at all, indexing past the end of the list. The cues carry real
+  // timestamps and the scene carries a real window, so neither has to be
+  // guessed at.
+  const start = sceneStart;
+  const end = sceneDuration > 0 ? sceneStart + sceneDuration : Infinity;
+  const within = segments.filter((segment) => {
+    const at = srtSecondsOf(segment.start);
+    return at !== null && at >= start - CAPTION_EDGE_TOLERANCE_SECONDS && at < end;
+  });
 
-  return segments.slice(startIdx, endIdx).map(s => ({
-    time: s.start,
-    text: s.text,
-  }));
+  // A scene with no window to match against — no timing anywhere in the
+  // episode — still shows the whole transcript rather than nothing.
+  const chosen = sceneDuration > 0 ? within : segments;
+  return chosen.map((segment) => ({ time: segment.start, text: segment.text }));
+}
+
+/** A cue that begins a hair before its scene still belongs to it. */
+const CAPTION_EDGE_TOLERANCE_SECONDS = 0.001;
+
+/** `00:01:29,833` — SRT allows either a comma or a dot before the milliseconds. */
+export function srtSecondsOf(stamp: string): number | null {
+  const match = /^(\d{2}):(\d{2}):(\d{2})[.,](\d{3})$/.exec(stamp.trim());
+  if (!match) return null;
+  return (
+    Number(match[1]) * 3600
+    + Number(match[2]) * 60
+    + Number(match[3])
+    + Number(match[4]) / 1000
+  );
 }

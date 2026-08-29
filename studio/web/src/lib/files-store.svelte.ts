@@ -8,6 +8,7 @@
  */
 
 import { getGatewayClient } from "./gateway.svelte.ts";
+import { libraryUrlPath } from "@studio/contracts/src/library-url.mjs";
 
 export type Level = "channel" | "series" | "episode";
 
@@ -148,6 +149,26 @@ class FilesStore {
     }
   }
 
+  /**
+   * Read a file's text without opening it.
+   *
+   * `open` is a navigation: it changes what the viewer is showing and loads a
+   * revision list. A panel that only needs to *look* at a file — the pipeline
+   * view reading the manifest to draw it — must not drag the editor along with
+   * it. Returns null when the file cannot be read.
+   */
+  async readText(filePath: string): Promise<string | null> {
+    if (!this.ref) return null;
+    try {
+      const data = await getGatewayClient().fetchJSON<{ content?: string }>(
+        `${apiPrefix(this.ref)}/file/${filePath}`,
+      );
+      return data.content ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   edit(text: string): void {
     this.selectedContent = text;
     this.dirty = true;
@@ -251,6 +272,51 @@ class FilesStore {
     }
   }
 
+  /**
+   * Object URL for an older version's bytes.
+   *
+   * `#revisionText` reads a revision as text, which is right for a diff and
+   * useless for an image. Comparing two renders of the same frame is the whole
+   * point of keeping attempts, so the bytes have to be reachable too. Fetched
+   * with the bearer header and wrapped in a blob rather than putting the token
+   * in a query string; callers revoke the URL.
+   */
+  async revisionMediaUrl(filePath: string, id: string): Promise<string | null> {
+    if (!this.ref) return null;
+    const client = getGatewayClient();
+    try {
+      const res = await fetch(
+        `${client.baseUrl}${apiPrefix(this.ref)}/revisions` +
+          `?path=${encodeURIComponent(filePath)}&id=${encodeURIComponent(id)}`,
+        { headers: { authorization: `Bearer ${client.token ?? ""}` } },
+      );
+      if (!res.ok) return null;
+      return URL.createObjectURL(await res.blob());
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Raw bytes for a file.
+   *
+   * Separate from `mediaUrl` because some views need the content itself rather
+   * than something to point an element at — decoding audio to draw its real
+   * waveform, for one. Going through the object URL instead would mean racing
+   * that URL's lifetime.
+   */
+  async mediaBytes(filePath: string): Promise<ArrayBuffer | null> {
+    const url = this.mediaUrl(filePath);
+    if (!url) return null;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return await res.arrayBuffer();
+    } catch {
+      return null;
+    }
+  }
+
   /** Go back to the live file after previewing a revision. */
   async viewLive(): Promise<void> {
     if (!this.ref || !this.selectedPath) return;
@@ -325,24 +391,27 @@ class FilesStore {
   }
 
   /**
-   * Object URL for previewing a binary file.
+   * A streamable URL for a media file.
    *
-   * Fetched with the bearer header and wrapped in a blob rather than putting
-   * the token in a query string, which would leak it into browser history and
-   * any proxy log. Callers revoke the URL when the preview goes away.
+   * This used to fetch the whole file with the bearer header and wrap it in a
+   * blob. That works, but a blob URL is the finished bytes: the browser cannot
+   * ask for part of it, so a 40 MB render had to download completely before the
+   * first frame appeared and seeking was impossible.
+   *
+   * The gateway already serves the library over `@fastify/static`, which honours
+   * `Range` — so pointing the element straight at that route gives progressive
+   * playback and real seeking for free, and nothing is buffered in memory. That
+   * route is deliberately public (localhost, read-only), which is what makes it
+   * usable from a `<video src>` that cannot carry an Authorization header.
+   *
+   * Synchronous, and null when the path escapes the level rather than firing a
+   * request that is certain to fail.
    */
-  async mediaUrl(path: string): Promise<string | null> {
+  mediaUrl(path: string): string | null {
     if (!this.ref) return null;
-    const client = getGatewayClient();
-    try {
-      const res = await fetch(`${client.baseUrl}${apiPrefix(this.ref)}/file/${path}`, {
-        headers: { authorization: `Bearer ${client.token ?? ""}` },
-      });
-      if (!res.ok) return null;
-      return URL.createObjectURL(await res.blob());
-    } catch {
-      return null;
-    }
+    const libraryPath = libraryUrlPath(this.ref, path);
+    if (!libraryPath) return null;
+    return `${getGatewayClient().baseUrl}${libraryPath}`;
   }
 }
 

@@ -89,8 +89,10 @@
       "version": "0.1.0",
       "dependencies": {
         "@av/codex-image": "workspace:*",
+        "@av/fal-media": "workspace:*",
         "@av/terminal-recorder": "workspace:*",
         "@av/video-composer": "workspace:*",
+        "@studio/contracts": "workspace:*",
         "js-yaml": "^5.2.2",
         "ws": "^8.21.1",
       },

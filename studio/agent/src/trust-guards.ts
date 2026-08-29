@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import * as path from "node:path";
+import { episodePath } from "@studio/contracts/src/layout.mjs";
 import { resolveConfig } from "../src/config.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -67,6 +68,14 @@ export async function guardPath(libraryRoot: string, targetPath: string): Promis
 
 /**
  * Validate that a candidate path is within the episode directory.
+ *
+ * Containment is checked against the episode, not the library. Checking the
+ * library only made the depth of the layout the thing that decided whether a
+ * traversal was caught: `../../../x` under layout 1 climbed out of the library
+ * and was rejected, and the same string under layout 2 -- two directories
+ * deeper, because of `series/` and `episodes/` -- lands back inside it and was
+ * allowed, writing into a different channel. A guard whose answer depends on
+ * how deep the directory happens to sit is not guarding the episode.
  */
 export async function guardEpisodePath(
   libraryRoot: string,
@@ -86,9 +95,17 @@ export async function guardEpisodePath(
     }
   }
 
-  // Build and validate the full path
-  const fullPath = path.join(channel, series, episode, artifactPath ?? "");
-  return guardPath(libraryRoot, fullPath);
+  const episodeDir = episodePath(libraryRoot, channel, series, episode);
+
+  // The library boundary still applies: an episode outside it is not made
+  // acceptable by a relative path that stays inside the episode.
+  const withinLibrary = await guardPath(
+    libraryRoot,
+    path.relative(libraryRoot, episodeDir),
+  );
+  if (!withinLibrary.allowed) return withinLibrary;
+
+  return guardPath(episodeDir, artifactPath ?? "");
 }
 
 /**

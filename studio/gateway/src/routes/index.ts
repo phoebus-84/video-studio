@@ -4,6 +4,7 @@ import type { WorkspaceService } from "../workspace/service.js";
 import type { RuntimeClient } from "../runtime/client.js";
 import { collectHealth, gatewayHealth } from "../health/index.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
+import { canonicalizeRoots } from "../lib/roots.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
 import { registerRuntimeRoutes } from "./runtime.js";
 import { registerProductionRoutes } from "./production.js";
@@ -16,7 +17,7 @@ import type { PiProcessManager } from "../rpc/process-manager.js";
  */
 export function registerRoutes(
   app: FastifyInstance,
-  _config: Config,
+  config: Config,
   workspace: WorkspaceService,
   runtime: RuntimeClient,
   piHealth?: PiRpcHealth,
@@ -86,6 +87,14 @@ export function registerRoutes(
       health: "/health",
       openapi: "/openapi.json",
       ws: "/ws",
+      // Which libraries this gateway actually serves. The agent resolves its
+      // own library root independently -- from AVG_LIBRARY_ROOT, or `./library`
+      // relative to wherever Pi was started -- and the two can disagree without
+      // either side erroring. A full episode was once produced into a library
+      // this gateway does not serve, so the studio showed an empty workspace
+      // while the work sat on disk. Publishing the roots lets a client detect
+      // that instead of guessing.
+      libraryRoots: canonicalizeRoots(config.libraryRoots),
     };
   });
 

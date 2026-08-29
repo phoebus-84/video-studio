@@ -32,6 +32,35 @@ running on the local TTS worker (`http://127.0.0.1:5197`).
 6. Submit explicit manifest order to `/narrations/master` and write the returned canonical `narration-manifest.json` plus `narration-full.wav`.
 7. Generate captions/timing from manifest order and measured WAV durations, never filename order.
 
+## Writing the manifest
+
+`artifacts/narration/narration-manifest.json` is how every reader downstream —
+the studio's episode view, the scene spine, the timing and caption stages —
+learns that this episode has narration at all. They look for an `entries` array
+whose members carry a `segmentId` and a measured `wav`, and a manifest without
+one is skipped in silence, as though no narration had been produced.
+
+Two ways to write it, and never a third:
+
+- Through `/narrations/master`, as step 6 describes. The worker returns the
+  canonical document; write it unchanged.
+- **`pva_write_narration_manifest`**, when narration came from the legacy
+  `/synthesize` path (`pva_synthesize_speech`) and there are WAVs on disk but no
+  mastering run. It measures every WAV from its own header, orders the segments,
+  carries the caption text across, and validates the document before writing.
+
+**Never hand-write this file.** A manifest assembled by eye once used
+`segments`/`sceneId`/`audioPath` where the contract says
+`entries`/`segmentId`/`wav`. It named a correct `finalWav`, so composition
+worked and nothing complained, while the studio showed an eleven-segment
+episode as having no narration whatsoever. If a manifest already exists in that
+older shape, `pva_write_narration_manifest` reads it and rewrites it in place,
+keeping the spoken text and recovering each pause from the gap that follows it.
+
+Record lead-in and lead-out silence when the mastered WAV has any. Speech plus
+pauses must account for the measured final, and a quarter-second of quiet at
+each end is otherwise half a second the manifest cannot explain.
+
 ## Model
 
 The selected profile pins the exact 1.7B CustomVoice checkpoint hash, preset, backend language, base direction, and sampling controls. `instruct` controls bounded delivery only; it never selects a different model. Neutral delivery is valid. Speed is exactly 1.0 because mlx-audio 0.4.6 exposes no Qwen speed control.
@@ -85,6 +114,7 @@ Per-segment deltas use only the bounded pace, articulation, energy, emotion, int
 | All voices sound the same | Wrong stable profile assignment | Validate exact checkpoint-discovered preset per character |
 | Fake silence present | Explicit CI provider was used | Never publish fake mode; speech-presence validation rejects it |
 | Legacy scene sidecars used | Canonical manifest absent | Read during transition only; new writers emit `narration-manifest.json` |
+| Studio shows the episode as having no narration | Manifest has `segments`, not `entries` | Run `pva_write_narration_manifest`; it rewrites the older shape in place |
 
 ## Quality Checks
 

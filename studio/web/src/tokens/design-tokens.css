@@ -41,6 +41,16 @@
   --vs-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --vs-duration-fast: 120ms;
   --vs-duration-normal: 200ms;
+
+  /* structural — geometry, not colour, so it belongs here rather than inside a
+     theme block where it would need a pointless dark-theme duplicate. */
+  --vs-region-structure-width: 260px;
+  --vs-region-inspector-width: 340px;
+  --vs-header-height: 46px;
+  /* The status strip sits under the header and is always present, so the shell
+     reserves a row for it rather than letting it push the canvas around as its
+     content changes. */
+  --vs-strip-height: 38px;
 }
 
 /* ── Light theme (default) ── */
@@ -93,10 +103,22 @@
   --vs-shadow-float: 0 2px 12px oklch(0% 0 0 / 0.1);
   --vs-shadow-modal: 0 8px 32px oklch(0% 0 0 / 0.14);
 
-  /* structural */
-  --vs-region-structure-width: 260px;
-  --vs-region-inspector-width: 340px;
-  --vs-header-height: 44px;
+  /* Aliases used by the workspace components. These were previously written as
+     inline fallbacks (`var(--vs-border-subtle, #e5e5e5)`), which meant a
+     hardcoded light-theme grey leaked into the dark theme. */
+  --vs-border-subtle: oklch(88% 0.004 85);
+  --vs-bg-selected: oklch(58% 0.14 48 / 0.12);
+  --vs-danger: oklch(48% 0.17 24);
+
+  /* Chrome surfaces: the panel dividers and the file-browser toolbar. */
+  --vs-bg-panel: oklch(97% 0.004 85);
+
+  /* Tinted backgrounds for failures and for diff gutters. These were only ever
+     written as inline fallbacks, so every one of them rendered a light hex in
+     the dark theme regardless of the theme in force. */
+  --vs-danger-subtle: oklch(52% 0.18 24 / 0.1);
+  --vs-diff-added: oklch(58% 0.14 160 / 0.14);
+  --vs-diff-removed: oklch(52% 0.18 24 / 0.12);
 }
 
 /* ── Dark theme ── */
@@ -144,6 +166,16 @@
 
   --vs-shadow-float: 0 2px 12px oklch(0% 0 0 / 0.3);
   --vs-shadow-modal: 0 8px 32px oklch(0% 0 0 / 0.5);
+
+  --vs-border-subtle: oklch(24% 0.004 260);
+  --vs-bg-selected: oklch(66% 0.15 48 / 0.14);
+  --vs-danger: oklch(66% 0.16 24);
+
+  --vs-bg-panel: oklch(18% 0.004 260);
+
+  --vs-danger-subtle: oklch(58% 0.16 24 / 0.14);
+  --vs-diff-added: oklch(62% 0.12 160 / 0.14);
+  --vs-diff-removed: oklch(58% 0.16 24 / 0.14);
 }
 
 /* ── reduced motion ── */

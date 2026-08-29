@@ -8,9 +8,12 @@
 // and produces the required output files.
 
 import * as fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
 import { loadNarrationManifest, naturalSceneOrder, type NarrationTimingEntry } from "./narration-manifest.js";
+import { episodePath } from "@studio/contracts/src/layout.mjs";
+import { appendJournalEvent } from "@studio/contracts/src/journal.mjs";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -201,10 +204,53 @@ async function handleContinuityCheck(ctx: StageContext): Promise<string[]> {
   return [outPath];
 }
 
+/**
+ * The render this episode last produced.
+ *
+ * QA looked for `artifacts/render/final.mp4`, a path nothing in the project
+ * writes: the composer writes `artifacts/final.mp4` and canonical renders go to
+ * `output/`. So QA never found a file, fell into its fallback, and wrote a
+ * report with an empty check list and a "warn" verdict — a report about
+ * nothing, indistinguishable from one about a video that had problems.
+ */
+async function findRender(episodeDir: string): Promise<string | null> {
+  const candidates: Array<{ file: string; mtimeMs: number }> = [];
+  try {
+    const outDir = path.join(episodeDir, "output");
+    for (const name of (await fs.readdir(outDir)).filter((f) => f.endsWith(".mp4"))) {
+      const file = path.join(outDir, name);
+      candidates.push({ file, mtimeMs: (await fs.stat(file)).mtimeMs });
+    }
+  } catch { /* no output directory */ }
+  for (const relative of [["artifacts", "final.mp4"], ["artifacts", "render", "final.mp4"]]) {
+    const file = path.join(episodeDir, ...relative);
+    try {
+      candidates.push({ file, mtimeMs: (await fs.stat(file)).mtimeMs });
+    } catch { /* absent */ }
+  }
+  return candidates.sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.file ?? null;
+}
+
 async function handleQa(ctx: StageContext): Promise<string[]> {
-  const mp4Path = path.join(ctx.episodeDir, "artifacts", "render", "final.mp4");
+  const mp4Path = await findRender(ctx.episodeDir);
   const captionsPath = path.join(ctx.episodeDir, "artifacts", "captions.srt");
   const narrationPath = path.join(ctx.episodeDir, "artifacts", "narration", "narration-full.wav");
+
+  if (!mp4Path) {
+    // Say there is no render rather than reporting "warn" about a file that
+    // was never there. A QA report that cannot name what it examined is not a
+    // QA report.
+    const report = {
+      verdict: "fail",
+      summary: "No render found to check: expected output/*.mp4 or artifacts/final.mp4",
+      checks: [],
+      timestamp: new Date().toISOString(),
+    };
+    const outPath = path.join(ctx.episodeDir, "artifacts", "qa-report.json");
+    await fs.writeFile(outPath, JSON.stringify(report, null, 2));
+    ctx.log("  qa: no render found");
+    return [outPath];
+  }
 
   // Run the full QA suite from ffmpeg-video-composer
   let report: Record<string, unknown>;
@@ -241,12 +287,34 @@ async function handleQa(ctx: StageContext): Promise<string[]> {
 
     ctx.log(`  qa: verdict=${qaReport.verdict} (${qaReport.checks.filter((c) => c.status === "fail").length} failures, ${qaReport.checks.filter((c) => c.status === "warn").length} warnings)`);
   } catch (err) {
-    // Fallback to basic check
+    // The full suite is unavailable, so measure what can be measured rather
+    // than reporting a verdict about a file nothing looked at. The Rome
+    // episode's report claimed 92.477s for an 89.833s render and passed its
+    // own 85–95 range: a check that never opened the file it named.
     ctx.log(`  qa: composer QA unavailable — ${err instanceof Error ? err.message : String(err)}`);
+    let measured: number | null = null;
+    try {
+      const { execFileSync } = await import("node:child_process");
+      measured = Number(execFileSync(process.env.QA_FFPROBE ?? "ffprobe", [
+        "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4Path,
+      ], { encoding: "utf-8" }).trim());
+    } catch { /* ffprobe unavailable too */ }
+
     report = {
       verdict: "warn",
-      summary: "Could not run full QA suite",
-      checks: [],
+      summary: measured !== null
+        ? `Full QA suite unavailable; duration measured from the render`
+        : "Could not run full QA suite, and the render could not be measured",
+      render: path.relative(ctx.episodeDir, mp4Path),
+      checks: measured !== null && Number.isFinite(measured)
+        ? [{
+            id: "duration",
+            name: "Render duration",
+            status: "info",
+            expected: "measured from the render",
+            actual: `${measured.toFixed(3)}s`,
+          }]
+        : [],
       timestamp: new Date().toISOString(),
     };
   }
@@ -277,7 +345,10 @@ export async function runAutopilot(
   log: (msg: string) => void,
 ): Promise<ExecutionReport> {
   const startMs = Date.now();
-  const episodeDir = path.join(libraryRoot, ref.channel, ref.series, ref.episode);
+  // Layout 2 puts a series inside `series/` and an episode inside `episodes/`.
+  // Joining the four names by hand pointed every stage at a directory that
+  // does not exist, so each handler wrote its artifact beside the episode.
+  const episodeDir = episodePath(libraryRoot, ref.channel, ref.series, ref.episode);
   const ctx: StageContext = { episodeDir, ref, log };
   const results: StageResult[] = [];
 
@@ -330,6 +401,13 @@ export async function runAutopilot(
     }
 
     const stageStart = Date.now();
+    // What happened to this episode is recorded as it happens. The journal had
+    // a schema, a route and a tool, and no writer: a complete production left
+    // it at zero bytes, so afterwards nothing could say which stages ran, how
+    // long they took or which one failed.
+    await appendJournalEvent(episodeDir, {
+      type: "stage-started", actor: "runtime", episode: ref, stageId,
+    });
     try {
       const outputs = await handler(ctx);
       results.push({
@@ -338,13 +416,31 @@ export async function runAutopilot(
         outputs,
         durationMs: Date.now() - stageStart,
       });
+      await appendJournalEvent(episodeDir, {
+        type: "stage-completed",
+        actor: "runtime",
+        episode: ref,
+        stageId,
+        detail: {
+          durationMs: Date.now() - stageStart,
+          outputs: outputs.map((o) => path.relative(episodeDir, o)),
+        },
+      });
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       results.push({
         stageId,
         status: "failed",
         outputs: [],
         durationMs: Date.now() - stageStart,
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
+      });
+      await appendJournalEvent(episodeDir, {
+        type: "stage-failed",
+        actor: "runtime",
+        episode: ref,
+        stageId,
+        detail: { durationMs: Date.now() - stageStart, error: message },
       });
       log(`Autopilot: ${stageId} FAILED — stopping`);
       break; // Stop on failure
@@ -384,18 +480,52 @@ function wrapText(text: string, maxLen: number): string {
   return text.slice(0, split).trim() + "\n" + text.slice(split).trim();
 }
 
+/**
+ * A WAV's duration, read from its own header.
+ *
+ * This used to estimate from file size against a hardcoded 24 kHz mono 16-bit —
+ * right for the segments the voice worker emits, and wrong by a factor of two
+ * for a 48 kHz mastered final. It also returned a flat five seconds whenever
+ * the read failed, so a missing file produced a plausible number rather than an
+ * error, and that number went on to shape the timeline, the captions and the
+ * render.
+ *
+ * Chunks are walked rather than assumed at a fixed offset: a WAV may carry LIST
+ * or fact chunks before its data, and the 44-byte guess reads those as audio.
+ */
 function getWavDuration(wavPath: string): number {
-  try {
-    const stat = require("node:fs").statSync(wavPath);
-    // Estimate from file size: WAV = 44 byte header + samples * channels * bytesPerSample
-    const dataSize = stat.size - 44;
-    const sampleRate = 24000;
-    const channels = 1;
-    const bytesPerSample = 2; // 16-bit
-    return dataSize / (sampleRate * channels * bytesPerSample);
-  } catch {
-    return 5; // Default 5 seconds
+  const bytes = readFileSync(wavPath);
+  if (bytes.length < 12 || bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error(`${path.basename(wavPath)} is not a RIFF/WAVE file`);
   }
+
+  let sampleRate = 0;
+  let channels = 0;
+  let sampleWidthBytes = 0;
+  let dataBytes = 0;
+
+  let cursor = 12;
+  while (cursor + 8 <= bytes.length) {
+    const id = bytes.toString("ascii", cursor, cursor + 4);
+    const size = bytes.readUInt32LE(cursor + 4);
+    const body = cursor + 8;
+    if (id === "fmt " && body + 16 <= bytes.length) {
+      channels = bytes.readUInt16LE(body + 2);
+      sampleRate = bytes.readUInt32LE(body + 4);
+      sampleWidthBytes = Math.ceil(bytes.readUInt16LE(body + 14) / 8);
+    } else if (id === "data") {
+      // A truncated file claims more data than it holds; trust the bytes.
+      dataBytes = Math.min(size, bytes.length - body);
+      break;
+    }
+    cursor = body + size + (size % 2);
+  }
+
+  const frameBytes = channels * sampleWidthBytes;
+  if (!sampleRate || !frameBytes || !dataBytes) {
+    throw new Error(`${path.basename(wavPath)} has no readable WAV format or data chunk`);
+  }
+  return dataBytes / (sampleRate * frameBytes);
 }
 
 function parseScriptScenes(script: string): string[] {

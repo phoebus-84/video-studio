@@ -1,18 +1,116 @@
 <script lang="ts">
   import Header from "./Header.svelte";
+  import StatusStrip from "./StatusStrip.svelte";
   import StructureRail from "./StructureRail.svelte";
   import ProductionCanvas from "./ProductionCanvas.svelte";
   import ContextInspector from "./ContextInspector.svelte";
   import OfflineBanner from "./OfflineBanner.svelte";
   import PanelDivider from "./PanelDivider.svelte";
+  import CommandPalette from "./CommandPalette.svelte";
+  import { studio } from "$lib/studio-store.svelte.ts";
+  import { episode } from "$lib/episode-store.svelte.ts";
+  import { library } from "$lib/library-store.svelte.ts";
+  import { displayStatus } from "$lib/library-types";
+  import type { LevelRollup } from "$lib/production-status";
+  import type { ResolvedEpisode } from "$lib/library-types";
 
   interface Props {
     connected: boolean;
     theme: "light" | "dark";
-    episodeTitle?: string;
   }
 
-  let { connected = false, theme = "light", episodeTitle }: Props = $props();
+  let { connected = false, theme = "light" }: Props = $props();
+
+  const currentEpisode = $derived(
+    episode.state.phase === "ready" ? episode.state.episode : null,
+  );
+
+  /* With a channel or series selected there is no episode to report on, so the
+     strip summarises what is underneath instead of saying nothing useful. */
+  const rollup = $derived.by((): LevelRollup | null => {
+    let episodes: ResolvedEpisode[] = [];
+    let label = "";
+
+    if (library.selectedChannel) {
+      const channel = library.tree.channels.find(
+        (c) => c.slug === library.selectedChannel,
+      );
+      if (!channel) return null;
+      episodes = channel.series.flatMap((s) => s.episodes);
+      label = channel.title;
+    } else if (library.selectedSeries) {
+      const { channel, series } = library.selectedSeries;
+      const entry = library.tree.channels
+        .find((c) => c.slug === channel)
+        ?.series.find((s) => s.slug === series);
+      if (!entry) return null;
+      episodes = entry.episodes;
+      label = entry.title;
+    } else {
+      return null;
+    }
+
+    const states = episodes.map(displayStatus);
+    return {
+      label,
+      total: episodes.length,
+      running: states.filter((s) => s === "running").length,
+      blocked: states.filter((s) => s === "blocked" || s === "failed").length,
+      stale: states.filter((s) => s === "stale").length,
+    };
+  });
+
+  /**
+   * Actions offered by the status strip and the palette.
+   *
+   * They are resolved here because the strip should not know how to navigate
+   * and the palette should not know what a rerun is. Actions that need a
+   * runtime call the studio cannot yet make say so on the agent status line
+   * rather than doing nothing when clicked.
+   */
+  function runAction(id: string) {
+    switch (id) {
+      case "open-render":
+        studio.show("render");
+        break;
+      case "open-log":
+        studio.inspectorTab = "logs";
+        break;
+      case "show-stale":
+        studio.inspectorTab = "run";
+        break;
+      case "reconnect":
+        location.reload();
+        break;
+      case "rerun-affected":
+      case "retry":
+      case "run":
+      case "pause":
+      case "accept":
+      case "reveal":
+      case "read-only":
+        studio.agentStatus = {
+          kind: "unavailable",
+          text: `“${id}” is not wired to the runtime yet — ask Pi below instead.`,
+        };
+        break;
+      default:
+        break;
+    }
+  }
+
+  /* ⌘K / Ctrl+K anywhere opens the palette; Escape closes it. Bound on the
+     window so it works regardless of what has focus. */
+  function onKeydown(event: KeyboardEvent) {
+    const key = event.key.toLowerCase();
+    if ((event.metaKey || event.ctrlKey) && (key === "k" || key === "p")) {
+      event.preventDefault();
+      studio.togglePalette();
+    } else if (event.key === "Escape" && studio.paletteOpen) {
+      event.preventDefault();
+      studio.closePalette();
+    }
+  }
 
   /**
    * Panel layout: collapsible, resizable, and remembered.
@@ -93,8 +191,12 @@
   <link rel="stylesheet" href="/src/tokens/design-tokens.css" />
 </svelte:head>
 
+<svelte:window onkeydown={onKeydown} />
+
 <div class="app-shell" data-theme={theme}>
-  <Header {episodeTitle} {connected} />
+  <Header {connected} episode={currentEpisode} />
+
+  <StatusStrip {connected} episode={currentEpisode} {rollup} onaction={runAction} />
 
   <div class="app-body" style="grid-template-columns: {columns}">
     <div class="panel" class:hidden={!structureOpen}>
@@ -133,12 +235,15 @@
   {#if !connected}
     <OfflineBanner />
   {/if}
+
+  <CommandPalette onaction={runAction} />
 </div>
 
 <style>
   .app-shell {
     display: grid;
-    grid-template-rows: var(--vs-header-height) 1fr auto;
+    /* header · status strip · body · offline banner */
+    grid-template-rows: var(--vs-header-height) var(--vs-strip-height) 1fr auto;
     height: 100dvh;
     overflow: hidden;
     background: var(--vs-bg-canvas);

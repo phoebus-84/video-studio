@@ -22,6 +22,7 @@ import { NodeFileSystem } from "./ports/filesystem.js";
 import { SystemClock } from "./ports/clock.js";
 import { FileSystemSnapshotStore } from "./pipeline/fs-snapshot-store.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
+import { appendJournalEvent } from "@studio/contracts/src/journal.mjs";
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
 import { artifactExists } from "./artifacts/discovery.js";
 
@@ -259,20 +260,23 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
     });
     const loader = makeLoader(args);
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
+    const episodeSlug = `${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const libraryRoot = libraryFrom(args);
+    const store = libraryRoot ? makeSnapshotStore(libraryRoot) : null;
+    const previous = store ? await store.loadLatest(episodeSlug) : null;
     const snapshot = await createSnapshot({
-      episodeSlug: `${parsed.channel}/${parsed.series}/${parsed.episode}`,
+      episodeSlug,
       pipeline,
       settings,
       providerBindings: [],
       sources: [],
       skillIds: [],
+      previousVersion: previous?.version,
     });
 
     // Persist it. Without this the resolved contract died with the process and
     // every later command reported "Pipeline not found".
-    const libraryRoot = libraryFrom(args);
-    if (libraryRoot) {
-      const store = makeSnapshotStore(libraryRoot);
+    if (store) {
       await store.save(snapshot);
     }
 
@@ -316,7 +320,7 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
 
     // ── Detect completed stages by checking for output artifacts ──────────
     const libraryRoot = libraryFrom(args) || ".";
-    const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const episodeDir = episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode);
 
     function checkArtifact(label: string): string {
       return artifactExists(episodeDir, label) ? "completed" : "pending";
@@ -415,7 +419,33 @@ async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { message: `[DRY RUN] Would approve stage "${args[1]}" for ${args[0]}`, dryRun: true });
     return EX_OK;
   }
-  emit(ctx, { message: `Stage "${args[1]}" approved for ${args[0]}`, path: args[0], stageId: args[1] });
+
+  // An approval is the one moment a person takes responsibility for an
+  // episode, and it used to leave no trace: this printed "approved" and
+  // recorded nothing, so a finished production could not say who had passed
+  // its review gates or when.
+  const parsed = parsePath(args[0]!);
+  const libraryRoot = libraryFrom(args);
+  let recorded = false;
+  if (parsed && libraryRoot) {
+    const written = await appendJournalEvent(
+      episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode),
+      {
+        type: "approval-granted",
+        actor: "human",
+        episode: parsed,
+        stageId: args[1]!,
+      },
+    );
+    recorded = written !== null;
+  }
+
+  emit(ctx, {
+    message: `Stage "${args[1]}" approved for ${args[0]}`,
+    path: args[0],
+    stageId: args[1],
+    recorded,
+  });
   return EX_OK;
 }
 
@@ -441,7 +471,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
     const libraryRoot = libraryFrom(args) || ".";
-    const episodeDir = `${libraryRoot}/${parsed.channel}/${parsed.series}/${parsed.episode}`;
+    const episodeDir = episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode);
 
     // Find the first non-completed stage using the same provider-neutral
     // artifact discovery as status. An explicit stage remains a forced run.

@@ -348,7 +348,13 @@ export class FalClientImpl implements FalClient {
       throw error;
     }
 
-    const statusUrl = `${this.queueUrl}/${input.binding.endpointId}/requests/${requestId}`;
+    const fallbackResultUrl = `${this.queueUrl}/${input.binding.endpointId}/requests/${requestId}`;
+    const resultUrl = typeof queued["response_url"] === "string"
+      ? queued["response_url"]
+      : fallbackResultUrl;
+    const statusUrl = typeof queued["status_url"] === "string"
+      ? queued["status_url"]
+      : `${resultUrl}/status`;
 
     let sleptMs = 0;
     // The deadline uses whichever has advanced further, the clock or the time
@@ -369,7 +375,7 @@ export class FalClientImpl implements FalClient {
         // The queue answers with the result inline, or points at it.
         const payload = status["result"] !== undefined
           ? status
-          : { ...status, result: await this.fetchResult(status, statusUrl, input, signal) };
+          : { ...status, result: await this.fetchResult(status, resultUrl, input, signal) };
 
         const result = this.finish(contract, input, { ...payload, request_id: requestId, status: "COMPLETED" }, startedMs);
         return result;

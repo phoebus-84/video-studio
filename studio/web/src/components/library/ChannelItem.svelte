@@ -5,17 +5,22 @@
 
   interface Props {
     channel: ResolvedChannel;
+    /** Hold the branch open regardless of local state, e.g. while filtering. */
+    forceExpand?: boolean;
   }
 
-  let { channel }: Props = $props();
+  let { channel, forceExpand = false }: Props = $props();
 
-  let expanded = $state(false);
+  let openedByUser = $state(false);
   let autoExpandedSeries = $state(false);
 
+  /* A forced-open branch stays open even if it was collapsed before, and goes
+     back to the user's own choice once the force is lifted. */
+  const expanded = $derived(forceExpand || openedByUser);
+
   function toggle() {
-    expanded = !expanded;
-    // Auto-expand the first (and typically only) series when opening a channel
-    if (expanded && !autoExpandedSeries && channel.series.length === 1) {
+    openedByUser = !expanded;
+    if (!expanded && !autoExpandedSeries && channel.series.length === 1) {
       autoExpandedSeries = true;
     }
   }
@@ -24,7 +29,7 @@
     library.selectChannel(channel.slug);
     // Also expand the tree when clicking the channel label
     if (!expanded) {
-      expanded = true;
+      openedByUser = true;
       if (!autoExpandedSeries && channel.series.length === 1) {
         autoExpandedSeries = true;
       }
@@ -59,16 +64,18 @@
   {#if expanded}
     <div class="series-list" role="group" aria-label="{channel.title} series">
       {#each channel.series as series (series.slug)}
-        <SeriesItem channelSlug={channel.slug} {series} autoExpand={autoExpandedSeries && channel.series.length === 1} />
+        <SeriesItem
+          channelSlug={channel.slug}
+          {series}
+          {forceExpand}
+          autoExpand={autoExpandedSeries && channel.series.length === 1}
+        />
       {/each}
     </div>
   {/if}
 </div>
 
 <style>
-  .channel-group {
-  }
-
   .channel-row {
     display: flex;
     align-items: center;

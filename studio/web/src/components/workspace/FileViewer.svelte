@@ -8,49 +8,31 @@
    * adding a case here and declaring the type, not rewriting the workspace.
    */
   import { files } from "$lib/files-store.svelte.ts";
-  import { viewerComponent, needsBytes } from "$lib/viewer-registry";
+  import { viewerComponent, needsBytes, resolveViewer } from "$lib/viewer-registry";
   import { isEditableViewer } from "@studio/contracts/src/presentation.mjs";
   import DiffViewer from "../viewers/DiffViewer.svelte";
 
-  let mediaSrc = $state<string | null>(null);
-  let mediaLoading = $state(false);
+  /* The artifact names its viewer; this resolves the name to a component,
+     narrowing a generic "text" when the file is unmistakably something more
+     specific. */
+  const viewer = $derived(
+    resolveViewer(
+      files.selectedPresentation?.viewer,
+      files.selectedType,
+      files.selectedPath,
+    ),
+  );
 
-  /* The artifact names its viewer; this resolves the name to a component. */
-  const viewer = $derived(files.selectedPresentation?.viewer);
+  /* The media URL points at the gateway's streaming route, so there is no blob
+     to build, hold or revoke — and nothing to wait for before rendering. */
+  const mediaSrc = $derived(
+    files.selectedPath && needsBytes(viewer)
+      ? files.mediaUrl(files.selectedPath)
+      : null,
+  );
   const actions = $derived(files.selectedPresentation?.actions ?? []);
   const Viewer = $derived(viewerComponent(viewer));
   const editable = $derived(isEditableViewer(viewer ?? "") && actions.includes("edit"));
-
-  /* Load media as a blob so the bearer token never lands in a URL. */
-  $effect(() => {
-    const path = files.selectedPath;
-    const needsMedia = !!path && needsBytes(viewer);
-
-    if (!needsMedia) {
-      mediaSrc = null;
-      return;
-    }
-
-    let revoked = false;
-    let url: string | null = null;
-    mediaLoading = true;
-
-    files.mediaUrl(path).then((result) => {
-      if (revoked) {
-        if (result) URL.revokeObjectURL(result);
-        return;
-      }
-      url = result;
-      mediaSrc = result;
-      mediaLoading = false;
-    });
-
-    return () => {
-      revoked = true;
-      mediaLoading = false;
-      if (url) URL.revokeObjectURL(url);
-    };
-  });
 
   function formatWhen(iso: string): string {
     return new Date(iso).toLocaleString();
@@ -72,10 +54,27 @@
     <header class="fv-head">
       <div class="fv-title">
         <span class="fv-path">{files.selectedPath}</span>
+
+        <!-- Chips state what this file is and what is true of it right now.
+             Each one is read off the artifact; none is decorative. -->
         {#if files.viewingRevision}
-          <span class="fv-badge">viewing an older version</span>
+          <span class="fv-badge fv-warn">viewing an older version</span>
         {:else if files.dirty}
           <span class="fv-badge fv-dirty">unsaved</span>
+        {/if}
+
+        {#if viewer}
+          <span class="fv-badge">{viewer}</span>
+        {/if}
+
+        {#if files.revisions.length > 0}
+          <span class="fv-badge">
+            {files.revisions.length} version{files.revisions.length === 1 ? "" : "s"}
+          </span>
+        {/if}
+
+        {#if files.selectedRevision}
+          <span class="fv-badge fv-mono">{files.selectedRevision.slice(0, 8)}</span>
         {/if}
       </div>
 
@@ -118,8 +117,6 @@
           leftLabel="version {formatWhen(files.revisions.find((r) => r.id === files.comparingRevision)?.createdAt ?? '')}"
           rightLabel="current"
         />
-      {:else if mediaLoading}
-        <p class="fv-note">Loading preview…</p>
       {:else}
         <Viewer
           path={files.selectedPath}
@@ -219,8 +216,18 @@
   }
 
   .fv-dirty {
-    background: var(--vs-accent-subtle, #fdf0e6);
-    color: var(--vs-accent, #b3510a);
+    background: var(--vs-accent-subtle);
+    color: var(--vs-accent-strong);
+  }
+
+  .fv-warn {
+    background: var(--vs-state-attention-bg);
+    color: var(--vs-state-attention);
+  }
+
+  .fv-mono {
+    font-family: var(--vs-font-mono);
+    text-transform: none;
   }
 
   .fv-actions {
@@ -261,34 +268,8 @@
     display: flex;
   }
 
-  .fv-text {
-    flex: 1;
-    resize: none;
-    border: none;
-    outline: none;
-    padding: 12px;
-    font-family: var(--vs-font-mono, ui-monospace, monospace);
-    font-size: 13px;
-    line-height: 1.55;
-    background: transparent;
-    color: var(--vs-text-primary, #222);
-  }
 
-  .fv-media {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-    overflow: auto;
-  }
 
-  .fv-media img,
-  .fv-media video {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
 
   .fv-note {
     margin: auto;
@@ -297,10 +278,6 @@
     color: var(--vs-text-secondary, #777);
   }
 
-  .fv-hint {
-    font-size: 12px;
-    opacity: 0.8;
-  }
 
   .fv-error {
     margin: 0;

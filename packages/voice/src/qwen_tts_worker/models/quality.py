@@ -380,6 +380,14 @@ class NarrationManifest(FrozenContract):
     mastering_profile_id: str = Field(..., min_length=1, max_length=128)
     final_wav: WavArtifact
     mastering: MasteringMetrics
+    # Silence before the first word and after the last. The contract had no way
+    # to say a narration begins with a beat of quiet, so a mastered WAV that
+    # opened and closed with a quarter second of it could never satisfy the
+    # rule that speech plus pauses equals the measured final -- a correct
+    # episode was rejected for being correctly mastered. Optional, so manifests
+    # written before this remain valid.
+    lead_in_silence_seconds: float = Field(default=0.0, ge=0.0, le=30.0)
+    lead_out_silence_seconds: float = Field(default=0.0, ge=0.0, le=30.0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
