@@ -108,6 +108,9 @@
             <li>
               <span class="pl-stage">
                 <span class="pl-stage-name">{stage.id}</span>
+                {#if stage.type}
+                  <span class="pl-stage-meta">{stage.type}</span>
+                {/if}
                 {#if stage.capability}
                   <span class="pl-stage-meta">{stage.capability}</span>
                 {/if}

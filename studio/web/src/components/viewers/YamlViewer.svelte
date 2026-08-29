@@ -86,6 +86,13 @@
             </span>
             <span class="ya-stage">
               <span class="ya-stage-name">{stage.id}</span>
+              <!-- A definition classifies its stages by `type` and binds a
+                   capability only where one is needed, so most stages carry a
+                   type and nothing else. Showing only the capability left them
+                   as a column of bare names. -->
+              {#if stage.type}
+                <span class="ya-stage-meta">{stage.type}</span>
+              {/if}
               {#if stage.capability}
                 <span class="ya-stage-meta">{stage.capability}</span>
               {/if}
