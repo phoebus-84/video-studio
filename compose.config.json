@@ -1,6 +1,15 @@
 {
   "$comment": "Declares every composable piece and the profiles that assemble them. `npm run compose -- --profile=<name>` writes composed.json, which the agent and gateway read to learn which capabilities are actually available. Nothing here decides HOW a capability behaves; it decides WHETHER it is wired.",
   "components": {
+    "blender": {
+      "path": "packages/blender",
+      "kind": "node",
+      "standalone": true,
+      "summary": "Editable 3D scenes, keyframes and Geometry Nodes; background Eevee/Cycles previews and animations. Poly Haven asset acquisition with provenance.",
+      "capabilities": ["scene.create", "scene.render"],
+      "requires": { "system": ["blender", "ffmpeg"] },
+      "docs": "docs/packages/blender.md"
+    },
     "voice": {
       "path": "packages/voice",
       "kind": "python",
@@ -172,6 +181,7 @@
     "full": {
       "summary": "Everything: the studio product plus every reusable package.",
       "components": [
+        "blender",
         "voice",
         "fal-media",
         "codex-image",
@@ -199,6 +209,7 @@
     "studio": {
       "summary": "The video studio without the local MLX voice worker (use a remote speech capability).",
       "components": [
+        "blender",
         "fal-media",
         "codex-image",
         "graphics",
@@ -242,6 +253,11 @@
         "image.generate": "fal-media",
         "image.edit": "fal-media"
       }
+    },
+    "blender": {
+      "summary": "Local 3D production with the agent and browser; no cloud image or MLX voice requirement.",
+      "components": ["blender", "video-composer", "contracts", "runtime", "pipelines", "agent", "gateway", "web"],
+      "skills": ["shared", "studio"]
     },
     "voice": {
       "summary": "Only the standalone voice tool. No studio, no pipelines.",

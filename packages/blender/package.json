@@ -1,0 +1,16 @@
+{
+  "name": "@av/blender",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Editable Blender scenes and background Eevee/Cycles animation rendering, independent of any studio.",
+  "exports": { ".": "./src/index.ts", "./poly-haven": "./src/poly-haven.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "cli": "node --import tsx src/cli.ts",
+    "test:live": "BLENDER_LIVE=1 node --import tsx --test test/live.test.ts"
+  },
+  "devDependencies": { "@types/node": "^26.1.1", "tsx": "^4.19.0", "typescript": "^5.7.0" }
+}

@@ -1,0 +1,104 @@
+pipeline:
+  id: blender-animation
+  version: "0.1.0"
+  description: "Preview-first editable 3D shot production. Produces a silent MP4 plus .blend source for standalone delivery or mixed-media composition. Directed by Pi; not the legacy gateway autopilot executor."
+  capabilities:
+    - id: scene.create
+      version: "1.0.0"
+    - id: scene.render
+      version: "1.0.0"
+  stages:
+    - id: scene-plan
+      name: "Shot Direction"
+      type: editorial
+      description: "Define framing, action, timing, asset licenses, render budget and intervention points."
+      inputs: []
+      outputs:
+        - contract: scene-plan.json
+          version: "0.1.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills:
+        - skill: blender-scene
+          version: "0.1.0"
+      depends_on: []
+    - id: scene-build
+      name: "Editable Scene"
+      type: capability
+      capability: scene.create
+      description: "Build with reviewed bpy code, keyframes and Geometry Nodes; save the source manifest reference."
+      inputs:
+        - contract: scene-plan.json
+          version: "0.1.0"
+      outputs:
+        - contract: scene-source.json
+          version: "0.1.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills:
+        - skill: blender-scene
+          version: "0.1.0"
+      depends_on: [scene-plan]
+    - id: scene-preview
+      name: "Preview and Artist Handoff"
+      type: capability
+      capability: scene.render
+      description: "Render low-cost previews; review framing and motion; accept a specific source hash, including artist edits."
+      inputs:
+        - contract: scene-source.json
+          version: "0.1.0"
+      outputs:
+        - contract: scene-preview.json
+          version: "0.1.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills:
+        - skill: blender-scene
+          version: "0.1.0"
+      depends_on: [scene-build]
+    - id: scene-render
+      name: "Final Animation"
+      type: capability
+      capability: scene.render
+      description: "Render the explicitly accepted source/settings to PNG frames and MP4; preserve source and logs."
+      inputs:
+        - contract: scene-preview.json
+          version: "0.1.0"
+      outputs:
+        - contract: scene-render.json
+          version: "0.1.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 0
+        budget:
+          wall_time: "60m"
+          tokens: 0
+      skills:
+        - skill: blender-scene
+          version: "0.1.0"
+      depends_on: [scene-preview]
+    - id: scene-qa
+      name: "Shot Acceptance"
+      type: editorial
+      description: "Measure duration/codecs and inspect first/middle/last frames and motion. Silence is intentional; do not claim narration QA."
+      inputs:
+        - contract: scene-render.json
+          version: "0.1.0"
+      outputs:
+        - contract: scene-qa.json
+          version: "0.1.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills:
+        - skill: blender-scene
+          version: "0.1.0"
+      depends_on: [scene-render]

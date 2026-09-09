@@ -16,6 +16,7 @@ Everything is here, in one place.
 | Document | What it answers |
 |---|---|
 | [Architecture](./architecture) | How does the system behave, and where are the boundaries? |
+| [Harness review](./harness-review) | What is implemented, where are the gaps, and what should improve first? |
 | [Domain language](./context) | What does each term mean? Read this before naming anything. |
 | [Workspace layout](./workspace) | What does the on-disk channel/series/episode tree look like? |
 | [Pipelines](./pipelines) | How are pipeline manifests and overrides structured? |
@@ -26,6 +27,7 @@ Reusable outside this project. They know nothing about episodes or pipelines.
 
 | Package | Capabilities |
 |---|---|
+| [blender](./packages/blender) | `scene.create`, `scene.render` |
 | [voice](./packages/voice) | `speech.synthesize` |
 | [fal-media](./packages/fal-media) | `image.generate`, `image.edit` |
 | [graphics](./packages/graphics) | `graphics.render` |
@@ -50,7 +52,7 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0032-single-repository-with-reusable-packages) holds 32 accepted
+[`adr/`](./adr/0033-blender-is-a-reusable-scene-provider) holds 33 accepted
 decisions. The ones that most shape the code:
 
 | ADR | Decision |

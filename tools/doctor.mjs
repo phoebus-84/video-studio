@@ -10,6 +10,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { checkRequirements, resolveBinary } from "./requirements.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -19,10 +20,23 @@ if (!existsSync(join(ROOT, "composed.json"))) {
 }
 
 const composed = JSON.parse(readFileSync(join(ROOT, "composed.json"), "utf-8"));
+const config = JSON.parse(readFileSync(join(ROOT, "compose.config.json"), "utf-8"));
+for (const component of composed.components) {
+  const definition = config.components[component.name];
+  component.present = !!definition && existsSync(join(ROOT, definition.path));
+  component.missing = definition ? checkRequirements(definition) : [{ kind: "component", name: component.name }];
+  component.ready = component.present && component.missing.length === 0;
+}
+for (const info of Object.values(composed.capabilities)) {
+  for (const provider of info.providers ?? []) {
+    provider.ready = composed.components.find(c => c.name === provider.name)?.ready ?? false;
+  }
+  info.ready = composed.components.find(c => c.name === info.provider)?.ready ?? false;
+}
 
 function probe(bin, args = ["--version"]) {
   try {
-    const out = execFileSync(bin, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    const out = execFileSync(resolveBinary(bin), args, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 10000 });
     return out.split("\n")[0].trim();
   } catch {
     return null;
@@ -35,6 +49,7 @@ const checks = [
   { name: "ffmpeg", detail: probe("ffmpeg", ["-version"]), required: false },
   { name: "ffprobe", detail: probe("ffprobe", ["-version"]), required: false },
   { name: "python3", detail: probe("python3"), required: false },
+  { name: "blender", detail: probe("blender"), required: false },
 ];
 
 console.log(`\nProfile: ${composed.profile}\n`);
@@ -50,8 +65,8 @@ for (const c of checks) {
 
 console.log("\nCredentials:");
 const envKeys = new Set();
-for (const c of composed.components) for (const m of c.missing) if (m.kind === "env") envKeys.add(m.name);
-for (const key of ["FAL_KEY"]) {
+for (const c of composed.components) for (const key of config.components[c.name]?.requires?.env ?? []) envKeys.add(key);
+for (const key of envKeys) {
   console.log(`  ${process.env[key] ? "✓" : "!"} ${key.padEnd(10)} ${process.env[key] ? "set" : "not set"}`);
 }
 

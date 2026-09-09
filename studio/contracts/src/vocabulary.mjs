@@ -15,6 +15,9 @@ export const CAPABILITIES = Object.freeze([
   // graphic: a different provider, different outputs, and a stage should be
   // able to ask for one without getting the other.
   "graphics.animate",
+  // Editable 3D sources and rendering existing scenes are separate contracts.
+  "scene.create",
+  "scene.render",
   "terminal.record",
   // Generating new footage from a prompt and references, as opposed to
   // composing existing footage into a timeline.

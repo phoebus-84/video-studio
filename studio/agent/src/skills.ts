@@ -7,6 +7,8 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { load as parseYaml } from "js-yaml";
 import { resolveConfig } from "../src/config.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -34,7 +36,7 @@ export interface SkillCatalog {
   /** List skills with optional filter. */
   list(filter?: { source?: "built-in" | "series-local"; seriesSlug?: string }): SkillDescriptor[];
   /** Load a skill's full content. */
-  load(skillId: string): Promise<string>;
+  load(skillId: string, seriesSlug?: string): Promise<string>;
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────
@@ -42,10 +44,9 @@ export interface SkillCatalog {
 /**
  * Create a skill catalog by scanning built-in and series-local directories.
  */
-export async function discoverSkills(): Promise<SkillCatalog> {
-  const config = await resolveConfig();
-  const builtInPath = path.resolve(config.libraryRoot, "..", "video-built-in-pipelines", "skills");
-  const libraryRoot = config.libraryRoot;
+export async function discoverSkills(options: { libraryRoot?: string; builtInPath?: string } = {}): Promise<SkillCatalog> {
+  const libraryRoot = options.libraryRoot ?? (await resolveConfig()).libraryRoot;
+  const builtInPath = options.builtInPath ?? fileURLToPath(new URL("../../../.pi/skills/", import.meta.url));
 
   const allSkills: SkillDescriptor[] = [];
 
@@ -68,9 +69,9 @@ export async function discoverSkills(): Promise<SkillCatalog> {
       const channelStat = await fs.stat(channelPath).catch(() => null);
       if (!channelStat?.isDirectory()) continue;
 
-      const seriesList = await fs.readdir(channelPath).catch(() => [] as string[]);
+      const seriesList = await fs.readdir(path.join(channelPath, "series")).catch(() => [] as string[]);
       for (const series of seriesList) {
-        const seriesPath = path.join(channelPath, series);
+        const seriesPath = path.join(channelPath, "series", series);
         const skillsPath = path.join(seriesPath, "skills");
         try {
           const localSkills = await scanSkillDir(skillsPath, "series-local", `${channel}/${series}`);
@@ -93,8 +94,12 @@ export async function discoverSkills(): Promise<SkillCatalog> {
         return true;
       });
     },
-    async load(skillId) {
-      const skill = allSkills.find((s) => s.id === skillId);
+    async load(skillId, seriesSlug) {
+      const local = seriesSlug ? allSkills.filter(s => s.id === skillId && s.seriesSlug === seriesSlug) : [];
+      const builtin = allSkills.filter(s => s.id === skillId && s.source === "built-in");
+      const matches = local.length ? local : builtin;
+      if (matches.length > 1) throw new Error(`Ambiguous skill: ${skillId}`);
+      const skill = matches[0];
       if (!skill) throw new Error(`Skill not found: ${skillId}`);
       return fs.readFile(skill.path, "utf-8");
     },
@@ -125,10 +130,10 @@ async function scanSkillDir(
             skills.push(descriptor);
           }
         }
-      } else if (entry.isFile() && entry.name.toUpperCase() === "SKILL.MD") {
-        // Flat: skills/SKILL.md (used by single-skill directory)
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+        // Pi also discovers root-level .md skills, not just SKILL.md folders.
         const skillPath = path.join(dirPath, entry.name);
-        const skillId = path.basename(dirPath);
+        const skillId = entry.name.toUpperCase() === "SKILL.MD" ? path.basename(dirPath) : path.basename(entry.name, ".md");
         const descriptor = await describeSkill(skillId, skillPath, source, seriesSlug);
         skills.push(descriptor);
       }
@@ -167,6 +172,12 @@ async function describeSkill(
     const descMatch = raw.match(/^#\s+.+\n\n(.+)/m);
     if (descMatch) {
       description = descMatch[1]!.trim().slice(0, 200);
+    }
+    const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (frontmatter) {
+      const meta = parseYaml(frontmatter[1]!) as Record<string, unknown> | null;
+      if (typeof meta?.name === "string") skillId = name = meta.name;
+      if (typeof meta?.description === "string") description = meta.description;
     }
   } catch {
     // File unreadable — return minimal descriptor

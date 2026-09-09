@@ -26,6 +26,16 @@
       "model": "v1"
     },
     {
+      "capability": "scene.create",
+      "provider": "blender",
+      "model": "blender-4.5-lts"
+    },
+    {
+      "capability": "scene.render",
+      "provider": "blender",
+      "model": "cycles-4.5-lts"
+    },
+    {
       "capability": "terminal.record",
       "provider": "vhs",
       "model": "vhs-v0.11"

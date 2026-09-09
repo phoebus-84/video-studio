@@ -27,13 +27,40 @@ than a module. `check:boundaries` will tell you immediately.
 Capabilities are provider-neutral (ADR-0015). A stage asks for
 `speech.synthesize`; it never asks for a particular vendor.
 
-1. Add the name to the canonical vocabulary in `studio/contracts`.
-2. Declare it in `compose.config.json` on the component that provides it.
-3. Wire the studio-side call in `studio/agent`.
+Use this end-to-end checklist (Blender is the scene-provider example):
 
-Exactly one component may claim a capability in a given profile. If two do,
-`compose` fails rather than picking a winner — resolving that is an editorial
-decision, not a tooling one.
+1. Define the provider-neutral input/output semantics. Reuse a capability only
+   when its semantics match; source creation, rendering and editing are different.
+2. Add new names to both `studio/contracts/src/vocabulary.mjs` and
+   `schemas/v1alpha1/vocabulary.schema.json`; run `npm run bindings:generate
+   --workspace @studio/contracts`. Extend `fixtures/vocabulary/valid/bindings.json`
+   and add schema fixtures/conformance tests. `npm run check:contracts` verifies
+   vocabulary, fixtures and generated bindings (also run by root `check`).
+3. Implement a reusable `@av/*` package with validation, readiness probing,
+   explicit provider/device selection, bounded cancellable execution, provenance,
+   and failed-output handling. Packages never import studio concepts.
+4. Register the workspace, component requirements and selected profiles in
+   `compose.config.json`. Multiple providers are supported: each overlapping
+   capability needs an explicit profile `defaultProviders` choice. No silent fallback.
+5. Add the agent dependency and a small studio adapter/tool-registration module.
+   Register it in `studio/agent/extensions/index.ts`. Check composition bindings
+   and live readiness; respect episode paths including symlinks. Throw tool errors
+   rather than returning an `isError` property from Pi tool `execute`.
+6. Add the technique/stage skill to `skills/`, and a versioned manifest or a
+   documented integration into an existing workflow. Describe native-source
+   handoffs, preview/final settings, and how an accepted result reaches the edit.
+   Do **not** add production handlers to the gateway.
+7. Test fake success/failure, missing outputs/binaries, cancellation, contention,
+   trust/path boundaries and source preservation; add an opt-in live smoke test.
+   Test actual skill/tool discovery and pipeline validation as well as the package.
+8. Run `bun install`, compose the intended profile, run doctor, regenerate docs,
+   then `npm run check`. Validate profiles without the new provider too. Record
+   external requirements and unverified live behavior; do not equate “wired” with
+   “ready” or “authorized.”
+
+This is still too many manual integration points. The proposed studio adapter
+registry and execution/approval work are described in the
+[harness review](harness-review.md); they are not yet a plugin API.
 
 ## Adding a skill
 
@@ -50,7 +77,7 @@ the canonical schema owned by `studio/contracts` (ADR-0024) — this package doe
 not define its own.
 
 ```bash
-npm run lint:pipeline --workspace @studio/pipelines -- pipelines/*.yaml
+npm run check:pipelines
 ```
 
 ## Dependencies

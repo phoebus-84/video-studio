@@ -1,5 +1,10 @@
 # Architecture
 
+> This describes the target architecture. Some active CLI/gateway paths do not
+> yet enforce its execution, approval and review guarantees. See the
+> [source-level harness review](harness-review.md) before relying on unattended
+> production.
+
 ## Product boundary
 
 The MVP produces faceless, narrated, illustrated YouTube explainers:
@@ -29,7 +34,9 @@ Stages request provider-neutral capabilities. The initial implementations are:
 - `image.generate` and `image.edit`: fal media adapter;
 - `speech.synthesize`: local Qwen3-TTS worker on MLX;
 - `graphics.render`: deterministic SVG, diagram, and code-frame renderer;
-- `video.compose` and `media.probe`: FFmpeg composer.
+- `video.compose` and `media.probe`: FFmpeg composer;
+- `scene.create` and `scene.render`: Blender editable 3D scenes and background
+  Eevee/Cycles previews/animation, with a Pi-directed artist-handoff workflow.
 
 The provider selected by Pi is recorded in the episode's pipeline snapshot. Adapters do not silently fall back.
 

@@ -1253,6 +1253,10 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         };
       }
 
+      // Editable 3D scenes: use the same composition-aware status as the adapter.
+      const { blenderCapabilityStatus } = await import("./blender-tools.js");
+      Object.assign(caps, await blenderCapabilityStatus());
+
       // Graphics
       caps["graphics-rendering"] = { available: false, detail: "Not yet wired (sgr-3i9.4)" };
 

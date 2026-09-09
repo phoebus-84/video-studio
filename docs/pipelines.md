@@ -1,73 +1,89 @@
 # Pipeline model
 
-## Manifest shape
+## Canonical manifests
 
-Built-in and series-owned pipelines use YAML. A simplified shape is:
+Built-in manifests live in `studio/pipelines/pipelines/*.yaml`. They validate
+against `studio/contracts/schemas/v1alpha1/pipeline-manifest.schema.json`, not a
+second schema invented by a provider. For example:
 
 ```yaml
-apiVersion: video.studio/v1alpha1
-kind: Pipeline
-metadata:
-  name: fairy-tale
-  version: 0.1.0
-extends: narrated-illustrated-video@0.1.0
-policy:
-  defaultApproval: autopilot
-  budgetUsd: 3.00
-stages:
-  adapt:
-    after: [ingest]
-    skill: skills/fairy-tale/adapt/SKILL.md
-    consumes: [source-text, channel-profile, series-profile]
-    produces: [adapted-story]
-    capabilities: []
-    gate: creative
-    success:
-      contracts: [adapted-story@1]
-  art-direction:
-    patch:
-      skill: skills/fairy-tale/art-direction/SKILL.md
+pipeline:
+  id: a-scene-workflow
+  version: "0.1.0"
+  description: "Create an editable 3D scene"
+  capabilities:
+    - id: scene.create
+      version: "1.0.0"
+  stages:
+    - id: build
+      name: "Build Scene"
+      type: capability
+      capability: scene.create
+      inputs: []
+      outputs:
+        - contract: scene-source.json
+          version: "0.1.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills:
+        - skill: blender-scene
+          version: "0.1.0"
+      depends_on: []
 ```
 
-The actual schema is owned by `video-workspace-contracts`.
+Editorial stages use `type: editorial` without a capability. Capabilities describe
+what is requested, not which vendor/tool executes it. Versioned series overrides
+must preserve a valid dependency graph and satisfiable input/output contracts;
+see [ADR-0001](adr/0001-series-pipelines-use-explicit-inheritance.md).
 
-## Override semantics
+## Built-in workflows
 
-A series pipeline can:
+| ID | Route |
+|---|---|
+| `narrated-illustrated-video` | Brief, script, art direction, terminal/illustration generation, narration, captions/timing, composition, QA |
+| `fairy-tale-adaptation` | Tale ingestion, audience adaptation and reviews plus the narrated path |
+| `repository-documentation` | Repository-grounded explanation plus the narrated path |
+| `blender-animation` | Shot plan → editable scene → preview/artist handoff → animation → shot acceptance |
 
-- `extends` one exact pipeline version;
-- patch a stage by stable stage ID;
-- insert a stage with explicit `before` or `after` edges;
-- disable a stage only when downstream contracts remain satisfiable;
-- replace the entire inherited definition;
-- define a new pipeline from scratch.
+`blender-animation` is a **Pi-directed silent-shot workflow**. It does not require
+fal, voice synthesis or VHS, and it does not add production handlers to the legacy
+gateway executor. The source/preview/render JSON artifacts reference immutable
+attempts and source hashes; their conventions are documented in `blender-scene`.
+The final MP4 can be a standalone silent shot or a video clip in a mixed-media edit.
 
-No implicit array merge is permitted. Unknown stage IDs, ambiguous ordering, cycles, missing artifact producers, and unsatisfied capabilities fail resolution. The runtime writes the fully resolved result to the episode before execution.
+## Automation and human direction
 
-## Built-in pipelines
+The intended common flow is: frozen plan → prerequisite validation → lease →
+capability/editorial work → validated candidate → review → accepted selection.
+Autopilot, guided and manual should be policies over that same graph. Guided
+Blender production uses shot-direction, preview and final acceptance gates;
+an artist can Save As a native revision and render that file without rebuilding
+it from the original script. Automated runs require an explicitly agreed plan
+and budget; a script trust flag is not a human approval.
 
-### `narrated-illustrated-video`
-Shared production stages: brief, script normalization, TTS segmentation, art direction, scene planning, narration, visual generation, graphics, edit, compose, and delivery QA.
+**Current limitation:** active CLI run/status paths still rely heavily on file
+existence and stage instructions, and the legacy gateway autopilot is hard-coded.
+The full state-machine, approval and budget guarantees are not yet integrated
+end to end. Do not interpret a declared gate as proof that direct tool calls are
+mechanically blocked. See the [harness review](harness-review.md) for evidence and
+priority fixes before unattended execution.
 
-### `fairy-tale`
-Specialized stages before the shared production path: source ingestion, audience adaptation, safety and sensitivity review, narrative preservation review, and story-specific visual continuity.
+## Adding a workflow
 
-### `repository-content-plan`
-Series-level source snapshot, repository map, audience and prerequisite analysis, topic inventory, learning progression, terminology, visual grammar, and independent episode brief generation.
+1. Reuse provider-neutral capabilities and typed media outputs.
+2. Declare stage inputs/outputs, dependencies, skills and gates explicitly.
+3. Avoid requiring irrelevant capabilities for every shot; optional input files
+   alone do not make a stage optional.
+4. Use a typed video timeline for mixed clips; never reduce Blender animation to
+   an image-concat input.
+5. Validate manifests and test a real user route through the agent, not just the
+   package API.
 
-### `repository-documentation-episode`
-Episode-level source grounding, claim and example verification, teaching script, code and diagram plan, then the shared narrated production path.
+```bash
+npm run check:pipelines
+```
 
-## Stage execution
-
-1. Runtime verifies prerequisites and grants a lease.
-2. Pi reads the stage skill and immutable snapshot.
-3. Pi calls only stage-declared capabilities and writes candidate artifacts.
-4. Runtime validates contracts and records a Stage Attempt.
-5. Pi performs skill-directed review; findings are persisted.
-6. Approval policy advances or pauses.
-7. Changes to source revisions mark dependent outputs stale.
-
-## Capability binding
-
-Stages declare capability names rather than provider tools. Pi records a concrete binding before a paid or consequential call. The MVP bindings are fal for generated imagery, Qwen3-TTS for speech, local graphics for text-critical frames, and FFmpeg for composition. Changing a binding creates a revised decision and may require approval; adapters do not silently substitute providers.
+The [capability checklist](contributing.md) covers installation, registration,
+skills, diagnostics, tests and documentation.

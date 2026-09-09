@@ -21,7 +21,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, cpSync, readdirSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
-import { execFileSync } from "node:child_process";
+import { checkRequirements } from "./requirements.mjs";
 import { isCapability, CAPABILITIES } from "@studio/contracts/src/vocabulary.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -65,26 +65,6 @@ if (!profile) {
 }
 
 // ── Requirement probes ──────────────────────────────────────────────────────
-
-function hasBinary(bin) {
-  try {
-    execFileSync("/bin/sh", ["-c", `command -v -- "$1"`, "sh", bin], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function checkRequirements(component) {
-  const missing = [];
-  for (const bin of component.requires?.system ?? []) {
-    if (!hasBinary(bin)) missing.push({ kind: "system", name: bin });
-  }
-  for (const env of component.requires?.env ?? []) {
-    if (!process.env[env]) missing.push({ kind: "env", name: env });
-  }
-  return missing;
-}
 
 // ── Resolve the composition ─────────────────────────────────────────────────
 
@@ -228,7 +208,7 @@ writeFileSync(join(ROOT, "composed.json"), JSON.stringify(composed, null, 2) + "
 
 // ── Report ──────────────────────────────────────────────────────────────────
 
-if (syncSkillsOnly && quiet) {
+if (syncSkillsOnly && quiet && problems.length === 0) {
   process.exit(0);
 }
 

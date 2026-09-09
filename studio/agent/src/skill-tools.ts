@@ -8,15 +8,9 @@ import { discoverSkills } from "../src/skills.js";
 import { gatherContext } from "../src/context.js";
 import type { SkillCatalog } from "../src/skills.js";
 
-// ── Cache ───────────────────────────────────────────────────────────────────
-
-let skillCatalog: SkillCatalog | null = null;
-
+// Discover on request: compose and human edits may change skills mid-session.
 async function getCatalog(): Promise<SkillCatalog> {
-  if (!skillCatalog) {
-    skillCatalog = await discoverSkills();
-  }
-  return skillCatalog;
+  return discoverSkills();
 }
 
 // ── Tools ───────────────────────────────────────────────────────────────────
@@ -67,11 +61,12 @@ export function registerSkillTools(pi: ExtensionAPI): void {
       "Load the full content of a production skill markdown file.",
     parameters: Type.Object({
       skillId: Type.String({ description: "Skill ID to load (e.g. 'write-brief')" }),
+      seriesSlug: Type.Optional(Type.String({ description: "channel/series for an explicit series-local override" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
         const catalog = await getCatalog();
-        const content = await catalog.load(params.skillId);
+        const content = await catalog.load(params.skillId, params.seriesSlug);
 
         return {
           content: [{ type: "text", text: `# Skill: ${params.skillId}\n\n${content}` }],

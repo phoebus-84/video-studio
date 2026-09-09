@@ -82,6 +82,7 @@ export default defineConfig({
         text: "Understanding the system",
         items: [
           { text: "Architecture", link: "/architecture" },
+          { text: "Harness review", link: "/harness-review" },
           { text: "Domain language", link: "/context" },
           { text: "Workspace layout", link: "/workspace" },
           { text: "Pipelines", link: "/pipelines" },

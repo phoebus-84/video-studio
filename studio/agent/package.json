@@ -58,6 +58,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@av/blender": "workspace:*",
     "@av/terminal-recorder": "workspace:*",
     "@av/video-composer": "workspace:*",
     "js-yaml": "^5.2.2",

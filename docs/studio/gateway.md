@@ -10,7 +10,7 @@
 | Tier | studio — part of the product |
 | Capabilities | — |
 | Requires | nothing beyond Node |
-| In profiles | `full`, `studio` |
+| In profiles | `full`, `studio`, `blender` |
 
 ## Role in the studio
 

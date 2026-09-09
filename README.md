@@ -26,6 +26,7 @@ narrate episodes is the studio's business, not the tool's.
 
 | Package | What it is on its own |
 |---|---|
+| `packages/blender` | Editable 3D scenes, Geometry Nodes, Eevee/Cycles animation and Poly Haven assets |
 | `packages/voice` | Speech synthesis and voice cloning on MLX |
 | `packages/fal-media` | Tracked image generation/editing against fal.ai |
 | `packages/graphics` | Deterministic SVG/PNG code frames, diagrams, titles |
@@ -80,6 +81,8 @@ npm run docs:build   # also fails on any dead internal link
 - [Workspace layout](docs/workspace.md)
 - [Pipelines](docs/pipelines.md)
 - [Contributing](docs/contributing.md)
+- [Blender setup and workflow](packages/blender/README.md)
+- [Harness review and improvement priorities](docs/harness-review.md)
 - [Per-component reference](docs/index.md#packages)
 - [Decision records](docs/adr/)
 

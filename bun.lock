@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "video-studio",
@@ -9,6 +8,15 @@
       },
       "devDependencies": {
         "vitepress": "^1.6.4",
+      },
+    },
+    "packages/blender": {
+      "name": "@av/blender",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/node": "^26.1.1",
+        "tsx": "^4.19.0",
+        "typescript": "^5.7.0",
       },
     },
     "packages/codex-image": {
@@ -47,7 +55,7 @@
       "name": "@av/infographics",
       "version": "0.1.0",
       "bin": {
-        "render-infographic": "./dist/cli.js",
+        "render-infographic": "./dist/cli.js"
       },
       "dependencies": {
         "@remotion/bundler": "4.0.505",
@@ -88,6 +96,7 @@
       "name": "@studio/agent",
       "version": "0.1.0",
       "dependencies": {
+        "@av/blender": "workspace:*",
         "@av/codex-image": "workspace:*",
         "@av/fal-media": "workspace:*",
         "@av/terminal-recorder": "workspace:*",
@@ -168,7 +177,7 @@
       "name": "@studio/runtime",
       "version": "0.1.0",
       "bin": {
-        "vpr": "./dist/src/cli.js",
+        "vpr": "./dist/src/cli.js"
       },
       "dependencies": {
         "@studio/contracts": "workspace:*",
@@ -244,6 +253,8 @@
     "@algolia/requester-node-http": ["@algolia/requester-node-http@5.56.0", "", { "dependencies": { "@algolia/client-common": "5.56.0" } }, "sha512-PIOUXlSnrqM0S+WOgDRb4RzotydJH7ZoT6tOyL7tAO7qJOfvX5wsEW8Pe+PMKMwvuI4/gIyK9cg2H7lJXqnc4Q=="],
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.91.1", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-LAmu761tSN9r66ixvmciswUj/ZC+1Q4iAfpedTfSVLeswRwnY3n2Nb6Tsk+cLPP28aLOPWeMgIuTuCcMC6W/iw=="],
+
+    "@av/blender": ["@av/blender@workspace:packages/blender"],
 
     "@av/codex-image": ["@av/codex-image@workspace:packages/codex-image"],
 
