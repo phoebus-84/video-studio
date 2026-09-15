@@ -1,0 +1,22 @@
+{
+  "stageId": "qa",
+  "decision": "approved",
+  "actor": "human",
+  "at": "2026-09-15T12:00:00Z",
+  "inputs": [
+    { "path": "output/final.mp4", "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90" }
+  ],
+  "outputs": [
+    { "path": "artifacts/qa-report.json", "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0" }
+  ],
+  "checks": [
+    {
+      "id": "duration",
+      "name": "Render duration",
+      "status": "pass",
+      "expected": "30-480s",
+      "actual": "89.833s",
+      "evidence": "ffprobe -show_entries format=duration output/final.mp4"
+    }
+  ]
+}
