@@ -14,12 +14,15 @@ import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
 import { loadNarrationManifest, naturalSceneOrder, type NarrationTimingEntry } from "./narration-manifest.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
 import { appendJournalEvent } from "@studio/contracts/src/journal.mjs";
+import { createDefaultLoader, resolvePipeline, type StageGates } from "@studio/runtime";
+import { hashArtifacts, buildGateReview } from "@studio/contracts/src/gate-review.mjs";
+import { builtinPipelinesPath } from "./client.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface StageResult {
   stageId: string;
-  status: "completed" | "failed" | "skipped";
+  status: "completed" | "failed" | "skipped" | "blocked" | "awaiting_approval";
   outputs: string[];
   durationMs: number;
   error?: string;
@@ -296,6 +299,84 @@ export const HANDLERS: Record<string, StageHandler> = {
   "qa": handleQa,
 };
 
+// ── Gates ───────────────────────────────────────────────────────────────────
+
+/** Gates for every stage in a pipeline, by stage id. */
+async function loadGates(
+  pipeline: string,
+  libraryRoot: string,
+  log: (msg: string) => void,
+): Promise<Map<string, StageGates> | null> {
+  try {
+    // `|| undefined` rather than the bare call: builtinPipelinesPath() returns
+    // "" when package resolution fails, and createDefaultLoader's `??` does not
+    // fall back on an empty string — so AVG_BUILTIN_PIPELINES, the operator's
+    // escape hatch, would be dead exactly when it is needed.
+    const loader = createDefaultLoader(libraryRoot, builtinPipelinesPath() || undefined);
+    const resolved = await resolvePipeline(loader, pipeline);
+    return new Map(resolved.stages.map((s) => [s.definition.id, s.definition.gates]));
+  } catch (err) {
+    // Fail closed and loudly. Not knowing what a stage's gates are is not the
+    // same as a stage having none, and guessing "none" is how fabricated
+    // reviews got reported as completions in the first place.
+    log(`Autopilot: cannot read gates for pipeline "${pipeline}" — ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Every declared output must exist and have bytes in it.
+ *
+ * A report file is not proof a review happened, and an empty file is not proof
+ * of anything at all. Returns an error message, or null when the outputs hold up.
+ */
+async function validateOutputs(episodeDir: string, outputs: string[]): Promise<string | null> {
+  if (outputs.length === 0) return "the stage produced no outputs";
+  for (const file of outputs) {
+    let stat;
+    try {
+      stat = await fs.stat(file);
+    } catch {
+      return `declared output "${path.relative(episodeDir, file)}" was not written`;
+    }
+    if (stat.size === 0) {
+      return `declared output "${path.relative(episodeDir, file)}" is empty`;
+    }
+  }
+  return null;
+}
+
+/** Ask for a review of what a stage produced, naming it by hash. */
+async function requestReview(
+  episodeDir: string,
+  ref: EpisodeRef,
+  stageId: string,
+  outputs: string[],
+  note: string,
+): Promise<void> {
+  let hashed: Awaited<ReturnType<typeof hashArtifacts>> = [];
+  try {
+    hashed = await hashArtifacts(episodeDir, outputs.map((o) => path.relative(episodeDir, o)));
+  } catch {
+    // A request that cannot name its artifacts is still a request; it simply
+    // names none. It can never be satisfied by an approval, which is correct.
+    hashed = [];
+  }
+  await appendJournalEvent(episodeDir, {
+    type: "approval-requested",
+    actor: "gateway",
+    episode: ref,
+    stageId,
+    detail: buildGateReview({
+      stageId,
+      decision: "requested",
+      actor: "gateway",
+      outputs: hashed,
+      note,
+    }),
+  });
+}
+
 // ── Executor ────────────────────────────────────────────────────────────────
 
 export async function runAutopilot(
@@ -311,6 +392,7 @@ export async function runAutopilot(
   // does not exist, so each handler wrote its artifact beside the episode.
   const episodeDir = episodePath(libraryRoot, ref.channel, ref.series, ref.episode);
   const ctx: StageContext = { episodeDir, ref, log };
+  const gates = await loadGates(pipeline, libraryRoot, log);
   const results: StageResult[] = [];
 
   log(`Autopilot: ${ref.channel}/${ref.series}/${ref.episode} (${pipeline})`);
@@ -348,17 +430,35 @@ export async function runAutopilot(
     }
     seen.add(stageId);
 
+    const stageGates = gates?.get(stageId);
+    const gated = stageGates === undefined || !stageGates.autopilot || stageGates.review !== "none";
+
+    // 1. The manifest says this may not run unattended.
+    if (stageGates && !stageGates.autopilot) {
+      log(`Autopilot: "${stageId}" declares autopilot: false — approval requested`);
+      await requestReview(episodeDir, ref, stageId, [], `${stageId} declares autopilot: false`);
+      results.push({ stageId, status: "blocked", outputs: [], durationMs: 0,
+        error: "Stage declares autopilot: false and may not run unattended" });
+      break;
+    }
+
     const handler = HANDLERS[stageId];
+
+    // 2. No checker behind a gated stage. A refusal, not a shrug.
     if (!handler) {
-      log(`Autopilot: no handler for "${stageId}" — skipping`);
-      results.push({
-        stageId,
-        status: "skipped",
-        outputs: [],
-        durationMs: 0,
-        error: "No handler registered",
-      });
-      break; // Stop on unknown stages
+      if (gated) {
+        const why = stageGates
+          ? `"${stageId}" requires ${stageGates.review} review and has no checker`
+          : `gates for "${stageId}" could not be read`;
+        log(`Autopilot: ${why} — blocked`);
+        await requestReview(episodeDir, ref, stageId, [], why);
+        results.push({ stageId, status: "blocked", outputs: [], durationMs: 0, error: why });
+      } else {
+        log(`Autopilot: no handler for "${stageId}" — skipping`);
+        results.push({ stageId, status: "skipped", outputs: [], durationMs: 0,
+          error: "No handler registered" });
+      }
+      break;
     }
 
     const stageStart = Date.now();
@@ -371,21 +471,45 @@ export async function runAutopilot(
     });
     try {
       const outputs = await handler(ctx);
-      results.push({
-        stageId,
-        status: "completed",
-        outputs,
-        durationMs: Date.now() - stageStart,
-      });
+
+      // 3. File existence is discovery, not completion.
+      const invalid = await validateOutputs(episodeDir, outputs);
+      if (invalid) {
+        results.push({ stageId, status: "failed", outputs: [], durationMs: Date.now() - stageStart,
+          error: invalid });
+        await appendJournalEvent(episodeDir, {
+          type: "stage-failed", actor: "runtime", episode: ref, stageId,
+          detail: { durationMs: Date.now() - stageStart, error: invalid },
+        });
+        log(`Autopilot: ${stageId} FAILED — ${invalid}`);
+        break;
+      }
+
+      const relative = outputs.map((o) => path.relative(episodeDir, o));
+
+      // 4. Ran, but not accepted. Unreadable gates count as gated here too:
+      // a stage whose gates nothing could read has not been shown to need no
+      // review, and calling it "completed" is the same guess that let
+      // fabricated reviews be reported as completions.
+      if (!stageGates || stageGates.review !== "none") {
+        const why = stageGates
+          ? `${stageId} requires ${stageGates.review} review`
+          : `gates for "${stageId}" could not be read`;
+        await requestReview(episodeDir, ref, stageId, outputs, why);
+        results.push({ stageId, status: "awaiting_approval", outputs, durationMs: Date.now() - stageStart });
+        await appendJournalEvent(episodeDir, {
+          type: "attempt-recorded", actor: "runtime", episode: ref, stageId,
+          detail: { durationMs: Date.now() - stageStart, outputs: relative },
+        });
+        log(`Autopilot: ${why} — awaiting review, stopping`);
+        break;
+      }
+
+      // 5. Ungated and its outputs hold up.
+      results.push({ stageId, status: "completed", outputs, durationMs: Date.now() - stageStart });
       await appendJournalEvent(episodeDir, {
-        type: "stage-completed",
-        actor: "runtime",
-        episode: ref,
-        stageId,
-        detail: {
-          durationMs: Date.now() - stageStart,
-          outputs: outputs.map((o) => path.relative(episodeDir, o)),
-        },
+        type: "stage-completed", actor: "runtime", episode: ref, stageId,
+        detail: { durationMs: Date.now() - stageStart, outputs: relative },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -409,8 +533,14 @@ export async function runAutopilot(
   }
 
   const totalMs = Date.now() - startMs;
-  const completed = results.filter((r) => r.status === "completed").length;
-  const failed = results.filter((r) => r.status === "failed").length;
+  const count = (status: StageResult["status"]) => results.filter((r) => r.status === status).length;
+  const parts = [
+    `${count("completed")} completed`,
+    `${count("failed")} failed`,
+  ];
+  // A run that halted at a gate is not a run that finished.
+  if (count("awaiting_approval") > 0) parts.push(`${count("awaiting_approval")} awaiting review`);
+  if (count("blocked") > 0) parts.push(`${count("blocked")} blocked`);
 
   return {
     episodeSlug: `${ref.channel}/${ref.series}/${ref.episode}`,
@@ -419,7 +549,7 @@ export async function runAutopilot(
     totalDurationMs: totalMs,
     summary: results.length === 0
       ? `All stages already complete (${(totalMs / 1000).toFixed(1)}s)`
-      : `${completed} completed, ${failed} failed, ${results.length} total (${(totalMs / 1000).toFixed(1)}s)`,
+      : `${parts.join(", ")}, ${results.length} total (${(totalMs / 1000).toFixed(1)}s)`,
   };
 }
 
