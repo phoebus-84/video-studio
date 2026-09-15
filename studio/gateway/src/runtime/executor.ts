@@ -431,10 +431,24 @@ export async function runAutopilot(
     seen.add(stageId);
 
     const stageGates = gates?.get(stageId);
-    const gated = stageGates === undefined || !stageGates.autopilot || stageGates.review !== "none";
 
-    // 1. The manifest says this may not run unattended.
-    if (stageGates && !stageGates.autopilot) {
+    // 1. Not knowing a stage's gates is not the same as a stage having none.
+    // Guessing "none" is how fabricated reviews got reported as completions.
+    // This precedes the handler lookup and the handler call, so a stage whose
+    // gates could not be read never executes — a gate you cannot read covers
+    // execution as much as acceptance.
+    if (!stageGates) {
+      const why = `gates for "${stageId}" could not be read`;
+      log(`Autopilot: ${why} — blocked`);
+      await requestReview(episodeDir, ref, stageId, [], why);
+      results.push({ stageId, status: "blocked", outputs: [], durationMs: 0, error: why });
+      break;
+    }
+
+    const gated = !stageGates.autopilot || stageGates.review !== "none";
+
+    // 2. The manifest says this may not run unattended.
+    if (!stageGates.autopilot) {
       log(`Autopilot: "${stageId}" declares autopilot: false — approval requested`);
       await requestReview(episodeDir, ref, stageId, [], `${stageId} declares autopilot: false`);
       results.push({ stageId, status: "blocked", outputs: [], durationMs: 0,
@@ -444,12 +458,10 @@ export async function runAutopilot(
 
     const handler = HANDLERS[stageId];
 
-    // 2. No checker behind a gated stage. A refusal, not a shrug.
+    // 3. No checker behind a gated stage. A refusal, not a shrug.
     if (!handler) {
       if (gated) {
-        const why = stageGates
-          ? `"${stageId}" requires ${stageGates.review} review and has no checker`
-          : `gates for "${stageId}" could not be read`;
+        const why = `"${stageId}" requires ${stageGates.review} review and has no checker`;
         log(`Autopilot: ${why} — blocked`);
         await requestReview(episodeDir, ref, stageId, [], why);
         results.push({ stageId, status: "blocked", outputs: [], durationMs: 0, error: why });
@@ -472,7 +484,7 @@ export async function runAutopilot(
     try {
       const outputs = await handler(ctx);
 
-      // 3. File existence is discovery, not completion.
+      // 4. File existence is discovery, not completion.
       const invalid = await validateOutputs(episodeDir, outputs);
       if (invalid) {
         results.push({ stageId, status: "failed", outputs: [], durationMs: Date.now() - stageStart,
@@ -487,14 +499,11 @@ export async function runAutopilot(
 
       const relative = outputs.map((o) => path.relative(episodeDir, o));
 
-      // 4. Ran, but not accepted. Unreadable gates count as gated here too:
-      // a stage whose gates nothing could read has not been shown to need no
-      // review, and calling it "completed" is the same guess that let
-      // fabricated reviews be reported as completions.
-      if (!stageGates || stageGates.review !== "none") {
-        const why = stageGates
-          ? `${stageId} requires ${stageGates.review} review`
-          : `gates for "${stageId}" could not be read`;
+      // 5. Ran, but not accepted. The test is the declared review, never
+      // `stageGates && ...`: a missing gate record must not read as "no review
+      // required" — that check is above, and it blocks.
+      if (stageGates.review !== "none") {
+        const why = `${stageId} requires ${stageGates.review} review`;
         await requestReview(episodeDir, ref, stageId, outputs, why);
         results.push({ stageId, status: "awaiting_approval", outputs, durationMs: Date.now() - stageStart });
         await appendJournalEvent(episodeDir, {
@@ -505,7 +514,7 @@ export async function runAutopilot(
         break;
       }
 
-      // 5. Ungated and its outputs hold up.
+      // 6. Ungated and its outputs hold up.
       results.push({ stageId, status: "completed", outputs, durationMs: Date.now() - stageStart });
       await appendJournalEvent(episodeDir, {
         type: "stage-completed", actor: "runtime", episode: ref, stageId,

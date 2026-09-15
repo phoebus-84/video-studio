@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,7 +133,7 @@ describe("acceptance gates", () => {
 });
 
 describe("gates that cannot be read", () => {
-  it("withholds acceptance rather than guessing a stage has no gates", async () => {
+  it("blocks rather than guessing a stage has no gates", async () => {
     const { root, dir } = await episode();
     await writeFile(join(dir, "assets", "images", "s1.png"), "bytes");
 
@@ -143,9 +143,28 @@ describe("gates that cannot be read", () => {
       runtimeOffering("illustrations"), REF, "no-such-pipeline", root, () => {},
     );
 
-    expect(report.stages[0]!.status).toBe("awaiting_approval");
-    expect(report.summary).toMatch(/1 awaiting review/);
+    expect(report.stages[0]!.status).toBe("blocked");
+    expect(report.summary).toMatch(/1 blocked/);
     expect((await journal(dir)).filter((e) => e.type === "approval-requested")).toHaveLength(1);
+  });
+
+  it("does not run the handler of a stage whose gates it could not read", async () => {
+    const { root, dir } = await episode();
+    await writeFile(join(dir, "assets", "images", "s1.png"), "bytes");
+
+    // A gate you cannot read covers execution, not only acceptance: an unknown
+    // stage might be the one declaring autopilot: false. So the block lands
+    // before the handler, and nothing is written.
+    const report = await runAutopilot(
+      runtimeOffering("illustrations"), REF, "no-such-pipeline", root, () => {},
+    );
+
+    expect(report.stages[0]!.status).toBe("blocked");
+    expect(report.stages[0]!.outputs).toEqual([]);
+    // handleIllustrations copies assets/images into artifacts/frames. If it had
+    // run, that directory would exist and hold s1.png.
+    await expect(readdir(join(dir, "artifacts", "frames"))).rejects.toThrow();
+    expect((await journal(dir)).filter((e) => e.type === "stage-started")).toHaveLength(0);
   });
 });
 
