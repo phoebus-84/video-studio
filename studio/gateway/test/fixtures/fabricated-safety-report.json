@@ -1,0 +1,12 @@
+{
+  "stage": "safety-review",
+  "targetAudience": "children 4-8",
+  "findings": [
+    { "category": "violence", "severity": "low", "detail": "Wolf eating characters is implicit/off-screen" },
+    { "category": "scariness", "severity": "moderate", "detail": "Wolf scenes may be intense for very young children" },
+    { "category": "language", "severity": "none", "detail": "No inappropriate language" },
+    { "category": "themes", "severity": "none", "detail": "Positive themes: bravery, helping others, stranger danger awareness" }
+  ],
+  "recommendation": "appropriate",
+  "parentalGuidance": "May be scary for children under 4. Parental co-viewing recommended."
+}

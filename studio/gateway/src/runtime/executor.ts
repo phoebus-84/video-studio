@@ -43,28 +43,6 @@ interface StageContext {
 
 type StageHandler = (ctx: StageContext) => Promise<string[]>;
 
-async function handleSafetyReview(ctx: StageContext): Promise<string[]> {
-  const report = {
-    stage: "safety-review",
-    reviewedAt: new Date().toISOString(),
-    targetAudience: "children 4-8",
-    findings: [
-      { category: "violence", severity: "low", detail: "Wolf eating characters is implicit/off-screen" },
-      { category: "scariness", severity: "moderate", detail: "Wolf scenes may be intense for very young children" },
-      { category: "language", severity: "none", detail: "No inappropriate language" },
-      { category: "themes", severity: "none", detail: "Positive themes: bravery, helping others, stranger danger awareness" },
-    ],
-    recommendation: "appropriate",
-    parentalGuidance: "May be scary for children under 4. Parental co-viewing recommended.",
-  };
-
-  const outPath = path.join(ctx.episodeDir, "artifacts", "safety-report.json");
-  await fs.mkdir(path.dirname(outPath), { recursive: true });
-  await fs.writeFile(outPath, JSON.stringify(report, null, 2));
-  ctx.log(`  safety-review: written (${report.findings.length} findings)`);
-  return [outPath];
-}
-
 async function handleIllustrations(ctx: StageContext): Promise<string[]> {
   // Images already exist under assets/images/ — check and report
   const assetsDir = path.join(ctx.episodeDir, "assets", "images");
@@ -182,26 +160,6 @@ async function handleTiming(ctx: StageContext): Promise<string[]> {
     ctx.log(`  timing: error — ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
-}
-
-async function handleContinuityCheck(ctx: StageContext): Promise<string[]> {
-  const report = {
-    stage: "continuity-check",
-    checkedAt: new Date().toISOString(),
-    scenes: 8,
-    checks: [
-      { check: "character-consistency", status: "pass", note: "Character designs consistent across scenes" },
-      { check: "color-palette", status: "pass", note: "Warm storybook palette maintained" },
-      { check: "lighting-continuity", status: "pass", note: "Consistent lighting direction" },
-      { check: "background-elements", status: "pass", note: "Setting details consistent" },
-    ],
-    overall: "pass",
-  };
-
-  const outPath = path.join(ctx.episodeDir, "artifacts", "continuity-report.json");
-  await fs.writeFile(outPath, JSON.stringify(report, null, 2));
-  ctx.log(`  continuity-check: ${report.checks.length} checks, all pass`);
-  return [outPath];
 }
 
 /**
@@ -325,13 +283,16 @@ async function handleQa(ctx: StageContext): Promise<string[]> {
 }
 
 // ── Handler registry ────────────────────────────────────────────────────────
+//
+// safety-review and continuity-check are deliberately absent. They used to be
+// here and wrote literal findings — a wolf, eight scenes, four passing checks —
+// without opening any file belonging to the episode. A stage with a review gate
+// and no real checker must stop, not invent a pass; see the dispatcher below.
 
-const HANDLERS: Record<string, StageHandler> = {
-  "safety-review": handleSafetyReview,
+export const HANDLERS: Record<string, StageHandler> = {
   "illustrations": handleIllustrations,
   "captions": handleCaptions,
   "timing": handleTiming,
-  "continuity-check": handleContinuityCheck,
   "qa": handleQa,
 };
 
