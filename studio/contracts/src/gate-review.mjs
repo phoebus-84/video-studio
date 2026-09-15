@@ -107,3 +107,55 @@ export function buildGateReview({
   if (note !== undefined) review.note = note;
   return review;
 }
+
+/**
+ * The current review state of a stage.
+ *
+ * Invalidation is a fresh read, not a subscription: the recorded hashes are
+ * compared against the bytes on disk at the moment of asking. There is no
+ * watcher, no cache and no bookkeeping to fall out of date, so a review that
+ * was outrun by a re-render, copied from another episode, or simply forged
+ * cannot survive being checked.
+ *
+ * `events` is the parsed journal — see parseJournal in ./journal.mjs.
+ */
+export async function deriveGateState(events, stageId, episodeDir) {
+  const mine = events.filter(
+    (event) => (event.detail?.stageId ?? event.stageId) === stageId,
+  );
+
+  const latest = [...mine]
+    .reverse()
+    .find((event) => event.type === "approval-granted" || event.type === "approval-requested");
+
+  if (!latest) return { state: "none" };
+
+  if (latest.type === "approval-requested") {
+    return { state: "requested", at: latest.at, actor: latest.actor };
+  }
+
+  const recorded = [...(latest.detail?.inputs ?? []), ...(latest.detail?.outputs ?? [])];
+  if (recorded.length === 0) {
+    return {
+      state: "invalidated",
+      reason: "the approval named no artifacts, so there is nothing it could have reviewed",
+    };
+  }
+
+  for (const { path: relative, sha256 } of recorded) {
+    let current;
+    try {
+      [current] = await hashArtifacts(episodeDir, [relative]);
+    } catch (err) {
+      return { state: "invalidated", reason: err.message };
+    }
+    if (current.sha256 !== sha256) {
+      return {
+        state: "invalidated",
+        reason: `"${relative}" changed since it was approved`,
+      };
+    }
+  }
+
+  return { state: "approved", at: latest.at, actor: latest.actor };
+}

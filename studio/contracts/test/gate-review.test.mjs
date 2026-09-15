@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { hashArtifacts, buildGateReview, GATE_DECISIONS } from "../src/gate-review.mjs";
+import { hashArtifacts, buildGateReview, deriveGateState, GATE_DECISIONS } from "../src/gate-review.mjs";
 
 /**
  * The gateway executor used to write a safety report about a wolf for every
@@ -96,6 +96,100 @@ describe("gate review records", () => {
         () => buildGateReview({ decision: "requested", actor: "gateway" }),
         /stage/,
       );
+    });
+  });
+
+  describe("deriveGateState", () => {
+    const evt = (type, detail, actor = "human") => ({
+      eventId: `evt-${Math.random()}`,
+      type,
+      actor,
+      at: new Date().toISOString(),
+      episode: { channel: "c", series: "s", episode: "e" },
+      stageId: detail.stageId,
+      detail,
+    });
+
+    it("reports none when no one has asked for a review", async () => {
+      const state = await deriveGateState([], "qa", dir);
+      assert.equal(state.state, "none");
+    });
+
+    it("reports requested when a review was asked for but not granted", async () => {
+      const events = [evt("approval-requested", { stageId: "qa", inputs: [], outputs: [] }, "gateway")];
+      const state = await deriveGateState(events, "qa", dir);
+      assert.equal(state.state, "requested");
+    });
+
+    it("reports approved while the reviewed bytes are unchanged", async () => {
+      const file = path.join(dir, "artifacts", "qa-report.json");
+      await writeFile(file, '{"verdict":"pass"}');
+      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
+      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs })];
+
+      const state = await deriveGateState(events, "qa", dir);
+
+      assert.equal(state.state, "approved");
+      assert.equal(state.actor, "human");
+    });
+
+    it("invalidates the review when a reviewed artifact changes", async () => {
+      const file = path.join(dir, "artifacts", "qa-report.json");
+      await writeFile(file, '{"verdict":"pass"}');
+      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
+      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs })];
+
+      // The render was redone after approval; the report is no longer the one
+      // that was reviewed.
+      await writeFile(file, '{"verdict":"fail"}');
+
+      const state = await deriveGateState(events, "qa", dir);
+
+      assert.equal(state.state, "invalidated");
+      assert.match(state.reason, /changed/);
+    });
+
+    it("invalidates the review when a reviewed artifact is gone", async () => {
+      const file = path.join(dir, "artifacts", "qa-report.json");
+      await writeFile(file, '{"verdict":"pass"}');
+      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
+      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs })];
+
+      await rm(file);
+
+      const state = await deriveGateState(events, "qa", dir);
+      assert.equal(state.state, "invalidated");
+    });
+
+    it("reads the latest decision, not the first", async () => {
+      const file = path.join(dir, "artifacts", "qa-report.json");
+      await writeFile(file, '{"verdict":"pass"}');
+      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
+      const events = [
+        evt("approval-requested", { stageId: "qa", inputs: [], outputs: [] }, "gateway"),
+        evt("approval-granted", { stageId: "qa", inputs: [], outputs }),
+      ];
+
+      const state = await deriveGateState(events, "qa", dir);
+      assert.equal(state.state, "approved");
+    });
+
+    it("ignores another stage's approval", async () => {
+      const file = path.join(dir, "artifacts", "qa-report.json");
+      await writeFile(file, '{"verdict":"pass"}');
+      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
+      const events = [evt("approval-granted", { stageId: "illustrations", inputs: [], outputs })];
+
+      const state = await deriveGateState(events, "qa", dir);
+      assert.equal(state.state, "none");
+    });
+
+    it("invalidates an approval that names nothing", async () => {
+      // Belt and braces: buildGateReview refuses to make one, but a record
+      // written by something else must not be trusted either.
+      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs: [] })];
+      const state = await deriveGateState(events, "qa", dir);
+      assert.equal(state.state, "invalidated");
     });
   });
 });

@@ -45,6 +45,16 @@ export interface BuildGateReviewInput {
   at?: string;
 }
 
+export type GateStateName = "none" | "requested" | "approved" | "invalidated";
+
+export interface GateState {
+  state: GateStateName;
+  /** Why a review is invalid, when it is. */
+  reason?: string;
+  at?: string;
+  actor?: JournalActor;
+}
+
 export declare const GATE_DECISIONS: readonly ["requested", "approved"];
 
 export declare function hashArtifacts(
@@ -53,3 +63,9 @@ export declare function hashArtifacts(
 ): Promise<ArtifactHash[]>;
 
 export declare function buildGateReview(input: BuildGateReviewInput): GateReview;
+
+export declare function deriveGateState(
+  events: unknown[],
+  stageId: string,
+  episodeDir: string,
+): Promise<GateState>;
