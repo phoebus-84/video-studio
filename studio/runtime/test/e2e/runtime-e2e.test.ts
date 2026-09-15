@@ -22,6 +22,7 @@ const TEST_PIPELINE: PipelineDefinition = {
       dependsOn: [],
       produces: [{ kind: "text/markdown", label: "brief.md" }],
       consumes: [],
+      gates: { autopilot: true, review: "none", retryOnFailure: 0 },
     },
     {
       id: "write-script",
@@ -31,6 +32,7 @@ const TEST_PIPELINE: PipelineDefinition = {
       dependsOn: ["write-brief"],
       produces: [{ kind: "text/markdown", label: "script.md" }],
       consumes: [{ kind: "text/markdown", label: "brief.md" }],
+      gates: { autopilot: true, review: "none", retryOnFailure: 0 },
     },
     {
       id: "narration",
@@ -40,6 +42,7 @@ const TEST_PIPELINE: PipelineDefinition = {
       dependsOn: ["write-script"],
       produces: [{ kind: "audio/wav", label: "narration.wav" }],
       consumes: [{ kind: "text/markdown", label: "script.md" }],
+      gates: { autopilot: true, review: "none", retryOnFailure: 0 },
     },
     {
       id: "render",
@@ -52,6 +55,7 @@ const TEST_PIPELINE: PipelineDefinition = {
         { kind: "audio/wav", label: "narration.wav" },
         { kind: "text/markdown", label: "script.md" },
       ],
+      gates: { autopilot: true, review: "none", retryOnFailure: 0 },
     },
   ],
   skills: [

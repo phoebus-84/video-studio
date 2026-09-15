@@ -32,6 +32,7 @@ export type {
   CapabilityRequest,
   ArtifactRef,
   StageDefinition,
+  StageGates,
   SkillRef,
   PipelineExtends,
   PipelineDefinition,

@@ -20,6 +20,24 @@ export interface ArtifactRef {
   label: string;
 }
 
+/**
+ * What a stage's manifest asks for before the stage runs, and before its
+ * output counts.
+ *
+ * These are two different gates and collapsing them loses information:
+ * `autopilot` gates execution (may this run unattended?), `review` gates
+ * acceptance (whose sign-off does the result need?). A stage can legitimately
+ * run in autopilot and still not be finished.
+ */
+export interface StageGates {
+  /** May this stage run unattended? */
+  autopilot: boolean;
+  /** Who must accept the output: "none" or "human". */
+  review: string;
+  /** How many times to retry on failure. */
+  retryOnFailure: number;
+}
+
 /** A single stage in a pipeline definition. */
 export interface StageDefinition {
   /** Unique within the pipeline, e.g. "brief", "script", "illustrations". */
@@ -36,6 +54,8 @@ export interface StageDefinition {
   produces: ArtifactRef[];
   /** Artifacts this stage consumes (must be produced by prior stages). */
   consumes: ArtifactRef[];
+  /** Gates declared by the manifest. Absent gates mean ungated, not blocked. */
+  gates: StageGates;
 }
 
 /** A skill reference resolved within trusted roots. */
