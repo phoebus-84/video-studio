@@ -48,6 +48,31 @@ describe("gate review records", () => {
         /empty/,
       );
     });
+
+    it("refuses an absolute path", async () => {
+      // A record naming /Users/someone/.../qa-report.json can only be checked
+      // on the machine that wrote it.
+      const absolute = path.join(dir, "artifacts", "qa-report.json");
+      await writeFile(absolute, "{}");
+      await assert.rejects(
+        () => hashArtifacts(dir, [absolute]),
+        /relative to the episode/,
+      );
+    });
+
+    it("refuses a relative path that climbs out of the episode", async () => {
+      // The file exists and is readable — the point is that it is not this
+      // episode's, so no review of this episode could have examined it.
+      await writeFile(path.join(dir, "outside.json"), "{}");
+      await assert.rejects(
+        () => hashArtifacts(path.join(dir, "artifacts"), ["../outside.json"]),
+        /climbs out of it/,
+      );
+      await assert.rejects(
+        () => hashArtifacts(dir, ["artifacts/../../outside.json"]),
+        /climbs out of it/,
+      );
+    });
   });
 
   describe("buildGateReview", () => {

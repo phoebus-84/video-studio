@@ -37,6 +37,11 @@ export const GATE_DECISIONS = Object.freeze(["requested", "approved"]);
  * Throws rather than substituting a placeholder for a missing or empty file. A
  * record that hashes an absent file is the same lie in a new format, and the
  * whole point of the record is that it can be checked.
+ *
+ * Absolute paths are refused, and so are relative ones that climb out of the
+ * episode with `..`: a record naming a file outside the episode describes
+ * something the episode does not own, and could be satisfied by bytes no review
+ * of this episode ever saw.
  */
 export async function hashArtifacts(episodeDir, relativePaths) {
   const hashes = [];
@@ -45,6 +50,12 @@ export async function hashArtifacts(episodeDir, relativePaths) {
       throw new Error(
         `Cannot hash "${relative}": a record must name artifacts relative to the episode, ` +
         `or it can only be checked on the machine that wrote it`,
+      );
+    }
+    if (path.normalize(relative).split(/[\\/]/).includes("..")) {
+      throw new Error(
+        `Cannot hash "${relative}": a record must name artifacts inside the episode, ` +
+        `and this path climbs out of it`,
       );
     }
     let bytes;
