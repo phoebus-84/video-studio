@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { FileSystemPipelineLoader } from "../../../src/pipeline/fs-loader.js";
 import { resolvePipeline } from "../../../src/pipeline/resolver.js";
 
@@ -11,6 +14,36 @@ const PIPELINES = resolve(__dirname, "../../../../pipelines/pipelines");
 
 function loader() {
   return new FileSystemPipelineLoader([PIPELINES]);
+}
+
+const roots: string[] = [];
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+// Every stage in every real manifest under studio/pipelines/pipelines declares
+// an explicit `gates:` block, so a loader pointed at that directory can never
+// exercise the `yaml.gates?.x ?? default` fallback branches. To prove the
+// fail-open default actually fires, write a synthetic manifest with a stage
+// that omits `gates` entirely, and point a fresh loader at it.
+async function ungatedManifestDir(): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), "vpr-gates-"));
+  roots.push(root);
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    path.join(root, "synthetic-ungated.yaml"),
+    [
+      "pipeline:",
+      "  id: synthetic-ungated",
+      "  version: \"1.0.0\"",
+      "  stages:",
+      "    - id: only-stage",
+      "      name: \"Only Stage\"",
+      "      type: editorial",
+      "",
+    ].join("\n"),
+  );
+  return root;
 }
 
 describe("stage gates survive loading", () => {
@@ -27,11 +60,15 @@ describe("stage gates survive loading", () => {
     // Absence of a gate is not a gate. A stage whose author asked for nothing
     // keeps today's behaviour; the fail-closed property comes from honouring
     // declared gates and validating outputs, not from gating by omission.
-    const def = await loader().load("narrated-illustrated-video");
-    const stage = def!.stages.find((s) => s.id === "brief");
+    //
+    // This has to use a synthetic manifest, not the real pipelines directory:
+    // every stage in every real manifest declares an explicit gates block, so
+    // loading a real pipeline never reaches the `?? default` fallback code.
+    const dir = await ungatedManifestDir();
+    const def = await new FileSystemPipelineLoader([dir]).load("synthetic-ungated");
+    const stage = def!.stages.find((s) => s.id === "only-stage");
 
-    expect(stage!.gates.autopilot).toBe(true);
-    expect(stage!.gates.review).toBe("none");
+    expect(stage!.gates).toEqual({ autopilot: true, review: "none", retryOnFailure: 0 });
   });
 
   it("carries gates through pipeline inheritance", async () => {
