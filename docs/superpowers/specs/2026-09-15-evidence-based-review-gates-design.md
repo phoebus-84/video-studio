@@ -98,6 +98,22 @@ type belongs with `avg-qr4.3`, which owns the approval flow; until then a
 stage that is not approved simply stays `requested`, which already fails
 closed.
 
+**The event shape this rides on is the writer's, not the schema's.**
+`studio/contracts/src/journal.mjs` names `journal-event.schema.json` as its
+contract and has never conformed to it: it writes `eventId` (a UUID) where the
+schema requires `id` matching `^evt_[0-9A-HJKMNP-TV-Z]{26}$`, `episode` for
+`episodeRef`, `detail` for `data`, `stageId` at the top level instead of inside
+the payload, and omits the `apiVersion`/`kind` envelope — which, with
+`additionalProperties: false`, makes every real event invalid. Nothing catches
+it because journal events are never validated at runtime; only the four
+hand-written fixtures are checked, and those were authored against the schema.
+
+Gate-review records therefore use `detail`, matching what the writer actually
+produces and what every existing journal consumer reads. Reconciling the two is
+`avg-i1x`, filed separately: it touches the writer, the gateway route that
+serves the journal, the Pi tool that reads it, and the existing journal tests,
+and would swallow this issue. It does not block this work.
+
 `src/gate-review.mjs` provides three functions:
 
 - **`hashArtifacts(episodeDir, paths)`** — sha256 over file bytes. A missing or
