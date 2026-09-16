@@ -182,12 +182,17 @@ describe("gates that cannot be read", () => {
       runtimeOffering("illustrations"), REF, "no-such-pipeline", root, () => {},
     );
 
-    expect(report.stages[0]!.status).toBe("blocked");
-    expect(report.stages[0]!.outputs).toEqual([]);
+    // The no-trace assertions come first, and deliberately. Vitest stops at the
+    // first failed expect, so leading with the status would let a status-only
+    // regression shadow the three checks that actually distinguish "blocked
+    // before the handler" from "blocked after it ran".
+    //
     // handleIllustrations copies assets/images into artifacts/frames. If it had
     // run, that directory would exist and hold s1.png.
     await expect(readdir(join(dir, "artifacts", "frames"))).rejects.toThrow();
     expect((await journal(dir)).filter((e) => e.type === "stage-started")).toHaveLength(0);
+    expect(report.stages[0]!.outputs).toEqual([]);
+    expect(report.stages[0]!.status).toBe("blocked");
   });
 });
 
@@ -376,5 +381,27 @@ describe("dependency gates", () => {
     expect(second.stages[0]!.status).toBe("blocked");
     expect(second.stages[0]!.error).toMatch(/illustrations/);
     expect(second.stages[0]!.error).toMatch(/awaiting review/);
+  });
+});
+
+describe("quality assurance", () => {
+  it("cannot produce a pass with no render present", async () => {
+    const { root, dir } = await episode();
+
+    // Nothing wrote output/*.mp4 or artifacts/final.mp4. QA runs — it has a
+    // handler — but it declares review: human, so it is structurally unable to
+    // reach `completed`, and its report must not claim a verdict it could not
+    // have reached.
+    const report = await runAutopilot(
+      runtimeOffering("qa"), REF, "fairy-tale-adaptation", root, () => {},
+    );
+
+    expect(report.stages[0]!.stageId).toBe("qa");
+    expect(report.stages[0]!.status).not.toBe("completed");
+
+    const written = JSON.parse(await readFile(join(dir, "artifacts", "qa-report.json"), "utf-8"));
+    expect(written.verdict).not.toBe("pass");
+    expect(written.checks).toEqual([]);
+    expect(written.summary).toMatch(/No render found/);
   });
 });

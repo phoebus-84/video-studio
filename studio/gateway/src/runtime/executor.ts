@@ -334,10 +334,20 @@ async function loadGates(
 }
 
 /**
- * Every declared output must exist and have bytes in it.
+ * Every path the handler returned must exist and have bytes in it.
  *
  * A report file is not proof a review happened, and an empty file is not proof
  * of anything at all. Returns an error message, or null when the outputs hold up.
+ *
+ * What this checks and what it does not: it validates the paths the HANDLER
+ * returned, not the outputs the MANIFEST declares. The spec asks for the
+ * declared ones. There is no gap today — each of the four handlers returns
+ * exactly the artifact its stage declares — but the guarantee is weaker than it
+ * reads: a handler that returned some other file it happened to write would
+ * pass this check and reach `completed` with its declared output absent.
+ * Closing that needs a mapping from a manifest contract label
+ * ("captions.srt", "illustrations/") to the path on disk, which does not exist
+ * anywhere in the project; building it is avg-qr4.8, not this issue.
  */
 async function validateOutputs(episodeDir: string, outputs: string[]): Promise<string | null> {
   if (outputs.length === 0) return "the stage produced no outputs";
