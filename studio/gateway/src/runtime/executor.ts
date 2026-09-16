@@ -431,14 +431,13 @@ async function requestReview(
     type: "approval-requested",
     actor: "gateway",
     episode: ref,
-    stageId,
-    detail: buildGateReview({
+    data: { ...buildGateReview({
       stageId,
       decision: "requested",
       actor: "gateway",
       outputs: hashed,
       note,
-    }),
+    }) },
   });
 }
 
@@ -570,7 +569,8 @@ export async function runAutopilot(
     // it at zero bytes, so afterwards nothing could say which stages ran, how
     // long they took or which one failed.
     await appendJournalEvent(episodeDir, {
-      type: "stage-started", actor: "runtime", episode: ref, stageId,
+      type: "stage-started", actor: "runtime", episode: ref,
+      data: { stageId },
     });
     try {
       const outputs = await handler(ctx);
@@ -581,8 +581,8 @@ export async function runAutopilot(
         results.push({ stageId, status: "failed", outputs: [], durationMs: Date.now() - stageStart,
           error: invalid });
         await appendJournalEvent(episodeDir, {
-          type: "stage-failed", actor: "runtime", episode: ref, stageId,
-          detail: { durationMs: Date.now() - stageStart, error: invalid },
+          type: "stage-failed", actor: "runtime", episode: ref,
+          data: { stageId, durationMs: Date.now() - stageStart, error: invalid },
         });
         log(`Autopilot: ${stageId} FAILED — ${invalid}`);
         break;
@@ -597,10 +597,6 @@ export async function runAutopilot(
         const why = `${stageId} requires ${stageGates.review} review`;
         await requestReview(episodeDir, ref, stageId, outputs, why);
         results.push({ stageId, status: "awaiting_approval", outputs, durationMs: Date.now() - stageStart });
-        await appendJournalEvent(episodeDir, {
-          type: "attempt-recorded", actor: "runtime", episode: ref, stageId,
-          detail: { durationMs: Date.now() - stageStart, outputs: relative },
-        });
         log(`Autopilot: ${why} — awaiting review, stopping`);
         break;
       }
@@ -608,8 +604,8 @@ export async function runAutopilot(
       // 7. Ungated and its outputs hold up.
       results.push({ stageId, status: "completed", outputs, durationMs: Date.now() - stageStart });
       await appendJournalEvent(episodeDir, {
-        type: "stage-completed", actor: "runtime", episode: ref, stageId,
-        detail: { durationMs: Date.now() - stageStart, outputs: relative },
+        type: "stage-completed", actor: "runtime", episode: ref,
+        data: { stageId, durationMs: Date.now() - stageStart, outputs: relative },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -624,8 +620,7 @@ export async function runAutopilot(
         type: "stage-failed",
         actor: "runtime",
         episode: ref,
-        stageId,
-        detail: { durationMs: Date.now() - stageStart, error: message },
+        data: { stageId, durationMs: Date.now() - stageStart, error: message },
       });
       log(`Autopilot: ${stageId} FAILED — stopping`);
       break; // Stop on failure

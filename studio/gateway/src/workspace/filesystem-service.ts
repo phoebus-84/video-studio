@@ -25,6 +25,7 @@ import {
 import { libraryUrlPath } from "@studio/contracts/src/library-url.mjs";
 import { materializeSceneSpine, readSceneSpine } from "./scene-spine.js";
 import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
+import type { JournalEventType } from "@studio/contracts/src/journal.mjs";
 
 /**
  * Content directories at a level.
@@ -438,7 +439,10 @@ export class FileSystemWorkspaceService implements WorkspaceService {
     ref: { channel: string; series: string; episode: string },
     query: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> {
-    const type = typeof query.type === "string" ? query.type : undefined;
+    // A caller may pass any string here; an unrecognised one is not a runtime
+    // error — parseJournal simply matches nothing, same as before this typed
+    // the parameter.
+    const type = (typeof query.type === "string" ? query.type : undefined) as JournalEventType | undefined;
     const rawLimit = Number(query.limit);
     const limit = Number.isFinite(rawLimit) && rawLimit >= 0 ? rawLimit : 50;
 

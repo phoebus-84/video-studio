@@ -121,7 +121,7 @@ describe("the journal", () => {
     const started = await service.findEvents(REF, { type: "stage-started" });
     expect(started).toHaveLength(3);
     const recent = await service.findEvents(REF, { limit: 2 });
-    expect(recent.map((e) => e.stageId)).toEqual(["c", "c"]);
+    expect(recent.map((e) => (e.data as { stageId: string }).stageId)).toEqual(["c", "c"]);
   });
 
   it("survives a corrupt line rather than losing the journal", async () => {

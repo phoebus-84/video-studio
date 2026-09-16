@@ -84,8 +84,8 @@ describe("execution gates", () => {
     const events = await journal(dir);
     const requested = events.filter((e) => e.type === "approval-requested");
     expect(requested).toHaveLength(1);
-    expect(requested[0]!.detail.stageId).toBe("safety-review");
-    expect(requested[0]!.detail.decision).toBe("requested");
+    expect(requested[0]!.data.stageId).toBe("safety-review");
+    expect(requested[0]!.data.decision).toBe("requested");
   });
 
   it("never writes a safety report for an episode it did not read", async () => {
@@ -128,7 +128,7 @@ describe("acceptance gates", () => {
     const requested = (await journal(dir)).filter((e) => e.type === "approval-requested");
     expect(requested).toHaveLength(1);
     // The request names what it wants reviewed, by hash.
-    expect(requested[0]!.detail.outputs[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(requested[0]!.data.outputs[0].sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("never emits an approval of its own", async () => {
@@ -286,8 +286,7 @@ describe("dependency gates", () => {
       type,
       actor: type === "approval-granted" ? "human" : "gateway",
       episode: REF,
-      stageId: review.stageId as string,
-      detail: review,
+      data: review,
     });
   }
 
