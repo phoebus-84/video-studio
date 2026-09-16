@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileLock } from "../../../src/ports/file-lock.js";
@@ -103,5 +103,50 @@ describe("FileLock", () => {
     const lock = new FileLock(await lockRoot());
     expect((await lock.acquire("stage:illustrations", 60_000)).ok).toBe(true);
     expect((await lock.acquire("stage:captions", 60_000)).ok).toBe(true);
+  });
+
+  it("release with an expired lease succeeds without touching the current holder's file", async () => {
+    const lock = new FileLock(await lockRoot());
+    const first = await lock.acquire("stage:illustrations", 1);
+    if (!first.ok) throw new Error("setup failed");
+    await new Promise((r) => setTimeout(r, 20));
+    const second = await lock.acquire("stage:illustrations", 60_000);
+    if (!second.ok) throw new Error("setup failed");
+
+    // The first holder wakes up long after expiry and tries to release. This
+    // must succeed (release is idempotent, even for an expired lease) but
+    // must not touch the file the second holder now owns.
+    const released = await lock.release(first.value);
+    expect(released.ok).toBe(true);
+
+    // Proof the second holder's file was never touched: it can still be
+    // renewed with its own token.
+    const renewed = await lock.renew(second.value, 60_000);
+    expect(renewed.ok).toBe(true);
+  });
+
+  it("fails to renew an expired lease with LEASE_EXPIRED", async () => {
+    const lock = new FileLock(await lockRoot());
+    const first = await lock.acquire("stage:illustrations", 1);
+    if (!first.ok) throw new Error("setup failed");
+    await new Promise((r) => setTimeout(r, 20));
+
+    const renewed = await lock.renew(first.value, 60_000);
+    expect(renewed.ok).toBe(false);
+    if (!renewed.ok) expect(renewed.error.code).toBe("LEASE_EXPIRED");
+  });
+
+  it("refuses to acquire a resource whose lockfile is malformed", async () => {
+    const root = await lockRoot();
+    const resource = "stage:illustrations";
+    const file = join(root, `${Buffer.from(resource).toString("base64url")}.lock`);
+    // What a crash mid-write leaves behind: present, but not valid JSON.
+    await writeFile(file, "{not valid json", "utf-8");
+
+    const lock = new FileLock(root);
+    const got = await lock.acquire(resource, 60_000);
+
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.error.code).toBe("LEASE_CONFLICT");
   });
 });
