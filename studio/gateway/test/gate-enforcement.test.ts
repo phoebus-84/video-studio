@@ -5,7 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAutopilot } from "../src/runtime/executor.js";
 import type { RuntimeClient } from "../src/runtime/client.js";
-import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
+import { appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
+import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-review.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PIPELINES = resolve(__dirname, "../../pipelines/pipelines");
@@ -43,6 +44,28 @@ function runtimeOffering(...stageIds: string[]): RuntimeClient {
 
 async function journal(dir: string) {
   return parseJournal(await readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8"));
+}
+
+/** A real, readable WAV — the captions handler measures durations from headers. */
+async function writeWav(file: string, seconds = 0.1) {
+  const sampleRate = 24000;
+  const dataBytes = Math.round(sampleRate * 2 * seconds);
+  const buffer = Buffer.alloc(44 + dataBytes);
+  buffer.write("RIFF", 0, "ascii");
+  buffer.writeUInt32LE(36 + dataBytes, 4);
+  buffer.write("WAVE", 8, "ascii");
+  buffer.write("fmt ", 12, "ascii");
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);            // PCM
+  buffer.writeUInt16LE(1, 22);            // mono
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write("data", 36, "ascii");
+  buffer.writeUInt32LE(dataBytes, 40);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, buffer);
 }
 
 describe("execution gates", () => {
@@ -204,5 +227,134 @@ describe("the run summary", () => {
 
     expect(report.summary).toMatch(/1 blocked/);
     expect(report.summary).not.toMatch(/^All stages already complete/);
+  });
+});
+
+describe("dependency gates", () => {
+  // The halt has to survive the next POST /execute, and nothing but this gate
+  // makes it. `studio/runtime/src/cli.ts` picks the pending stage purely from
+  // which output files exist; the gateway leaves a halted stage's outputs on
+  // disk and records the review request only in the journal, which the runtime
+  // never reads. So the second invocation is offered the stage after the one
+  // that stopped, and would build on an artifact nobody accepted.
+  //
+  // `captions` depends on `narration`, not on `illustrations` — the two stages
+  // in the spec's narrative are not actually adjacent in
+  // narrated-illustrated-video.yaml. The edge exercised below is the real one,
+  // and `captions` is still the stage that would silently complete: it has a
+  // handler and declares `review: none`, so nothing else would stop it.
+
+  /** An episode with one narration segment, hashed as `relative`. */
+  async function narrated() {
+    const { root, dir } = await episode();
+    const relative = join("artifacts", "narration", "s1.wav");
+    await writeWav(join(dir, relative), 0.2);
+    return { root, dir, relative };
+  }
+
+  async function record(
+    dir: string,
+    type: "approval-requested" | "approval-granted",
+    review: Record<string, unknown>,
+  ) {
+    await appendJournalEvent(dir, {
+      type,
+      actor: type === "approval-granted" ? "human" : "gateway",
+      episode: REF,
+      stageId: review.stageId as string,
+      detail: review,
+    });
+  }
+
+  it("blocks a stage whose dependency is still awaiting review", async () => {
+    const { root, dir, relative } = await narrated();
+
+    await record(dir, "approval-requested", buildGateReview({
+      stageId: "narration",
+      decision: "requested",
+      actor: "gateway",
+      outputs: await hashArtifacts(dir, [relative]),
+    }));
+
+    const report = await runAutopilot(
+      runtimeOffering("captions"), REF, "fairy-tale-adaptation", root, () => {},
+    );
+
+    // Assert the absence of work before the status: a status-only regression
+    // must not hide the fact that the handler ran anyway.
+    await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
+    expect(report.stages[0]!.status).toBe("blocked");
+    expect(report.stages[0]!.error).toMatch(/narration/);
+    expect(report.stages[0]!.error).toMatch(/awaiting review/);
+  });
+
+  it("lets the stage run once that dependency is approved", async () => {
+    const { root, dir, relative } = await narrated();
+
+    // A real approval: the hashes are of the bytes actually on disk. Recording
+    // anything else would make deriveGateState answer `invalidated`, and this
+    // test would prove the opposite of what it claims.
+    await record(dir, "approval-granted", buildGateReview({
+      stageId: "narration",
+      decision: "approved",
+      actor: "human",
+      outputs: await hashArtifacts(dir, [relative]),
+    }));
+
+    const report = await runAutopilot(
+      runtimeOffering("captions"), REF, "fairy-tale-adaptation", root, () => {},
+    );
+
+    // Not merely unblocked — through to completion, with the artifact on disk.
+    expect(await readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).toMatch(/-->/);
+    expect(report.stages[0]!.stageId).toBe("captions");
+    expect(report.stages[0]!.status).toBe("completed");
+  });
+
+  it("blocks when the dependency's approval no longer matches what is on disk", async () => {
+    const { root, dir, relative } = await narrated();
+
+    await record(dir, "approval-granted", buildGateReview({
+      stageId: "narration",
+      decision: "approved",
+      actor: "human",
+      outputs: await hashArtifacts(dir, [relative]),
+    }));
+
+    // Re-rendered after the approval. The approval described bytes that are
+    // gone, so it is not an approval of what would now be consumed.
+    await writeWav(join(dir, relative), 0.9);
+
+    const report = await runAutopilot(
+      runtimeOffering("captions"), REF, "fairy-tale-adaptation", root, () => {},
+    );
+
+    await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
+    expect(report.stages[0]!.status).toBe("blocked");
+    expect(report.stages[0]!.error).toMatch(/invalidated review/);
+    expect(report.stages[0]!.error).toMatch(/changed since it was approved/);
+  });
+
+  it("keeps a halt at a review gate across the next execute", async () => {
+    const { root, dir } = await episode();
+    await writeFile(join(dir, "assets", "images", "s1.png"), "bytes");
+
+    // Run 1: the gateway itself halts illustrations and writes the request.
+    // Nothing here is hand-authored — this is the state a real halt leaves.
+    const first = await runAutopilot(
+      runtimeOffering("illustrations"), REF, "fairy-tale-adaptation", root, () => {},
+    );
+    expect(first.stages[0]!.status).toBe("awaiting_approval");
+
+    // Run 2: discovery sees artifacts/frames on disk and moves on. Without the
+    // gate, continuity-check would be refused for having no checker — a
+    // coincidence of this stage, not a rule. It is refused for its dependency.
+    const second = await runAutopilot(
+      runtimeOffering("continuity-check"), REF, "fairy-tale-adaptation", root, () => {},
+    );
+
+    expect(second.stages[0]!.status).toBe("blocked");
+    expect(second.stages[0]!.error).toMatch(/illustrations/);
+    expect(second.stages[0]!.error).toMatch(/awaiting review/);
   });
 });

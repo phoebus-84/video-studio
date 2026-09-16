@@ -13,9 +13,9 @@ import * as path from "node:path";
 import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
 import { loadNarrationManifest, naturalSceneOrder, type NarrationTimingEntry } from "./narration-manifest.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
-import { appendJournalEvent } from "@studio/contracts/src/journal.mjs";
+import { appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { createDefaultLoader, resolvePipeline, type StageGates } from "@studio/runtime";
-import { hashArtifacts, buildGateReview } from "@studio/contracts/src/gate-review.mjs";
+import { hashArtifacts, buildGateReview, deriveGateState } from "@studio/contracts/src/gate-review.mjs";
 import { builtinPipelinesPath } from "./client.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -301,12 +301,18 @@ export const HANDLERS: Record<string, StageHandler> = {
 
 // ── Gates ───────────────────────────────────────────────────────────────────
 
-/** Gates for every stage in a pipeline, by stage id. */
+/** What the manifest declares about a stage: its gates and what it is built on. */
+interface StageDeclaration {
+  gates: StageGates;
+  dependsOn: string[];
+}
+
+/** Gates and dependencies for every stage in a pipeline, by stage id. */
 async function loadGates(
   pipeline: string,
   libraryRoot: string,
   log: (msg: string) => void,
-): Promise<Map<string, StageGates> | null> {
+): Promise<Map<string, StageDeclaration> | null> {
   try {
     // `|| undefined` rather than the bare call: builtinPipelinesPath() returns
     // "" when package resolution fails, and createDefaultLoader's `??` does not
@@ -314,7 +320,10 @@ async function loadGates(
     // escape hatch, would be dead exactly when it is needed.
     const loader = createDefaultLoader(libraryRoot, builtinPipelinesPath() || undefined);
     const resolved = await resolvePipeline(loader, pipeline);
-    return new Map(resolved.stages.map((s) => [s.definition.id, s.definition.gates]));
+    return new Map(resolved.stages.map((s) => [
+      s.definition.id,
+      { gates: s.definition.gates, dependsOn: s.definition.dependsOn ?? [] },
+    ]));
   } catch (err) {
     // Fail closed and loudly. Not knowing what a stage's gates are is not the
     // same as a stage having none, and guessing "none" is how fabricated
@@ -341,6 +350,52 @@ async function validateOutputs(episodeDir: string, outputs: string[]): Promise<s
     }
     if (stat.size === 0) {
       return `declared output "${path.relative(episodeDir, file)}" is empty`;
+    }
+  }
+  return null;
+}
+
+/** The episode's journal, or no events at all when it has none yet. */
+async function readJournal(episodeDir: string): Promise<unknown[]> {
+  try {
+    return parseJournal(await fs.readFile(path.join(episodeDir, JOURNAL_RELATIVE_PATH), "utf-8"));
+  } catch {
+    // An episode that has never been run has no journal. Absence of events is
+    // not an outstanding review.
+    return [];
+  }
+}
+
+/**
+ * Why a stage may not run yet, named after the dependency that is holding it.
+ *
+ * A halt at a review gate has to survive the next POST /execute, and nothing
+ * else makes it. `studio/runtime/src/cli.ts` decides which stage is pending
+ * purely from whether output files exist, and discovery counts a file as
+ * present regardless of size; neither reads the journal, which is the only
+ * place approval lives. So the second invocation is offered the stage after the
+ * one that stopped awaiting review, and would build on an artifact nobody
+ * accepted — precisely what stopping was for.
+ *
+ * Direct dependencies only. A blocked parent stops the run, so transitivity is
+ * inherited rather than walked. `approved` and `none` do not block: most stages
+ * have never had a review requested, and blocking on `none` would deadlock
+ * every pipeline at its first stage.
+ */
+async function blockingDependency(
+  episodeDir: string,
+  dependsOn: string[],
+): Promise<string | null> {
+  if (dependsOn.length === 0) return null;
+  const events = await readJournal(episodeDir);
+  if (events.length === 0) return null;
+  for (const depId of dependsOn) {
+    const state = await deriveGateState(events, depId, episodeDir);
+    if (state.state === "requested") {
+      return `"${depId}" is awaiting review`;
+    }
+    if (state.state === "invalidated") {
+      return `"${depId}" has an invalidated review: ${state.reason}`;
     }
   }
   return null;
@@ -430,14 +485,14 @@ export async function runAutopilot(
     }
     seen.add(stageId);
 
-    const stageGates = gates?.get(stageId);
+    const declaration = gates?.get(stageId);
 
     // 1. Not knowing a stage's gates is not the same as a stage having none.
     // Guessing "none" is how fabricated reviews got reported as completions.
     // This precedes the handler lookup and the handler call, so a stage whose
     // gates could not be read never executes — a gate you cannot read covers
     // execution as much as acceptance.
-    if (!stageGates) {
+    if (!declaration) {
       const why = `gates for "${stageId}" could not be read`;
       log(`Autopilot: ${why} — blocked`);
       await requestReview(episodeDir, ref, stageId, [], why);
@@ -445,9 +500,25 @@ export async function runAutopilot(
       break;
     }
 
+    const { gates: stageGates, dependsOn } = declaration;
     const gated = !stageGates.autopilot || stageGates.review !== "none";
 
-    // 2. The manifest says this may not run unattended.
+    // 2. A stage this one is built on is awaiting review, or its review no
+    // longer matches what is on disk. The gateway leaves a halted stage's
+    // outputs in place and records approval only in the journal, which the
+    // runtime never reads — so without this the halt lasts exactly one
+    // invocation, and the next /execute happily builds on an artifact nobody
+    // accepted.
+    const blocking = await blockingDependency(episodeDir, dependsOn);
+    if (blocking) {
+      const why = `"${stageId}" cannot run: ${blocking}`;
+      log(`Autopilot: ${why} — blocked`);
+      await requestReview(episodeDir, ref, stageId, [], why);
+      results.push({ stageId, status: "blocked", outputs: [], durationMs: 0, error: why });
+      break;
+    }
+
+    // 3. The manifest says this may not run unattended.
     if (!stageGates.autopilot) {
       log(`Autopilot: "${stageId}" declares autopilot: false — approval requested`);
       await requestReview(episodeDir, ref, stageId, [], `${stageId} declares autopilot: false`);
@@ -458,7 +529,7 @@ export async function runAutopilot(
 
     const handler = HANDLERS[stageId];
 
-    // 3. No checker behind a gated stage. A refusal, not a shrug.
+    // 4. No checker behind a gated stage. A refusal, not a shrug.
     if (!handler) {
       if (gated) {
         const why = `"${stageId}" requires ${stageGates.review} review and has no checker`;
@@ -484,7 +555,7 @@ export async function runAutopilot(
     try {
       const outputs = await handler(ctx);
 
-      // 4. File existence is discovery, not completion.
+      // 5. File existence is discovery, not completion.
       const invalid = await validateOutputs(episodeDir, outputs);
       if (invalid) {
         results.push({ stageId, status: "failed", outputs: [], durationMs: Date.now() - stageStart,
@@ -499,7 +570,7 @@ export async function runAutopilot(
 
       const relative = outputs.map((o) => path.relative(episodeDir, o));
 
-      // 5. Ran, but not accepted. The test is the declared review, never
+      // 6. Ran, but not accepted. The test is the declared review, never
       // `stageGates && ...`: a missing gate record must not read as "no review
       // required" — that check is above, and it blocks.
       if (stageGates.review !== "none") {
@@ -514,7 +585,7 @@ export async function runAutopilot(
         break;
       }
 
-      // 6. Ungated and its outputs hold up.
+      // 7. Ungated and its outputs hold up.
       results.push({ stageId, status: "completed", outputs, durationMs: Date.now() - stageStart });
       await appendJournalEvent(episodeDir, {
         type: "stage-completed", actor: "runtime", episode: ref, stageId,
