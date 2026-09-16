@@ -218,4 +218,56 @@ describe("lease liveness", () => {
     assert.equal(inst.attempts[0].outcome, undefined);
     assert.equal(inst.status, "running");
   });
+
+  it("lets a new lease retry a stage whose previous holder's lease expired mid-run", () => {
+    // The realistic crash path: nothing forces a stage-failed or
+    // attempt-recorded event for a holder that died, so the next thing the
+    // journal sees is a fresh lease for a retry. Expiry must be applied
+    // during replay -- not only in an end-of-replay sweep -- or this second
+    // stage-leased finds the stage still "running", and running -> pending
+    // is a transition the machine forbids: replay would throw, and it would
+    // throw on every future replay of this same journal.
+    const events = [
+      lease("illustrations", "L1", 1, "2026-09-16T11:55:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+      lease("illustrations", "L2", 2, "2999-01-01T00:00:00Z"),
+    ];
+
+    assert.doesNotThrow(() => deriveExecutionState(events, ["illustrations"], NOW));
+
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(inst.attempts.length, 2);
+    assert.equal(inst.attempts[0].outcome, "timeout");
+    assert.equal(inst.attempts[1].outcome, undefined);
+    assert.equal(inst.status, "pending");
+  });
+
+  it("reports no lease once a superseded timeout is followed by a successful retry", () => {
+    // leaseState must not keep reporting the dead holder as "expired" once a
+    // later attempt has run -- that later attempt is the last word on who
+    // holds (or held) the stage.
+    const events = [
+      lease("illustrations", "L1", 1, "2026-09-16T11:55:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+      lease("illustrations", "L2", 2, "2999-01-01T00:00:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L2", attemptNumber: 2 }),
+      evt("stage-completed", { stageId: "illustrations", leaseId: "L2", attemptNumber: 2, outputs: ["a"] }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(leaseState(inst, NOW).state, "none");
+  });
+
+  it("reports expired for an open attempt whose expiry has passed by the time asked, even under an earlier replay clock", () => {
+    // leaseState must check `now` itself, not merely trust whatever the
+    // replay concluded at its own (possibly earlier) clock.
+    const events = [
+      lease("illustrations", "L1", 1, "2026-09-16T12:05:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+    ];
+    // NOW (12:00:00Z) is before the lease's expiry, so the replay leaves the
+    // attempt open and live.
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    const later = new Date("2026-09-16T12:10:00Z");
+    assert.equal(leaseState(inst, later).state, "expired");
+  });
 });

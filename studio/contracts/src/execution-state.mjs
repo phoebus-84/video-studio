@@ -55,6 +55,28 @@ function transition(instance, to, because) {
 }
 
 /**
+ * If `instance` has an open attempt whose lease has expired at or before
+ * `now`, close it: the holder is gone and is not coming back. Expiry is not
+ * a status of its own — the attempt becomes a timeout, and the stage lands
+ * on whatever OUTCOME_STATUS.timeout maps to (failed), which is the state
+ * the machine already allows a retry from.
+ *
+ * Called from two places: inline during replay, right before an event for
+ * this stage is processed (so a retry lease arriving after a crash finds the
+ * stage already failed, not stuck running), and once more after the loop, to
+ * close an attempt left open at the end of the journal with no later event
+ * to trigger the inline check.
+ */
+function closeIfExpired(instance, now) {
+  const open = instance.attempts.find((a) => a.outcome === undefined);
+  if (!open || !open.expiresAt) return;
+  if (new Date(open.expiresAt).getTime() > now.getTime()) return;
+  open.outcome = "timeout";
+  open.endedAt = open.expiresAt;
+  if (instance.status === "running") transition(instance, OUTCOME_STATUS.timeout, "the lease expired");
+}
+
+/**
  * Replay a journal into per-stage execution state.
  *
  * `stageIds` are the stages the resolved pipeline declares. `now` is the clock
@@ -92,6 +114,18 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
     if (instance.createdAt === null) instance.createdAt = event.at;
 
     if (event.type === "stage-leased") {
+      // A retry lease for a crashed holder is the realistic path — nothing
+      // forces a stage-failed or attempt-recorded event for a holder that
+      // just died. Close any expired open attempt from an EARLIER lease on
+      // this stage before granting the new one, so the stage is already
+      // `failed` (not stuck `running`) by the time this lease moves it to
+      // `pending`. This must run only here, not before every event: an
+      // event that continues the CURRENTLY open attempt (stage-started,
+      // stage-completed, ...) is itself the authoritative account of what
+      // happened to that attempt, and must not be preempted by a timeout
+      // guess just because `now` has drifted past its expiry.
+      closeIfExpired(instance, now);
+
       if (instance.attempts.some((a) => a.leaseId === leaseId)) {
         throw new Error(
           `Journal leases attempt "${leaseId}" on stage "${stageId}" twice. ` +
@@ -145,17 +179,11 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
     }
   }
 
-  // An open attempt whose lease has expired did not finish — its holder is gone
-  // and is not coming back. Expiry is not a status of its own: the attempt is a
-  // timeout, and the stage lands on the status OUTCOME_STATUS.timeout maps to,
-  // which is the state the machine already allows a retry from.
+  // A journal whose last event leaves an attempt open still needs that
+  // attempt timed out if its lease has expired by `now` — no later event
+  // will arrive to trigger the inline check above.
   for (const instance of state.values()) {
-    const open = instance.attempts.find((a) => a.outcome === undefined);
-    if (!open || !open.expiresAt) continue;
-    if (new Date(open.expiresAt).getTime() > now.getTime()) continue;
-    open.outcome = "timeout";
-    open.endedAt = open.expiresAt;
-    if (instance.status === "running") transition(instance, OUTCOME_STATUS.timeout, "the lease expired");
+    closeIfExpired(instance, now);
   }
 
   return state;
@@ -171,14 +199,25 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
  */
 export function leaseState(instance, now = new Date()) {
   const open = instance.attempts.find((a) => a.outcome === undefined);
-  if (!open || !open.expiresAt) {
-    // An attempt timed out by the replay above is closed, not live — a stage
-    // whose holder vanished must be retryable, not blocked forever.
-    const expired = [...instance.attempts].reverse().find((a) => a.outcome === "timeout");
-    if (expired) {
-      return { state: "expired", holder: expired.holder, expiresAt: expired.expiresAt };
+  if (open && open.expiresAt) {
+    // Trust `now` here too, not just whatever the replay already concluded:
+    // a caller can ask leaseState with a later clock than the one the replay
+    // used, and an attempt open-but-past-expiry at THAT moment is expired
+    // regardless of what deriveExecutionState decided at its own `now`.
+    if (new Date(open.expiresAt).getTime() > now.getTime()) {
+      return { state: "live", holder: open.holder, expiresAt: open.expiresAt };
     }
-    return { state: "none" };
+    return { state: "expired", holder: open.holder, expiresAt: open.expiresAt };
   }
-  return { state: "live", holder: open.holder, expiresAt: open.expiresAt };
+
+  // An attempt timed out by the replay is closed, not live — a stage whose
+  // holder vanished must be retryable, not blocked forever. But report that
+  // only while the timeout is still the last word: once a later attempt has
+  // run (retried and succeeded, failed, or is itself open), the dead
+  // holder's lease is no longer what the caller should be told about.
+  const last = instance.attempts[instance.attempts.length - 1];
+  if (last && last.outcome === "timeout") {
+    return { state: "expired", holder: last.holder, expiresAt: last.expiresAt };
+  }
+  return { state: "none" };
 }
