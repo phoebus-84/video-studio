@@ -89,6 +89,13 @@ function toStageDef(yaml: YamlStage, pipelineCaps: YamlPipeline["pipeline"]["cap
     dependsOn: yaml.depends_on ?? [],
     produces: toArtifactRefs(yaml.outputs),
     consumes: toArtifactRefs(yaml.inputs),
+    // Parsed since the loader was written, and dropped here until avg-qr4.1:
+    // the manifests declared gates that nothing could read.
+    gates: {
+      autopilot: yaml.gates?.autopilot ?? true,
+      review: yaml.gates?.review ?? "none",
+      retryOnFailure: yaml.gates?.retry_on_failure ?? 0,
+    },
   };
 }
 

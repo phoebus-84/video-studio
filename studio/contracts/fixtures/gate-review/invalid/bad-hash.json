@@ -1,0 +1,9 @@
+{
+  "stageId": "qa",
+  "decision": "requested",
+  "actor": "gateway",
+  "at": "2026-09-15T12:00:00Z",
+  "inputs": [{ "path": "output/final.mp4", "sha256": "abc123" }],
+  "outputs": [],
+  "checks": []
+}

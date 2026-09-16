@@ -37,6 +37,23 @@ export interface EpisodeRef {
   episode: string;
 }
 
+// ── Built-in pipelines ──────────────────────────────────────────────────────
+
+/**
+ * Where the built-in pipeline manifests live.
+ *
+ * Resolved through the package, never guessed from a relative path: ADR-0026,
+ * and the reason the runtime CLI is found the same way.
+ */
+export function builtinPipelinesPath(): string {
+  try {
+    const manifest = createRequire(import.meta.url).resolve("@studio/pipelines/package.json");
+    return manifest.replace(/package\.json$/, "pipelines");
+  } catch {
+    return "";
+  }
+}
+
 // ── Client ──────────────────────────────────────────────────────────────────
 
 export class RuntimeClient {
@@ -54,12 +71,7 @@ export class RuntimeClient {
 
   /** Built-in pipeline definitions, resolved as a package rather than guessed. */
   private static builtinPipelines(): string {
-    try {
-      const manifest = createRequire(import.meta.url).resolve("@studio/pipelines/package.json");
-      return manifest.replace(/package\.json$/, "pipelines");
-    } catch {
-      return "";
-    }
+    return builtinPipelinesPath();
   }
 
   /**
