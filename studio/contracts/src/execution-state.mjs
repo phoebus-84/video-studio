@@ -11,6 +11,15 @@
 // so the engine's own executor and the rerun planner can consume it. The types
 // are duplicated rather than imported because the dependency runs the other
 // way: runtime depends on contracts, never the reverse.
+//
+// Validation boundary: this module trusts `event.data` field-by-field. The
+// write path (Task 1's journal appender) checks that the event's `type` is
+// known, that `actor` is present, and that `data` is an object — it does not
+// validate `data`'s internal shape against execution-event.schema.json. So a
+// wrong-typed field (an `attemptNumber` that is a string, say) passes through
+// here silently; the real guarantee that `data` matches its declared payload
+// shape comes only from whichever caller validates against the JSON Schema
+// before appending to the journal, not from this replay.
 // ---------------------------------------------------------------------------
 
 /** Journal event types this module interprets. Everything else is ignored. */
@@ -24,6 +33,13 @@ const VALID_TRANSITIONS = Object.freeze({
   running: ["completed", "failed"],
   completed: [],
   failed: ["pending"],
+});
+
+/** Maps an attempt-recorded outcome to the status it settles the stage into. */
+const OUTCOME_STATUS = Object.freeze({
+  success: "completed",
+  failure: "failed",
+  timeout: "failed",
 });
 
 function transition(instance, to, because) {
@@ -76,6 +92,13 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
     if (instance.createdAt === null) instance.createdAt = event.at;
 
     if (event.type === "stage-leased") {
+      if (instance.attempts.some((a) => a.leaseId === leaseId)) {
+        throw new Error(
+          `Journal leases attempt "${leaseId}" on stage "${stageId}" twice. ` +
+          `A duplicate lease id describes something impossible, and inventing a ` +
+          `second attempt for it would be a guess.`,
+        );
+      }
       transition(instance, "pending", "a new lease");
       instance.attempts.push({
         number: data.attemptNumber,
@@ -114,6 +137,7 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
         attempt.retryable = data.retryable;
         break;
       case "attempt-recorded":
+        transition(instance, OUTCOME_STATUS[data.outcome], "the attempt was recorded");
         attempt.endedAt = event.at;
         attempt.outcome = data.outcome;
         if (data.outputs) instance.outputArtifacts = data.outputs;

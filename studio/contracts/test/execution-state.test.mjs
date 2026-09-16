@@ -121,4 +121,40 @@ describe("deriveExecutionState", () => {
     const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
     assert.equal(inst.status, "pending");
   });
+
+  it("fails closed on a duplicate stage-leased for the same leaseId", () => {
+    // Two leases with the same id and no intervening close would otherwise
+    // push a second attempt record that stage-started/stage-completed can
+    // never resolve to (Array.find only ever reaches the first one) — a
+    // plausible-but-wrong history rather than a thrown error.
+    const events = [
+      lease("illustrations", "L1", 1),
+      lease("illustrations", "L1", 1),
+    ];
+    assert.throws(() => deriveExecutionState(events, ["illustrations"], NOW), /L1/);
+  });
+
+  it("transitions to completed when attempt-recorded reports success", () => {
+    const events = [
+      lease("illustrations", "L1", 1),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+      evt("attempt-recorded", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1,
+        outcome: "success", outputs: ["artifacts/frames/s1.png"] }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(inst.status, "completed");
+    assert.equal(inst.attempts[0].outcome, "success");
+  });
+
+  it("transitions to failed when attempt-recorded reports failure", () => {
+    const events = [
+      lease("illustrations", "L1", 1),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+      evt("attempt-recorded", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1,
+        outcome: "failure" }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(inst.status, "failed");
+    assert.equal(inst.attempts[0].outcome, "failure");
+  });
 });
