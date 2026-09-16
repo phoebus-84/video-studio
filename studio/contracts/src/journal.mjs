@@ -18,8 +18,36 @@
 // ---------------------------------------------------------------------------
 
 import { appendFile, mkdir } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
+
+/** Crockford base32 — the schema's id pattern is exactly this alphabet. */
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/**
+ * A ULID: 48 bits of timestamp then 80 bits of randomness, Crockford base32.
+ *
+ * Written here rather than taken as a dependency: it is twenty lines, and
+ * @studio/contracts is imported at runtime by packages that carry no ajv and
+ * should not grow a dependency tree for an id.
+ *
+ * Time-ordered, so a journal sorts by id as well as by position — which is what
+ * makes an id useful for ordering rather than only for identity.
+ */
+export function ulid(now = Date.now()) {
+  let time = "";
+  let t = now;
+  for (let i = 0; i < 10; i++) {
+    time = CROCKFORD[t % 32] + time;
+    t = Math.floor(t / 32);
+  }
+  const bytes = randomBytes(16);
+  let random = "";
+  for (let i = 0; i < 16; i++) {
+    random += CROCKFORD[bytes[i] % 32];
+  }
+  return time + random;
+}
 
 /** Who caused an event. Mirrors the Actor enum in the schema. */
 export const JOURNAL_ACTORS = Object.freeze([
@@ -56,14 +84,11 @@ export const JOURNAL_RELATIVE_PATH = path.join("journal", "events.jsonl");
  * Separated from the append so callers can validate or batch, and so the shape
  * is testable without a filesystem.
  */
-export function buildJournalEvent({
-  type,
-  actor,
-  episode,
-  stageId,
-  detail,
-  at,
-}) {
+
+/** The envelope every schema in this package stamps on a top-level document. */
+const API_VERSION = "studio.video/v1alpha1";
+
+export function buildJournalEvent({ type, actor, episode, stageId, data, at }) {
   if (!JOURNAL_EVENTS.includes(type)) {
     throw new Error(`Unknown journal event type: ${type}`);
   }
@@ -73,21 +98,29 @@ export function buildJournalEvent({
   if (!episode?.channel || !episode?.series || !episode?.episode) {
     throw new Error("A journal event must name its channel, series and episode");
   }
+  if (data !== undefined && (typeof data !== "object" || data === null || Array.isArray(data))) {
+    throw new Error("A journal event's data must be an object");
+  }
 
-  const event = {
-    eventId: randomUUID(),
-    type,
-    actor,
-    at: at ?? new Date().toISOString(),
-    episode: {
+  // stageId used to sit at the top level, which additionalProperties: false
+  // rejects. It belongs in the payload, where every reader now looks for it.
+  const payload = { ...(data ?? {}) };
+  if (stageId !== undefined && payload.stageId === undefined) payload.stageId = stageId;
+
+  return {
+    apiVersion: API_VERSION,
+    kind: "JournalEvent",
+    id: `evt_${ulid()}`,
+    episodeRef: {
       channel: episode.channel,
       series: episode.series,
       episode: episode.episode,
     },
+    at: at ?? new Date().toISOString(),
+    actor,
+    type,
+    data: payload,
   };
-  if (stageId) event.stageId = stageId;
-  if (detail !== undefined) event.detail = detail;
-  return event;
 }
 
 /**
@@ -124,17 +157,26 @@ export async function appendJournalEvent(episodeDir, input) {
  * A malformed line is skipped rather than failing the read: the journal is
  * append-only evidence, and one bad record must not hide the rest.
  */
-export function parseJournal(contents, { type, limit } = {}) {
+export function parseJournal(contents, { type, limit, strict = false } = {}) {
   const events = [];
-  for (const line of contents.split(/\r?\n/)) {
-    const trimmed = line.trim();
+  const lines = contents.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
     if (trimmed === "") continue;
+    let event;
     try {
-      const event = JSON.parse(trimmed);
-      if (type && event.type !== type) continue;
-      events.push(event);
-    } catch { /* skip a corrupt record, keep the rest */ }
+      event = JSON.parse(trimmed);
+    } catch {
+      // Lenient by default: the journal is a narrative, and one bad record must
+      // not hide the rest. Strict for callers deriving state from it, where a
+      // skipped line is a silently forgotten attempt rather than a missing note.
+      if (strict) {
+        throw new Error(`Malformed journal record at line ${i + 1}`);
+      }
+      continue;
+    }
+    if (type && event.type !== type) continue;
+    events.push(event);
   }
-  // The most recent events are the interesting ones, and they are at the end.
   return typeof limit === "number" && limit >= 0 ? events.slice(-limit) : events;
 }

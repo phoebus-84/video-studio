@@ -18,35 +18,39 @@ export type JournalEventType =
   | "supersession-recorded"
   | "deliverable-current-changed";
 
-export interface JournalEpisodeRef {
+export interface EpisodeRef {
   channel: string;
   series: string;
   episode: string;
 }
 
+export interface JournalEvent {
+  apiVersion: "studio.video/v1alpha1";
+  kind: "JournalEvent";
+  /** `evt_` followed by a 26-character Crockford base32 ULID. */
+  id: string;
+  episodeRef: EpisodeRef;
+  at: string;
+  actor: JournalActor;
+  type: JournalEventType;
+  data: Record<string, unknown>;
+}
+
 export interface JournalEventInput {
   type: JournalEventType;
   actor: JournalActor;
-  episode: JournalEpisodeRef;
+  episode: EpisodeRef;
   stageId?: string;
-  detail?: unknown;
+  data?: Record<string, unknown>;
   /** Defaults to now. Supply only to record an event that already happened. */
   at?: string;
-}
-
-export interface JournalEvent {
-  eventId: string;
-  type: JournalEventType;
-  actor: JournalActor;
-  at: string;
-  episode: JournalEpisodeRef;
-  stageId?: string;
-  detail?: unknown;
 }
 
 export declare const JOURNAL_ACTORS: readonly JournalActor[];
 export declare const JOURNAL_EVENTS: readonly JournalEventType[];
 export declare const JOURNAL_RELATIVE_PATH: string;
+
+export declare function ulid(now?: number): string;
 
 export declare function buildJournalEvent(input: JournalEventInput): JournalEvent;
 
@@ -58,5 +62,5 @@ export declare function appendJournalEvent(
 
 export declare function parseJournal(
   contents: string,
-  options?: { type?: string; limit?: number },
+  options?: { type?: JournalEventType; limit?: number; strict?: boolean },
 ): JournalEvent[];

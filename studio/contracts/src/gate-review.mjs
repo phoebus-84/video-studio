@@ -10,10 +10,9 @@
 // it checkable later: `deriveGateState` re-reads those files and compares, so a
 // review that has been outrun by a re-render stops counting as a review.
 //
-// These records ride in the `detail` of approval-requested and approval-granted
-// journal events. They use the field names journal.mjs actually writes, not the
-// ones journal-event.schema.json describes; the two have never agreed, and
-// reconciling them is avg-i1x.
+// These records ride in the `data` of approval-requested and approval-granted
+// journal events, which is journal.mjs's shape for the payload — the one
+// journal-event.schema.json also describes, now that avg-i1x is closed.
 // ---------------------------------------------------------------------------
 
 import { readFile } from "node:fs/promises";
@@ -131,9 +130,7 @@ export function buildGateReview({
  * `events` is the parsed journal — see parseJournal in ./journal.mjs.
  */
 export async function deriveGateState(events, stageId, episodeDir) {
-  const mine = events.filter(
-    (event) => (event.detail?.stageId ?? event.stageId) === stageId,
-  );
+  const mine = events.filter((event) => event.data?.stageId === stageId);
 
   const latest = [...mine]
     .reverse()
@@ -145,7 +142,7 @@ export async function deriveGateState(events, stageId, episodeDir) {
     return { state: "requested", at: latest.at, actor: latest.actor };
   }
 
-  const recorded = [...(latest.detail?.inputs ?? []), ...(latest.detail?.outputs ?? [])];
+  const recorded = [...(latest.data?.inputs ?? []), ...(latest.data?.outputs ?? [])];
   if (recorded.length === 0) {
     return {
       state: "invalidated",
