@@ -454,12 +454,20 @@ export async function runAutopilot(
 
   // Run up to 20 stages (safety limit)
   const seen = new Set<string>();
+  // Whether the runtime ever actually told us there was nothing left to do,
+  // as opposed to erroring or returning something this loop could not parse.
+  // Both leave `results` empty, and only the first is a finished episode — an
+  // unreachable `vpr run` must not read the same as one.
+  let sawCompletion = false;
+  let haltReason: string | null = null;
   for (let i = 0; i < 20; i++) {
     // Get next runnable stage from runtime
     const runResult = await runtime.run(ref, undefined, false, pipeline);
     if (!runResult.ok && !runResult.data) {
-      // All done or error
-      log(`Autopilot: ${runResult.error ?? "No more stages"}`);
+      // The runtime itself failed to answer — not the same as "no more
+      // stages". Recorded so the summary can say so instead of guessing done.
+      haltReason = runResult.error ?? "runtime returned no result";
+      log(`Autopilot: ${haltReason}`);
       break;
     }
 
@@ -472,8 +480,10 @@ export async function runAutopilot(
       const stdout = runResult.stdout ?? "";
       if (stageData?.completed === true || stdout.includes("All stages complete") || runResult.stdout?.includes("completed")) {
         log("Autopilot: all stages complete!");
+        sawCompletion = true;
         break;
       }
+      haltReason = `runtime returned an unparsable result — ${stdout.slice(0, 200)}`;
       log(`Autopilot: unknown stage — ${stdout.slice(0, 200)}`);
       break;
     }
@@ -628,7 +638,9 @@ export async function runAutopilot(
     stages: results,
     totalDurationMs: totalMs,
     summary: results.length === 0
-      ? `All stages already complete (${(totalMs / 1000).toFixed(1)}s)`
+      ? sawCompletion
+        ? `All stages already complete (${(totalMs / 1000).toFixed(1)}s)`
+        : `No stage could be run: ${haltReason ?? "the runtime gave no reason"} (${(totalMs / 1000).toFixed(1)}s)`
       : `${parts.join(", ")}, ${results.length} total (${(totalMs / 1000).toFixed(1)}s)`,
   };
 }

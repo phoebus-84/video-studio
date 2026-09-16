@@ -228,6 +228,26 @@ describe("the run summary", () => {
     expect(report.summary).toMatch(/1 blocked/);
     expect(report.summary).not.toMatch(/^All stages already complete/);
   });
+
+  it("does not report completion when the runtime never resolved a stage", async () => {
+    const { root } = await episode();
+
+    // The runtime itself is unreachable — no stage, no data, just an error.
+    // Before sawCompletion, this fell through the same `results.length === 0`
+    // branch as a genuinely finished episode: the loop broke on the first
+    // iteration with nothing in `results`, and the summary claimed "All stages
+    // already complete" for a run that never touched a single stage.
+    const runtime: RuntimeClient = {
+      run: vi.fn().mockResolvedValue({ ok: false, error: "vpr not found" }),
+    } as unknown as RuntimeClient;
+
+    const report = await runAutopilot(runtime, REF, "fairy-tale-adaptation", root, () => {});
+
+    expect(report.stages).toHaveLength(0);
+    expect(report.summary).not.toMatch(/All stages already complete/);
+    expect(report.summary).toMatch(/vpr not found/);
+  });
+
 });
 
 describe("dependency gates", () => {
