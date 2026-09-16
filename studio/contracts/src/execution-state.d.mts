@@ -40,3 +40,11 @@ export declare function deriveExecutionState(
   stageIds: string[],
   now?: Date,
 ): Map<string, StageInstance>;
+
+export interface LeaseState {
+  state: "none" | "live" | "expired";
+  holder?: string;
+  expiresAt?: string;
+}
+
+export declare function leaseState(instance: StageInstance, now?: Date): LeaseState;

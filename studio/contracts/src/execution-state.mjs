@@ -145,5 +145,40 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
     }
   }
 
+  // An open attempt whose lease has expired did not finish — its holder is gone
+  // and is not coming back. Expiry is not a status of its own: the attempt is a
+  // timeout, and the stage lands on the status OUTCOME_STATUS.timeout maps to,
+  // which is the state the machine already allows a retry from.
+  for (const instance of state.values()) {
+    const open = instance.attempts.find((a) => a.outcome === undefined);
+    if (!open || !open.expiresAt) continue;
+    if (new Date(open.expiresAt).getTime() > now.getTime()) continue;
+    open.outcome = "timeout";
+    open.endedAt = open.expiresAt;
+    if (instance.status === "running") transition(instance, OUTCOME_STATUS.timeout, "the lease expired");
+  }
+
   return state;
+}
+
+/**
+ * The lease on a stage, now.
+ *
+ * A lease is live when an attempt is open and its expiry has not passed. The
+ * journal records that a lease was granted; it cannot arbitrate who won a race,
+ * which is what the Lock port is for. This answers only "is someone holding
+ * this, and until when".
+ */
+export function leaseState(instance, now = new Date()) {
+  const open = instance.attempts.find((a) => a.outcome === undefined);
+  if (!open || !open.expiresAt) {
+    // An attempt timed out by the replay above is closed, not live — a stage
+    // whose holder vanished must be retryable, not blocked forever.
+    const expired = [...instance.attempts].reverse().find((a) => a.outcome === "timeout");
+    if (expired) {
+      return { state: "expired", holder: expired.holder, expiresAt: expired.expiresAt };
+    }
+    return { state: "none" };
+  }
+  return { state: "live", holder: open.holder, expiresAt: open.expiresAt };
 }

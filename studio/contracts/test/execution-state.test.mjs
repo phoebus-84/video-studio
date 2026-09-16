@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { deriveExecutionState } from "../src/execution-state.mjs";
+import { deriveExecutionState, leaseState } from "../src/execution-state.mjs";
 
 const ref = { channel: "c", series: "s", episode: "e" };
 let seq = 0;
@@ -156,5 +156,66 @@ describe("deriveExecutionState", () => {
     const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
     assert.equal(inst.status, "failed");
     assert.equal(inst.attempts[0].outcome, "failure");
+  });
+});
+
+describe("lease liveness", () => {
+  it("reports no lease for a stage that never took one", () => {
+    const state = deriveExecutionState([], ["illustrations"], NOW);
+    assert.equal(leaseState(state.get("illustrations"), NOW).state, "none");
+  });
+
+  it("reports a live lease while the attempt is open and unexpired", () => {
+    const events = [
+      lease("illustrations", "L1", 1, "2026-09-16T12:05:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+
+    const live = leaseState(inst, NOW);
+    assert.equal(live.state, "live");
+    assert.equal(live.holder, "test/1");
+  });
+
+  it("reports the lease expired once the clock passes its expiry", () => {
+    const events = [
+      lease("illustrations", "L1", 1, "2026-09-16T11:55:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(leaseState(inst, NOW).state, "expired");
+  });
+
+  it("reports no live lease once the attempt closed, however recent", () => {
+    const events = [
+      lease("illustrations", "L1", 1, "2999-01-01T00:00:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+      evt("stage-completed", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1, outputs: ["a"] }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(leaseState(inst, NOW).state, "none");
+  });
+
+  it("marks an expired open attempt as timed out and the stage as retryable", () => {
+    // The crash case with an expired lease: the holder is gone and is not
+    // coming back, so the attempt is a timeout and the stage may be retried.
+    const events = [
+      lease("illustrations", "L1", 1, "2026-09-16T11:55:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+
+    assert.equal(inst.attempts[0].outcome, "timeout");
+    assert.equal(inst.status, "failed");
+  });
+
+  it("leaves an unexpired open attempt running, not timed out", () => {
+    const events = [
+      lease("illustrations", "L1", 1, "2999-01-01T00:00:00Z"),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
+    ];
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(inst.attempts[0].outcome, undefined);
+    assert.equal(inst.status, "running");
   });
 });
