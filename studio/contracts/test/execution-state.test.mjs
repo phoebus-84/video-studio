@@ -102,15 +102,38 @@ describe("deriveExecutionState", () => {
   });
 
   it("fails closed on a transition the state machine forbids", () => {
-    // completed is terminal; a second lease on a completed stage is not a retry
-    // the machine allows from that state.
+    // A stage that was leased but never started cannot complete: pending ->
+    // completed skips the run itself, and coercing it would invent history.
+    const events = [
+      lease("illustrations", "L1", 1),
+      evt("stage-completed", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1, outputs: ["a"] }),
+    ];
+    assert.throws(() => deriveExecutionState(events, ["illustrations"], NOW), /pending to completed/);
+  });
+
+  it("lets a completed stage be leased again — a re-run is a retry, not a violation", () => {
+    // The journal is cumulative across every run of an episode and is never
+    // truncated, so `completed` cannot be a state a stage can never leave.
+    // Re-running a completed stage is a first-class operation (rerun/planner,
+    // rerun/recovery), and it reaches the journal as a fresh lease on a stage
+    // the log already shows as completed. If that threw, the first re-run
+    // would make the episode's whole execution history permanently
+    // underivable — the journal is append-only, so there is no undo.
     const events = [
       lease("illustrations", "L1", 1),
       evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
       evt("stage-completed", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1, outputs: ["a"] }),
       lease("illustrations", "L2", 2),
     ];
-    assert.throws(() => deriveExecutionState(events, ["illustrations"], NOW), /completed/);
+
+    assert.doesNotThrow(() => deriveExecutionState(events, ["illustrations"], NOW));
+
+    const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
+    assert.equal(inst.status, "pending");
+    assert.equal(inst.attempts.length, 2);
+    assert.equal(inst.attempts[0].outcome, "success");
+    assert.equal(inst.attempts[1].outcome, undefined);
+    assert.equal(inst.attempts[1].leaseId, "L2");
   });
 
   it("ignores journal events that are not execution events", () => {

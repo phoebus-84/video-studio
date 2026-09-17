@@ -27,11 +27,30 @@ const EXECUTION_EVENTS = Object.freeze([
   "stage-leased", "stage-started", "stage-completed", "stage-failed", "attempt-recorded",
 ]);
 
-/** Mirrors VALID_TRANSITIONS in studio/runtime/src/engine/types.ts. */
+/**
+ * The transitions replay accepts. Deliberately NOT identical to
+ * VALID_TRANSITIONS in studio/runtime/src/engine/types.ts, and the difference
+ * is the point — do not "restore fidelity" to the engine's table.
+ *
+ * The engine's map governs one in-memory run: within a single execution a
+ * stage that has completed is finished, and nothing may move it again. This
+ * map governs a cumulative, append-only log that spans every run an episode
+ * ever had and is never truncated. So `completed` cannot be terminal here:
+ * re-running a completed stage is a first-class operation (see
+ * studio/runtime/src/rerun/planner.ts and rerun/recovery.ts), and the journal
+ * records that re-run as a fresh `stage-leased` on a stage the log already
+ * shows as completed.
+ *
+ * Under the engine's table that lease is an illegal transition, so replay
+ * throws — and because the journal can never be rewritten, it throws on every
+ * future replay too: one re-run would make that episode's execution state
+ * permanently underivable. `completed -> pending` is therefore allowed here.
+ * It is a legitimate retry, not a violation.
+ */
 const VALID_TRANSITIONS = Object.freeze({
   pending: ["running"],
   running: ["completed", "failed"],
-  completed: [],
+  completed: ["pending"],
   failed: ["pending"],
 });
 
