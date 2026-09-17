@@ -75,6 +75,36 @@ export const JOURNAL_EVENTS = Object.freeze([
   "deliverable-current-changed",
 ]);
 
+/**
+ * The fields each execution event's payload must carry, mirroring the
+ * `required` lists in schemas/v1alpha1/execution-event.schema.json.
+ *
+ * This exists because nothing else enforces that schema. It is `$ref`'d from
+ * nowhere, and journal-event.schema.json's EventData is
+ * `additionalProperties: true` with no per-type branch — so the only things
+ * ever checked against it are four hand-authored fixtures, which were written
+ * from the schema and therefore always pass. That is precisely the failure
+ * this package spent a branch ending: the fixtures conformed and the writer
+ * never did. The gateway's `{ stageId, durationMs }` stage-started sailed
+ * through every check in this file and then made replay throw for the whole
+ * journal.
+ *
+ * Presence only, and deliberately: `@studio/contracts` carries ajv as a
+ * devDependency, and the gateway imports this module at runtime without it,
+ * so full schema validation cannot live here. What presence buys is the
+ * property replay depends on — every execution event names its stage, its
+ * lease and its attempt, so a terminal event can always be placed in the
+ * history. A wrong-TYPED field still gets through; that is the boundary, and
+ * execution-state.mjs says so where it trusts these payloads.
+ */
+const REQUIRED_EXECUTION_FIELDS = Object.freeze({
+  "stage-leased": ["stageId", "leaseId", "attemptNumber", "ttlMs", "expiresAt", "holder"],
+  "stage-started": ["stageId", "leaseId", "attemptNumber"],
+  "stage-completed": ["stageId", "leaseId", "attemptNumber", "outputs"],
+  "stage-failed": ["stageId", "leaseId", "attemptNumber", "error"],
+  "attempt-recorded": ["stageId", "leaseId", "attemptNumber", "outcome"],
+});
+
 /** Where an episode's journal lives, relative to the episode directory. */
 export const JOURNAL_RELATIVE_PATH = path.join("journal", "events.jsonl");
 
@@ -106,6 +136,21 @@ export function buildJournalEvent({ type, actor, episode, stageId, data, at }) {
   // rejects. It belongs in the payload, where every reader now looks for it.
   const payload = { ...(data ?? {}) };
   if (stageId !== undefined && payload.stageId === undefined) payload.stageId = stageId;
+
+  // Checked after the stageId fold-in, so a caller that passes stageId at the
+  // top level (as most still do) satisfies the requirement the same way one
+  // that puts it in `data` does.
+  const required = REQUIRED_EXECUTION_FIELDS[type];
+  if (required) {
+    const missing = required.filter((field) => payload[field] === undefined);
+    if (missing.length > 0) {
+      throw new Error(
+        `A ${type} event must carry ${missing.join(", ")} in its data: ` +
+        `execution state is replayed by matching events to the attempt their ` +
+        `leaseId names, and an event missing that cannot be placed in the history`,
+      );
+    }
+  }
 
   return {
     apiVersion: API_VERSION,

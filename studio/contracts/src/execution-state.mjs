@@ -13,13 +13,18 @@
 // way: runtime depends on contracts, never the reverse.
 //
 // Validation boundary: this module trusts `event.data` field-by-field. The
-// write path (Task 1's journal appender) checks that the event's `type` is
-// known, that `actor` is present, and that `data` is an object — it does not
-// validate `data`'s internal shape against execution-event.schema.json. So a
-// wrong-typed field (an `attemptNumber` that is a string, say) passes through
-// here silently; the real guarantee that `data` matches its declared payload
-// shape comes only from whichever caller validates against the JSON Schema
-// before appending to the journal, not from this replay.
+// write path (buildJournalEvent in journal.mjs) checks that the event's `type`
+// is known, that `actor` is present, that `data` is an object, and — for the
+// five execution events — that every field execution-event.schema.json marks
+// required is actually present. That last check is what lets the replay below
+// assume a terminal event names the lease it closes.
+//
+// Presence is all it checks, because that module is imported at runtime by
+// packages that carry no ajv. So a wrong-TYPED field (an `attemptNumber` that
+// is a string, say) still passes through here silently; the guarantee that
+// `data` matches its declared payload shape in full comes only from a caller
+// that validates against the JSON Schema before appending, not from this
+// replay.
 // ---------------------------------------------------------------------------
 
 /** Journal event types this module interprets. Everything else is ignored. */
