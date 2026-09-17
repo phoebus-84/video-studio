@@ -48,6 +48,14 @@ export class FileLock implements Lock {
    * `LockFile` — is what a crash mid-write leaves behind, and its holder may
    * still be running. Callers must fail closed on `"malformed"`, not treat it
    * as `"missing"`.
+   *
+   * "Well-formed" has to include an `expiresAt` that is actually a date, not
+   * merely a string. A structural check alone let an unparseable expiry
+   * through as `ok`, and every downstream comparison is
+   * `new Date(expiresAt).getTime() > now` — which is `NaN > now`, which is
+   * false, which reads as "expired" and reclaims the lockfile. An expiry we
+   * cannot read tells us nothing about whether its holder is still running,
+   * so it is exactly the case this fails closed on.
    */
   private async read(
     file: string,
@@ -65,6 +73,7 @@ export class FileLock implements Lock {
       if (
         typeof parsed.token === "string" &&
         typeof parsed.expiresAt === "string" &&
+        !Number.isNaN(new Date(parsed.expiresAt).getTime()) &&
         typeof parsed.resource === "string"
       ) {
         return { kind: "ok", value: parsed as LockFile };

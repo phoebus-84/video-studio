@@ -149,4 +149,25 @@ describe("FileLock", () => {
     expect(got.ok).toBe(false);
     if (!got.ok) expect(got.error.code).toBe("LEASE_CONFLICT");
   });
+
+  it("refuses to acquire a resource whose lockfile has an unreadable expiry", async () => {
+    const root = await lockRoot();
+    const resource = "stage:illustrations";
+    const file = join(root, `${Buffer.from(resource).toString("base64url")}.lock`);
+    // Structurally a lockfile -- three strings -- but the expiry is not a
+    // date. The old check was `typeof expiresAt === "string"` and nothing
+    // more, so this read as `ok`; then `new Date("whenever").getTime()` is
+    // NaN, `NaN > now` is false, and the lockfile was reclaimed out from
+    // under a holder that may still be running. An expiry we cannot read
+    // says nothing about whether its holder is alive, so it fails closed.
+    await writeFile(file, JSON.stringify({
+      token: "t1", expiresAt: "whenever", resource,
+    }), "utf-8");
+
+    const lock = new FileLock(root);
+    const got = await lock.acquire(resource, 60_000);
+
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.error.code).toBe("LEASE_CONFLICT");
+  });
 });
