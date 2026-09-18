@@ -431,14 +431,13 @@ async function requestReview(
     type: "approval-requested",
     actor: "gateway",
     episode: ref,
-    stageId,
-    detail: buildGateReview({
+    data: { ...buildGateReview({
       stageId,
       decision: "requested",
       actor: "gateway",
       outputs: hashed,
       note,
-    }),
+    }) },
   });
 }
 
@@ -565,13 +564,23 @@ export async function runAutopilot(
     }
 
     const stageStart = Date.now();
-    // What happened to this episode is recorded as it happens. The journal had
-    // a schema, a route and a tool, and no writer: a complete production left
-    // it at zero bytes, so afterwards nothing could say which stages ran, how
-    // long they took or which one failed.
-    await appendJournalEvent(episodeDir, {
-      type: "stage-started", actor: "runtime", episode: ref, stageId,
-    });
+    // No stage-started / stage-completed / stage-failed is written here, and
+    // that is deliberate. Execution state is derived by replaying the journal
+    // (deriveExecutionState in @studio/contracts), and replay identifies an
+    // attempt by its leaseId: every execution event must carry leaseId and
+    // attemptNumber or it cannot be placed in the history. The gateway takes
+    // no leases, so it cannot supply either, and the events it used to write
+    // — `{ stageId, durationMs }` and nothing more — made replay throw
+    // "closes attempt undefined ... which was never opened" for the whole
+    // journal, forever: it is append-only, so one autopilot run would have
+    // left that episode's execution state permanently underivable.
+    //
+    // A record that destroys an episode's history is worse than no record.
+    // Lease-bound execution events belong to the execution service, which
+    // holds the lease that makes them replayable. This is the same reasoning
+    // that removed the gateway's attempt-recorded write. `approval-requested`
+    // below is unaffected: it is not an execution event, carries no lease,
+    // and is what the review path actually reads.
     try {
       const outputs = await handler(ctx);
 
@@ -580,15 +589,10 @@ export async function runAutopilot(
       if (invalid) {
         results.push({ stageId, status: "failed", outputs: [], durationMs: Date.now() - stageStart,
           error: invalid });
-        await appendJournalEvent(episodeDir, {
-          type: "stage-failed", actor: "runtime", episode: ref, stageId,
-          detail: { durationMs: Date.now() - stageStart, error: invalid },
-        });
+        // No stage-failed here — see the note above the handler call.
         log(`Autopilot: ${stageId} FAILED — ${invalid}`);
         break;
       }
-
-      const relative = outputs.map((o) => path.relative(episodeDir, o));
 
       // 6. Ran, but not accepted. The test is the declared review, never
       // `stageGates && ...`: a missing gate record must not read as "no review
@@ -597,20 +601,13 @@ export async function runAutopilot(
         const why = `${stageId} requires ${stageGates.review} review`;
         await requestReview(episodeDir, ref, stageId, outputs, why);
         results.push({ stageId, status: "awaiting_approval", outputs, durationMs: Date.now() - stageStart });
-        await appendJournalEvent(episodeDir, {
-          type: "attempt-recorded", actor: "runtime", episode: ref, stageId,
-          detail: { durationMs: Date.now() - stageStart, outputs: relative },
-        });
         log(`Autopilot: ${why} — awaiting review, stopping`);
         break;
       }
 
       // 7. Ungated and its outputs hold up.
       results.push({ stageId, status: "completed", outputs, durationMs: Date.now() - stageStart });
-      await appendJournalEvent(episodeDir, {
-        type: "stage-completed", actor: "runtime", episode: ref, stageId,
-        detail: { durationMs: Date.now() - stageStart, outputs: relative },
-      });
+      // No stage-completed here — see the note above the handler call.
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({
@@ -620,13 +617,7 @@ export async function runAutopilot(
         durationMs: Date.now() - stageStart,
         error: message,
       });
-      await appendJournalEvent(episodeDir, {
-        type: "stage-failed",
-        actor: "runtime",
-        episode: ref,
-        stageId,
-        detail: { durationMs: Date.now() - stageStart, error: message },
-      });
+      // No stage-failed here — see the note above the handler call.
       log(`Autopilot: ${stageId} FAILED — stopping`);
       break; // Stop on failure
     }

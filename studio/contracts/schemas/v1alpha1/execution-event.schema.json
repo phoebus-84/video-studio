@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/execution-event.schema.json",
+  "title": "Execution event payloads",
+  "description": "The `data` payloads of the journal events that execution state is replayed from. Every one carries leaseId and attemptNumber: a stage attempted three times produces three interleaved runs of events, and without both a reader cannot tell which stage-failed closes which stage-started.",
+  "$defs": {
+    "StageLeased": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stageId", "leaseId", "attemptNumber", "ttlMs", "expiresAt", "holder"],
+      "properties": {
+        "stageId": { "type": "string", "minLength": 1 },
+        "leaseId": { "type": "string", "minLength": 1 },
+        "attemptNumber": { "type": "integer", "minimum": 1 },
+        "ttlMs": { "type": "integer", "minimum": 1 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "holder": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who took the lease, so an expired one reports as held by X until T rather than as an anonymous block."
+        }
+      }
+    },
+    "StageStarted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stageId", "leaseId", "attemptNumber"],
+      "properties": {
+        "stageId": { "type": "string", "minLength": 1 },
+        "leaseId": { "type": "string", "minLength": 1 },
+        "attemptNumber": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "StageCompleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stageId", "leaseId", "attemptNumber", "outputs"],
+      "properties": {
+        "stageId": { "type": "string", "minLength": 1 },
+        "leaseId": { "type": "string", "minLength": 1 },
+        "attemptNumber": { "type": "integer", "minimum": 1 },
+        "outputs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "StageFailed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stageId", "leaseId", "attemptNumber", "error"],
+      "properties": {
+        "stageId": { "type": "string", "minLength": 1 },
+        "leaseId": { "type": "string", "minLength": 1 },
+        "attemptNumber": { "type": "integer", "minimum": 1 },
+        "error": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "AttemptRecorded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stageId", "leaseId", "attemptNumber", "outcome"],
+      "properties": {
+        "stageId": { "type": "string", "minLength": 1 },
+        "leaseId": { "type": "string", "minLength": 1 },
+        "attemptNumber": { "type": "integer", "minimum": 1 },
+        "outcome": { "enum": ["success", "failure", "timeout"] },
+        "outputs": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

@@ -98,10 +98,22 @@ describe("captions", () => {
 });
 
 describe("the journal", () => {
-  it("reads the events the runtime wrote", async () => {
+  // Execution events carry leaseId and attemptNumber, and buildJournalEvent
+  // now rejects one that does not: replay identifies an attempt by its lease,
+  // so an event without one cannot be placed in the history. The gateway does
+  // not write these — it takes no leases — but the execution service will, and
+  // these are the read-path tests for what it writes. Writing them here the
+  // way the gateway used to (`{ stageId }` alone) would now record nothing at
+  // all, and the assertions would fail on an empty journal.
+  const startedData = (stageId: string, leaseId: string) =>
+    ({ stageId, leaseId, attemptNumber: 1 });
+  const completedData = (stageId: string, leaseId: string) =>
+    ({ stageId, leaseId, attemptNumber: 1, outputs: [`artifacts/${stageId}.txt`] });
+
+  it("reads the events the execution service wrote", async () => {
     const { root, dir } = await episode();
-    await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF, stageId: "narration" });
-    await appendJournalEvent(dir, { type: "stage-completed", actor: "runtime", episode: REF, stageId: "narration" });
+    await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF, data: startedData("narration", "L1") });
+    await appendJournalEvent(dir, { type: "stage-completed", actor: "runtime", episode: REF, data: completedData("narration", "L1") });
     await appendJournalEvent(dir, { type: "approval-granted", actor: "human", episode: REF, stageId: "qa" });
 
     const events = await new FileSystemWorkspaceService([root]).findEvents(REF, {});
@@ -113,22 +125,22 @@ describe("the journal", () => {
   it("filters by type and limits to the most recent", async () => {
     const { root, dir } = await episode();
     for (const stageId of ["a", "b", "c"]) {
-      await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF, stageId });
-      await appendJournalEvent(dir, { type: "stage-completed", actor: "runtime", episode: REF, stageId });
+      await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF, data: startedData(stageId, `L-${stageId}`) });
+      await appendJournalEvent(dir, { type: "stage-completed", actor: "runtime", episode: REF, data: completedData(stageId, `L-${stageId}`) });
     }
     const service = new FileSystemWorkspaceService([root]);
 
     const started = await service.findEvents(REF, { type: "stage-started" });
     expect(started).toHaveLength(3);
     const recent = await service.findEvents(REF, { limit: 2 });
-    expect(recent.map((e) => e.stageId)).toEqual(["c", "c"]);
+    expect(recent.map((e) => (e.data as { stageId: string }).stageId)).toEqual(["c", "c"]);
   });
 
   it("survives a corrupt line rather than losing the journal", async () => {
     const { root, dir } = await episode();
-    await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF });
+    await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF, data: startedData("narration", "L1") });
     await appendFile(join(dir, "journal", "events.jsonl"), "half a record\n");
-    await appendJournalEvent(dir, { type: "stage-completed", actor: "runtime", episode: REF });
+    await appendJournalEvent(dir, { type: "stage-completed", actor: "runtime", episode: REF, data: completedData("narration", "L1") });
 
     const events = await new FileSystemWorkspaceService([root]).findEvents(REF, {});
     expect(events.map((e) => e.type)).toEqual(["stage-started", "stage-completed"]);
@@ -144,7 +156,7 @@ describe("the journal", () => {
     const empty = await mkdtemp(join(tmpdir(), "gateway-empty-"));
     roots.push(empty);
     const { root, dir } = await episode();
-    await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF });
+    await appendJournalEvent(dir, { type: "stage-started", actor: "runtime", episode: REF, data: startedData("narration", "L1") });
 
     const events = await new FileSystemWorkspaceService([empty, root]).findEvents(REF, {});
     expect(events).toHaveLength(1);

@@ -23,7 +23,7 @@
   "scripts": {
     "check": "npm run check:compatibility && npm run check:schemas && npm run bindings:check && npm test",
     "check:compatibility": "node scripts/check-compatibility-fixtures.mjs",
-    "check:schemas": "node scripts/check-identity-fixtures.mjs && node scripts/check-workspace-fixtures.mjs && node scripts/check-pipeline-fixtures.mjs && node scripts/check-vocabulary.mjs && node scripts/check-event-fixtures.mjs && node scripts/check-timeline-fixtures.mjs && node scripts/check-review-fixtures.mjs && node scripts/check-provider-job-fixtures.mjs && node scripts/check-error-envelope-fixtures.mjs && node scripts/check-capability-binding-fixtures.mjs && node scripts/check-narration-fixtures.mjs && node scripts/check-gate-review-fixtures.mjs",
+    "check:schemas": "node scripts/check-identity-fixtures.mjs && node scripts/check-workspace-fixtures.mjs && node scripts/check-pipeline-fixtures.mjs && node scripts/check-vocabulary.mjs && node scripts/check-event-fixtures.mjs && node scripts/check-timeline-fixtures.mjs && node scripts/check-review-fixtures.mjs && node scripts/check-provider-job-fixtures.mjs && node scripts/check-error-envelope-fixtures.mjs && node scripts/check-capability-binding-fixtures.mjs && node scripts/check-narration-fixtures.mjs && node scripts/check-gate-review-fixtures.mjs && node scripts/check-execution-event-fixtures.mjs",
     "bindings:generate": "node scripts/generate-ts-bindings.mjs",
     "bindings:check": "node scripts/generate-ts-bindings.mjs --check",
     "test": "node --test"

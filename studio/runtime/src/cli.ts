@@ -434,7 +434,7 @@ async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
         type: "approval-granted",
         actor: "human",
         episode: parsed,
-        stageId: args[1]!,
+        data: { stageId: args[1]! },
       },
     );
     recorded = written !== null;

@@ -125,14 +125,15 @@ describe("gate review records", () => {
   });
 
   describe("deriveGateState", () => {
-    const evt = (type, detail, actor = "human") => ({
-      eventId: `evt-${Math.random()}`,
-      type,
-      actor,
+    const evt = (type, data, actor = "human") => ({
+      apiVersion: "studio.video/v1alpha1",
+      kind: "JournalEvent",
+      id: `evt_${"0".repeat(26)}`,
+      episodeRef: { channel: "c", series: "s", episode: "e" },
       at: new Date().toISOString(),
-      episode: { channel: "c", series: "s", episode: "e" },
-      stageId: detail.stageId,
-      detail,
+      actor,
+      type,
+      data,
     });
 
     it("reports none when no one has asked for a review", async () => {
