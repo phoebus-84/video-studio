@@ -179,13 +179,21 @@ journal record saying why:
 | dispatcher returned no outputs | `failed` |
 | a declared output missing or zero bytes | `failed` |
 | lease lost to another holder | `blocked` |
-| lease expired mid-flight | `failed`, attempt recorded as `timeout` |
+| lease expired mid-flight | `failed`, and nothing is written — replay derives the timeout from the lease's own `expiresAt` |
 | a dependency not accepted | `blocked` |
 | budget guard refused, or absent | `blocked` |
 
 The distinction is deliberate: `failed` means this attempt is finished and
 retryable, `blocked` means the stage never started and the condition is
 someone else's to clear.
+
+A lapsed lease is the one condition under which the service deliberately
+records nothing at all. By the time it notices, another holder may already
+have leased, started and completed the stage, and a terminal event naming the
+stale lease landing after that makes replay throw — permanently, because the
+journal is append-only, so every later `status` and `run` on that episode
+fails. Replay closes the abandoned attempt as a timeout from the lease's own
+`expiresAt`, which is already in the log, so the silence costs no information.
 
 ### 6. Dry run
 

@@ -218,14 +218,22 @@ describe("failing closed", () => {
     expect(result.value.status).toBe("failed");
     expect(result.value.reason).toMatch(/lease/i);
 
-    // The property that actually matters: an attempt whose lease lapsed is
-    // recorded as a timeout, and never as a completion — something else may
-    // already hold the stage, so its outputs cannot be trusted.
+    // The property that actually matters: an attempt whose lease lapsed
+    // writes NOTHING. Not a completion — something else may already hold the
+    // stage, so its outputs cannot be trusted — and not a terminal event
+    // either, because by now another holder may have leased, started and
+    // finished the stage, and a stale terminal event landing after that is
+    // what makes replay throw for good.
     const events = await journal(dir);
-    const timeoutAttempt = events.find(
-      (e: any) => e.type === "attempt-recorded" && e.data.outcome === "timeout",
-    );
-    expect(timeoutAttempt).toBeDefined();
-    expect(events.some((e: any) => e.type === "stage-completed")).toBe(false);
+    expect(events.map((e: any) => e.type)).toEqual(["stage-leased", "stage-started"]);
+
+    // Nothing is lost by the silence: the timeout is derived from the
+    // lease's own expiresAt, which the stage-leased event already carries.
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    const brief = status.value.stages.find((s) => s.stageId === "brief")!;
+    expect(brief.status).toBe("failed");
+    expect(brief.lease.state).toBe("expired");
   });
 });

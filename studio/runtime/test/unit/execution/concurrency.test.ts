@@ -112,6 +112,99 @@ describe("two services over one episode", () => {
   });
 });
 
+describe("lease takeover", () => {
+  // A leases a stage with a short TTL and overruns. B finds the lease
+  // expired, reclaims it, and runs the stage to completion. A then returns.
+  // If A appends a terminal event for its stale lease at that point, replay
+  // sees a completed stage being failed — `Stage "brief" cannot go from
+  // completed to failed` — and because the journal is append-only it throws
+  // on every replay from then on: status() and run() return REPLAY_INVALID
+  // for the life of the episode. A lapsed attempt must therefore write
+  // nothing at all.
+
+  /** A dispatcher that takes `ms` and then writes real output. */
+  function slowWriter(dir: string, ms: number): StageDispatcher {
+    return {
+      dispatch: async () => {
+        await new Promise((r) => setTimeout(r, ms));
+        const file = join(dir, "artifacts", "brief.md");
+        await mkdir(dirname(file), { recursive: true });
+        await writeFile(file, "A's late content");
+        return [file];
+      },
+    };
+  }
+
+  it("leaves the episode replayable when the overrun holder returns after the new one finished", async () => {
+    const { root, dir } = await episode();
+    const opts = { libraryRoot: root, builtinPipelines: PIPELINES, budget: permissiveBudget };
+    const a = new ExecutionService({ ...opts, dispatcher: slowWriter(dir, 250), holder: "A", leaseTtlMs: 25 });
+    const b = new ExecutionService({ ...opts, dispatcher: writingDispatcher(dir), holder: "B" });
+
+    const aRun = a.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    // Let A's lease lapse, then let B take the stage over and finish it —
+    // so A's write, if it made one, would land after B's stage-completed.
+    await new Promise((r) => setTimeout(r, 60));
+    const rb = await b.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    const ra = await aRun;
+
+    expect(rb.ok).toBe(true);
+    if (!rb.ok) return;
+    expect(rb.value.status).toBe("completed");
+
+    expect(ra.ok).toBe(true);
+    if (!ra.ok) return;
+    expect(ra.value.status).toBe("failed");
+    expect(ra.value.reason).toMatch(/lease/i);
+
+    // A contributed nothing after its lease lapsed: B's attempt is the last
+    // word in the journal.
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual([
+      "stage-leased", "stage-started", "stage-leased", "stage-started", "stage-completed",
+    ]);
+
+    // The point of the whole exercise: the episode is still replayable.
+    const status = await b.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    expect(status.value.stages.find((s) => s.stageId === "brief")!.status).toBe("completed");
+  });
+
+  it("writes nothing either when the overrun holder throws after losing its lease", async () => {
+    const { root, dir } = await episode();
+    const opts = { libraryRoot: root, builtinPipelines: PIPELINES, budget: permissiveBudget };
+    const throwsLate: StageDispatcher = {
+      dispatch: async () => {
+        await new Promise((r) => setTimeout(r, 250));
+        throw new Error("the renderer died, eventually");
+      },
+    };
+    const a = new ExecutionService({ ...opts, dispatcher: throwsLate, holder: "A", leaseTtlMs: 25 });
+    const b = new ExecutionService({ ...opts, dispatcher: writingDispatcher(dir), holder: "B" });
+
+    const aRun = a.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    await new Promise((r) => setTimeout(r, 60));
+    await b.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    const ra = await aRun;
+
+    expect(ra.ok).toBe(true);
+    if (!ra.ok) return;
+    expect(ra.value.status).toBe("failed");
+    // The dispatcher's own error is still reported to A's caller; it is only
+    // the journal that stays silent.
+    expect(ra.value.reason).toMatch(/the renderer died, eventually/);
+
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual([
+      "stage-leased", "stage-started", "stage-leased", "stage-started", "stage-completed",
+    ]);
+
+    const status = await b.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+  });
+});
+
 describe("restart", () => {
   it("derives failed from lease timing alone, with no terminal event ever written, and a fresh service can run the stage again", async () => {
     const { root, dir } = await episode();

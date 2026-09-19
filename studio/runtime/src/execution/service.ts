@@ -342,12 +342,22 @@ export class ExecutionService {
       data: { stageId, leaseId, attemptNumber },
     });
 
+    // Once the lease has lapsed this attempt may say nothing about the stage,
+    // in any journal line: see `lapsed` below.
+    const lapsed = (detail = ""): Result<StageOutcome, ExecutionError> => ok({
+      stageId, status: "failed",
+      reason: `the lease on "${stageId}" expired after ${ttlMs}ms, while the stage was ` +
+        `still running${detail}`,
+      outputs: [], attemptNumber, leaseId, durationMs: Date.now() - startedAt,
+    });
+
     // ── Dispatch ──────────────────────────────────────────────────────────
     let outputs: string[];
     try {
       outputs = await this.options.dispatcher.dispatch(stage, { ...ctx, attemptNumber });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      if (this.leaseLapsed(expiresAt)) return lapsed(` (it then threw: ${message})`);
       await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, message);
       return ok({ stageId, status: "failed", reason: message, outputs: [], attemptNumber, leaseId,
         durationMs: Date.now() - startedAt });
@@ -355,19 +365,17 @@ export class ExecutionService {
 
     // The lease may have expired while the stage was working. If it has,
     // something else may already have taken the stage, so this attempt's
-    // outputs cannot be trusted — record the timeout rather than a completion.
-    if (this.now().getTime() >= Date.parse(expiresAt)) {
-      const reason = `the lease on "${stageId}" expired after ${ttlMs}ms, while the stage was still running`;
-      await appendJournalEvent(episodeDir, {
-        type: "attempt-recorded", actor: "runtime", episode: ref,
-        data: { stageId, leaseId, attemptNumber, outcome: "timeout" },
-      });
-      return ok({ stageId, status: "failed", reason, outputs: [], attemptNumber, leaseId,
-        durationMs: Date.now() - startedAt });
-    }
+    // outputs cannot be trusted — and nothing is written.
+    if (this.leaseLapsed(expiresAt)) return lapsed();
 
     // ── Validate ──────────────────────────────────────────────────────────
     const invalid = await this.validateOutputs(episodeDir, outputs);
+    // Validation is filesystem work and takes time; re-checked so that the
+    // gap between the check above and either write below stays as small as
+    // it can be made without renewing the lease.
+    if (this.leaseLapsed(expiresAt)) {
+      return lapsed(invalid ? ` (its outputs were also invalid: ${invalid})` : "");
+    }
     if (invalid) {
       await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, invalid);
       return ok({ stageId, status: "failed", reason: invalid, outputs: [], attemptNumber, leaseId,
@@ -389,7 +397,35 @@ export class ExecutionService {
       durationMs: Date.now() - startedAt });
   }
 
-  /** Record a failed attempt and release its lease, in that order. */
+  /**
+   * Whether this attempt's lease has lapsed, and with it this attempt's
+   * right to write anything at all about the stage.
+   *
+   * Once the lease expires, another holder may already have reclaimed the
+   * lockfile and appended its own `stage-leased`/`stage-started`. A terminal
+   * event for the stale lease landing after that holder's own terminal event
+   * makes replay throw (`cannot go from completed to failed`) — and since the
+   * journal is append-only, it throws on every future replay too: every
+   * later `status()` and `run()` on that episode returns REPLAY_INVALID
+   * forever. Landing before it is only marginally better: replay survives but
+   * reports a state nobody was ever in.
+   *
+   * So a lapsed attempt writes nothing. Nothing is lost by the silence:
+   * replay's `closeIfExpired` derives the timeout from the lease's own
+   * `expiresAt`, which is already in the journal, so an explicit event adds
+   * no information and risks the whole episode.
+   */
+  private leaseLapsed(expiresAt: string): boolean {
+    return this.now().getTime() >= Date.parse(expiresAt);
+  }
+
+  /**
+   * Record a failed attempt and release its lease, in that order.
+   *
+   * Every call site must check `leaseLapsed` first: a dispatcher that throws
+   * after its lease lapsed must not append either, for exactly the reason
+   * that method documents.
+   */
   private async recordFailure(
     episodeDir: string, ref: EpisodeRef, sm: StageStateMachine,
     instance: EngineStageInstance, stageId: string, leaseId: string,
