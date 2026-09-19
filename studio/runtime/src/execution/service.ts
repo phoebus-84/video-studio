@@ -267,20 +267,33 @@ export class ExecutionService {
       return blocked(`budget refused "${stageId}": ${permitted.error.message}`);
     }
 
-    // ── Dry run stops here: everything above is free, everything below writes.
-    if (opts.dryRun) {
-      return ok({
-        stageId, status: "completed", reason: "dry run — would have dispatched",
-        outputs: [], durationMs: Date.now() - startedAt, dryRun: true,
-      });
-    }
-
-    // ── Lease ─────────────────────────────────────────────────────────────
+    // ── The state the stage is actually in ────────────────────────────────
+    // The retry cap and the current state are checked ABOVE the dry-run
+    // return, not below it. A dry run exists to answer the same question a
+    // real call would; one that reported "would have dispatched" for a stage
+    // the real call refuses — because it is out of retries, or because
+    // another process is holding it right now — answers a different question
+    // and is worse than no dry run at all. Only the lease acquisition and the
+    // writes belong below the return.
     const ttlMs = this.options.leaseTtlMs ?? DEFAULT_ENGINE_CONFIG.leaseTtlMs;
     const engineConfig = { ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs };
     const sm = new StageStateMachine(new FileLock(path.join(episodeDir, ".locks")), engineConfig);
 
     let instance = this.toEngineInstance(derived.get(stageId)!, stage);
+
+    // `running` after replay means a lease that has not expired yet: someone
+    // else is on it. There is no path from `running` to `running`, so the
+    // transition below would throw and land in the same `blocked` — this
+    // just says so before the dry-run return, where a dry run can see it.
+    if (instance.status === "running") {
+      return blocked(`"${stageId}" cannot start from its current state ("running")`);
+    }
+    if (instance.status === "failed" && !sm.canRetry(instance)) {
+      return blocked(
+        `"${stageId}" has failed ${instance.attempts.length} time(s), reaching its retry ` +
+        `limit of ${engineConfig.maxAttempts}; it will not be retried automatically`,
+      );
+    }
     // A completed stage named explicitly is a rerun: reset it before leasing.
     // A failed one is a retry, and needs the same reset — `failed` has no
     // direct path to `running` in the transition table, only to `pending`.
@@ -289,18 +302,27 @@ export class ExecutionService {
     // episode: the transition threw on every call, `blocked` never leases,
     // and unnamed selection keeps re-picking the same stage forever because
     // its filter only excludes `completed`.
-    if (instance.status === "completed") {
-      instance = (await sm.transition(instance, "pending")).instance;
-    } else if (instance.status === "failed") {
-      if (!sm.canRetry(instance)) {
-        return blocked(
-          `"${stageId}" has failed ${instance.attempts.length} time(s), reaching its retry ` +
-          `limit of ${engineConfig.maxAttempts}; it will not be retried automatically`,
-        );
-      }
+    //
+    // Both are in-memory only: `transition` writes no journal line and takes
+    // no lease except when moving to `running`, so a dry run can take them.
+    if (instance.status === "completed" || instance.status === "failed") {
       instance = (await sm.transition(instance, "pending")).instance;
     }
 
+    // ── Dry run stops here: everything above is free, everything below writes.
+    // `would-run` rather than `completed`: the stage has NOT completed, and a
+    // caller looping while the outcome is `completed` — the loop this service
+    // is built for — would never terminate under dryRun, since nothing is
+    // journaled and the same stage is selected again on every pass. The
+    // `dryRun` flag stays too, for callers that switch on it.
+    if (opts.dryRun) {
+      return ok({
+        stageId, status: "would-run", reason: "dry run — would have dispatched",
+        outputs: [], durationMs: Date.now() - startedAt, dryRun: true,
+      });
+    }
+
+    // ── Lease ─────────────────────────────────────────────────────────────
     let leaseId: string;
     try {
       const started = await sm.transition(instance, "running");

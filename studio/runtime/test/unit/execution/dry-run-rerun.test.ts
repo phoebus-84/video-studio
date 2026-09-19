@@ -7,6 +7,7 @@ import { ExecutionService } from "../../../src/execution/service.js";
 import type { StageDispatcher, BudgetGuard } from "../../../src/execution/types.js";
 import { JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { ok, err } from "../../../src/result.js";
+import { DEFAULT_ENGINE_CONFIG } from "../../../src/engine/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PIPELINES = resolve(__dirname, "../../../../pipelines/pipelines");
@@ -57,6 +58,52 @@ describe("dry run", () => {
     expect(result.value.dryRun).toBe(true);
     expect(dispatcher.dispatch).not.toHaveBeenCalled();
     await expect(readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8")).rejects.toThrow();
+  });
+
+  it("reports would-run, not completed, so a loop over run() terminates", async () => {
+    // The loop the service is built for — call run() until it stops
+    // advancing — never terminates if a dry run claims the stage completed:
+    // nothing is journaled, so the same stage is selected and reported
+    // complete on every pass, forever.
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget,
+    });
+
+    const result = await svc.run(REF, "narrated-illustrated-video", { stage: "brief", dryRun: true });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("would-run");
+    expect(result.value.status).not.toBe("completed");
+  });
+
+  it("sees the retry cap, and blocks for the same reason a real call gives", async () => {
+    // A dry run exists to answer the same question the real call answers.
+    // The cap check used to sit below the dry-run return, so a dry run of a
+    // retry-exhausted stage said it would have dispatched while the real
+    // call refused.
+    const { root } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher: { dispatch: async () => { throw new Error("the renderer died"); } },
+      budget: permissiveBudget,
+    });
+
+    for (let i = 0; i < DEFAULT_ENGINE_CONFIG.maxAttempts; i++) {
+      await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    }
+
+    const dry = await svc.run(REF, "narrated-illustrated-video", { stage: "brief", dryRun: true });
+    const real = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+
+    expect(dry.ok && real.ok).toBe(true);
+    if (!dry.ok || !real.ok) return;
+    expect(dry.value.status).toBe("blocked");
+    expect(dry.value.reason).toBe(real.value.reason);
+    expect(dry.value.reason).toMatch(/retry limit/);
+    expect(dry.value.dryRun).toBe(true);
   });
 
   it("still reports a gate refusal, so it answers the same question as a real run", async () => {

@@ -197,12 +197,19 @@ fails. Replay closes the abandoned attempt as a timeout from the lease's own
 
 ### 6. Dry run
 
-A dry run takes the same path through selection and every gate, then stops
-before acquiring the lease. It performs no writes and no paid calls, and it can
-still report that the stage *would* have been blocked and by what.
+A dry run takes the same path through selection, every gate, the retry cap
+and the stage's current state, then stops before acquiring the lease. It
+performs no writes and no paid calls, and it can still report that the stage
+*would* have been blocked and by what — including by a retry limit it has
+already exhausted, or by another process holding it right now.
 
-A dry run that skipped the gates would answer a different question than the
-real call — which is the property that makes it worth having.
+A dry run that skipped any of those would answer a different question than
+the real call — which is the property that makes it worth having.
+
+It reports `would-run`, not `completed`: the stage has not completed, and a
+caller looping until nothing advances would never terminate if it were told
+otherwise, since a dry run journals nothing and the same stage is selected
+again on the next pass.
 
 ## Testing
 

@@ -57,6 +57,16 @@ export interface BudgetGuard {
 export type OutcomeStatus =
   /** The stage ran and its declared outputs hold up. */
   | "completed"
+  /**
+   * A dry run: every gate passed and the stage would have been dispatched,
+   * but nothing was leased, dispatched or written.
+   *
+   * Distinct from `completed` because a caller looping until nothing
+   * advances — the loop this service is built for — would otherwise never
+   * terminate under `dryRun`: nothing is journaled, so the same stage is
+   * selected on every pass and reported complete on every pass.
+   */
+  | "would-run"
   /** The stage ran and did not produce what it declared, or threw. Retryable. */
   | "failed"
   /** The stage never started. Someone else's condition to clear. */
