@@ -37,6 +37,33 @@ export class LeaseError extends Error {
 }
 
 /**
+ * The attempts made since this stage last succeeded.
+ *
+ * A retry limit is a limit on how many times a stage may fail in a row, not
+ * on how many times it may ever run. Counting every attempt is what made a
+ * stage that had completed three times and then failed once unrunnable —
+ * permanently, because replay pushes an attempt for every `stage-leased` it
+ * reads, successful ones included, and the journal is append-only, so the
+ * count only ever grows. A stage that has succeeded starts its failure
+ * budget over; what the cap is about is what happened after that success.
+ *
+ * Attempts with no recorded outcome count. A holder that crashed or whose
+ * lease lapsed writes no terminal event at all — replay closes that attempt
+ * as a timeout — and a stage whose dispatcher hangs every time needs a cap
+ * just as much as one that throws.
+ */
+export function attemptsSinceLastSuccess(instance: StageInstance): StageAttempt[] {
+  let lastSuccess = -1;
+  for (let i = instance.attempts.length - 1; i >= 0; i -= 1) {
+    if (instance.attempts[i]!.outcome === "success") {
+      lastSuccess = i;
+      break;
+    }
+  }
+  return instance.attempts.slice(lastSuccess + 1);
+}
+
+/**
  * Stage state machine.
  *
  * Enforces valid transitions and manages lease lifecycle through the Lock port.
@@ -100,7 +127,13 @@ export class StageStateMachine {
     }
 
     // Release lease on terminal states
-    const isTerminal = VALID_TRANSITIONS[to].length === 0;
+    // Terminal for lease purposes means "this attempt is over", which is not
+    // the same as "the stage can never move again". Inferring it from the
+    // transition table being empty tied the two together: `failed` is
+    // retryable, so its list was non-empty, so a failed stage never released
+    // its lock and held it until the TTL expired. Naming the outcomes keeps
+    // the lease lifecycle independent of what the stage may do next.
+    const isTerminal = to === "completed" || to === "failed";
     if (isTerminal) {
       const activeLease = this.activeLeases.get(instance.stageId);
       if (activeLease) {
@@ -142,8 +175,14 @@ export class StageStateMachine {
     return this.transition(instance, "failed");
   }
 
+  /**
+   * Whether this stage may be attempted again.
+   *
+   * The budget is spent by consecutive failures, not by attempts: see
+   * `attemptsSinceLastSuccess`.
+   */
   canRetry(instance: StageInstance): boolean {
-    return instance.attempts.length < this.config.maxAttempts;
+    return attemptsSinceLastSuccess(instance).length < this.config.maxAttempts;
   }
 
   /** Release all active leases. */
