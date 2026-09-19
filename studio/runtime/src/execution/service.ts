@@ -353,6 +353,19 @@ export class ExecutionService {
         durationMs: Date.now() - startedAt });
     }
 
+    // The lease may have expired while the stage was working. If it has,
+    // something else may already have taken the stage, so this attempt's
+    // outputs cannot be trusted — record the timeout rather than a completion.
+    if (this.now().getTime() >= Date.parse(expiresAt)) {
+      const reason = `the lease on "${stageId}" expired after ${ttlMs}ms, while the stage was still running`;
+      await appendJournalEvent(episodeDir, {
+        type: "attempt-recorded", actor: "runtime", episode: ref,
+        data: { stageId, leaseId, attemptNumber, outcome: "timeout" },
+      });
+      return ok({ stageId, status: "failed", reason, outputs: [], attemptNumber, leaseId,
+        durationMs: Date.now() - startedAt });
+    }
+
     // ── Validate ──────────────────────────────────────────────────────────
     const invalid = await this.validateOutputs(episodeDir, outputs);
     if (invalid) {
