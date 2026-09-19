@@ -89,8 +89,13 @@ journal, and the lockfile. Nothing else is shared.
 ### 2. One operation, one stage
 
 ```
-run(ref, { stage?, dryRun? }) -> StageOutcome
+run(ref, pipeline, { stage?, dryRun? }) -> StageOutcome
 ```
+
+The pipeline is a required argument, not something the service infers from
+the episode: replay needs the stage ids the pipeline declares before it can
+say anything about state, and guessing them would be the file-existence
+inference this module exists to remove, wearing a different hat.
 
 One call claims one stage and returns what happened. Callers that want a whole
 episode loop; callers that want a single step do not. The CLI's "what next",
@@ -112,11 +117,11 @@ In order:
 7. Validate the outputs the manifest declares — present, and non-empty.
 8. Write `stage-completed` or `stage-failed`. Release the lease.
 
-`status(ref)` replays the journal and reports instances, lease states and what
+`status(ref, pipeline)` replays the journal and reports instances, lease states and what
 is runnable. **No file-existence inference anywhere** — that is the specific
 defect `cmdStatus` has today.
 
-`rerun(ref, stageIds)` needs no new machinery. Slice A's fix wave made
+`rerun(ref, pipeline, stageIds)` needs no new machinery. Slice A's fix wave made
 `completed -> pending` a legal transition in replay, so a fresh lease on a
 completed stage *is* a rerun. `rerun` is `planRerun` — which already exists and
 already accepts the map `deriveExecutionState` produces — choosing the ids,
@@ -169,12 +174,15 @@ functions with no store and no callers.
 
 ### 5. Failing closed, enumerated
 
-Each is a distinct `StageOutcome`, not a thrown exception, and each leaves a
-journal record saying why:
+Each is a distinct `StageOutcome`, not a thrown exception, and each outcome
+carries the reason. The journal records only what actually happened: no
+`blocked` path writes anything, and none should — a blocked stage never
+started, and "I considered this and declined" in a log that is now
+load-bearing for state is noise rather than evidence.
 
 | condition | outcome |
 |---|---|
-| stage not declared by the pipeline | `failed` |
+| stage not declared by the pipeline | `Err(STAGE_UNKNOWN)` — not an outcome at all: a caller naming a stage that does not exist has made a different kind of mistake from a stage that ran and failed |
 | no dispatcher supplied | `blocked` |
 | dispatcher returned no outputs | `failed` |
 | a declared output missing or zero bytes | `failed` |
@@ -217,8 +225,8 @@ again on the next pass.
   invoked once or in a loop; `status` after it reports what `run` returned.
 - **Selection:** dependencies respected; an explicitly named stage overrides
   selection; an already-accepted stage is not reselected unless named.
-- **Each fail-closed row above**, asserted as its own test with the journal
-  record it leaves.
+- **Each fail-closed row above**, asserted as its own test, with the journal
+  record it leaves where it leaves one.
 - **Lease arbitration:** two service instances over one episode directory,
   same stage — exactly one dispatches, the other returns `blocked`.
 - **Restart:** a service instance that dies mid-stage (lease written, no
