@@ -14,18 +14,22 @@
 // implementation with a different vocabulary and must not be used here.
 // ---------------------------------------------------------------------------
 
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
-import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
+import { parseJournal, JOURNAL_RELATIVE_PATH, appendJournalEvent } from "@studio/contracts/src/journal.mjs";
 import type { JournalEvent } from "@studio/contracts/src/journal.mjs";
 import { deriveExecutionState, leaseState } from "@studio/contracts/src/execution-state.mjs";
 import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
 import { ok, err, type Result } from "../result.js";
+import { StageStateMachine, LeaseError } from "../engine/state-machine.js";
+import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from "../engine/types.js";
+import { FileLock } from "../ports/file-lock.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
+  DispatchContext, StageOutcome,
 } from "./types.js";
 
 export class ExecutionService {
@@ -132,6 +136,211 @@ export class ExecutionService {
     });
 
     return ok({ ref, pipeline, stages: reports });
+  }
+
+  /**
+   * Bridge replay's stage instance to the engine's.
+   *
+   * Replay produces a deliberate subset — it receives stage ids and cannot
+   * invent a human-readable name, and it leaves createdAt null for a stage the
+   * journal has never mentioned. The pipeline supplies the name; a stage with
+   * no history is created now.
+   */
+  private toEngineInstance(
+    derived: { stageId: string; status: string; attempts: unknown[]; outputArtifacts: string[]; createdAt: string | null },
+    stage: ResolvedStage,
+  ): EngineStageInstance {
+    return {
+      stageId: derived.stageId,
+      name: stage.definition.name,
+      status: derived.status as EngineStageInstance["status"],
+      attempts: derived.attempts.map((a) => ({ ...(a as object) })) as EngineStageInstance["attempts"],
+      outputArtifacts: [...derived.outputArtifacts],
+      createdAt: derived.createdAt ?? this.now().toISOString(),
+    };
+  }
+
+  /** Every declared output exists and has bytes in it. Returns why not, or null. */
+  private async validateOutputs(episodeDir: string, outputs: string[]): Promise<string | null> {
+    if (outputs.length === 0) return "the stage produced no outputs";
+    for (const file of outputs) {
+      const absolute = path.isAbsolute(file) ? file : path.join(episodeDir, file);
+      let info;
+      try {
+        info = await stat(absolute);
+      } catch {
+        return `declared output "${path.relative(episodeDir, absolute)}" was not written`;
+      }
+      if (info.size === 0) {
+        return `declared output "${path.relative(episodeDir, absolute)}" is empty`;
+      }
+    }
+    return null;
+  }
+
+  async run(
+    ref: EpisodeRef,
+    pipeline: string,
+    opts: { stage?: string; dryRun?: boolean } = {},
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+    const log = this.options.log ?? (() => {});
+
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+
+    const episodeDir = this.episodeDir(ref);
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+
+    const stages = resolved.value.stages;
+    const stageIds = stages.map((s) => s.definition.id);
+    const now = this.now();
+
+    let derived;
+    try {
+      derived = deriveExecutionState(events.value, stageIds, now);
+    } catch (e) {
+      return err({
+        code: "REPLAY_INVALID",
+        message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+
+    // ── Select ────────────────────────────────────────────────────────────
+    let stage: ResolvedStage | undefined;
+    if (opts.stage) {
+      stage = stages.find((s) => s.definition.id === opts.stage);
+      if (!stage) {
+        return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${opts.stage}"` });
+      }
+    } else {
+      stage = stages.find((s) =>
+        derived.get(s.definition.id)!.status !== "completed" && dependenciesMet(s, derived));
+    }
+
+    if (!stage) {
+      return ok({ stageId: null, status: "idle", outputs: [], durationMs: Date.now() - startedAt });
+    }
+
+    const stageId = stage.definition.id;
+    const blocked = (reason: string): Result<StageOutcome, ExecutionError> =>
+      ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt, dryRun: opts.dryRun });
+
+    // ── Gate ──────────────────────────────────────────────────────────────
+    if (!dependenciesMet(stage, derived)) {
+      const missing = (stage.definition.dependsOn ?? [])
+        .filter((id) => derived.get(id)?.status !== "completed");
+      return blocked(`"${stageId}" depends on ${missing.map((m) => `"${m}"`).join(", ")}, which ${missing.length === 1 ? "has" : "have"} not completed`);
+    }
+
+    const ctx: DispatchContext = {
+      episodeDir, ref,
+      attemptNumber: derived.get(stageId)!.attempts.length + 1,
+      log,
+    };
+
+    if (!this.options.dispatcher) {
+      return blocked(`no dispatcher is configured, so "${stageId}" cannot be performed`);
+    }
+    if (!this.options.budget) {
+      return blocked(`no budget guard is configured, so "${stageId}" may not spend`);
+    }
+    const permitted = await this.options.budget.maySpend(stage, ctx);
+    if (!permitted.ok) {
+      return blocked(`budget refused "${stageId}": ${permitted.error.message}`);
+    }
+
+    // ── Dry run stops here: everything above is free, everything below writes.
+    if (opts.dryRun) {
+      return ok({
+        stageId, status: "completed", reason: "dry run — would have dispatched",
+        outputs: [], durationMs: Date.now() - startedAt, dryRun: true,
+      });
+    }
+
+    // ── Lease ─────────────────────────────────────────────────────────────
+    const ttlMs = this.options.leaseTtlMs ?? DEFAULT_ENGINE_CONFIG.leaseTtlMs;
+    const sm = new StageStateMachine(new FileLock(path.join(episodeDir, ".locks")), {
+      ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs,
+    });
+
+    let instance = this.toEngineInstance(derived.get(stageId)!, stage);
+    // A completed stage named explicitly is a rerun: reset it before leasing.
+    if (instance.status === "completed") {
+      instance = (await sm.transition(instance, "pending")).instance;
+    }
+
+    let leaseId: string;
+    try {
+      const started = await sm.transition(instance, "running");
+      instance = started.instance;
+      leaseId = started.transition.leaseId!;
+    } catch (e) {
+      if (e instanceof LeaseError) {
+        return blocked(`"${stageId}" is already held by another run`);
+      }
+      return blocked(`"${stageId}" cannot start: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    const attemptNumber = instance.attempts.length;
+    const expiresAt = new Date(this.now().getTime() + ttlMs).toISOString();
+    const holder = this.options.holder ?? `runtime/pid-${process.pid}`;
+
+    await appendJournalEvent(episodeDir, {
+      type: "stage-leased", actor: "runtime", episode: ref,
+      data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
+    });
+    await appendJournalEvent(episodeDir, {
+      type: "stage-started", actor: "runtime", episode: ref,
+      data: { stageId, leaseId, attemptNumber },
+    });
+
+    // ── Dispatch ──────────────────────────────────────────────────────────
+    let outputs: string[];
+    try {
+      outputs = await this.options.dispatcher.dispatch(stage, { ...ctx, attemptNumber });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, message);
+      return ok({ stageId, status: "failed", reason: message, outputs: [], attemptNumber, leaseId,
+        durationMs: Date.now() - startedAt });
+    }
+
+    // ── Validate ──────────────────────────────────────────────────────────
+    const invalid = await this.validateOutputs(episodeDir, outputs);
+    if (invalid) {
+      await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, invalid);
+      return ok({ stageId, status: "failed", reason: invalid, outputs: [], attemptNumber, leaseId,
+        durationMs: Date.now() - startedAt });
+    }
+
+    const relative = outputs.map((o) => path.isAbsolute(o) ? path.relative(episodeDir, o) : o);
+
+    // The journal is written before the lease is released. If this process dies
+    // in between, the record says what happened and the lease expires on its
+    // own; releasing first would leave a completed stage looking unstarted.
+    await appendJournalEvent(episodeDir, {
+      type: "stage-completed", actor: "runtime", episode: ref,
+      data: { stageId, leaseId, attemptNumber, outputs: relative },
+    });
+    await sm.complete(instance);
+
+    return ok({ stageId, status: "completed", outputs: relative, attemptNumber, leaseId,
+      durationMs: Date.now() - startedAt });
+  }
+
+  /** Record a failed attempt and release its lease, in that order. */
+  private async recordFailure(
+    episodeDir: string, ref: EpisodeRef, sm: StageStateMachine,
+    instance: EngineStageInstance, stageId: string, leaseId: string,
+    attemptNumber: number, error: string,
+  ): Promise<void> {
+    await appendJournalEvent(episodeDir, {
+      type: "stage-failed", actor: "runtime", episode: ref,
+      data: { stageId, leaseId, attemptNumber, error, retryable: true },
+    });
+    await sm.fail(instance, error, true);
   }
 }
 
