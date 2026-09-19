@@ -24,7 +24,7 @@ import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
 import { ok, err, type Result } from "../result.js";
-import { StageStateMachine, LeaseError } from "../engine/state-machine.js";
+import { StageStateMachine, LeaseError, attemptsSinceLastSuccess } from "../engine/state-machine.js";
 import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from "../engine/types.js";
 import { FileLock } from "../ports/file-lock.js";
 import type {
@@ -290,8 +290,9 @@ export class ExecutionService {
     }
     if (instance.status === "failed" && !sm.canRetry(instance)) {
       return blocked(
-        `"${stageId}" has failed ${instance.attempts.length} time(s), reaching its retry ` +
-        `limit of ${engineConfig.maxAttempts}; it will not be retried automatically`,
+        `"${stageId}" has failed ${attemptsSinceLastSuccess(instance).length} time(s) in a row, ` +
+        `reaching its retry limit of ${engineConfig.maxAttempts}; it will not be retried ` +
+        `automatically (only a successful attempt clears the count)`,
       );
     }
     // A completed stage named explicitly is a rerun: reset it before leasing.

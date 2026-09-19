@@ -94,6 +94,21 @@ function failThenSucceedDispatcher(dir: string, relative = "artifacts/brief.md")
   };
 }
 
+/** A dispatcher that writes real output, except on the numbered calls given. */
+function dispatcherFailingOnCalls(dir: string, failOn: number[], relative = "artifacts/brief.md"): StageDispatcher {
+  let calls = 0;
+  return {
+    dispatch: vi.fn(async () => {
+      calls += 1;
+      if (failOn.includes(calls)) throw new Error(`call ${calls} died`);
+      const file = join(dir, relative);
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, "real content");
+      return [file];
+    }),
+  };
+}
+
 /** A dispatcher that claims to have written a file outside the episode. */
 function escapingDispatcher(): StageDispatcher {
   return {
@@ -338,6 +353,74 @@ describe("ExecutionService.run", () => {
     if (!overLimitUnnamed.ok) return;
     expect(overLimitUnnamed.value.stageId).toBe("brief");
     expect(overLimitUnnamed.value.status).toBe("blocked");
+  });
+
+  // The cap is a limit on consecutive failures, not on attempts. Replay
+  // pushes an attempt for every stage-leased it reads and never prunes, so
+  // counting attempts made a stage that had completed three times and then
+  // failed once permanently unrunnable — blocked with "has failed 4 time(s)"
+  // when it had failed exactly once, and, because unnamed selection excludes
+  // only `completed`, stalling the whole episode on it.
+
+  it("does not count successful runs against the retry limit", async () => {
+    const { root, dir } = await episode();
+    // Three completions, then one failure, then one more good call.
+    const dispatcher = dispatcherFailingOnCalls(dir, [4]);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher, budget: permissiveBudget, holder: "test/1",
+    });
+
+    for (let i = 0; i < DEFAULT_ENGINE_CONFIG.maxAttempts; i++) {
+      const done = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+      expect(done.ok).toBe(true);
+      if (!done.ok) return;
+      expect(done.value.status).toBe("completed");
+    }
+
+    const failed = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(failed.ok).toBe(true);
+    if (!failed.ok) return;
+    expect(failed.value.status).toBe("failed");
+
+    // One failure, three successes: this stage is nowhere near its limit.
+    const retry = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(retry.ok).toBe(true);
+    if (!retry.ok) return;
+    expect(retry.value.status).toBe("completed");
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(DEFAULT_ENGINE_CONFIG.maxAttempts + 2);
+  });
+
+  it("still stops a stage that fails maxAttempts times in a row after a success", async () => {
+    const { root, dir } = await episode();
+    // One completion, then nothing but failures: the budget resets once and
+    // is then spent in full.
+    const dispatcher = dispatcherFailingOnCalls(dir, [2, 3, 4, 5]);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher, budget: permissiveBudget, holder: "test/1",
+    });
+
+    const first = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.value.status).toBe("completed");
+
+    for (let i = 0; i < DEFAULT_ENGINE_CONFIG.maxAttempts; i++) {
+      const failed = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+      expect(failed.ok).toBe(true);
+      if (!failed.ok) return;
+      expect(failed.value.status).toBe("failed");
+    }
+
+    const overLimit = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(overLimit.ok).toBe(true);
+    if (!overLimit.ok) return;
+    expect(overLimit.value.status).toBe("blocked");
+    expect(overLimit.value.reason).toContain(`${DEFAULT_ENGINE_CONFIG.maxAttempts} time(s) in a row`);
+    // The message states what actually happened: three failures, not four
+    // attempts, and the successful one is not counted among them.
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(DEFAULT_ENGINE_CONFIG.maxAttempts + 1);
   });
 
   // Finding 4 (review, task-3): a dispatcher's declared output was joined

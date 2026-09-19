@@ -6,6 +6,7 @@ export {
   StageStateMachine,
   StageTransitionError,
   LeaseError,
+  attemptsSinceLastSuccess,
 } from "./state-machine.js";
 
 export {
