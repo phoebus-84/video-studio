@@ -410,18 +410,37 @@ export class ExecutionService {
    * pending` is a legal transition precisely because the journal is cumulative
    * across runs.
    *
+   * Every id is validated against the resolved pipeline before any of them
+   * runs. A typo in the third of three ids must not leave the first two
+   * reran with no way for the caller to know it happened — a caller asking
+   * for three reruns and getting one, undocumented, is worse than getting
+   * none plus a clear error.
+   *
    * Stops at the first stage that does not complete, so a caller is not left
    * guessing which of several reruns is responsible for the state they see.
+   * A hard error partway through (the journal becoming unreadable, say) does
+   * not discard what already ran: it rides along on the error as
+   * `partialOutcomes`.
    */
   async rerun(
     ref: EpisodeRef,
     pipeline: string,
     stageIds: string[],
   ): Promise<Result<StageOutcome[], ExecutionError>> {
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+
+    const declared = new Set(resolved.value.stages.map((s) => s.definition.id));
+    for (const stageId of stageIds) {
+      if (!declared.has(stageId)) {
+        return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+      }
+    }
+
     const outcomes: StageOutcome[] = [];
     for (const stageId of stageIds) {
       const outcome = await this.run(ref, pipeline, { stage: stageId });
-      if (!outcome.ok) return outcome;
+      if (!outcome.ok) return err({ ...outcome.error, partialOutcomes: outcomes });
       outcomes.push(outcome.value);
       if (outcome.value.status !== "completed") break;
     }

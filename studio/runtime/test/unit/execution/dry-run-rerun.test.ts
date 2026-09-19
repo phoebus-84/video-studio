@@ -88,6 +88,24 @@ describe("dry run", () => {
     if (!real.ok) return;
     expect(real.value.status).toBe("completed");
   });
+
+  it("reports a dependency refusal, not just a budget one, and still writes nothing", async () => {
+    const { root, dir } = await episode();
+    const dispatcher = writingDispatcher(dir);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES, dispatcher, budget: permissiveBudget,
+    });
+
+    // "script" depends on "brief", which has never run in this episode.
+    const result = await svc.run(REF, "narrated-illustrated-video", { stage: "script", dryRun: true });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/brief/);
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+    await expect(readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8")).rejects.toThrow();
+  });
 });
 
 describe("rerun", () => {
@@ -125,5 +143,51 @@ describe("rerun", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("STAGE_UNKNOWN");
+  });
+
+  it("runs nothing when a later id in the list is a typo", async () => {
+    const { root, dir } = await episode();
+    const dispatcher = writingDispatcher(dir);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher, budget: permissiveBudget,
+    });
+    await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    vi.mocked(dispatcher.dispatch).mockClear();
+
+    const result = await svc.rerun(REF, "narrated-illustrated-video", ["brief", "no-such-stage"]);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("STAGE_UNKNOWN");
+    expect(result.error.message).toMatch(/no-such-stage/);
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    expect(status.value.stages.find((s) => s.stageId === "brief")!.attempts).toBe(1);
+  });
+
+  it("keeps the outcomes of earlier stages when a later one blocks", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget,
+    });
+    await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+
+    // "art-direction" depends on "script", which has never run — the second
+    // rerun in this list is a soft failure (blocked), not a hard error.
+    const result = await svc.rerun(REF, "narrated-illustrated-video", ["brief", "art-direction"]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(2);
+    expect(result.value[0]!.stageId).toBe("brief");
+    expect(result.value[0]!.status).toBe("completed");
+    expect(result.value[1]!.stageId).toBe("art-direction");
+    expect(result.value[1]!.status).toBe("blocked");
+    expect(result.value[1]!.reason).toMatch(/script/);
   });
 });

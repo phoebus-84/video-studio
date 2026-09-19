@@ -110,6 +110,13 @@ export interface ExecutionError {
     | "REPLAY_INVALID"
     | "STAGE_UNKNOWN";
   message: string;
+  /**
+   * Set only when a hard error interrupts `rerun` partway through its list.
+   * Whatever ran before the error — completed, blocked, or failed — is not
+   * discarded; it is here instead of the caller's returned array. Not named
+   * "completed": some of these outcomes may not be.
+   */
+  partialOutcomes?: StageOutcome[];
 }
 
 export interface ExecutionServiceOptions {
