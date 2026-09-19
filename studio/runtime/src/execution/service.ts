@@ -160,11 +160,27 @@ export class ExecutionService {
     };
   }
 
-  /** Every declared output exists and has bytes in it. Returns why not, or null. */
+  /**
+   * Every declared output exists, has bytes in it, and stays inside the
+   * episode. Returns why not, or null.
+   *
+   * A dispatcher's returned path is trusted enough to `stat`, not enough to
+   * record blind: `path.join`/`path.resolve` silently collapse a leading
+   * `../..`, so a relative path that climbs out of the episode — or an
+   * absolute one naming a file elsewhere on disk — would otherwise validate
+   * against a real file and land in `stage-completed.outputs` verbatim. The
+   * same defect @studio/contracts' `hashArtifacts` closed with a `..` guard;
+   * this checks the resolved path rather than the string, since dispatchers
+   * are allowed to return absolute paths where hashArtifacts's callers are not.
+   */
   private async validateOutputs(episodeDir: string, outputs: string[]): Promise<string | null> {
     if (outputs.length === 0) return "the stage produced no outputs";
     for (const file of outputs) {
-      const absolute = path.isAbsolute(file) ? file : path.join(episodeDir, file);
+      const absolute = path.isAbsolute(file) ? path.resolve(file) : path.resolve(episodeDir, file);
+      const rel = path.relative(episodeDir, absolute);
+      if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+        return `declared output "${file}" resolves outside the episode directory`;
+      }
       let info;
       try {
         info = await stat(absolute);
@@ -261,13 +277,27 @@ export class ExecutionService {
 
     // ── Lease ─────────────────────────────────────────────────────────────
     const ttlMs = this.options.leaseTtlMs ?? DEFAULT_ENGINE_CONFIG.leaseTtlMs;
-    const sm = new StageStateMachine(new FileLock(path.join(episodeDir, ".locks")), {
-      ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs,
-    });
+    const engineConfig = { ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs };
+    const sm = new StageStateMachine(new FileLock(path.join(episodeDir, ".locks")), engineConfig);
 
     let instance = this.toEngineInstance(derived.get(stageId)!, stage);
     // A completed stage named explicitly is a rerun: reset it before leasing.
+    // A failed one is a retry, and needs the same reset — `failed` has no
+    // direct path to `running` in the transition table, only to `pending`.
+    // Selecting a failed stage and then transitioning it straight to
+    // `running` (skipping this reset) is exactly what used to deadlock the
+    // episode: the transition threw on every call, `blocked` never leases,
+    // and unnamed selection keeps re-picking the same stage forever because
+    // its filter only excludes `completed`.
     if (instance.status === "completed") {
+      instance = (await sm.transition(instance, "pending")).instance;
+    } else if (instance.status === "failed") {
+      if (!sm.canRetry(instance)) {
+        return blocked(
+          `"${stageId}" has failed ${instance.attempts.length} time(s), reaching its retry ` +
+          `limit of ${engineConfig.maxAttempts}; it will not be retried automatically`,
+        );
+      }
       instance = (await sm.transition(instance, "pending")).instance;
     }
 
@@ -280,17 +310,33 @@ export class ExecutionService {
       if (e instanceof LeaseError) {
         return blocked(`"${stageId}" is already held by another run`);
       }
-      return blocked(`"${stageId}" cannot start: ${e instanceof Error ? e.message : String(e)}`);
+      // Reaching here means a state the reset above did not anticipate — not
+      // the `failed` case, which is handled before this transition is
+      // attempted. Describe the stage's situation rather than repeating the
+      // machine's transition-table wording.
+      log(`unexpected transition failure for "${stageId}": ${e instanceof Error ? e.message : String(e)}`);
+      return blocked(`"${stageId}" cannot start from its current state ("${instance.status}")`);
     }
 
     const attemptNumber = instance.attempts.length;
     const expiresAt = new Date(this.now().getTime() + ttlMs).toISOString();
     const holder = this.options.holder ?? `runtime/pid-${process.pid}`;
 
-    await appendJournalEvent(episodeDir, {
+    const leased = await appendJournalEvent(episodeDir, {
       type: "stage-leased", actor: "runtime", episode: ref,
       data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
     });
+    if (!leased) {
+      // Nothing else has been recorded yet — release the lease we just took
+      // and stop before dispatching. A dropped stage-started or
+      // stage-completed self-heals (the lease expires, the stage becomes
+      // retryable); a dropped stage-leased with stage-started still landing
+      // would leave replay looking at a terminal-shaped gap it can never
+      // close, since the journal is append-only. Failing here, before any
+      // work happens, is the only point that can be undone.
+      await sm.releaseAll();
+      return blocked(`"${stageId}" could not be leased: the journal write for its lease did not land`);
+    }
     await appendJournalEvent(episodeDir, {
       type: "stage-started", actor: "runtime", episode: ref,
       data: { stageId, leaseId, attemptNumber },
