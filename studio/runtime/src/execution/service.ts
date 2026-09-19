@@ -401,6 +401,32 @@ export class ExecutionService {
     });
     await sm.fail(instance, error, true);
   }
+
+  /**
+   * Run named stages again.
+   *
+   * There is no separate machinery: a completed stage that is named explicitly
+   * takes a fresh lease, which replay reads as a new attempt — `completed ->
+   * pending` is a legal transition precisely because the journal is cumulative
+   * across runs.
+   *
+   * Stops at the first stage that does not complete, so a caller is not left
+   * guessing which of several reruns is responsible for the state they see.
+   */
+  async rerun(
+    ref: EpisodeRef,
+    pipeline: string,
+    stageIds: string[],
+  ): Promise<Result<StageOutcome[], ExecutionError>> {
+    const outcomes: StageOutcome[] = [];
+    for (const stageId of stageIds) {
+      const outcome = await this.run(ref, pipeline, { stage: stageId });
+      if (!outcome.ok) return outcome;
+      outcomes.push(outcome.value);
+      if (outcome.value.status !== "completed") break;
+    }
+    return ok(outcomes);
+  }
 }
 
 /** Every stage this one is built on has completed. */
