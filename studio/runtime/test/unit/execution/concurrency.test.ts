@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile, writeFile, appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,21 @@ async function episode() {
 
 async function journal(dir: string) {
   return parseJournal(await readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8"));
+}
+
+/** Append a raw journal line, as the writer would have produced it. */
+async function journalLine(dir: string, type: string, data: Record<string, unknown>) {
+  const event = {
+    apiVersion: "studio.video/v1alpha1",
+    kind: "JournalEvent",
+    id: `evt_${"0".repeat(26)}`,
+    episodeRef: REF,
+    at: new Date().toISOString(),
+    actor: "runtime",
+    type,
+    data,
+  };
+  await appendFile(join(dir, "journal", "events.jsonl"), `${JSON.stringify(event)}\n`, "utf-8");
 }
 
 /** A dispatcher that writes the file it claims to have written. */
@@ -98,18 +113,20 @@ describe("two services over one episode", () => {
 });
 
 describe("restart", () => {
-  it("derives the same state a fresh service sees after a crash mid-stage", async () => {
+  it("derives failed from lease timing alone, with no terminal event ever written, and a fresh service can run the stage again", async () => {
     const { root, dir } = await episode();
-    // A dispatcher that never returns stands in for a process that died: the
-    // lease and start are journaled, no terminal event ever is.
-    const svc = new ExecutionService({
-      libraryRoot: root, builtinPipelines: PIPELINES, budget: permissiveBudget,
-      leaseTtlMs: 40,
-      dispatcher: { dispatch: async () => { await new Promise((r) => setTimeout(r, 90)); return []; } },
+    // A real crash leaves exactly this in the journal: a lease and a start,
+    // and nothing that closes the attempt — the log is append-only, so no
+    // later event can retroactively record what a dead process never
+    // reported. expiresAt is already in the past, so a fresh service must
+    // derive "failed" purely from lease-timing during replay (execution-state
+    // .mjs's closeIfExpired), not from any recorded outcome.
+    await journalLine(dir, "stage-leased", {
+      stageId: "brief", leaseId: "L1", attemptNumber: 1,
+      ttlMs: 1, expiresAt: "2000-01-01T00:00:00Z", holder: "dead-process",
     });
-    await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    await journalLine(dir, "stage-started", { stageId: "brief", leaseId: "L1", attemptNumber: 1 });
 
-    // A fresh service, after the lease has expired.
     const fresh = new ExecutionService({
       libraryRoot: root, builtinPipelines: PIPELINES, budget: permissiveBudget,
       dispatcher: writingDispatcher(dir), holder: "fresh",
@@ -119,13 +136,26 @@ describe("restart", () => {
     expect(status.ok).toBe(true);
     if (!status.ok) return;
     const brief = status.value.stages.find((s) => s.stageId === "brief")!;
+    expect(brief.status).toBe("failed");
     expect(brief.lease.state).not.toBe("live");
 
-    // And the stage is runnable again rather than stuck.
+    // The journal still carries no terminal event for this attempt: the
+    // "failed" verdict came from replay's lease-timing logic, not from a
+    // recorded outcome.
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual(["stage-leased", "stage-started"]);
+
+    // And the stage is runnable again rather than stuck, recording a new
+    // attempt.
     const again = await fresh.run(REF, "narrated-illustrated-video", { stage: "brief" });
     expect(again.ok).toBe(true);
     if (!again.ok) return;
     expect(again.value.status).toBe("completed");
+
+    const finalTypes = (await journal(dir)).map((e: any) => e.type);
+    expect(finalTypes).toEqual([
+      "stage-leased", "stage-started", "stage-leased", "stage-started", "stage-completed",
+    ]);
   });
 });
 
@@ -133,5 +163,6 @@ describe("package surface", () => {
   it("exports the service from @studio/runtime", async () => {
     const mod = await import("../../../src/index.js");
     expect(typeof (mod as Record<string, unknown>).ExecutionService).toBe("function");
+    expect(typeof (mod as Record<string, unknown>).dependenciesMet).toBe("function");
   });
 });
