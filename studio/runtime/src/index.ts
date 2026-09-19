@@ -282,5 +282,13 @@ export type {
   RecoveryState,
 } from "./rerun/index.js";
 
+// Execution (one meaning for run/status/rerun)
+export { ExecutionService, dependenciesMet } from "./execution/index.js";
+export type {
+  DispatchContext, StageDispatcher, BudgetGuard, Reservation,
+  OutcomeStatus, StageOutcome, StageStatusReport, EpisodeStatus,
+  ExecutionError, ExecutionServiceOptions,
+} from "./execution/index.js";
+
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
