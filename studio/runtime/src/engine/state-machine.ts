@@ -100,7 +100,13 @@ export class StageStateMachine {
     }
 
     // Release lease on terminal states
-    const isTerminal = VALID_TRANSITIONS[to].length === 0;
+    // Terminal for lease purposes means "this attempt is over", which is not
+    // the same as "the stage can never move again". Inferring it from the
+    // transition table being empty tied the two together: `failed` is
+    // retryable, so its list was non-empty, so a failed stage never released
+    // its lock and held it until the TTL expired. Naming the outcomes keeps
+    // the lease lifecycle independent of what the stage may do next.
+    const isTerminal = to === "completed" || to === "failed";
     if (isTerminal) {
       const activeLease = this.activeLeases.get(instance.stageId);
       if (activeLease) {

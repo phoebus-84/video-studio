@@ -95,9 +95,10 @@ function makeInstance(
 
 describe("StageStateMachine", () => {
   let sm: StageStateMachine;
+  let lock: FakeLock;
 
   beforeEach(() => {
-    const lock = new FakeLock();
+    lock = new FakeLock();
     sm = new StageStateMachine(lock, DEFAULT_ENGINE_CONFIG);
   });
 
@@ -164,6 +165,52 @@ describe("StageStateMachine", () => {
     it("denies retry if max attempts reached", async () => {
       const instance = makeInstance("brief", "failed", 3);
       expect(sm.canRetry(instance)).toBe(false);
+    });
+  });
+
+  describe("lease lifecycle", () => {
+    it("releases the lease when a stage fails", async () => {
+      // A failed stage used to hold its lock until the TTL expired, because
+      // terminality was inferred from the transition table being empty and
+      // `failed` can be retried.
+      let instance = makeInstance("brief", "pending");
+      instance = (await sm.transition(instance, "running")).instance;
+      await sm.fail(instance, "boom", true);
+
+      const reacquired = await lock.acquire("stage:brief", 1000);
+      expect(reacquired.ok).toBe(true);
+    });
+
+    it("releases the lease when a stage completes", async () => {
+      let instance = makeInstance("brief", "pending");
+      instance = (await sm.transition(instance, "running")).instance;
+      await sm.complete(instance);
+
+      const reacquired = await lock.acquire("stage:brief", 1000);
+      expect(reacquired.ok).toBe(true);
+    });
+
+    it("stamps endedAt on a failed attempt", async () => {
+      let instance = makeInstance("brief", "pending");
+      instance = (await sm.transition(instance, "running")).instance;
+      const { instance: failed } = await sm.fail(instance, "boom", true);
+
+      expect(failed.attempts[0]!.endedAt).toBeDefined();
+      expect(failed.attempts[0]!.outcome).toBe("failure");
+    });
+  });
+
+  describe("rerun", () => {
+    it("allows completed → pending, so a finished stage can be run again", async () => {
+      // The journal is cumulative across runs; re-running a completed stage is
+      // a first-class operation. Replay allows this, and the in-memory machine
+      // must agree or the service could record a rerun the machine refuses.
+      let instance = makeInstance("brief", "pending");
+      instance = (await sm.transition(instance, "running")).instance;
+      instance = (await sm.complete(instance)).instance;
+
+      const { instance: reset } = await sm.transition(instance, "pending");
+      expect(reset.status).toBe("pending");
     });
   });
 });
