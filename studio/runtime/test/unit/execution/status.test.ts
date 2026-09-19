@@ -112,4 +112,41 @@ describe("ExecutionService.status", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("JOURNAL_UNREADABLE");
   });
+
+  it("distinguishes a journal that disagrees with the pipeline from one that is corrupt", async () => {
+    // Every line here is valid JSON — parseJournal has nothing to object to.
+    // The problem is one level up: the event names a stage this pipeline does
+    // not declare, which means the pipeline definition changed under a
+    // running episode, not that the file is damaged. That calls for a
+    // different code than a truncated line, so a caller can tell "repair the
+    // file" apart from "the pipeline changed".
+    const { root, dir } = await episode();
+    await journalLine(dir, "stage-leased", {
+      stageId: "no-such-stage", leaseId: "L1", attemptNumber: 1,
+      ttlMs: 300000, expiresAt: "2999-01-01T00:00:00Z", holder: "h",
+    });
+
+    const result = await service(root).status(REF, "narrated-illustrated-video");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("REPLAY_INVALID");
+  });
+
+  it("fails rather than reporting a new episode when the journal cannot be read", async () => {
+    // A directory sitting where the journal file should be makes `readFile`
+    // reject with EISDIR, not ENOENT. Only ENOENT means "no journal yet, this
+    // is a new episode" — anything else is a real failure and must not be
+    // reported as "everything pending", which would be file-existence
+    // inference in reverse: absence of a readable file taken as affirmative
+    // evidence about state.
+    const { root, dir } = await episode();
+    await mkdir(join(dir, "journal", "events.jsonl"));
+
+    const result = await service(root).status(REF, "narrated-illustrated-video");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("JOURNAL_UNREADABLE");
+  });
 });

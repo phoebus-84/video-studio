@@ -100,6 +100,14 @@ export interface ExecutionError {
   code:
     | "PIPELINE_UNRESOLVED"
     | "JOURNAL_UNREADABLE"
+    /**
+     * The journal parsed cleanly but replay rejected it: an event names a
+     * stage the pipeline does not declare, a lease id repeats, or a terminal
+     * event closes an attempt that was never opened. The file is fine — the
+     * journal and the pipeline definition disagree, which is a different
+     * problem from a corrupt line and calls for a different response.
+     */
+    | "REPLAY_INVALID"
     | "STAGE_UNKNOWN";
   message: string;
 }

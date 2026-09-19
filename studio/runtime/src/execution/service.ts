@@ -71,8 +71,20 @@ export class ExecutionService {
     let contents: string;
     try {
       contents = await readFile(file, "utf-8");
-    } catch {
-      return ok([]); // No journal yet is a new episode, not a broken one.
+    } catch (e) {
+      // Absent is a new episode. Anything else — a permissions error, an
+      // unreadable mount, a directory sitting where the file should be — is
+      // a real failure and must not be reported as "everything pending":
+      // that would be the same file-existence inference this module exists
+      // to remove, just inverted (absence of a readable file taken as
+      // affirmative evidence of state).
+      if ((e as NodeJS.ErrnoException)?.code === "ENOENT") {
+        return ok([]); // No journal yet is a new episode, not a broken one.
+      }
+      return err({
+        code: "JOURNAL_UNREADABLE",
+        message: `Journal for this episode could not be read: ${e instanceof Error ? e.message : String(e)}`,
+      });
     }
     try {
       return ok(parseJournal(contents, { strict: true }));
@@ -101,7 +113,7 @@ export class ExecutionService {
       derived = deriveExecutionState(events.value, stageIds, now);
     } catch (e) {
       return err({
-        code: "JOURNAL_UNREADABLE",
+        code: "REPLAY_INVALID",
         message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
