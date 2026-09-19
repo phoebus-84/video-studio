@@ -217,5 +217,15 @@ describe("failing closed", () => {
     if (!result.ok) return;
     expect(result.value.status).toBe("failed");
     expect(result.value.reason).toMatch(/lease/i);
+
+    // The property that actually matters: an attempt whose lease lapsed is
+    // recorded as a timeout, and never as a completion — something else may
+    // already hold the stage, so its outputs cannot be trusted.
+    const events = await journal(dir);
+    const timeoutAttempt = events.find(
+      (e: any) => e.type === "attempt-recorded" && e.data.outcome === "timeout",
+    );
+    expect(timeoutAttempt).toBeDefined();
+    expect(events.some((e: any) => e.type === "stage-completed")).toBe(false);
   });
 });
