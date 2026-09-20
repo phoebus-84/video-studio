@@ -257,6 +257,28 @@ export class ExecutionService {
       );
     }
 
+    // ── Attendance ────────────────────────────────────────────────────────
+    // `gates.autopilot: false` means "a person has to be at the controls for
+    // this". The service has no notion of attendance, so the only honest
+    // answer is to refuse: it cannot run this stage on anyone's behalf.
+    //
+    // This was enforced by nothing at all — "autopilot" appeared nowhere in
+    // this file. It merely looked enforced, because every `autopilot: false`
+    // stage in the shipped manifests (script, compose, safety-review) also
+    // happens to have no gateway handler and so stopped at `canDispatch`.
+    // Give one a handler — or ship a manifest that gates an ordinary stage —
+    // and it ran unattended, which is the one thing the flag exists to
+    // prevent.
+    //
+    // Below the unmet-dependency check, which names an earlier and more
+    // useful problem, and above everything that leases, dispatches or spends.
+    if (!stage.definition.gates.autopilot) {
+      return blocked(
+        `"${stageId}" declares autopilot: false and may not run unattended; ` +
+        `a person has to run it`,
+      );
+    }
+
     for (const depId of stage.definition.dependsOn ?? []) {
       if (this.options.review) {
         // An injected gate is authoritative only where it actually knows

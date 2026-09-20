@@ -197,32 +197,28 @@ describe("execution gates", () => {
     // safety-review declares autopilot: false. It used to run anyway and write
     // a report about a wolf.
     //
-    // The block still lands and nothing is produced. What is no longer true is
-    // WHY: the service has no autopilot gate, so this stage stops at
-    // `canDispatch` — it has no handler — and a stage that declares
-    // autopilot: false but does have one would run. The regression test for
-    // that is the `it.fails` immediately below; the approval-requested record
-    // this test used to assert on is gone with the same root cause (F2).
+    // The reason is pinned, not just the status: for a while this stage was
+    // blocked at `canDispatch` — it has no handler — which is a coincidence of
+    // this stage rather than the rule the test claims. The service reads
+    // `gates.autopilot` now, so the refusal is the one the title names.
     const result = await gatewayService(root).run(REF, "fairy-tale-adaptation", { stage: "safety-review" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/autopilot: false/);
+    expect(result.value.reason).toMatch(/unattended/);
     expect(result.value.outputs).toEqual([]);
   });
 
-  // Marked `it.fails` deliberately: the assertion is the one avg-qr4.1 bought,
-  // stated at full strength, and it does not hold against the new composition.
-  // ExecutionService never reads `stage.definition.gates.autopilot`, so the
-  // manifest's "may not run unattended" is enforced by nothing. Today that is
-  // masked, because every autopilot: false stage in the shipped manifests
-  // (script, compose, safety-review) also has no gateway handler. The
-  // synthetic pipeline here removes the mask by giving a handler to a stage
-  // that declares autopilot: false.
-  //
-  // When someone restores the gate, this test goes red for passing. Delete the
-  // `.fails` then — do not delete the test.
-  it.fails("F1: honours autopilot: false for a stage it CAN dispatch", async () => {
+  // The assertion avg-qr4.1 bought, stated at full strength. It was `it.fails`
+  // while ExecutionService never read `stage.definition.gates.autopilot`: the
+  // manifest's "may not run unattended" was enforced by nothing, and only
+  // looked enforced because every autopilot: false stage in the shipped
+  // manifests (script, compose, safety-review) also has no gateway handler.
+  // The synthetic pipeline removes that mask by giving a handler — the real
+  // `captions` one — to a stage that declares autopilot: false.
+  it("honours autopilot: false for a stage it CAN dispatch", async () => {
     const { root, dir } = await episode();
     await writeWav(join(dir, "artifacts", "narration", "s1.wav"), 0.2);
 
@@ -252,6 +248,10 @@ describe("execution gates", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/autopilot: false/);
+    // Refused for the flag, not for a missing handler: this dispatcher has one.
+    expect(result.value.reason).not.toMatch(/does not handle/);
+    await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
   });
 
   it("never writes a safety report for an episode it did not read", async () => {
