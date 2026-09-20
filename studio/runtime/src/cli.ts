@@ -30,7 +30,6 @@ import {
 } from "@studio/contracts/src/journal.mjs";
 import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-review.mjs";
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
-import { artifactExists } from "./artifacts/discovery.js";
 import { ExecutionService } from "./execution/index.js";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
 import { err, ok } from "./result.js";
@@ -319,50 +318,30 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: `Invalid path "${remaining[0]}"` });
     return EX_USAGE;
   }
-  try {
-    const { settings } = resolveSettings({
-      channel: emptyLayer(),
-      series: emptyLayer(),
-      episode: emptyLayer(),
-    });
-    const loader = makeLoader(args);
-    const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
 
-    // ── Detect completed stages by checking for output artifacts ──────────
-    const libraryRoot = libraryFrom(args) || ".";
-    const episodeDir = episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode);
-
-    function checkArtifact(label: string): string {
-      return artifactExists(episodeDir, label) ? "completed" : "pending";
-    }
-
-    function stageState(s: typeof pipeline.stages[0]): string {
-      // If ALL outputs exist, stage is completed
-      const states = s.definition.produces.map((p) => checkArtifact(p.label));
-      if (states.every((st) => st === "completed")) return "completed";
-      // If inputs are all done but outputs missing, it's runnable
-      const inputStates = s.definition.consumes.map((c) => checkArtifact(c.label));
-      if (inputStates.every((st) => st === "completed")) return "runnable";
-      return "pending";
-    }
-
-    emit(ctx, {
-      message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}`,
-      episode: parsed,
-      pipeline: pipeline.name,
-      stages: pipeline.stages.map((s) => ({
-        id: s.definition.id,
-        state: stageState(s),
-        dependsOn: s.definition.dependsOn,
-        produces: s.definition.produces ?? [],
-      })),
-      budget: { currency: "USD", limitMicros: settings.budget.value.limitMicros, consumed: 0, reserved: 0 },
-    });
-    return EX_OK;
-  } catch (e) {
-    emit(ctx, { error: `Status failed: ${e instanceof Error ? e.message : String(e)}` });
-    return EX_RUNTIME;
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
+    return EX_USAGE;
   }
+
+  const service = makeService(args, ttl.value);
+  const status = await service.status(parsed, pipelineName ?? DEFAULT_PIPELINE);
+  if (!status.ok) {
+    emit(ctx, { error: `${status.error.code}: ${status.error.message}` });
+    return exitCodeFor(status.error);
+  }
+
+  // No budget field. The old one reported `consumed: 0, reserved: 0`
+  // unconditionally — a number a caller can act on, that nothing measured.
+  // Budget reporting returns when there is a ledger behind it (avg-91o).
+  emit(ctx, {
+    message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}`,
+    episode: parsed,
+    pipeline: status.value.pipeline,
+    stages: status.value.stages,
+  });
+  return EX_OK;
 }
 
 // ── validate ────────────────────────────────────────────────────────────────
@@ -980,7 +959,7 @@ async function completeDryRun(
 const COMMANDS: Record<string, CliCommand> = {
   init: { name: "init", description: "Initialize a new episode workspace", usage: "vpr init <channel>/<series>/<episode> [--json] [--dry-run]", examples: ["vpr init my-channel/my-series/ep001"], run: cmdInit },
   resolve: { name: "resolve", description: "Resolve settings and create an immutable pipeline snapshot", usage: "vpr resolve <channel>/<series>/<episode> [--pipeline <name>] [--json]", examples: ["vpr resolve my-channel/my-series/ep001 --json", "vpr resolve my-channel/my-series/ep001 --pipeline fairy-tale-adaptation"], run: cmdResolve },
-  status: { name: "status", description: "Show pipeline, stage, artifact, and budget projections", usage: "vpr status <channel>/<series>/<episode> [--pipeline <name>] [--json]", examples: ["vpr status my-channel/my-series/ep001", "vpr status my-channel/my-series/ep001 --pipeline fairy-tale-adaptation"], run: cmdStatus },
+  status: { name: "status", description: "Show each stage's state as the journal records it", usage: "vpr status <channel>/<series>/<episode> [--pipeline <name>] [--json]", examples: ["vpr status my-channel/my-series/ep001", "vpr status my-channel/my-series/ep001 --pipeline fairy-tale-adaptation"], run: cmdStatus },
   validate: { name: "validate", description: "Validate pipeline DAG or snapshot integrity", usage: "vpr validate <pipeline|snapshot> [path] [--json]", examples: ["vpr validate pipeline my-channel/my-series/ep001"], run: cmdValidate },
   run: { name: "run", description: "Claim the next runnable stage for a performer", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001", "vpr run my-channel/my-series/ep001 --dry-run"], run: cmdRun },
   complete: { name: "complete", description: "Close a claimed stage with the outputs it produced", usage: "vpr complete <channel>/<series>/<episode> <stage-id> [--lease <id>] --outputs <path>[,<path>] | --failed [--error <msg>]", examples: ["vpr complete my-channel/my-series/ep001 brief --lease l-7 --outputs artifacts/brief.md", "vpr complete my-channel/my-series/ep001 brief --failed --error 'the model refused'"], run: cmdComplete },

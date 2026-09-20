@@ -663,4 +663,45 @@ describe("vpr run / vpr complete", () => {
       expect(result.json().status).toBe("failed");
     });
   });
+
+  describe("vpr status reports the journal", () => {
+    it("reports pending for a stage with real artifacts and an empty journal", async () => {
+      // This is the change with the largest blast radius on this branch:
+      // every episode under library/ has real artifacts on disk and no
+      // journal, and the old file-existence check called every one of them
+      // complete. The artifact exists here, the journal is empty, and the
+      // correct report is `pending` — that is intended, not a regression.
+      const { root, dir } = await episodeFixture();
+      await writeFile(path.join(dir, "artifacts/brief.md"), "a brief written before journals existed");
+
+      const result = vpr(["status", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      expect(result.status).toBe(0);
+      const out = result.json();
+      const brief = out.stages.find((s: { stageId: string }) => s.stageId === "brief");
+      expect(brief.status).toBe("pending");
+      expect(brief.state).toBe("runnable");
+    });
+
+    it("reports a claimed stage as running, with its holder and expiry", async () => {
+      const { root } = await episodeFixture();
+      vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      const result = vpr(["status", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      const out = result.json();
+      const brief = out.stages.find((s: { stageId: string }) => s.stageId === "brief");
+      expect(brief.state).toBe("running");
+      expect(brief.lease.state).toBe("live");
+      expect(brief.lease.holder).toMatch(/^cli\/pid-/);
+    });
+
+    it("no longer reports a budget it cannot measure", async () => {
+      const { root } = await episodeFixture();
+
+      const result = vpr(["status", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      expect(result.json().budget).toBeUndefined();
+    });
+  });
 });
