@@ -311,6 +311,29 @@ describe("a lease that dies between the replay and the write", () => {
    * before it writes, so this is the narrowest possible expression of the
    * race: the lease was live when replay proved the attempt open, and had
    * gone by the time the append came round.
+   *
+   * ── READ THIS BEFORE ADDING A CLOCK READ TO `complete()` ──────────────
+   *
+   * This clock is coupled to the NUMBER of `this.now()` calls `complete()`
+   * makes, not to when they happen. That is what lets it land inside a
+   * window a wall clock cannot be aimed at — and it is also how these four
+   * tests can silently stop testing anything.
+   *
+   * Adding any clock read to `complete()` BEFORE the `deriveExecutionState`
+   * call invalidates all four of them WITHOUT FAILING ANY OF THEM: the
+   * derivation would then be the second read, see the lapse itself, and
+   * take the `!open` branch — which also refuses and also writes nothing,
+   * so every assertion here still passes while the guard they exist to pin
+   * is never reached.
+   *
+   * So if you add one, you must re-verify by hand. It is mechanical:
+   * comment out the three `if (!held()) return lapsed(open);` lines in
+   * `complete()` — one before the `input.failed` `recordFailure`, one
+   * before the invalid-outputs `recordFailure`, one before the
+   * `stage-completed` `appendJournalEvent` — and confirm that ALL FOUR
+   * tests in this block fail. If any still passes, this clock no longer
+   * reaches the window and needs re-aiming (bias the reads, or drive the
+   * lapse from the validation path instead).
    */
   function lapsesAfterReplay() {
     let reads = 0;
