@@ -7,8 +7,44 @@
 import type { FastifyInstance } from "fastify";
 import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
 import type { WorkspaceService } from "../workspace/service.js";
-import { runAutopilot } from "../runtime/executor.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
+import { ExecutionService, type StageOutcome } from "@studio/runtime";
+import { GatewayDispatcher } from "../runtime/dispatcher.js";
+import { GatewayReviewGate } from "../runtime/review-gate.js";
+
+/** A single execute call advances at most this many stages before returning. */
+const MAX_STAGES_PER_EXECUTE = 20;
+
+/** The shape the web UI already reads. Kept deliberately unchanged. */
+function report(
+  ref: { channel: string; series: string; episode: string },
+  pipeline: string,
+  stages: StageOutcome[],
+  startedAt: number,
+) {
+  const totalDurationMs = Date.now() - startedAt;
+  const count = (status: StageOutcome["status"]) => stages.filter((s) => s.status === status).length;
+  const parts = [`${count("completed")} completed`, `${count("failed")} failed`];
+  // A run that halted is not a run that finished.
+  if (count("awaiting_review") > 0) parts.push(`${count("awaiting_review")} awaiting review`);
+  if (count("blocked") > 0) parts.push(`${count("blocked")} blocked`);
+
+  return {
+    episodeSlug: `${ref.channel}/${ref.series}/${ref.episode}`,
+    pipeline,
+    stages: stages.map((s) => ({
+      stageId: s.stageId,
+      status: s.status,
+      outputs: s.outputs,
+      durationMs: s.durationMs,
+      ...(s.reason ? { error: s.reason } : {}),
+    })),
+    totalDurationMs,
+    summary: stages.length === 0
+      ? `Nothing to do (${(totalDurationMs / 1000).toFixed(1)}s)`
+      : `${parts.join(", ")}, ${stages.length} total (${(totalDurationMs / 1000).toFixed(1)}s)`,
+  };
+}
 
 function parseEpisode(params: Record<string, string>): EpisodeRef {
   return {
@@ -122,23 +158,40 @@ export function registerProductionRoutes(
     const { pipeline: requestedPipeline, dryRun } = request.body as { pipeline?: string; dryRun?: boolean };
     const pipeline = await inheritedPipeline(workspace, ref, requestedPipeline) ?? "narrated-illustrated-video";
 
+    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
+    const service = new ExecutionService({
+      libraryRoot,
+      dispatcher: new GatewayDispatcher(),
+      review: new GatewayReviewGate(),
+      budget: { maySpend: async () => ({ ok: true as const, value: { reserveId: "gateway", estimatedCost: 0 } }) },
+      holder: `gateway/pid-${process.pid}`,
+      log: (message) => request.log.info(message),
+    });
+
     if (dryRun) {
-      const result = await runtime.run(ref, undefined, true, pipeline);
-      return { ok: result.ok, data: result.data, dryRun: true };
+      const outcome = await service.run(ref, pipeline, { dryRun: true });
+      return outcome.ok
+        ? { ok: true, dryRun: true, outcome: outcome.value }
+        : { ok: false, dryRun: true, error: outcome.error };
     }
 
-    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
-    const report = await runAutopilot(
-      runtime,
-      ref,
-      pipeline,
-      libraryRoot,
-      (msg) => request.log.info(msg),
-    );
+    // The loop the gateway used to own is now just a caller's choice: keep
+    // going while stages complete, stop at the first one that does not.
+    const startedAt = Date.now();
+    const stages: StageOutcome[] = [];
+    for (let i = 0; i < MAX_STAGES_PER_EXECUTE; i++) {
+      const outcome = await service.run(ref, pipeline);
+      if (!outcome.ok) {
+        return { ok: false, error: outcome.error, report: report(ref, pipeline, stages, startedAt) };
+      }
+      if (outcome.value.status === "idle") break;
+      stages.push(outcome.value);
+      if (outcome.value.status !== "completed") break;
+    }
 
     return {
-      ok: report.stages.filter((s) => s.status === "failed").length === 0,
-      report,
+      ok: stages.every((s) => s.status !== "failed"),
+      report: report(ref, pipeline, stages, startedAt),
     };
   });
 
