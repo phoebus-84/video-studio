@@ -56,4 +56,14 @@ describe("fabricated reviews", () => {
     expect(source).not.toContain("Wolf eating characters");
     expect(source).not.toContain("Consistent lighting direction");
   });
+
+  it("leaves executor.ts holding no orchestration", () => {
+    // What runs, in what order, under what lease, and whether the result
+    // counted moved to the execution service. A handler file that grew any of
+    // it back would be the same conflation returning.
+    const source = readFileSync(join(__dirname, "../src/runtime/executor.ts"), "utf-8");
+    for (const gone of ["runAutopilot", "HANDLERS", "approval-requested", "deriveGateState"]) {
+      expect(source).not.toContain(gone);
+    }
+  });
 });
