@@ -38,7 +38,7 @@ export interface ExecutionReport {
 
 // ── Stage handlers ──────────────────────────────────────────────────────────
 
-interface StageContext {
+export interface StageContext {
   episodeDir: string;
   ref: EpisodeRef;
   log: (msg: string) => void;
@@ -46,7 +46,7 @@ interface StageContext {
 
 type StageHandler = (ctx: StageContext) => Promise<string[]>;
 
-async function handleIllustrations(ctx: StageContext): Promise<string[]> {
+export async function handleIllustrations(ctx: StageContext): Promise<string[]> {
   // Images already exist under assets/images/ — check and report
   const assetsDir = path.join(ctx.episodeDir, "assets", "images");
   const framesDir = path.join(ctx.episodeDir, "artifacts", "frames");
@@ -103,7 +103,7 @@ async function narrationEntries(ctx: StageContext, sceneText: string[]): Promise
   }));
 }
 
-async function handleCaptions(ctx: StageContext): Promise<string[]> {
+export async function handleCaptions(ctx: StageContext): Promise<string[]> {
   const captionsPath = path.join(ctx.episodeDir, "artifacts", "captions.srt");
   try {
     let scriptText = "";
@@ -131,7 +131,7 @@ async function handleCaptions(ctx: StageContext): Promise<string[]> {
   }
 }
 
-async function handleTiming(ctx: StageContext): Promise<string[]> {
+export async function handleTiming(ctx: StageContext): Promise<string[]> {
   const timingPath = path.join(ctx.episodeDir, "artifacts", "timing.json");
   try {
     const entries = await narrationEntries(ctx, []);
@@ -192,7 +192,7 @@ async function findRender(episodeDir: string): Promise<string | null> {
   return candidates.sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.file ?? null;
 }
 
-async function handleQa(ctx: StageContext): Promise<string[]> {
+export async function handleQa(ctx: StageContext): Promise<string[]> {
   const mp4Path = await findRender(ctx.episodeDir);
   const captionsPath = path.join(ctx.episodeDir, "artifacts", "captions.srt");
   const narrationPath = path.join(ctx.episodeDir, "artifacts", "narration", "narration-full.wav");
