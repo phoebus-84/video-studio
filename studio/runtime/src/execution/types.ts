@@ -45,15 +45,41 @@ export interface StageDispatcher {
 }
 
 /**
- * Whether a stage's review is still outstanding.
+ * What a review gate knows about a stage.
+ *
+ * Three answers, not two. A boolean cannot tell "I hold a current record and
+ * it accepts this stage" apart from "I have never heard of this stage", and
+ * the service needs that distinction. While this was a boolean, an injected
+ * gate answering `false` for a stage it had no record of suppressed the
+ * service's manifest fallback — which made injecting a gate strictly WEAKER
+ * than injecting none, in the one composition that ships.
+ */
+export type ReviewGateState =
+  /** A review exists, is current, and accepted what the stage produced. */
+  | "approved"
+  /** Asked for and not granted, or granted and since invalidated. */
+  | "outstanding"
+  /**
+   * The gate holds nothing about this stage. Not evidence of acceptance and
+   * not evidence of refusal — the service falls back to the manifest.
+   */
+  | "no-record";
+
+export interface ReviewVerdict {
+  state: ReviewGateState;
+  /** Why, when `outstanding`. Written to go in front of a person. */
+  reason?: string;
+}
+
+/**
+ * Whether a stage's review is satisfied, outstanding, or unknown to the gate.
  *
  * Injected rather than owned, because what an approval IS belongs to
  * avg-qr4.3, and the service deciding it first is the mistake this epic exists
  * to close. The gateway supplies one backed by gate-review records.
  */
 export interface ReviewGate {
-  /** Outstanding means requested-but-not-granted, or invalidated. */
-  isOutstanding(stageId: string, episodeDir: string): Promise<{ outstanding: boolean; reason?: string }>;
+  isOutstanding(stageId: string, episodeDir: string): Promise<ReviewVerdict>;
 }
 
 /** A budget reservation, opaque to the service. */
@@ -163,10 +189,11 @@ export interface ExecutionServiceOptions {
   dispatcher?: StageDispatcher;
   budget?: BudgetGuard;
   /**
-   * Consulted for dependency acceptance and for whether a finished stage still
-   * needs one. Absent, the service refuses only where the manifest declares a
-   * review — see the dependency check in service.ts for why that is not the
-   * flat "absence is refusal" the other two ports use.
+   * Consulted for dependency acceptance. Its `approved` and `outstanding`
+   * answers are authoritative; `no-record` falls through to the manifest rule,
+   * which refuses where a dependency declares a review. So a gate can only
+   * ever make the service stricter, never more permissive than having none —
+   * see the dependency check in service.ts.
    */
   review?: ReviewGate;
   /** Recorded on every lease, so an expired one names who held it. */

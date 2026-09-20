@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExecutionService } from "../../../src/execution/service.js";
-import type { ReviewGate, StageDispatcher } from "../../../src/execution/types.js";
+import type { ReviewGate, ReviewGateState, StageDispatcher } from "../../../src/execution/types.js";
 import { ok } from "../../../src/result.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,8 +35,19 @@ function writer(dir: string): StageDispatcher {
 }
 
 const budget = { maySpend: async () => ok({ reserveId: "r", estimatedCost: 0 }) };
-/** Nothing is ever outstanding. */
-const permissive: ReviewGate = { isOutstanding: async () => ({ outstanding: false }) };
+/** Every stage is accepted, as far as this gate is concerned. */
+const permissive: ReviewGate = { isOutstanding: async () => ({ state: "approved" }) };
+
+/** A gate that holds nothing at all — the state a fresh episode is in. */
+const knowsNothing: ReviewGate = { isOutstanding: async () => ({ state: "no-record" }) };
+
+/** A gate that answers `state` for `stageId` and knows nothing else. */
+function gateFor(stageId: string, state: ReviewGateState, reason?: string): ReviewGate {
+  return {
+    isOutstanding: async (id) =>
+      id === stageId ? { state, reason } : { state: "no-record" },
+  };
+}
 
 // The real narrated-illustrated-video manifest cannot exercise most of these
 // properties: its only `review: human` stages are `script` and `compose`,
@@ -145,18 +156,18 @@ describe("a stage that needs acceptance", () => {
   });
 });
 
+// The gate answers one of three things, and each has its own consequence.
+// While it answered a boolean, "approved" and "no record" were the same
+// answer — which is how an injected gate came to be WEAKER than no gate at
+// all: the service treated the gate as authoritative and skipped the manifest
+// rule below, so a stage nobody had ever reviewed read as accepted.
 describe("the review gate on dependencies", () => {
-  it("blocks a stage whose dependency has an outstanding review", async () => {
+  it("outstanding: blocks, and names the gate's reason", async () => {
     const { root, dir } = await episode();
     const pipelines = await reviewChainPipeline();
-    const gate: ReviewGate = {
-      isOutstanding: async (stageId) =>
-        stageId === "upstream"
-          ? { outstanding: true, reason: "awaiting review" }
-          : { outstanding: false },
-    };
     const svc = new ExecutionService({
-      libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget, review: gate,
+      libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
+      review: gateFor("upstream", "outstanding", "awaiting review"),
     });
 
     await svc.run(REF, "review-chain", { stage: "upstream" });
@@ -169,26 +180,88 @@ describe("the review gate on dependencies", () => {
     expect(result.value.reason).toMatch(/awaiting review/);
   });
 
-  it("lets the stage run once that dependency is no longer outstanding", async () => {
+  it("approved: satisfies the dependency, even one the manifest gates", async () => {
+    // `downstream` depends on `gated`, which declares review: human. A current
+    // record beats the manifest's default — that is what a gate is for.
     const { root, dir } = await episode();
     const pipelines = await reviewChainPipeline();
-    let outstanding = true;
-    const gate: ReviewGate = {
-      isOutstanding: async (stageId) => ({ outstanding: stageId === "upstream" && outstanding }),
-    };
     const svc = new ExecutionService({
-      libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget, review: gate,
+      libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
+      review: gateFor("gated", "approved"),
     });
-    await svc.run(REF, "review-chain", { stage: "upstream" });
-    expect((await svc.run(REF, "review-chain", { stage: "gated" })).ok).toBe(true);
 
-    outstanding = false;
+    await svc.run(REF, "review-chain", { stage: "upstream" });
+    await svc.run(REF, "review-chain", { stage: "gated" });
+    const result = await svc.run(REF, "review-chain", { stage: "downstream" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("completed");
+  });
+
+  it("no record: falls through to the manifest, which refuses a gated dependency", async () => {
+    const { root, dir } = await episode();
+    const pipelines = await reviewChainPipeline();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
+      review: knowsNothing,
+    });
+
+    await svc.run(REF, "review-chain", { stage: "upstream" });
+    await svc.run(REF, "review-chain", { stage: "gated" });
+    const result = await svc.run(REF, "review-chain", { stage: "downstream" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/gated/);
+    expect(result.value.reason).toMatch(/no accepted review is recorded/);
+  });
+
+  it("no record: proceeds where the manifest declares no review", async () => {
+    // Silence is not refusal either. `upstream` declares review: none, so
+    // nothing needs a record and `gated` runs.
+    const { root, dir } = await episode();
+    const pipelines = await reviewChainPipeline();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
+      review: knowsNothing,
+    });
+
+    await svc.run(REF, "review-chain", { stage: "upstream" });
     const result = await svc.run(REF, "review-chain", { stage: "gated" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // `gated` itself declares review: human, so it awaits rather than completes.
     expect(result.value.status).toBe("awaiting_review");
+  });
+
+  it("an injected gate is never weaker than no gate at all", async () => {
+    // The property the tri-state exists for. A gate that knows nothing must
+    // refuse exactly where a service with no gate refuses — the regression was
+    // that injecting one turned that refusal off.
+    const uninjected = await episode();
+    const injected = await episode();
+    const pipelines = await reviewChainPipeline();
+
+    async function upTo(root: string, dir: string, review?: ReviewGate) {
+      const svc = new ExecutionService({
+        libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget, review,
+      });
+      await svc.run(REF, "review-chain", { stage: "upstream" });
+      await svc.run(REF, "review-chain", { stage: "gated" });
+      return svc.run(REF, "review-chain", { stage: "downstream" });
+    }
+
+    const withoutGate = await upTo(uninjected.root, uninjected.dir);
+    const withGate = await upTo(injected.root, injected.dir, knowsNothing);
+
+    expect(withoutGate.ok && withGate.ok).toBe(true);
+    if (!withoutGate.ok || !withGate.ok) return;
+    expect(withoutGate.value.status).toBe("blocked");
+    expect(withGate.value.status).toBe(withoutGate.value.status);
+    expect(withGate.value.reason).toBe(withoutGate.value.reason);
   });
 });
 

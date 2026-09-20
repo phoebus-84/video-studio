@@ -101,6 +101,35 @@ async function seedUpTo(dir: string, ...stageIds: string[]) {
   for (const id of stageIds) await seedCompleted(dir, id);
 }
 
+/**
+ * Seed a stage as completed AND accepted, with a real hash-bound approval.
+ *
+ * Completing a `review: human` stage is no longer enough to reach past it: the
+ * service falls back to the manifest when the gate holds no record, so a test
+ * that wants to exercise something BEHIND such a stage has to put a genuine
+ * approval in the journal. Written with `buildGateReview`/`hashArtifacts` over
+ * bytes that really exist, because a hand-shaped record would derive as
+ * `invalidated` and prove the opposite of what the test claims.
+ */
+async function seedAccepted(dir: string, stageId: string, relatives: string[]) {
+  for (const relative of relatives) {
+    await mkdir(dirname(join(dir, relative)), { recursive: true });
+    await writeFile(join(dir, relative), `bytes of ${relative}`);
+  }
+  await seedCompleted(dir, stageId, relatives);
+  await appendJournalEvent(dir, {
+    type: "approval-granted",
+    actor: "human",
+    episode: REF,
+    data: buildGateReview({
+      stageId,
+      decision: "approved",
+      actor: "human",
+      outputs: await hashArtifacts(dir, relatives),
+    }),
+  });
+}
+
 async function journal(dir: string) {
   return parseJournal(await readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8"));
 }
@@ -236,7 +265,11 @@ describe("execution gates", () => {
 
   it("blocks a gated stage that has no checker behind it", async () => {
     const { root, dir } = await episode();
-    await seedUpTo(dir, "brief", "script", "art-direction", "illustrations");
+    await seedUpTo(dir, "brief", "script", "art-direction");
+    // illustrations declares review: human, and continuity-check depends on
+    // it — so it has to be genuinely accepted, or the block below would land
+    // on the dependency rather than on the missing checker.
+    await seedAccepted(dir, "illustrations", ["artifacts/frames/s1.png"]);
 
     // continuity-check declares autopilot: true but review: human, and nothing
     // actually checks continuity. Blocked, not a fabricated pass. This is the
@@ -609,21 +642,19 @@ describe("dependency gates", () => {
     await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
   });
 
-  // Marked `it.fails` deliberately, and this is the load-bearing one. The
-  // original asserted this with NOTHING hand-authored — "this is the state a
-  // real halt leaves" — because that is the only version of the property worth
-  // having. Nothing in the new composition writes the `approval-requested`
-  // record a halt used to leave, so `deriveGateState` answers `none` for a
-  // stage that completed while declaring `review: human`, and
-  // `GatewayReviewGate` reports it as not outstanding. The dependent is then
-  // let through the review gate and refused only for having no handler — the
-  // "coincidence of this stage, not a rule" the original comment ruled out.
+  // The load-bearing one, asserted with NOTHING hand-authored — "this is the
+  // state a real halt leaves" — because that is the only version of the
+  // property worth having.
   //
-  // Root cause: `ReviewGate.isOutstanding` returns a boolean, which cannot
-  // distinguish "approved" from "I have no record", and an injected gate is
-  // authoritative, so the service's own manifest fallback is skipped. See
-  // task-4-report.md, finding F2. When it is fixed, drop the `.fails`.
-  it.fails("F2: keeps a halt at a review gate across the next execute", async () => {
+  // It was `it.fails` until the review gate went tri-state. Nothing in this
+  // composition writes an `approval-requested` record, so `deriveGateState`
+  // answers `none` for a stage that completed while declaring `review: human`.
+  // While `isOutstanding` returned a boolean that came back as "not
+  // outstanding", the injected gate was authoritative, the manifest fallback
+  // was skipped, and the dependent was refused only for having no handler —
+  // the "coincidence of this stage, not a rule" ruled out below. `no-record`
+  // now falls through to the manifest, so the refusal is about the dependency.
+  it("keeps a halt at a review gate across the next execute, with no record written", async () => {
     const { root, dir } = await episode();
     await seedUpTo(dir, "brief", "script", "art-direction");
     await writeFile(join(dir, "assets", "images", "s1.png"), "bytes");
@@ -643,7 +674,9 @@ describe("dependency gates", () => {
     if (!second.ok) return;
     expect(second.value.status).toBe("blocked");
     expect(second.value.reason).toMatch(/illustrations/);
-    expect(second.value.reason).toMatch(/awaiting review/);
+    expect(second.value.reason).toMatch(/no accepted review is recorded/);
+    // Refused for the dependency, not for the missing checker.
+    expect(second.value.reason).not.toMatch(/does not handle/);
   });
 });
 
@@ -652,8 +685,12 @@ describe("quality assurance", () => {
     const { root, dir } = await episode();
     await seedUpTo(
       dir, "brief", "script", "art-direction", "terminal-recordings",
-      "illustrations", "narration", "captions", "timing", "compose",
+      "illustrations", "narration", "captions", "timing",
     );
+    // qa depends on compose, which declares review: human. Accepted here so
+    // that qa is reached at all — the property under test is what qa writes,
+    // not whether the review gate holds.
+    await seedAccepted(dir, "compose", ["artifacts/compose-log.txt"]);
 
     // Nothing wrote output/*.mp4 or artifacts/final.mp4. QA runs — it has a
     // handler — but it declares review: human, so it is structurally unable to

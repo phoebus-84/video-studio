@@ -259,30 +259,40 @@ export class ExecutionService {
 
     for (const depId of stage.definition.dependsOn ?? []) {
       if (this.options.review) {
-        // A gate is injected: it is authoritative for every dependency,
-        // regardless of what that dependency's own manifest declares. This is
-        // what lets a caller-supplied gate say "this is outstanding" even for
-        // a dependency whose gates.review is "none" — the gate's record beats
-        // the manifest's default.
+        // An injected gate is authoritative only where it actually knows
+        // something. It used to be authoritative for everything, including
+        // stages it had never heard of — and since "I have no record" came
+        // back as `outstanding: false`, injecting a gate SUPPRESSED the
+        // manifest fallback below and made the service more permissive than
+        // having no gate at all. That is precisely backwards, and it was the
+        // gateway — the only composition that ships — that got the weak path.
         const verdict = await this.options.review.isOutstanding(depId, episodeDir);
-        if (verdict.outstanding) {
+        if (verdict.state === "approved") {
+          // A current, satisfied record beats the manifest: this dependency
+          // is accepted even if its manifest declares a review.
+          continue;
+        }
+        if (verdict.state === "outstanding") {
           return blocked(
             `"${stageId}" cannot run: "${depId}" ${verdict.reason ?? "has an outstanding review"}`,
           );
         }
-        continue;
+        // "no-record": the gate is not evidence either way, so fall through
+        // to the manifest rule rather than reading silence as acceptance.
       }
 
-      // No gate configured: the service cannot know whether a required
-      // review happened, so it does not guess. Absence is refusal exactly
-      // where something is protected — a dependency the manifest never asked
-      // to be reviewed proceeds untouched.
+      // The manifest rule, reached with no gate configured or with a gate
+      // that holds nothing on this dependency. The service cannot know
+      // whether a required review happened, so it does not guess. Absence is
+      // refusal exactly where something is protected — a dependency the
+      // manifest never asked to be reviewed proceeds untouched.
       const depStage = stages.find((s) => s.definition.id === depId);
       const depNeedsReview = depStage?.definition.gates.review !== "none";
       if (depNeedsReview) {
         return blocked(
-          `"${depId}" declares ${depStage!.definition.gates.review} review and no review gate ` +
-          `is configured, so whether it was accepted cannot be known`,
+          `"${stageId}" cannot run: "${depId}" declares ${depStage!.definition.gates.review} ` +
+          `review and no accepted review is recorded for it, so whether it was accepted ` +
+          `cannot be known`,
         );
       }
     }
