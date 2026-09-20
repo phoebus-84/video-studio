@@ -188,10 +188,10 @@ describe("vpr run / vpr complete", () => {
    */
   const PIPELINES = path.resolve(__dirname, "../../../pipelines/pipelines");
 
-  function vpr(args: string[]) {
+  function vpr(args: string[], env: Record<string, string> = {}) {
     const result = spawnSync("node", [cliPath, ...args], {
       encoding: "utf-8",
-      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES },
+      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES, ...env },
     });
     return {
       stdout: result.stdout?.toString() ?? "",
@@ -276,8 +276,44 @@ describe("vpr run / vpr complete", () => {
 
       const out = result.json();
       expect(out.message).toContain(
-        `vpr complete childrens/fairy-tales/ep brief --lease ${out.leaseId} --outputs `,
+        `vpr complete childrens/fairy-tales/ep brief --library ${root} ` +
+        `--lease ${out.leaseId} --outputs PATH`,
       );
+    });
+
+    it("prints a command that actually works when pasted", async () => {
+      // The strongest form of the assertion above: run the line. A printed
+      // command missing --library resolves against the caller's cwd, finds no
+      // journal, and reports `"brief" has no open claim to complete` at exit
+      // 0 — the performer told its claim does not exist at the moment it
+      // does. `--outputs <path>` fails differently and just as hard: `<` is a
+      // shell redirect, so the line is a syntax error before it runs.
+      const { root, dir } = await episodeFixture();
+      const claimed = vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+      await writeFile(path.join(dir, "artifacts/brief.md"), "a real brief");
+
+      const line = String(claimed.json().message).split("\n")[1]!.trim();
+      expect(line).not.toMatch(/[<>]/);
+      const pasted = line.replace(/^vpr /, "").replace("PATH", "artifacts/brief.md");
+      const result = vpr([...pasted.split(" "), "--json"]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("completed");
+    });
+
+    it("reads the episode from the positionals, not the first non-flag token", async () => {
+      // `remaining.find((a) => !a.startsWith("--"))` took `--library`'s VALUE
+      // as the episode. While run only printed advice that was harmless
+      // nonsense; now it leases and journals, so it wrote stage-leased and
+      // stage-started into a library nobody named.
+      const { root, dir } = await episodeFixture();
+
+      const result = vpr(["run", "--library", root, "childrens/fairy-tales/ep", "--json"]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().stage).toBe("brief");
+      // Journaled where it was asked to, and nowhere else.
+      expect((await readJournal(dir)).length).toBe(2);
     });
 
     it("--dry-run reports the selection and every gate, and writes nothing", async () => {
@@ -311,6 +347,55 @@ describe("vpr run / vpr complete", () => {
       const out = result.json();
       expect(out.status).toBe("blocked");
       expect(out.reason).toMatch(/autopilot/);
+    });
+
+    it("passes --stage through to the service", async () => {
+      // A `claim()` that never receives `stage` leaves every other test in
+      // this file green: after `brief` completes, unnamed selection picks
+      // `script` anyway. Naming a stage no pipeline declares is the one
+      // request whose answer can only come from the flag being forwarded.
+      const { root } = await episodeFixture();
+
+      const result = vpr([
+        "run", "childrens/fairy-tales/ep", "--stage", "no-such-stage", "--library", root, "--json",
+      ]);
+
+      expect(result.json().error).toMatch(/STAGE_UNKNOWN/);
+      // A mistyped argument is a usage error, distinguishable by a script
+      // from an unreadable journal.
+      expect(result.status).toBe(1);
+    });
+
+    it("refuses an unusable AVG_CLAIM_TTL_MS instead of claiming with it", async () => {
+      // `Number(env ?? default)` catches only `undefined`: "" reaches
+      // `Number("")` and yields 0, so the CLI claimed, journaled both events
+      // and left a stage whose every completion reports the lease lapsed —
+      // burned, with no error printed anywhere.
+      const { root, dir } = await episodeFixture();
+
+      for (const bad of ["", "abc", "0", "-1"]) {
+        const result = vpr(
+          ["run", "childrens/fairy-tales/ep", "--library", root, "--json"],
+          { AVG_CLAIM_TTL_MS: bad },
+        );
+        expect(result.status, `AVG_CLAIM_TTL_MS=${JSON.stringify(bad)}`).toBe(1);
+        expect(result.json().error).toMatch(/AVG_CLAIM_TTL_MS/);
+      }
+      // Refused before anything was leased.
+      await expect(readJournal(dir)).rejects.toThrow();
+    });
+
+    it("honours a valid AVG_CLAIM_TTL_MS", async () => {
+      const { root } = await episodeFixture();
+
+      const result = vpr(
+        ["run", "childrens/fairy-tales/ep", "--library", root, "--json"],
+        { AVG_CLAIM_TTL_MS: "60000" },
+      );
+
+      const expiresAt = Date.parse(result.json().expiresAt);
+      expect(expiresAt - Date.now()).toBeGreaterThan(30_000);
+      expect(expiresAt - Date.now()).toBeLessThan(120_000);
     });
 
     it("reports an unresolvable pipeline as a runtime failure", async () => {
@@ -407,7 +492,7 @@ describe("vpr run / vpr complete", () => {
       expect(events.some((e) => e.type === "stage-completed")).toBe(true);
     });
 
-    it("reports an unknown stage as a runtime failure", async () => {
+    it("reports an unknown stage as a usage error", async () => {
       const { root } = await episodeFixture();
 
       const result = vpr([
@@ -415,11 +500,32 @@ describe("vpr run / vpr complete", () => {
         "--outputs", "artifacts/x.md", "--library", root, "--json",
       ]);
 
-      expect(result.status).toBe(2);
+      expect(result.status).toBe(1);
       expect(result.json().error).toMatch(/STAGE_UNKNOWN/);
     });
 
-    it("--dry-run writes nothing", async () => {
+    it("refuses a --lease that names an attempt other than the open one", async () => {
+      // The whole reason `run` prints the lease id. Without the forward,
+      // `complete` closes whichever claim is open — the second holder's,
+      // once a lapsed claim has been retaken — and a test that passes the
+      // CORRECT lease cannot tell the difference.
+      const { root, dir } = await episodeFixture();
+      const leaseId = vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]).json().leaseId;
+      await writeFile(path.join(dir, "artifacts/brief.md"), "a real brief");
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief", "--lease", "bogus-id",
+        "--outputs", "artifacts/brief.md", "--library", root, "--json",
+      ]);
+
+      expect(result.json().status).toBe("blocked");
+      expect(result.json().reason).toContain("bogus-id");
+      expect(result.json().reason).toContain(leaseId);
+      // Refused, not recorded: the open claim is still open.
+      expect((await readJournal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+    });
+
+    it("--dry-run writes nothing and predicts what a real call would report", async () => {
       const { root, dir } = await episodeFixture();
       vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
       const before = (await readJournal(dir)).length;
@@ -431,7 +537,50 @@ describe("vpr run / vpr complete", () => {
 
       expect(result.status).toBe(0);
       expect(result.json().dryRun).toBe(true);
+      expect(result.json().status).toBe("completed");
       expect((await readJournal(dir)).length).toBe(before);
+    });
+
+    it("--dry-run refuses a stage no pipeline declares, as the real call does", async () => {
+      // Echoing the arguments back reported `[DRY RUN] Would complete
+      // "totally-made-up"` at exit 0, for a stage nothing declares and nobody
+      // has claimed. A dry run answers the same question the real call does
+      // or it is worse than no dry run at all.
+      const { root } = await episodeFixture();
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "totally-made-up",
+        "--outputs", "artifacts/x.md", "--library", root, "--json", "--dry-run",
+      ]);
+
+      expect(result.status).toBe(1);
+      expect(result.json().error).toMatch(/STAGE_UNKNOWN/);
+    });
+
+    it("--dry-run reports the missing claim a real call would refuse on", async () => {
+      const { root } = await episodeFixture();
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief",
+        "--outputs", "artifacts/brief.md", "--library", root, "--json", "--dry-run",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("blocked");
+      expect(result.json().reason).toMatch(/no open claim/);
+    });
+
+    it("--dry-run predicts awaiting_review for a stage that declares one", async () => {
+      const { root } = await episodeFixture();
+      await writeReviewedPipeline(root);
+      vpr(["run", "childrens/fairy-tales/ep", "--pipeline", "reviewed-single", "--library", root, "--json"]);
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief", "--pipeline", "reviewed-single",
+        "--outputs", "artifacts/brief.md", "--library", root, "--json", "--dry-run",
+      ]);
+
+      expect(result.json().status).toBe("awaiting_review");
     });
 
     it("keeps positionals that follow a flag taking no value", async () => {

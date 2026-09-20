@@ -32,8 +32,9 @@ import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-revie
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
 import { artifactExists } from "./artifacts/discovery.js";
 import { ExecutionService } from "./execution/index.js";
-import type { StageOutcome } from "./execution/index.js";
-import { ok } from "./result.js";
+import type { ExecutionError, StageOutcome } from "./execution/index.js";
+import { err, ok } from "./result.js";
+import type { Result } from "./result.js";
 
 // ── Exit codes ──────────────────────────────────────────────────────────────
 
@@ -536,7 +537,7 @@ async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
  * terminal cannot run `illustrations`, and pretending otherwise would be a
  * lie about where work happens.
  */
-function makeService(args: string[]): ExecutionService {
+function makeService(args: string[], leaseTtlMs: number): ExecutionService {
   return new ExecutionService({
     libraryRoot: libraryFrom(args) || ".",
     // `|| undefined`, not a bare read, for the reason documented in the
@@ -550,13 +551,127 @@ function makeService(args: string[]): ExecutionService {
     // every claim fail for a reason nobody can act on.
     budget: { maySpend: async () => ok({ reserveId: "cli", estimatedCost: 0 }) },
     holder: `cli/pid-${process.pid}`,
-    // Stated, not inherited. The engine's default is 5 minutes, chosen for a
-    // dispatcher that finishes in seconds; a claim is held by a person or an
-    // agent doing real work, and 5 minutes would expire under them. A TTL
-    // that is too long only delays recovery from an abandoned claim; one that
-    // is too short destroys live work, so this errs long.
-    leaseTtlMs: Number(process.env.AVG_CLAIM_TTL_MS ?? 15 * 60 * 1000),
+    // Stated, not inherited; see `claimTtlMs`.
+    leaseTtlMs,
   });
+}
+
+/**
+ * The loader the service itself builds, for the few CLI reads that need the
+ * manifest rather than the journal's account of it.
+ *
+ * Composed from the same two inputs `makeService` passes, so the CLI cannot
+ * read one pipeline while the service runs another.
+ */
+function serviceLoader(args: string[]): PipelineLoader {
+  return createDefaultLoader(
+    libraryFrom(args) || ".",
+    process.env.AVG_BUILTIN_PIPELINES || undefined,
+  ) as unknown as PipelineLoader;
+}
+
+const CLAIM_TTL_ENV = "AVG_CLAIM_TTL_MS";
+const DEFAULT_CLAIM_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * How long a claim is honoured, validated rather than coerced.
+ *
+ * Stated, not inherited: the engine's default is 5 minutes, chosen for a
+ * dispatcher that finishes in seconds. A claim is held by a person or an
+ * agent doing real work, and 5 minutes would expire under them. A TTL that is
+ * too long only delays recovery from an abandoned claim; one that is too
+ * short destroys live work, so this errs long.
+ *
+ * `Number(process.env.X ?? default)` is not enough, and the failure is
+ * silent. `??` catches only `undefined`, so `AVG_CLAIM_TTL_MS=""` reaches
+ * `Number("")` and yields `0`: the CLI claims, journals `stage-leased` and
+ * `stage-started`, and every later `complete` reports the lease lapsed — the
+ * stage is burned with no error printed anywhere. `abc` yields `NaN`, which
+ * surfaces later as `cannot start from its current state ("pending")` and
+ * names the wrong cause entirely. The service treats `0` and `NaN` as
+ * deliberate, so this is the only place either can be caught.
+ *
+ * An empty value is refused rather than defaulted, which is the opposite of
+ * what `builtinPipelines` does with one three lines up. The asymmetry is
+ * deliberate: an empty search path degrades to the default search and costs
+ * nothing, while an empty TTL destroys the claim it was meant to size. A
+ * deployment script that exported this variable meant something by it, and
+ * quietly substituting 15 minutes would hide a broken one.
+ */
+function claimTtlMs(): Result<number, string> {
+  const raw = process.env[CLAIM_TTL_ENV];
+  if (raw === undefined) return ok(DEFAULT_CLAIM_TTL_MS);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return err(
+      `${CLAIM_TTL_ENV} must be a positive number of milliseconds, and is ${JSON.stringify(raw)}. ` +
+      `Unset it to use the ${DEFAULT_CLAIM_TTL_MS}ms default.`,
+    );
+  }
+  return ok(parsed);
+}
+
+/**
+ * The exit code an ExecutionError earns.
+ *
+ * A stage the pipeline never declared is a mistyped argument, not a broken
+ * system: `EX_USAGE`, so a script can tell "you asked for something that does
+ * not exist" from "the journal could not be read". Everything else —
+ * unreadable journal, unresolvable pipeline, journal and pipeline in
+ * disagreement — is `EX_RUNTIME`.
+ */
+function exitCodeFor(error: ExecutionError): number {
+  return error.code === "STAGE_UNKNOWN" ? EX_USAGE : EX_RUNTIME;
+}
+
+/**
+ * Flags that consume the token after them.
+ *
+ * Named explicitly rather than treating "follows any `--flag`" as a value,
+ * because `--failed` consumes nothing: under that rule
+ * `vpr complete --failed <episode> <stage>` would silently lose its episode
+ * and report a usage error for a command that named everything it needed.
+ * (`--json` and `--dry-run` never reach a command — main strips them — but
+ * they are the same shape of flag and the same trap.)
+ */
+const VALUE_FLAGS = new Set([
+  "--outputs", "--error", "--lease", "--library", "--pipeline", "--stage",
+]);
+
+/**
+ * The bare arguments, with flag values removed.
+ *
+ * Shared by `run` and `complete` because the naive version —
+ * `args.find((a) => !a.startsWith("--"))` — is actively destructive now that
+ * `run` writes. `vpr run --library a/b/c childrens/fairy-tales/ep` took
+ * `a/b/c` as the episode, leased a stage and journaled `stage-leased` and
+ * `stage-started` under a library the user never named. While `run` only
+ * printed advice this was harmless nonsense; claiming made it corruption of
+ * an episode nobody asked about.
+ */
+function positionalArgs(args: string[]): string[] {
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i]!;
+    if (token.startsWith("--")) {
+      if (VALUE_FLAGS.has(token)) i++;
+      continue;
+    }
+    positional.push(token);
+  }
+  return positional;
+}
+
+/**
+ * One argument, safe to paste into a shell.
+ *
+ * The completion command `run` prints is meant to be pasted, and a library
+ * path with a space in it would otherwise arrive as two arguments.
+ */
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(value)
+    ? value
+    : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /** Turn a StageOutcome into the CLI's JSON shape. */
@@ -575,7 +690,7 @@ function outcomeFields(outcome: StageOutcome): Record<string, unknown> {
 
 async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
   const { pipeline: pipelineName, remaining } = extractPipeline(args);
-  const pathArg = remaining.find((a: string) => !a.startsWith("--"));
+  const pathArg = positionalArgs(remaining)[0];
   if (!pathArg) {
     emit(ctx, { error: "Usage: vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--dry-run]" });
     return EX_USAGE;
@@ -588,7 +703,13 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
   const stageIdx = remaining.indexOf("--stage");
   const stage = stageIdx >= 0 ? remaining[stageIdx + 1] : undefined;
 
-  const service = makeService(args);
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
+    return EX_USAGE;
+  }
+
+  const service = makeService(args, ttl.value);
   const claimed = await service.claim(parsed, pipelineName ?? DEFAULT_PIPELINE, {
     ...(stage ? { stage } : {}),
     dryRun: ctx.dryRun,
@@ -596,7 +717,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
 
   if (!claimed.ok) {
     emit(ctx, { error: `${claimed.error.code}: ${claimed.error.message}` });
-    return EX_RUNTIME;
+    return exitCodeFor(claimed.error);
   }
 
   const outcome = claimed.value;
@@ -608,7 +729,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, {
       message:
         `Claimed "${outcome.stageId}" until ${outcome.expiresAt}. Perform it, then:\n` +
-        `  ${completionCommand(pathArg, outcome, pipelineName)}`,
+        `  ${completionCommand(args, pathArg, outcome, pipelineName)}`,
       ...outcomeFields(outcome),
     });
     return EX_OK;
@@ -638,47 +759,37 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
  * easy one.
  */
 function completionCommand(
+  args: string[],
   pathArg: string,
   outcome: StageOutcome,
   pipelineName?: string,
 ): string {
+  // Every argument needed to reach the same episode again, not only the
+  // lease. A line printed without `--library` resolves against the current
+  // directory when pasted, finds no journal, and reports
+  // `"brief" has no open claim to complete` at exit 0 — telling the performer
+  // its claim does not exist at the exact moment it does. `--pipeline` is
+  // carried for the same reason.
+  const library = libraryFrom(args);
+  const passedLibrary = args.includes("--library");
   return [
     "vpr complete", pathArg, outcome.stageId ?? "<stage-id>",
-    ...(pipelineName ? ["--pipeline", pipelineName] : []),
+    ...(passedLibrary && library ? ["--library", shellQuote(library)] : []),
+    ...(pipelineName ? ["--pipeline", shellQuote(pipelineName)] : []),
     ...(outcome.leaseId ? ["--lease", outcome.leaseId] : []),
-    "--outputs <path>",
+    // Upper-case placeholder, not `<path>`: `<` is a shell redirect, so the
+    // line as printed would be a syntax error the moment it was pasted.
+    "--outputs PATH",
   ].join(" ");
 }
 
-/**
- * Flags that consume the token after them.
- *
- * Named explicitly rather than treating "follows any `--flag`" as a value,
- * because `--failed` consumes nothing: under that rule
- * `vpr complete --failed <episode> <stage>` would silently lose its episode
- * and report a usage error for a command that named everything it needed.
- * (`--json` and `--dry-run` never reach here — main strips them — but they
- * are the same shape of flag and the same trap.)
- */
-const COMPLETE_VALUE_FLAGS = new Set([
-  "--outputs", "--error", "--lease", "--library", "--pipeline", "--stage",
-]);
-
 async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
   const { pipeline: pipelineName, remaining } = extractPipeline(args);
-  const positional: string[] = [];
-  for (let i = 0; i < remaining.length; i++) {
-    const token = remaining[i]!;
-    if (token.startsWith("--")) {
-      if (COMPLETE_VALUE_FLAGS.has(token)) i++;
-      continue;
-    }
-    positional.push(token);
-  }
+  const positional = positionalArgs(remaining);
   if (positional.length < 2) {
     emit(ctx, {
       error: "Usage: vpr complete <channel>/<series>/<episode> <stage-id> " +
-        "--outputs <path>[,<path>...] | --failed [--error <message>]",
+        "[--lease <id>] --outputs <path>[,<path>...] | --failed [--error <message>]",
     });
     return EX_USAGE;
   }
@@ -688,6 +799,7 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
   const stageId = positional[1]!;
+  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
 
   const flag = (name: string): string | undefined => {
     const i = remaining.indexOf(name);
@@ -704,23 +816,25 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
+    return EX_USAGE;
+  }
+  const service = makeService(args, ttl.value);
+
   if (ctx.dryRun) {
-    emit(ctx, {
-      message: `[DRY RUN] Would complete "${stageId}" with ${failed ? "a failure" : `${outputs.length} output(s)`}`,
-      dryRun: true, stage: stageId,
-    });
-    return EX_OK;
+    return completeDryRun(ctx, service, args, parsed, pipeline, stageId, failed, outputs);
   }
 
-  const service = makeService(args);
-  const done = await service.complete(parsed, pipelineName ?? DEFAULT_PIPELINE, stageId, {
+  const done = await service.complete(parsed, pipeline, stageId, {
     ...(failed ? { failed: true, error: flag("--error") } : { outputs }),
     ...(flag("--lease") ? { leaseId: flag("--lease") } : {}),
   });
 
   if (!done.ok) {
     emit(ctx, { error: `${done.error.code}: ${done.error.message}` });
-    return EX_RUNTIME;
+    return exitCodeFor(done.error);
   }
   // Every outcome the service returns here is a report that landed, including
   // `awaiting_review` — a stage declaring `review: human` completes, its
@@ -732,6 +846,96 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
     ...outcomeFields(done.value),
   });
   return EX_OK;
+}
+
+/** Whether the manifest puts this stage behind a review. */
+async function declaresReview(args: string[], pipeline: string, stageId: string): Promise<boolean> {
+  try {
+    const resolved = await resolvePipeline(serviceLoader(args), pipeline);
+    const stage = resolved?.stages.find((st) => st.definition.id === stageId);
+    return stage ? stage.definition.gates.review !== "none" : false;
+  } catch {
+    // The caller has already resolved this pipeline through the service, so
+    // a failure here is not worth a second error path; predict the
+    // un-reviewed outcome.
+    return false;
+  }
+}
+
+/**
+ * What `vpr complete` would do, without doing it.
+ *
+ * A dry run exists to answer the same question the real call would; the
+ * service says of its own that one reporting "would have dispatched" for a
+ * stage the real call refuses is worse than no dry run at all. Echoing the
+ * arguments back — which is what this did — reported
+ * `[DRY RUN] Would complete "totally-made-up"` for a stage no pipeline
+ * declares and no one has claimed, and emitted no `status` field for a
+ * caller to switch on.
+ *
+ * `complete` has no `dryRun` option and giving it one belongs to the service,
+ * so this reproduces the refusals a real call makes before it writes: the
+ * pipeline does not declare the stage, and nothing is claimed. Two it cannot
+ * reproduce, and does not pretend to — a `--lease` that names the wrong
+ * attempt, because `LeaseState` carries no id for it to compare against, and
+ * an output path that is missing or empty, because that is stat-ed at
+ * completion time and a file can appear between now and then.
+ */
+async function completeDryRun(
+  ctx: CliContext,
+  service: ExecutionService,
+  args: string[],
+  ref: { channel: string; series: string; episode: string },
+  pipeline: string,
+  stageId: string,
+  failed: boolean,
+  outputs: string[],
+): Promise<number> {
+  const status = await service.status(ref, pipeline);
+  if (!status.ok) {
+    emit(ctx, { error: `${status.error.code}: ${status.error.message}` });
+    return exitCodeFor(status.error);
+  }
+  const report = status.value.stages.find((s) => s.stageId === stageId);
+  if (!report) {
+    emit(ctx, { error: `STAGE_UNKNOWN: Pipeline "${pipeline}" declares no stage "${stageId}"` });
+    return EX_USAGE;
+  }
+
+  const would = (status: string, message: string, extra: Record<string, unknown> = {}): number => {
+    emit(ctx, { message: `[DRY RUN] ${message}`, stage: stageId, status, dryRun: true, ...extra });
+    return EX_OK;
+  };
+
+  if (report.lease.state === "expired") {
+    return would(
+      "failed",
+      `the claim on "${stageId}" lapsed at ${report.lease.expiresAt} and nothing would be recorded ` +
+      `for it; the stage is retryable and may already have been taken by someone else`,
+      { reason: `the claim on "${stageId}" lapsed at ${report.lease.expiresAt}` },
+    );
+  }
+  if (report.lease.state !== "live") {
+    return would("blocked", `"${stageId}" has no open claim to complete`, {
+      reason: `"${stageId}" has no open claim to complete`,
+    });
+  }
+  if (failed) {
+    return would("failed", `Would record "${stageId}" as failed and release its claim`);
+  }
+
+  // Completion is what happens; acceptance is whether it counts. A stage
+  // declaring a review reports `awaiting_review`, so a dry run that always
+  // said `completed` would mispredict exactly the stages a person is waiting
+  // on. The manifest is the only place that says which those are, so it is
+  // read rather than guessed.
+  const needsReview = await declaresReview(args, pipeline, stageId);
+  return would(
+    needsReview ? "awaiting_review" : "completed",
+    `Would complete "${stageId}" with ${outputs.length} output(s)` +
+    (needsReview ? `, which then awaits review` : ""),
+    { outputs },
+  );
 }
 
 // ── Registry ────────────────────────────────────────────────────────────────
