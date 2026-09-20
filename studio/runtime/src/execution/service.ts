@@ -214,11 +214,17 @@ export class ExecutionService {
    * epic exists to close, and the hardest to notice, because both would be
    * correct in isolation.
    *
-   * `precheck` runs after selection and gating and before anything is leased.
-   * `run` uses it to refuse a stage its dispatcher does not handle, so that
-   * no stage is ever leased by a caller that cannot perform it. A bare
-   * `claim` passes none: a claim is a promise to perform from somewhere else,
-   * and requiring a dispatcher for one would defeat the point.
+   * `precheck` runs after selection and the manifest's own gates, and before
+   * anything is leased or spent. `run` uses it to refuse a stage its
+   * dispatcher does not handle, so that no stage is ever leased by a caller
+   * that cannot perform it — and so that a stage nothing here can perform
+   * never reaches the budget guard and mints a reservation for work that is
+   * then refused.
+   *
+   * A bare `claim` passes none: a claim is a promise to perform from
+   * somewhere else, and requiring a dispatcher for one would defeat the
+   * point. The precheck can only ever make `run` refuse sooner than `claim`
+   * does — every gate above it applies to both.
    */
   private async claimInternal(
     ref: EpisodeRef,
@@ -358,6 +364,12 @@ export class ExecutionService {
       log,
     };
 
+    // Whatever the caller needs true before a lease is taken. Placed here so
+    // it sees a stage the manifest's own gates have already cleared, and so a
+    // refusal costs nothing: nothing has been leased, written or spent yet.
+    const refusal = precheck?.(stage);
+    if (refusal) return blocked(refusal);
+
     if (!this.options.budget) {
       return blocked(`no budget guard is configured, so "${stageId}" may not spend`);
     }
@@ -365,12 +377,6 @@ export class ExecutionService {
     if (!permitted.ok) {
       return blocked(`budget refused "${stageId}": ${permitted.error.message}`);
     }
-
-    // Whatever the caller needs true before a lease is taken. Placed here so
-    // it sees a stage that has passed every gate, and so a refusal costs
-    // nothing: nothing has been leased or written yet.
-    const refusal = precheck?.(stage);
-    if (refusal) return blocked(refusal);
 
     // ── The state the stage is actually in ────────────────────────────────
     // The retry cap and the current state are checked ABOVE the dry-run
