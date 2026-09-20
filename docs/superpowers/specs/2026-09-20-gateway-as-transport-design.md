@@ -81,8 +81,22 @@ The service uses it in two places:
 - **Reporting.** When a stage the service just ran declares `review: human`, the
   outcome is `awaiting_review` rather than `completed`. The journal still says
   `stage-completed`; the outcome tells the caller the work is not accepted yet.
-  The web UI already renders an `awaiting_approval` state, so this is reporting
-  vocabulary it understands rather than a new concept.
+  This is a NEW word in the report, not one an existing consumer already
+  understands. An earlier draft of this section justified it with "the web UI
+  already renders an `awaiting_approval` state" — that claim is wrong twice
+  over. `studio/web/src/contracts/gateway.ts` spells the stage status
+  `awaiting_approval`, not `awaiting_review`, so the strings do not match; and
+  nothing currently reads the `/execute` report at all, so no consumer is
+  validating either spelling. Nothing breaks today, but the compatibility was
+  asserted rather than verified, and reconciling the two vocabularies is
+  outstanding work, not a settled fact.
+
+  In the same vein: the gateway's old `StageResult` had a third status,
+  `skipped`, which `runAutopilot` emitted for a stage it declined to run.
+  `OutcomeStatus` has no such member and the service never emits one — a stage
+  that does not run is `blocked`, with a reason. `skipped` survives only in
+  `studio/gateway/src/contracts/types.ts` and the web contract, where it is now
+  unreachable from `/execute`.
 
 **An absent gate refuses only where a review is declared.** The service already
 reads each stage's `gates` from the manifest. If a stage in the dependency chain
