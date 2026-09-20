@@ -33,7 +33,11 @@ export class GatewayDispatcher implements StageDispatcher {
    * stage with no handler is a refusal for someone to clear, not a failure.
    */
   canDispatch(stage: ResolvedStage): boolean {
-    return stage.definition.id in HANDLERS;
+    // `Object.hasOwn`, not `in`: `in` also matches inherited Object.prototype
+    // keys, so a stage id like "toString" or "constructor" would make this
+    // report true while `dispatch` below hands back a prototype method. The
+    // service's blocked-versus-failed distinction rests on these two agreeing.
+    return Object.hasOwn(HANDLERS, stage.definition.id);
   }
 
   async dispatch(stage: ResolvedStage, ctx: DispatchContext): Promise<string[]> {
