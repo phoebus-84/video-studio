@@ -184,7 +184,13 @@ describe("status agrees with what run will do", () => {
 
     const downstream = status.value.stages.find((s) => s.stageId === "downstream")!;
     expect(downstream.state).toBe("blocked");
-    expect(downstream.stateReason).toMatch(/gated/);
+    // The INJECTED gate's own reason, not merely something containing
+    // "gated". The manifest fallback (`"gated" declares human review and no
+    // accepted review is recorded…`) also names the stage, so a `whyBlocked`
+    // that ignored the injected gate and fell through to the manifest would
+    // satisfy a /gated/ match — and whether `status` consults the injected
+    // gate is the one property this test exists to establish.
+    expect(downstream.stateReason).toMatch(/is awaiting review/);
 
     // And run agrees.
     const attempt = await svc.claim(REF, "review-chain", { stage: "downstream" });
@@ -192,7 +198,7 @@ describe("status agrees with what run will do", () => {
   });
 
   it("calls a stage runnable when it genuinely is", async () => {
-    const { root } = await episode();
+    const { root, dir } = await episode();
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: PIPELINES, budget: permissiveBudget,
     });
@@ -203,8 +209,25 @@ describe("status agrees with what run will do", () => {
 
     expect(status.value.stages.find((s) => s.stageId === "brief")!.state).toBe("runnable");
     expect(status.value.stages.find((s) => s.stageId === "art-direction")!.state).toBe("pending");
-    // script declares autopilot: false, so it can never be runnable.
-    expect(status.value.stages.find((s) => s.stageId === "script")!.state).not.toBe("runnable");
+
+    // `script` declares autopilot: false — but on a fresh episode that is not
+    // what stops it. Its dependency has not completed, so it reports
+    // `pending` on the unmet-dependency branch and the attendance check is
+    // never reached. Complete `brief` so attendance is the branch under test.
+    await svc.claim(REF, "narrated-illustrated-video", { stage: "brief" });
+    await writeFile(join(dir, "artifacts/brief.md"), "a real brief");
+    await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    const after = await svc.status(REF, "narrated-illustrated-video");
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+
+    const script = after.value.stages.find((s) => s.stageId === "script")!;
+    expect(script.dependenciesMet).toBe(true);
+    expect(script.state).toBe("blocked");
+    expect(script.stateReason).toMatch(/autopilot: false/);
   });
 
   it("reports a completed stage that declares a review as awaiting_review", async () => {
@@ -240,5 +263,106 @@ describe("status agrees with what run will do", () => {
     expect(captions.dependsOn).toEqual(["narration"]);
     expect(captions.produces).toEqual(["captions.srt"]);
     expect(captions.outputArtifacts).toEqual([]);
+  });
+
+  it("reports a stage blocked for want of a budget guard, in the same words a claim uses", async () => {
+    // The budget guard's PRESENCE is a claim gate, so `status` applies it
+    // too — otherwise a composition that configured no guard is told
+    // `runnable` and refused the moment it claims. Its VERDICT is a
+    // different matter: asking for one means `maySpend`, which mints a
+    // reservation nothing releases, and a polled endpoint must not do that.
+    const { root } = await episode();
+    const svc = new ExecutionService({ libraryRoot: root, builtinPipelines: PIPELINES });
+
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+
+    const brief = status.value.stages.find((s) => s.stageId === "brief")!;
+    expect(brief.state).toBe("blocked");
+    expect(brief.stateReason).toMatch(/no budget guard is configured/);
+
+    const attempt = await svc.claim(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(attempt.ok && attempt.value.status).toBe("blocked");
+    expect(attempt.ok && attempt.value.reason).toBe(brief.stateReason);
+  });
+
+  it("asks the review gate once per dependency, however many stages depend on it", async () => {
+    // `GatewayReviewGate.isOutstanding` re-reads the whole journal and
+    // sha256s every artifact the review covered — the narration wav and the
+    // final mp4 among them. `status` is what the CLI and the studio poll, so
+    // a fan-in of eight behind one reviewed stage must not be eight of those.
+    const { root, dir } = await episode();
+    const pipelineDir = await reviewChainPipeline(roots, 7);
+    const asked: string[] = [];
+    const svc = new ExecutionService({
+      libraryRoot: root,
+      builtinPipelines: pipelineDir,
+      budget: permissiveBudget,
+      review: {
+        isOutstanding: async (id) => {
+          asked.push(id);
+          return { state: "no-record" };
+        },
+      },
+    });
+
+    await svc.claim(REF, "review-chain");
+    await writeFile(join(dir, "artifacts/upstream.md"), "x");
+    await svc.complete(REF, "review-chain", "upstream", { outputs: ["artifacts/upstream.md"] });
+    await svc.claim(REF, "review-chain", { stage: "gated" });
+    await writeFile(join(dir, "artifacts/gated.md"), "x");
+    await svc.complete(REF, "review-chain", "gated", { outputs: ["artifacts/gated.md"] });
+
+    asked.length = 0;
+    const status = await svc.status(REF, "review-chain");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+
+    // Eight stages depend on `gated` and every one of them is judged.
+    const dependents = status.value.stages.filter((s) => s.dependsOn.includes("gated"));
+    expect(dependents).toHaveLength(8);
+    expect(dependents.every((s) => s.state === "blocked")).toBe(true);
+    // One question, not eight.
+    expect(asked.filter((id) => id === "gated")).toHaveLength(1);
+  });
+
+  it("refuses rather than rejecting when the review gate throws", async () => {
+    // Every other failure in `status` is a typed Result.err. A gate that
+    // throws instead of returning a verdict used to escape as an unhandled
+    // rejection, which on the read-only path a CLI polls is materially worse
+    // than a stage reported blocked with the reason named.
+    const { root, dir } = await episode();
+    const pipelineDir = await reviewChainPipeline(roots);
+    const svc = new ExecutionService({
+      libraryRoot: root,
+      builtinPipelines: pipelineDir,
+      budget: permissiveBudget,
+      // Throws only about `gated`, so the two setup claims below — which ask
+      // about `upstream` — still go through. `claimInternal` propagating a
+      // throwing gate is pre-existing and out of scope here; `status` is the
+      // path under test.
+      review: {
+        isOutstanding: async (id) => {
+          if (id === "gated") throw new Error("gate exploded");
+          return { state: "no-record" };
+        },
+      },
+    });
+
+    await svc.claim(REF, "review-chain");
+    await writeFile(join(dir, "artifacts/upstream.md"), "x");
+    await svc.complete(REF, "review-chain", "upstream", { outputs: ["artifacts/upstream.md"] });
+    await svc.claim(REF, "review-chain", { stage: "gated" });
+    await writeFile(join(dir, "artifacts/gated.md"), "x");
+    await svc.complete(REF, "review-chain", "gated", { outputs: ["artifacts/gated.md"] });
+
+    const status = await svc.status(REF, "review-chain");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+
+    const downstream = status.value.stages.find((s) => s.stageId === "downstream")!;
+    expect(downstream.state).toBe("blocked");
+    expect(downstream.stateReason).toMatch(/gate exploded/);
   });
 });

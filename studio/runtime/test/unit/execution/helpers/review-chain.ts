@@ -25,8 +25,14 @@ import { join } from "node:path";
  *
  * `roots` is the caller's cleanup list; the directory is pushed onto it so
  * the caller's own `afterEach` removes it.
+ *
+ * `fanOut` appends that many extra stages depending on `gated`, alongside
+ * `downstream`. They exist so a caller can count how often one `status()`
+ * asks the review gate about a single shared dependency: with a wide fan-in
+ * the difference between "once per dependent" and "once per call" is visible
+ * rather than theoretical.
  */
-export async function reviewChainPipeline(roots: string[]): Promise<string> {
+export async function reviewChainPipeline(roots: string[], fanOut = 0): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "review-gate-pipeline-"));
   roots.push(dir);
   await writeFile(
@@ -80,6 +86,24 @@ export async function reviewChainPipeline(roots: string[]): Promise<string> {
       "      depends_on:",
       "        - gated",
       "",
+      ...Array.from({ length: fanOut }, (_, i) => [
+        `    - id: fan-${i + 1}`,
+        `      name: "Fan ${i + 1}"`,
+        "      type: editorial",
+        "      inputs:",
+        "        - contract: gated.md",
+        '          version: "1.0.0"',
+        "      outputs:",
+        `        - contract: fan-${i + 1}.md`,
+        '          version: "1.0.0"',
+        "      gates:",
+        "        autopilot: true",
+        "        review: none",
+        "        retry_on_failure: 0",
+        "      depends_on:",
+        "        - gated",
+        "",
+      ].join("\n")),
     ].join("\n"),
   );
   return dir;

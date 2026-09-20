@@ -183,9 +183,27 @@ export interface CompleteInput {
  * `StageStatusReport.status` has four members, which is everything the journal
  * can say about a stage on its own. These seven are answers about a stage IN
  * its pipeline: `runnable`, `blocked` and `awaiting_review` need the
- * dependency check, the manifest's gates and the review gate. They are
- * computed by the same code that answers those questions for a run, so a
- * caller is never told a stage is ready and then refused when it acts.
+ * dependency check, the manifest's gates and the review gate.
+ *
+ * `status` answers the CLAIM question, and says so here rather than implying
+ * more. A stage reported `runnable` has passed every gate a claim applies:
+ * its dependencies have completed, their reviews are satisfied, it does not
+ * declare `autopilot: false`, and a budget guard is configured. Those come
+ * from the same code a claim runs, so the two cannot disagree about them.
+ *
+ * Two things it deliberately does not promise:
+ *
+ * - Whether THIS composition can also perform the stage itself. `run` refuses
+ *   a stage its injected dispatcher does not handle, but that is a run-only
+ *   gate, and `status` cannot know whether its caller means to run or to
+ *   claim. The CLI injects no dispatcher at all and performs claimed stages
+ *   by hand, so reporting "no dispatcher is configured" as `blocked` would be
+ *   false for that caller.
+ * - Whether the configured budget guard would refuse this particular stage.
+ *   Discovering that means calling `maySpend`, which mints a reservation
+ *   nothing in this tree releases; a polled read endpoint that reserved
+ *   budget on every tick would be a worse bug than the disagreement it
+ *   removes. The guard's presence is checked, its verdict is not asked for.
  */
 export type StageState =
   | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review";
@@ -200,7 +218,10 @@ export interface StageStatusReport {
   lease: { state: "none" | "live" | "expired"; holder?: string; expiresAt?: string };
   /** True when every stage it depends on has completed. */
   dependenciesMet: boolean;
-  /** As `run` would see it. This is what a caller should switch on. */
+  /**
+   * As a claim would see it. This is what a caller should switch on; see
+   * `StageState` for what `runnable` does and does not promise.
+   */
   state: StageState;
   /**
    * Why the stage is in the `state` it is in, when there is something to say.

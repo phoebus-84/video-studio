@@ -30,7 +30,7 @@ import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from
 import { FileLock } from "../ports/file-lock.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
-  StageState, CompleteInput, DispatchContext, StageOutcome,
+  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict,
 } from "./types.js";
 
 /** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
@@ -41,6 +41,19 @@ interface ClaimInternal {
   /** Ready for dispatch, with `attemptNumber` set. Absent when nothing was selected. */
   ctx?: DispatchContext;
   episodeDir: string;
+}
+
+/**
+ * The refusal a composition with no budget guard earns.
+ *
+ * Shared by `claimInternal` and `status` so the two say the same sentence
+ * about the same stage. It is a PRESENCE check and nothing more: `status`
+ * must never call `maySpend`, which mints a reservation nothing in this tree
+ * releases (avg-91o), and a polled read endpoint that quietly reserved budget
+ * would be a worse bug than the disagreement this module removes.
+ */
+function noBudgetGuardRefusal(stageId: string): string {
+  return `no budget guard is configured, so "${stageId}" may not spend`;
 }
 
 export class ExecutionService {
@@ -146,6 +159,10 @@ export class ExecutionService {
       });
     }
 
+    // One review verdict per dependency per `status()` call, shared by every
+    // stage in the loop below. See `whyBlocked`.
+    const verdicts = new Map<string, ReviewVerdict>();
+
     const reports: StageStatusReport[] = [];
     for (const stage of stages) {
       const instance = derived.get(stage.definition.id)!;
@@ -153,9 +170,28 @@ export class ExecutionService {
       const depsMet = dependenciesMet(stage, derived);
       // Only a stage that has not run yet has a question to ask: the rest are
       // described by what the journal already recorded.
-      const stateReason = instance.status === "pending"
-        ? await this.whyBlocked(stage, stages, derived, episodeDir)
-        : null;
+      let stateReason: string | null = null;
+      if (instance.status === "pending") {
+        try {
+          stateReason = await this.whyBlocked(stage, stages, derived, episodeDir, verdicts);
+        } catch (e) {
+          // An injected gate that throws instead of returning a verdict used
+          // to escape `status` as an unhandled rejection. Every other failure
+          // here is a typed refusal, and this is the read-only path a CLI
+          // polls: a gate nobody can get an answer out of is a stage nobody
+          // should be told is runnable, not a crash in the poller.
+          stateReason =
+            `"${stage.definition.id}" cannot be judged: its review gate failed: ` +
+            `${e instanceof Error ? e.message : String(e)}`;
+        }
+        // The budget guard's PRESENCE, which `claimInternal` checks below the
+        // gates above. Its verdict is not asked for — `maySpend` reserves.
+        // Ordered after `whyBlocked` so both paths name the same first
+        // problem, and so this never masks a dependency or review refusal.
+        if (!stateReason && !this.options.budget) {
+          stateReason = noBudgetGuardRefusal(stage.definition.id);
+        }
+      }
 
       let state: StageState;
       if (instance.status === "completed") {
@@ -264,12 +300,23 @@ export class ExecutionService {
    * did: `status` used the exported `dependenciesMet`, which tests only for
    * `completed`, while a run also consulted the review gate — so status
    * reported a stage as ready that a run then refused.
+   *
+   * `verdicts` memoises the review gate for the length of one caller's
+   * question. `status` asks this of every stage, and a fan-in of eight behind
+   * one reviewed stage asked `isOutstanding` about that stage eight times for
+   * a single poll — and `GatewayReviewGate.isOutstanding` re-reads the whole
+   * journal and sha256s every artifact the review covered, which for the
+   * shipped pipeline includes the narration wav and the final mp4. Sharing
+   * one map across the loop also stops a report contradicting itself when an
+   * artifact changes mid-loop. `claimInternal` passes none: a claim asks
+   * about one stage, once.
    */
   private async whyBlocked(
     stage: ResolvedStage,
     stages: ResolvedStage[],
     derived: Map<string, { status: string }>,
     episodeDir: string,
+    verdicts?: Map<string, ReviewVerdict>,
   ): Promise<string | null> {
     const stageId = stage.definition.id;
 
@@ -313,7 +360,11 @@ export class ExecutionService {
         // manifest fallback below and made the service more permissive than
         // having no gate at all. That is precisely backwards, and it was the
         // gateway — the only composition that ships — that got the weak path.
-        const verdict = await this.options.review.isOutstanding(depId, episodeDir);
+        let verdict = verdicts?.get(depId);
+        if (!verdict) {
+          verdict = await this.options.review.isOutstanding(depId, episodeDir);
+          verdicts?.set(depId, verdict);
+        }
         if (verdict.state === "approved") {
           // A current, satisfied record beats the manifest: this dependency
           // is accepted even if its manifest declares a review.
@@ -440,7 +491,7 @@ export class ExecutionService {
     if (precheckRefusal) return blocked(precheckRefusal);
 
     if (!this.options.budget) {
-      return blocked(`no budget guard is configured, so "${stageId}" may not spend`);
+      return blocked(noBudgetGuardRefusal(stageId));
     }
     const permitted = await this.options.budget.maySpend(stage, ctx);
     if (!permitted.ok) {
