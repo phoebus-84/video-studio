@@ -153,7 +153,7 @@ export class ExecutionService {
       const depsMet = dependenciesMet(stage, derived);
       // Only a stage that has not run yet has a question to ask: the rest are
       // described by what the journal already recorded.
-      const blockedReason = instance.status === "pending"
+      const stateReason = instance.status === "pending"
         ? await this.whyBlocked(stage, stages, derived, episodeDir)
         : null;
 
@@ -172,11 +172,11 @@ export class ExecutionService {
       } else if (!depsMet) {
         // Waiting its turn, not stuck. `blocked` is reserved for a refusal
         // somebody has to clear — an outstanding review, `autopilot: false` —
-        // because that is the distinction a caller acts on. `blockedReason`
+        // because that is the distinction a caller acts on. `stateReason`
         // still carries what it is waiting for.
         state = "pending";
       } else {
-        state = blockedReason ? "blocked" : "runnable";
+        state = stateReason ? "blocked" : "runnable";
       }
 
       reports.push({
@@ -194,7 +194,7 @@ export class ExecutionService {
         // never run. `outputArtifacts` above is the journal's record of what
         // was actually written.
         produces: (stage.definition.produces ?? []).map((artifact) => artifact.label),
-        ...(blockedReason ? { blockedReason } : {}),
+        ...(stateReason ? { stateReason } : {}),
       });
     }
 

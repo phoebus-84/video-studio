@@ -184,7 +184,7 @@ describe("status agrees with what run will do", () => {
 
     const downstream = status.value.stages.find((s) => s.stageId === "downstream")!;
     expect(downstream.state).toBe("blocked");
-    expect(downstream.blockedReason).toMatch(/gated/);
+    expect(downstream.stateReason).toMatch(/gated/);
 
     // And run agrees.
     const attempt = await svc.claim(REF, "review-chain", { stage: "downstream" });

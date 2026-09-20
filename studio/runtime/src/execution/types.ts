@@ -203,10 +203,17 @@ export interface StageStatusReport {
   /** As `run` would see it. This is what a caller should switch on. */
   state: StageState;
   /**
-   * Why, when `state` is `blocked` — and what it is still waiting for, when
-   * `pending`. Both come from the same refusal the run path would give.
+   * Why the stage is in the `state` it is in, when there is something to say.
+   *
+   * Set for `blocked` (the gate that refuses) and for `pending` (what it is
+   * still waiting on); absent otherwise. Both come from the same refusal the
+   * run path would give, so this is the sentence a caller can show verbatim.
+   *
+   * Not `blockedReason`: it is populated for stages that are not blocked, and
+   * a field whose name reports something other than what it holds is the
+   * defect this module exists to remove.
    */
-  blockedReason?: string;
+  stateReason?: string;
   /** The stage ids this stage is built on, as the manifest declares them. */
   dependsOn: string[];
   /**
