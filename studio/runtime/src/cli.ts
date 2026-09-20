@@ -7,6 +7,8 @@
 // --dry-run for destructive/paid operations.
 // ---------------------------------------------------------------------------
 
+import { readFile } from "node:fs/promises";
+import * as nodePath from "node:path";
 import { ConsoleLogger } from "./logging.js";
 import { VERSION } from "./index.js";
 import { resolveSettings } from "./settings/index.js";
@@ -22,7 +24,10 @@ import { NodeFileSystem } from "./ports/filesystem.js";
 import { SystemClock } from "./ports/clock.js";
 import { FileSystemSnapshotStore } from "./pipeline/fs-snapshot-store.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
-import { appendJournalEvent } from "@studio/contracts/src/journal.mjs";
+import {
+  appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH,
+} from "@studio/contracts/src/journal.mjs";
+import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-review.mjs";
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
 import { artifactExists } from "./artifacts/discovery.js";
 
@@ -415,36 +420,103 @@ async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: "Usage: vpr approve <channel>/<series>/<episode> <stage-id>" });
     return EX_USAGE;
   }
+  const pathArg = args[0]!;
+  const stageId = args[1]!;
   if (ctx.dryRun) {
-    emit(ctx, { message: `[DRY RUN] Would approve stage "${args[1]}" for ${args[0]}`, dryRun: true });
+    emit(ctx, { message: `[DRY RUN] Would approve stage "${stageId}" for ${pathArg}`, dryRun: true });
     return EX_OK;
   }
 
-  // An approval is the one moment a person takes responsibility for an
-  // episode, and it used to leave no trace: this printed "approved" and
-  // recorded nothing, so a finished production could not say who had passed
-  // its review gates or when.
-  const parsed = parsePath(args[0]!);
+  const parsed = parsePath(pathArg);
+  if (!parsed) {
+    emit(ctx, { error: `Invalid path "${pathArg}" (expected <channel>/<series>/<episode>)` });
+    return EX_USAGE;
+  }
   const libraryRoot = libraryFrom(args);
-  let recorded = false;
-  if (parsed && libraryRoot) {
-    const written = await appendJournalEvent(
-      episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode),
-      {
-        type: "approval-granted",
-        actor: "human",
-        episode: parsed,
-        data: { stageId: args[1]! },
-      },
+  if (!libraryRoot) {
+    emit(ctx, { error: "No library root: pass --library <path> or set AVG_LIBRARY_ROOT" });
+    return EX_USAGE;
+  }
+  const episodeDir = episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode);
+
+  // An approval is the one moment a person takes responsibility for an
+  // episode, and it has to be a record that can still be checked afterwards.
+  //
+  // Writing `{ stageId }` and nothing else — which is what this did — is worse
+  // than writing nothing: `deriveGateState` reads an approval that names no
+  // artifacts as `invalidated`, the review gate turns `invalidated` into an
+  // outstanding review, and the journal is append-only. So approving a stage
+  // used to block every dependent of it forever, with no way to undo it.
+  //
+  // What makes the record checkable is the hash binding: the artifacts the
+  // stage actually produced, hashed as they are at this moment, so that
+  // re-rendering one of them invalidates the approval rather than silently
+  // inheriting it.
+  let events;
+  try {
+    events = parseJournal(
+      await readFile(nodePath.join(episodeDir, JOURNAL_RELATIVE_PATH), "utf-8"),
+      { strict: true },
     );
-    recorded = written !== null;
+  } catch (e) {
+    const why = (e as NodeJS.ErrnoException)?.code === "ENOENT"
+      ? "it has no journal, so no stage has been recorded as completed"
+      : `its journal could not be read: ${e instanceof Error ? e.message : String(e)}`;
+    emit(ctx, { error: `Cannot approve "${stageId}" for ${pathArg}: ${why}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+
+  // The journal's own account of what the stage produced, not the manifest's
+  // account of what it was supposed to produce. Only the former can be hashed.
+  const completion = [...events]
+    .reverse()
+    .find((e) => e.type === "stage-completed" && (e.data as { stageId?: string })?.stageId === stageId);
+  if (!completion) {
+    emit(ctx, {
+      error: `Cannot approve "${stageId}" for ${pathArg}: the journal records no completed ` +
+        `attempt for it, so there are no artifacts to approve. Nothing was recorded.`,
+    });
+    return EX_RUNTIME;
+  }
+
+  const produced = ((completion.data as { outputs?: string[] })?.outputs ?? []);
+  if (produced.length === 0) {
+    emit(ctx, {
+      error: `Cannot approve "${stageId}" for ${pathArg}: its completion recorded no outputs, ` +
+        `and an approval of nothing cannot be invalidated by anything. Nothing was recorded.`,
+    });
+    return EX_RUNTIME;
+  }
+
+  let outputs;
+  try {
+    outputs = await hashArtifacts(episodeDir, produced);
+  } catch (e) {
+    emit(ctx, {
+      error: `Cannot approve "${stageId}" for ${pathArg}: ` +
+        `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.`,
+    });
+    return EX_RUNTIME;
+  }
+
+  const review = buildGateReview({ stageId, decision: "approved", actor: "human", outputs });
+  const written = await appendJournalEvent(episodeDir, {
+    type: "approval-granted",
+    actor: "human",
+    episode: parsed,
+    data: { ...review },
+  });
+  if (!written) {
+    emit(ctx, { error: `Approval of "${stageId}" for ${pathArg} could not be written to the journal` });
+    return EX_RUNTIME;
   }
 
   emit(ctx, {
-    message: `Stage "${args[1]}" approved for ${args[0]}`,
-    path: args[0],
-    stageId: args[1],
-    recorded,
+    message: `Stage "${stageId}" approved for ${pathArg} (${outputs.length} artifact(s) recorded by hash)`,
+    path: pathArg,
+    stageId,
+    recorded: true,
+    artifacts: outputs.map((o) => o.path),
   });
   return EX_OK;
 }
