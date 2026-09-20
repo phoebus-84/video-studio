@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExecutionService } from "../../../src/execution/service.js";
-import type { BudgetGuard } from "../../../src/execution/types.js";
+import type { BudgetGuard, ExecutionServiceOptions } from "../../../src/execution/types.js";
 import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { ok } from "../../../src/result.js";
 
@@ -35,7 +35,7 @@ const permissiveBudget: BudgetGuard = {
   maySpend: async () => ok({ reserveId: "r1", estimatedCost: 0 }),
 };
 
-function service(root: string, extra: Record<string, unknown> = {}) {
+function service(root: string, extra: Partial<ExecutionServiceOptions> = {}) {
   return new ExecutionService({
     libraryRoot: root,
     builtinPipelines: PIPELINES,
@@ -63,7 +63,7 @@ describe("claiming a stage for an out-of-process performer", () => {
   });
 
   it("refuses a second claim while the first is live", async () => {
-    const { root } = await episode();
+    const { root, dir } = await episode();
     const svc = service(root);
 
     const first = await svc.claim(REF, "narrated-illustrated-video");
@@ -71,6 +71,14 @@ describe("claiming a stage for an out-of-process performer", () => {
 
     expect(first.ok && first.value.status).toBe("claimed");
     expect(second.ok && second.value.status).toBe("blocked");
+    // Refused because the stage is held, not for some unrelated reason: a
+    // bare `blocked` here would pass even if the second claim had tripped a
+    // gate that has nothing to do with the live lease.
+    expect(second.ok && second.value.reason).toMatch(/already held|current state/);
+
+    // And the refusal wrote nothing. Only the first claim is in the journal.
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
   });
 
   it("applies every gate a run applies, so a claim cannot skip one", async () => {
@@ -98,5 +106,56 @@ describe("claiming a stage for an out-of-process performer", () => {
 
     expect(outcome.ok && outcome.value.status).toBe("would-run");
     await expect(readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8")).rejects.toThrow();
+  });
+});
+
+describe("the order the gates are applied in", () => {
+  // The precheck `run` supplies sits ABOVE the budget checks, which is where
+  // the dispatcher checks were before `claimInternal` was extracted. Nothing
+  // else in the suite observes that precedence: fail-closed.test.ts's
+  // "no dispatcher" test supplies a budget guard and its "no budget guard"
+  // test supplies a dispatcher, so each is blind to the ordering. These two
+  // fail if the precheck moves back below `maySpend`.
+
+  it("refuses a stage its dispatcher does not handle without consulting the budget", async () => {
+    // A stage nothing here can perform must not reach `maySpend`. The
+    // reservation it would mint has nothing to settle it (avg-91o), and
+    // /execute loops over every stage in the pipeline, so a handler-less
+    // stage would mint one on every pass.
+    const { root, dir } = await episode();
+    let maySpendCalls = 0;
+    const counting: BudgetGuard = {
+      maySpend: async () => {
+        maySpendCalls += 1;
+        return ok({ reserveId: "r1", estimatedCost: 0 });
+      },
+    };
+    const svc = service(root, {
+      dispatcher: { dispatch: async () => [], canDispatch: () => false },
+      budget: counting,
+    });
+
+    const outcome = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.status).toBe("blocked");
+    expect(outcome.value.reason).toMatch(/does not handle/);
+    expect(maySpendCalls).toBe(0);
+    await expect(readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8")).rejects.toThrow();
+  });
+
+  it("names the missing dispatcher first when neither it nor a budget guard is configured", async () => {
+    // Both refusals are true; which one a person is shown is the ordering,
+    // and the ordering is the pre-extraction one.
+    const { root } = await episode();
+    const svc = new ExecutionService({ libraryRoot: root, builtinPipelines: PIPELINES });
+
+    const outcome = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.status).toBe("blocked");
+    expect(outcome.value.reason).toMatch(/no dispatcher is configured/);
   });
 });
