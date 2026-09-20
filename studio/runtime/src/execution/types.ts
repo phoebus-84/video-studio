@@ -34,6 +34,26 @@ export interface DispatchContext {
  */
 export interface StageDispatcher {
   dispatch(stage: ResolvedStage, ctx: DispatchContext): Promise<string[]>;
+  /**
+   * Whether this dispatcher performs this stage at all.
+   *
+   * A dispatcher that does not handle a stage is a refusal someone must clear —
+   * no adapter exists, no handler is registered — not an attempt that broke.
+   * Omit it to mean "I handle everything I am given".
+   */
+  canDispatch?(stage: ResolvedStage): boolean;
+}
+
+/**
+ * Whether a stage's review is still outstanding.
+ *
+ * Injected rather than owned, because what an approval IS belongs to
+ * avg-qr4.3, and the service deciding it first is the mistake this epic exists
+ * to close. The gateway supplies one backed by gate-review records.
+ */
+export interface ReviewGate {
+  /** Outstanding means requested-but-not-granted, or invalidated. */
+  isOutstanding(stageId: string, episodeDir: string): Promise<{ outstanding: boolean; reason?: string }>;
 }
 
 /** A budget reservation, opaque to the service. */
@@ -72,7 +92,13 @@ export type OutcomeStatus =
   /** The stage never started. Someone else's condition to clear. */
   | "blocked"
   /** Nothing was selectable — every stage is done, or none is runnable. */
-  | "idle";
+  | "idle"
+  /**
+   * The stage ran and its outputs hold up, but it declares a review and is not
+   * accepted yet. Its dependents must not treat it as done — completion is what
+   * happened, acceptance is whether it counts.
+   */
+  | "awaiting_review";
 
 export interface StageOutcome {
   /** Null when nothing was selected. */
@@ -136,6 +162,13 @@ export interface ExecutionServiceOptions {
   builtinPipelines?: string;
   dispatcher?: StageDispatcher;
   budget?: BudgetGuard;
+  /**
+   * Consulted for dependency acceptance and for whether a finished stage still
+   * needs one. Absent, the service refuses only where the manifest declares a
+   * review — see the dependency check in service.ts for why that is not the
+   * flat "absence is refusal" the other two ports use.
+   */
+  review?: ReviewGate;
   /** Recorded on every lease, so an expired one names who held it. */
   holder?: string;
   /** How long a lease lasts. Defaults to the engine's default. */
