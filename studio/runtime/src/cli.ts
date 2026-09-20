@@ -574,6 +574,19 @@ const CLAIM_TTL_ENV = "AVG_CLAIM_TTL_MS";
 const DEFAULT_CLAIM_TTL_MS = 15 * 60 * 1000;
 
 /**
+ * The shortest claim anyone can mean.
+ *
+ * A floor on scale, not on sign. `> 0` tests the wrong property: the
+ * realistic mistakes here are all unit confusions — `15` meaning fifteen
+ * minutes, `900` meaning nine hundred seconds, `1e3` meaning something other
+ * than a thousand milliseconds — and each of them passes a positivity check
+ * and then burns a stage exactly the way `0` does. A claim exists precisely
+ * because the work happens out of process, in another program or another
+ * person's hands, and nothing that qualifies finishes inside ten seconds.
+ */
+const MIN_CLAIM_TTL_MS = 10_000;
+
+/**
  * How long a claim is honoured, validated rather than coerced.
  *
  * Stated, not inherited: the engine's default is 5 minutes, chosen for a
@@ -590,6 +603,11 @@ const DEFAULT_CLAIM_TTL_MS = 15 * 60 * 1000;
  * surfaces later as `cannot start from its current state ("pending")` and
  * names the wrong cause entirely. The service treats `0` and `NaN` as
  * deliberate, so this is the only place either can be caught.
+ *
+ * `MIN_CLAIM_TTL_MS` rather than `> 0`, because a positivity check catches
+ * only the least likely way to get this wrong. `1e3` is positive and finite
+ * and produces a one-second claim, which is the same silent burn by a
+ * different route.
  *
  * The distinction this draws is "not set" against "set wrong", and empty is
  * the one invalid-looking value that belongs on the first side. In shell,
@@ -610,9 +628,20 @@ function claimTtlMs(): Result<number, string> {
   const raw = process.env[CLAIM_TTL_ENV];
   if (raw === undefined || raw === "") return ok(DEFAULT_CLAIM_TTL_MS);
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed)) {
     return err(
-      `${CLAIM_TTL_ENV} must be a positive number of milliseconds, and is ${JSON.stringify(raw)}. ` +
+      `${CLAIM_TTL_ENV} must be a number of milliseconds, and is ${JSON.stringify(raw)}. ` +
+      `Unset it to use the ${DEFAULT_CLAIM_TTL_MS}ms default.`,
+    );
+  }
+  if (parsed < MIN_CLAIM_TTL_MS) {
+    // Name the floor AND the units. An operator who meant "15 minutes" and
+    // wrote `15` needs to learn that this is milliseconds, not merely that
+    // their number was rejected.
+    return err(
+      `${CLAIM_TTL_ENV} is in milliseconds and must be at least ${MIN_CLAIM_TTL_MS}, ` +
+      `and is ${JSON.stringify(raw)} (${parsed}ms). A claim is held by a performer outside ` +
+      `this process, so a shorter lease expires before the work can finish. ` +
       `Unset it to use the ${DEFAULT_CLAIM_TTL_MS}ms default.`,
     );
   }

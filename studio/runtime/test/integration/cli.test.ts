@@ -387,6 +387,44 @@ describe("vpr run / vpr complete", () => {
       await expect(readJournal(dir)).rejects.toThrow();
     });
 
+    it("refuses a claim TTL whose scale is wrong, not merely its sign", async () => {
+      // `> 0` tests the wrong property. Every realistic mistake here is a
+      // unit confusion — `15` meaning fifteen minutes, `900` meaning nine
+      // hundred seconds, `1e3` meaning something other than a thousand
+      // milliseconds — and each is positive, finite, and burns the stage
+      // exactly the way 0 did: claimed, both events journaled, and every
+      // later `complete` reporting a lapsed lease with nothing naming why.
+      const { root, dir } = await episodeFixture();
+
+      for (const tooShort of ["1e3", "15", "900", "9999"]) {
+        const result = vpr(
+          ["run", "childrens/fairy-tales/ep", "--library", root, "--json"],
+          { AVG_CLAIM_TTL_MS: tooShort },
+        );
+        expect(result.status, `AVG_CLAIM_TTL_MS=${tooShort}`).toBe(1);
+        // The message teaches the units, not just that the number was
+        // rejected: an operator who meant fifteen minutes wrote `15`.
+        expect(result.json().error).toMatch(/milliseconds/);
+        expect(result.json().error).toMatch(/10000/);
+      }
+      await expect(readJournal(dir)).rejects.toThrow();
+    });
+
+    it("accepts a claim TTL at the ten-second floor", async () => {
+      const { root } = await episodeFixture();
+
+      const result = vpr(
+        ["run", "childrens/fairy-tales/ep", "--library", root, "--json"],
+        { AVG_CLAIM_TTL_MS: "10000" },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("claimed");
+      const remaining = Date.parse(result.json().expiresAt) - Date.now();
+      expect(remaining).toBeGreaterThan(5_000);
+      expect(remaining).toBeLessThanOrEqual(10_000);
+    });
+
     it("treats an empty AVG_CLAIM_TTL_MS as unset and takes the default", async () => {
       // "not set" against "set wrong". `export AVG_CLAIM_TTL_MS=` and
       // `AVG_CLAIM_TTL_MS=${AVG_CLAIM_TTL_MS:-}` are ordinary shell ways of
