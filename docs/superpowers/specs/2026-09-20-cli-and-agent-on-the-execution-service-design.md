@@ -59,9 +59,18 @@ lease and writing `stage-leased` and `stage-started`, then stops. It returns a
 new `OutcomeStatus` member, `claimed`, carrying the `leaseId` and
 `attemptNumber` the performer will need.
 
-`complete` validates the outputs the manifest declares — present, non-empty —
-and writes `stage-completed`, or writes `stage-failed` when the performer
-reports failure. Either way it releases the lease.
+`complete` takes the paths the performer actually wrote, validates them —
+present, non-empty, inside the episode directory — and writes
+`stage-completed`, or writes `stage-failed` when the performer reports
+failure. Either way it releases the lease.
+
+**The performer names its outputs; the service does not go looking for them.**
+This is the same contract `StageDispatcher.dispatch` already has, which
+returns the paths it wrote. The alternative — resolving the manifest's output
+labels to files — means `artifactExists`, which searches six candidate
+locations per label against a hardcoded legacy path map, and is the inference
+machinery this epic is removing. A performer that cannot say what it wrote has
+not finished.
 
 Between the two calls, something outside the process does the work: Pi writing
 a brief, a person recording a terminal session, an operator running ffmpeg by
@@ -108,18 +117,21 @@ knows it went wrong and wants to say so now.
 
 ### 4. Output validation is not file-existence inference
 
-`complete` decides whether a stage produced what it promised by looking at
-whether the declared files are present and non-empty. That resembles the
-inference this epic exists to remove, closely enough to say why it is not.
+`complete` decides whether a stage produced what it promised by stat-ing the
+files the performer named. That resembles the inference this epic exists to
+remove, closely enough to say why it is not.
 
-The bad inference uses file existence to decide **whether a stage ran**. That
-is unfalsifiable: a file left over from an earlier attempt, a partial write, a
-file copied in by hand, all read as success. Here the `stage-leased` and
-`stage-started` events are the evidence that the stage ran, and the performer's
-`complete` call is its own assertion that it finished. The files are checked
-only against what the manifest said they would be. That is validation of a
-claim, not a substitute for one — and it is what the service already does
-after a dispatcher returns.
+The bad inference uses file existence to decide **whether a stage ran**, and
+searches for the files itself. That is unfalsifiable: a file left over from an
+earlier attempt, a partial write, a file copied in by hand, all read as
+success.
+
+Here the `stage-leased` and `stage-started` events are the evidence that the
+stage ran; the performer's `complete` call is its assertion that it finished;
+and the paths it passes are its account of what it produced. The service
+checks that account and records it. That is validation of a claim, not a
+substitute for one — and it is byte-for-byte the same `validateOutputs` the
+service already runs on a dispatcher's returned paths.
 
 ### 5. The CLI
 
@@ -145,7 +157,10 @@ pretending otherwise would be a lie about where work happens. A claim on
 `illustrations` from a terminal means a person is doing it by hand, which is a
 real thing someone may need to do.
 
-**`vpr complete <ep> <stage> [--lease id] [--failed] [--error msg]`** is new.
+**`vpr complete <ep> <stage> --outputs <path>[,<path>...] [--lease id]`**, or
+**`vpr complete <ep> <stage> --failed --error <msg>`**, is new. `--outputs` is
+required for a successful completion, for the reason in section 1: the
+performer is the only party that knows what it wrote.
 
 **`vpr status <ep>`** reports the service's replay: per stage its status,
 attempt count, lease state and holder, and whether it is genuinely runnable.
