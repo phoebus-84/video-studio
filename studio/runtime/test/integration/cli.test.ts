@@ -160,3 +160,294 @@ describe("vpr approve", () => {
     expect((await gateState(dir, "narration")).state).toBe("none");
   });
 });
+
+// ── run / complete ──────────────────────────────────────────────────────────
+//
+// `vpr run` used to filter the pipeline for a stage whose declared output
+// files were missing on disk and print "Ready to execute: <id>". It consulted
+// no gate and persisted nothing, so two operators could be told the same
+// stage was theirs and a stage declaring `autopilot: false` was offered to
+// anyone who asked. It now claims through the ExecutionService: it selects,
+// checks every gate, takes a lease and journals. `vpr complete` closes that
+// claim with the outputs the performer names.
+
+describe("vpr run / vpr complete", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
+  });
+
+  /**
+   * The built-in manifests, by absolute path.
+   *
+   * `createDefaultLoader` searches AVG_BUILTIN_PIPELINES and the library root
+   * and nothing else — there is no compiled-in default location — so a
+   * throwaway library with no `pipelines/` directory cannot resolve
+   * `narrated-illustrated-video` unless the spawned CLI is told where the
+   * built-ins live. The gateway's own tests point at the same directory.
+   */
+  const PIPELINES = path.resolve(__dirname, "../../../pipelines/pipelines");
+
+  function vpr(args: string[]) {
+    const result = spawnSync("node", [cliPath, ...args], {
+      encoding: "utf-8",
+      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES },
+    });
+    return {
+      stdout: result.stdout?.toString() ?? "",
+      stderr: result.stderr?.toString() ?? "",
+      status: result.status ?? 1,
+      json: () => JSON.parse(result.stdout?.toString() ?? "{}"),
+    };
+  }
+
+  async function episodeFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), "vpr-cli-"));
+    roots.push(root);
+    const dir = path.join(root, "childrens", "series", "fairy-tales", "episodes", "ep");
+    await mkdir(path.join(dir, "artifacts"), { recursive: true });
+    return { root, dir };
+  }
+
+  async function readJournal(dir: string) {
+    return parseJournal(await readFile(path.join(dir, JOURNAL_RELATIVE_PATH), "utf-8"));
+  }
+
+  /**
+   * A one-stage pipeline whose only stage declares a human review.
+   *
+   * The built-in manifests put every `review: human` stage behind
+   * dependencies, so reaching `awaiting_review` through them would mean
+   * driving four stages to get at one assertion. The loader scans the
+   * library root recursively, so a manifest dropped there is selectable by
+   * `--pipeline`.
+   */
+  async function writeReviewedPipeline(root: string) {
+    await mkdir(path.join(root, "pipelines"), { recursive: true });
+    await writeFile(path.join(root, "pipelines", "reviewed-single.yaml"), [
+      "pipeline:",
+      "  id: reviewed-single",
+      '  version: "1.0.0"',
+      '  description: "One stage that completes and then waits for a person."',
+      "  stages:",
+      "    - id: brief",
+      '      name: "Creative Brief"',
+      "      type: editorial",
+      '      description: "Research and structure the video topic"',
+      "      inputs: []",
+      "      outputs:",
+      "        - contract: brief.md",
+      '          version: "1.0.0"',
+      "      gates:",
+      "        autopilot: true",
+      "        review: human",
+      "        retry_on_failure: 1",
+      "      depends_on: []",
+      "",
+    ].join("\n"));
+  }
+
+  describe("vpr run claims a stage", () => {
+    it("leases the stage and journals it, rather than printing advice", async () => {
+      const { root, dir } = await episodeFixture();
+
+      const result = vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      expect(result.status).toBe(0);
+      const out = result.json();
+      expect(out.status).toBe("claimed");
+      expect(out.stage).toBe("brief");
+      expect(out.leaseId).toBeTruthy();
+      expect(out.expiresAt).toBeTruthy();
+
+      const events = await readJournal(dir);
+      expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+    });
+
+    it("prints the completion command, lease and all, so the safe path is the easy one", async () => {
+      // `complete` without `--lease` closes whatever claim is open, which is
+      // the SECOND holder's claim once a lapsed claim has been retaken. The
+      // lease id is recoverable from nowhere else: `LeaseState` carries
+      // state, holder and expiresAt and no id, so `vpr status` cannot show
+      // it. Printing the whole command is what keeps the safe form to hand.
+      const { root } = await episodeFixture();
+
+      const result = vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      const out = result.json();
+      expect(out.message).toContain(
+        `vpr complete childrens/fairy-tales/ep brief --lease ${out.leaseId} --outputs `,
+      );
+    });
+
+    it("--dry-run reports the selection and every gate, and writes nothing", async () => {
+      const { root, dir } = await episodeFixture();
+
+      const result = vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json", "--dry-run"]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("would-run");
+      await expect(readJournal(dir)).rejects.toThrow();
+    });
+
+    it("refuses a stage the manifest says may not run unattended", async () => {
+      // `script` declares `autopilot: false`. Its dependency has to be
+      // satisfied first, or the refusal reported is the dependency's and the
+      // autopilot gate is never reached.
+      const { root, dir } = await episodeFixture();
+      vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+      await writeFile(path.join(dir, "artifacts/brief.md"), "a real brief");
+      vpr([
+        "complete", "childrens/fairy-tales/ep", "brief",
+        "--outputs", "artifacts/brief.md", "--library", root, "--json",
+      ]);
+
+      const result = vpr([
+        "run", "childrens/fairy-tales/ep", "--stage", "script", "--library", root, "--json",
+      ]);
+
+      // The service worked and refused. That is not a CLI failure.
+      expect(result.status).toBe(0);
+      const out = result.json();
+      expect(out.status).toBe("blocked");
+      expect(out.reason).toMatch(/autopilot/);
+    });
+
+    it("reports an unresolvable pipeline as a runtime failure", async () => {
+      const { root } = await episodeFixture();
+
+      const result = vpr([
+        "run", "childrens/fairy-tales/ep", "--pipeline", "no-such-pipeline", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(2);
+      expect(result.json().error).toMatch(/PIPELINE_UNRESOLVED/);
+    });
+  });
+
+  describe("vpr complete closes a claim", () => {
+    it("records the outputs the performer names", async () => {
+      const { root, dir } = await episodeFixture();
+      vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+      await writeFile(path.join(dir, "artifacts/brief.md"), "a real brief");
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief",
+        "--outputs", "artifacts/brief.md", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("completed");
+      const events = await readJournal(dir);
+      expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started", "stage-completed"]);
+    });
+
+    it("accepts the lease id the run command printed", async () => {
+      const { root, dir } = await episodeFixture();
+      const leaseId = vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]).json().leaseId;
+      await writeFile(path.join(dir, "artifacts/brief.md"), "a real brief");
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief", "--lease", leaseId,
+        "--outputs", "artifacts/brief.md", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("completed");
+    });
+
+    it("refuses a successful completion that names no outputs", async () => {
+      const { root } = await episodeFixture();
+      vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(1);
+      expect(result.json().error).toMatch(/--outputs/);
+    });
+
+    it("records a reported failure", async () => {
+      const { root, dir } = await episodeFixture();
+      vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief",
+        "--failed", "--error", "the model refused", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("failed");
+      const events = await readJournal(dir);
+      expect(events.some((e) => e.type === "stage-failed")).toBe(true);
+    });
+
+    it("reports a stage awaiting review as the success it is", async () => {
+      // `awaiting_review` is what a stage declaring `review: human` reports
+      // once it completes: the work is done and recorded (`stage-completed`),
+      // and acceptance is someone else's turn. Exiting non-zero on it would
+      // tell every script that a successful stage had failed.
+      const { root, dir } = await episodeFixture();
+      await writeReviewedPipeline(root);
+      const claimed = vpr([
+        "run", "childrens/fairy-tales/ep", "--pipeline", "reviewed-single", "--library", root, "--json",
+      ]);
+      expect(claimed.json().status).toBe("claimed");
+      await writeFile(path.join(dir, "artifacts/brief.md"), "a real brief");
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief", "--pipeline", "reviewed-single",
+        "--outputs", "artifacts/brief.md", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("awaiting_review");
+      const events = await readJournal(dir);
+      expect(events.some((e) => e.type === "stage-completed")).toBe(true);
+    });
+
+    it("reports an unknown stage as a runtime failure", async () => {
+      const { root } = await episodeFixture();
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "no-such-stage",
+        "--outputs", "artifacts/x.md", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(2);
+      expect(result.json().error).toMatch(/STAGE_UNKNOWN/);
+    });
+
+    it("--dry-run writes nothing", async () => {
+      const { root, dir } = await episodeFixture();
+      vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+      const before = (await readJournal(dir)).length;
+
+      const result = vpr([
+        "complete", "childrens/fairy-tales/ep", "brief",
+        "--outputs", "artifacts/brief.md", "--library", root, "--json", "--dry-run",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().dryRun).toBe(true);
+      expect((await readJournal(dir)).length).toBe(before);
+    });
+
+    it("keeps positionals that follow a flag taking no value", async () => {
+      // `--failed` consumes nothing, so a token after it is still a
+      // positional. Dropping it would report a usage error for a command
+      // that named its episode and stage perfectly well.
+      const { root } = await episodeFixture();
+      vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+
+      const result = vpr([
+        "complete", "--failed", "childrens/fairy-tales/ep", "brief",
+        "--error", "the model refused", "--library", root, "--json",
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("failed");
+    });
+  });
+});
