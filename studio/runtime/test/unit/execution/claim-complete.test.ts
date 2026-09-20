@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { dirname } from "node:path";
@@ -157,5 +157,170 @@ describe("the order the gates are applied in", () => {
     if (!outcome.ok) return;
     expect(outcome.value.status).toBe("blocked");
     expect(outcome.value.reason).toMatch(/no dispatcher is configured/);
+  });
+});
+
+describe("completing a claim", () => {
+  it("validates the paths the performer names and records them", async () => {
+    const { root, dir } = await episode();
+    const svc = service(root);
+
+    const claimed = await svc.claim(REF, "narrated-illustrated-video");
+    expect(claimed.ok && claimed.value.status).toBe("claimed");
+
+    await writeFile(join(dir, "artifacts/brief.md"), "a real brief");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok).toBe(true);
+    if (!done.ok) return;
+    expect(done.value.status).toBe("completed");
+    expect(done.value.outputs).toEqual(["artifacts/brief.md"]);
+
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started", "stage-completed"]);
+  });
+
+  it("fails the stage when a named output was never written", async () => {
+    const { root, dir } = await episode();
+    const svc = service(root);
+
+    await svc.claim(REF, "narrated-illustrated-video");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok && done.value.status).toBe("failed");
+    expect(done.ok && done.value.reason).toMatch(/was not written/);
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started", "stage-failed"]);
+  });
+
+  it("records the performer's own failure report", async () => {
+    const { root, dir } = await episode();
+    const svc = service(root);
+
+    await svc.claim(REF, "narrated-illustrated-video");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      failed: true, error: "the model refused the prompt",
+    });
+
+    expect(done.ok && done.value.status).toBe("failed");
+    const events = await journal(dir);
+    const failed = events.find((e) => e.type === "stage-failed");
+    expect((failed?.data as { error?: string })?.error).toBe("the model refused the prompt");
+  });
+
+  it("refuses a claim that has lapsed, and writes nothing", async () => {
+    // The whole reason the lease exists. By the time a lapsed performer
+    // reports, another process may already have taken the stage and closed
+    // it; a terminal event for the stale lease landing after that makes
+    // replay throw on every future call, because the journal is append-only.
+    const { root, dir } = await episode();
+    let clock = new Date("2026-09-20T10:00:00.000Z");
+    const svc = service(root, { leaseTtlMs: 60_000, now: () => clock });
+
+    const claimed = await svc.claim(REF, "narrated-illustrated-video");
+    expect(claimed.ok && claimed.value.status).toBe("claimed");
+
+    clock = new Date("2026-09-20T10:05:00.000Z"); // five minutes: well past the TTL
+    await writeFile(join(dir, "artifacts/brief.md"), "written too late");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok).toBe(true);
+    if (!done.ok) return;
+    expect(done.value.status).toBe("failed");
+    expect(done.value.reason).toMatch(/lapsed|expired/);
+
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+
+  it("lets a second claimant take a stage whose first claim lapsed, and still replays", async () => {
+    const { root, dir } = await episode();
+    let clock = new Date("2026-09-20T10:00:00.000Z");
+    const svc = service(root, { leaseTtlMs: 60_000, now: () => clock });
+
+    await svc.claim(REF, "narrated-illustrated-video");
+    clock = new Date("2026-09-20T10:05:00.000Z");
+    await svc.complete(REF, "narrated-illustrated-video", "brief", { outputs: ["artifacts/brief.md"] });
+
+    const second = await svc.claim(REF, "narrated-illustrated-video");
+    expect(second.ok && second.value.status).toBe("claimed");
+
+    await writeFile(join(dir, "artifacts/brief.md"), "a real brief");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+    expect(done.ok && done.value.status).toBe("completed");
+
+    // The journal must still replay: the whole point of the silence above.
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+  });
+
+  it("refuses to complete a stage nobody claimed", async () => {
+    const { root } = await episode();
+    const svc = service(root);
+
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok && done.value.status).toBe("blocked");
+    expect(done.ok && done.value.reason).toMatch(/no open claim|not claimed/i);
+  });
+
+  it("refuses a leaseId that does not match the open claim", async () => {
+    const { root } = await episode();
+    const svc = service(root);
+
+    await svc.claim(REF, "narrated-illustrated-video");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"], leaseId: "not-the-lease",
+    });
+
+    expect(done.ok && done.value.status).toBe("blocked");
+  });
+});
+
+describe("run is claim, dispatch, complete", () => {
+  it("writes exactly the events a claim followed by a complete writes", async () => {
+    // Asserted on the journal rather than on which methods were called: the
+    // guarantee is that the two paths leave the same record, not that one
+    // happens to call the other today.
+    const viaRun = await episode();
+    const runSvc = new ExecutionService({
+      libraryRoot: viaRun.root, builtinPipelines: PIPELINES, budget: permissiveBudget,
+      dispatcher: {
+        dispatch: async () => {
+          await writeFile(join(viaRun.dir, "artifacts/brief.md"), "a real brief");
+          return ["artifacts/brief.md"];
+        },
+      },
+    });
+    const ran = await runSvc.run(REF, "narrated-illustrated-video");
+    expect(ran.ok && ran.value.status).toBe("completed");
+
+    const viaClaim = await episode();
+    const claimSvc = service(viaClaim.root);
+    await claimSvc.claim(REF, "narrated-illustrated-video");
+    await writeFile(join(viaClaim.dir, "artifacts/brief.md"), "a real brief");
+    await claimSvc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    const shape = (events: Awaited<ReturnType<typeof journal>>) =>
+      events.map((e) => ({
+        type: e.type,
+        stageId: (e.data as { stageId?: string }).stageId,
+        attemptNumber: (e.data as { attemptNumber?: number }).attemptNumber,
+        outputs: (e.data as { outputs?: string[] }).outputs,
+      }));
+
+    expect(shape(await journal(viaRun.dir))).toEqual(shape(await journal(viaClaim.dir)));
   });
 });

@@ -153,6 +153,30 @@ export interface StageOutcome {
   dryRun?: boolean;
 }
 
+/** What a performer reports when it finishes a claimed stage. */
+export interface CompleteInput {
+  /**
+   * The paths the performer wrote, absolute or relative to the episode
+   * directory. Required unless `failed`.
+   *
+   * The performer names its outputs; the service does not go looking for
+   * them. Resolving the manifest's labels to files would mean `artifactExists`
+   * and its six-candidates-per-label search, which is the inference this
+   * module exists to remove. A performer that cannot say what it wrote has
+   * not finished.
+   */
+  outputs?: string[];
+  /**
+   * The claim being closed. When omitted, the stage's single open attempt is
+   * used — and if there is none, the claim has lapsed and is refused.
+   */
+  leaseId?: string;
+  /** The performer is reporting that the work failed. */
+  failed?: boolean;
+  /** Why, when `failed`. */
+  error?: string;
+}
+
 /** One stage's place in the episode, as the journal records it. */
 export interface StageStatusReport {
   stageId: string;
