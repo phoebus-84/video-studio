@@ -18,6 +18,7 @@
 - **Absence is refusal.** No budget guard means the stage does not run. No review record where a review is declared means the dependent does not run.
 - **`studio/runtime` has no `typecheck` npm script.** Typecheck it with `npx tsc --noEmit -p studio/runtime/tsconfig.json`. `studio/gateway` and `studio/web` do have one: `npm run typecheck -w @studio/gateway`.
 - **Run test suites per package, not from the root.** The root `npm test` flakes under concurrency (`avg-82z`, predates this work). Use `npm test -w @studio/runtime` etc.
+- **A bare `npx vitest` does not rebuild, and some tests spawn the compiled CLI.** `studio/runtime/test/integration/cli.test.ts` and the end-to-end suite run `dist/src/cli.js`, so they test whatever was last built. `npm test -w @studio/runtime` rebuilds first (`pretest`); `npx vitest run --root studio/runtime` does not, and will pass against stale code — demonstrated: a defect reintroduced into `src/cli.ts` left all three status tests green. Prefix any targeted `vitest` run of those suites with `npm run build -w @studio/runtime &&`, and take only `npm test -w @studio/runtime` as the real verdict. `studio/gateway` has no `pretest` at all, and its routes shell out to the runtime's `dist`, so the same caution applies there.
 - **Commit after each numbered step that says to.** Frequent commits; the ledger and `git log` are the recovery map.
 
 ## File Structure
@@ -1234,7 +1235,7 @@ async function episodeFixture() {
 - [ ] **Step 2: Run to verify they fail**
 
 ```bash
-npx vitest run studio/runtime/test/integration/cli.test.ts --root studio/runtime
+npm run build -w @studio/runtime && npx vitest run test/integration/cli.test.ts --root studio/runtime
 ```
 
 Expected: FAIL — `vpr run` still emits `Ready to execute`, and `complete` is an unknown subcommand.
@@ -1420,7 +1421,7 @@ In the `COMMANDS` registry, change the `run` entry's description and usage, and 
 - [ ] **Step 7: Run the tests**
 
 ```bash
-npx vitest run studio/runtime/test/integration/cli.test.ts --root studio/runtime
+npm run build -w @studio/runtime && npx vitest run test/integration/cli.test.ts --root studio/runtime
 npm test -w @studio/runtime
 npx tsc --noEmit -p studio/runtime/tsconfig.json
 ```
@@ -1498,7 +1499,7 @@ describe("vpr status reports the journal", () => {
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-npx vitest run studio/runtime/test/integration/cli.test.ts --root studio/runtime
+npm run build -w @studio/runtime && npx vitest run test/integration/cli.test.ts --root studio/runtime
 ```
 
 Expected: FAIL — `brief.status` is `completed` (inferred from the file) and `budget` is present.
@@ -1655,7 +1656,7 @@ describe("vpr rerun", () => {
 - [ ] **Step 2: Run to verify they fail**
 
 ```bash
-npx vitest run studio/runtime/test/unit/rerun studio/runtime/test/integration/cli.test.ts --root studio/runtime
+npm run build -w @studio/runtime && npx vitest run test/unit/rerun test/integration/cli.test.ts --root studio/runtime
 ```
 
 Expected: FAIL — `planRerun` requires a report; `vpr rerun` exits 0 with zero stages for every input.
@@ -2785,7 +2786,7 @@ describe("a pipeline from brief to qa", () => {
 - [ ] **Step 2: Run it**
 
 ```bash
-npx vitest run studio/runtime/test/integration/pipeline-end-to-end.test.ts --root studio/runtime
+npm run build -w @studio/runtime && npx vitest run test/integration/pipeline-end-to-end.test.ts --root studio/runtime
 ```
 
 Expected: PASS. If the `order` array does not match, read the actual order before changing the expectation — the service selects the first stage whose dependencies are met, so the order is determined by the manifest's declaration order and its dependency graph. A different but valid order means the expectation is wrong; a stage appearing twice, or the loop running out of iterations, means the claim/complete seam is wrong.
