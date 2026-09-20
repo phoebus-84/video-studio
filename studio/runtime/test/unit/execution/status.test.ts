@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExecutionService } from "../../../src/execution/service.js";
+import { ok } from "../../../src/result.js";
+import { reviewChainPipeline } from "./helpers/review-chain.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PIPELINES = resolve(__dirname, "../../../../pipelines/pipelines");
@@ -42,6 +44,9 @@ async function journalLine(dir: string, type: string, data: Record<string, unkno
 function service(root: string) {
   return new ExecutionService({ libraryRoot: root, builtinPipelines: PIPELINES });
 }
+
+/** Spends nothing and refuses nothing — these tests are not about budget. */
+const permissiveBudget = { maySpend: async () => ok({ reserveId: "r", estimatedCost: 0 }) };
 
 describe("ExecutionService.status", () => {
   it("reports every declared stage as pending for an untouched episode", async () => {
@@ -148,5 +153,92 @@ describe("ExecutionService.status", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("JOURNAL_UNREADABLE");
+  });
+});
+
+describe("status agrees with what run will do", () => {
+  it("does not call a stage runnable when its dependency's review is outstanding", async () => {
+    // The disagreement this fixes: `dependenciesMet` tested only for
+    // `completed`, while the dependency check inside a run also consults the
+    // review gate. Status said ready; run said blocked.
+    const { root, dir } = await episode();
+    const pipelineDir = await reviewChainPipeline(roots);
+    const svc = new ExecutionService({
+      libraryRoot: root,
+      builtinPipelines: pipelineDir,
+      budget: permissiveBudget,
+      review: { isOutstanding: async (id) =>
+        id === "gated" ? { state: "outstanding", reason: "is awaiting review" } : { state: "no-record" } },
+    });
+
+    await svc.claim(REF, "review-chain");
+    await writeFile(join(dir, "artifacts/upstream.md"), "x");
+    await svc.complete(REF, "review-chain", "upstream", { outputs: ["artifacts/upstream.md"] });
+    await svc.claim(REF, "review-chain", { stage: "gated" });
+    await writeFile(join(dir, "artifacts/gated.md"), "x");
+    await svc.complete(REF, "review-chain", "gated", { outputs: ["artifacts/gated.md"] });
+
+    const status = await svc.status(REF, "review-chain");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+
+    const downstream = status.value.stages.find((s) => s.stageId === "downstream")!;
+    expect(downstream.state).toBe("blocked");
+    expect(downstream.blockedReason).toMatch(/gated/);
+
+    // And run agrees.
+    const attempt = await svc.claim(REF, "review-chain", { stage: "downstream" });
+    expect(attempt.ok && attempt.value.status).toBe("blocked");
+  });
+
+  it("calls a stage runnable when it genuinely is", async () => {
+    const { root } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES, budget: permissiveBudget,
+    });
+
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+
+    expect(status.value.stages.find((s) => s.stageId === "brief")!.state).toBe("runnable");
+    expect(status.value.stages.find((s) => s.stageId === "art-direction")!.state).toBe("pending");
+    // script declares autopilot: false, so it can never be runnable.
+    expect(status.value.stages.find((s) => s.stageId === "script")!.state).not.toBe("runnable");
+  });
+
+  it("reports a completed stage that declares a review as awaiting_review", async () => {
+    const { root, dir } = await episode();
+    const pipelineDir = await reviewChainPipeline(roots);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: pipelineDir, budget: permissiveBudget,
+    });
+
+    await svc.claim(REF, "review-chain");
+    await writeFile(join(dir, "artifacts/upstream.md"), "x");
+    await svc.complete(REF, "review-chain", "upstream", { outputs: ["artifacts/upstream.md"] });
+    await svc.claim(REF, "review-chain", { stage: "gated" });
+    await writeFile(join(dir, "artifacts/gated.md"), "x");
+    await svc.complete(REF, "review-chain", "gated", { outputs: ["artifacts/gated.md"] });
+
+    const status = await svc.status(REF, "review-chain");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    expect(status.value.stages.find((s) => s.stageId === "gated")!.state).toBe("awaiting_review");
+  });
+
+  it("reports the manifest's declared dependencies and produced labels", async () => {
+    // `produces` is the manifest's declaration and `outputArtifacts` is the
+    // journal's record. A consumer mapping a file back to the stage that
+    // makes it needs the former, and a stage that has never run has no latter.
+    const { root } = await episode();
+    const status = await service(root).status(REF, "narrated-illustrated-video");
+
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    const captions = status.value.stages.find((s) => s.stageId === "captions")!;
+    expect(captions.dependsOn).toEqual(["narration"]);
+    expect(captions.produces).toEqual(["captions.srt"]);
+    expect(captions.outputArtifacts).toEqual([]);
   });
 });

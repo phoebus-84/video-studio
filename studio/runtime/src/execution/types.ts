@@ -177,6 +177,19 @@ export interface CompleteInput {
   error?: string;
 }
 
+/**
+ * A stage's place in its pipeline.
+ *
+ * `StageStatusReport.status` has four members, which is everything the journal
+ * can say about a stage on its own. These seven are answers about a stage IN
+ * its pipeline: `runnable`, `blocked` and `awaiting_review` need the
+ * dependency check, the manifest's gates and the review gate. They are
+ * computed by the same code that answers those questions for a run, so a
+ * caller is never told a stage is ready and then refused when it acts.
+ */
+export type StageState =
+  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review";
+
 /** One stage's place in the episode, as the journal records it. */
 export interface StageStatusReport {
   stageId: string;
@@ -187,6 +200,24 @@ export interface StageStatusReport {
   lease: { state: "none" | "live" | "expired"; holder?: string; expiresAt?: string };
   /** True when every stage it depends on has completed. */
   dependenciesMet: boolean;
+  /** As `run` would see it. This is what a caller should switch on. */
+  state: StageState;
+  /**
+   * Why, when `state` is `blocked` — and what it is still waiting for, when
+   * `pending`. Both come from the same refusal the run path would give.
+   */
+  blockedReason?: string;
+  /** The stage ids this stage is built on, as the manifest declares them. */
+  dependsOn: string[];
+  /**
+   * The artifact labels the manifest says this stage will write.
+   *
+   * Not `outputArtifacts`, which is what the journal recorded as actually
+   * written. A declaration and a record are different facts: `produces`
+   * answers "which stage makes artifacts/script.md?" for a stage that has
+   * never run, and `outputArtifacts` cannot.
+   */
+  produces: string[];
 }
 
 export interface EpisodeStatus {
