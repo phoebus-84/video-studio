@@ -173,7 +173,7 @@ export function registerProductionRoutes(
   // ── Execute full pipeline ─────────────────────────────────────────────────
   app.post("/api/channels/:channel/series/:series/episodes/:episode/execute", {
     schema: {
-      description: "Execute all pending pipeline stages in topological order using autopilot.",
+      description: "Execute pending pipeline stages in dependency order, stopping at the first stage that is blocked, fails, or is awaiting review.",
       tags: ["production"],
       params: {
         type: "object",

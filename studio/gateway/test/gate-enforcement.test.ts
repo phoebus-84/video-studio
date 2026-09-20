@@ -11,8 +11,14 @@
 // now `awaiting_review`, and `ExecutionReport.stages[].status` is now
 // `StageOutcome.status`.
 //
-// Three properties could NOT be carried across, and are marked in place
-// rather than quietly dropped — see the `it.fails` tests below and
+// Three properties could not be carried across when the port was first
+// re-pointed, and were marked in place rather than quietly dropped: two as
+// `it.fails` and one inline, in "leaves a human-reviewed stage awaiting
+// review". Two of the three are back — the autopilot gate and the review
+// gate now exist, and both `it.fails` are ordinary tests again. ONE remains,
+// the inline one: nothing in this composition writes an `approval-requested`
+// record, so the original assertion that such a record names by hash what it
+// wants reviewed has no object to make. That belongs to avg-qr4.3. See
 // .superpowers/sdd/2026-09-20-gateway-as-transport/task-4-report.md.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -328,8 +334,10 @@ describe("acceptance gates", () => {
 
     // Driven through the loop the route actually runs, rather than a fake
     // runtime handing over a stage list. `illustrations` is the first stage
-    // the service can select; `captions` is selectable right behind it and
-    // would consume illustrations nobody accepted.
+    // the service can select, it declares review: human, and the loop must
+    // stop there rather than carrying on to whatever is selectable next.
+    // (Not because the next stage consumes it: `captions` depends on
+    // `narration`, not on `illustrations`. The halt is the property.)
     const { app, post } = await executeRoute(root);
     const body = await post("narrated-illustrated-video");
     await app.close();

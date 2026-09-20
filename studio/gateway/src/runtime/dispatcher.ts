@@ -41,10 +41,15 @@ export class GatewayDispatcher implements StageDispatcher {
   }
 
   async dispatch(stage: ResolvedStage, ctx: DispatchContext): Promise<string[]> {
-    const handler = HANDLERS[stage.definition.id];
-    if (!handler) {
+    // The same `Object.hasOwn` test `canDispatch` uses, for the reason its
+    // comment gives: a bracket lookup finds inherited Object.prototype keys,
+    // so a stage id like "toString" would take this branch with a prototype
+    // method in hand while `canDispatch` reported false. The comment above
+    // says the two agree; this is what makes that true.
+    if (!this.canDispatch(stage)) {
       throw new Error(`The gateway has no handler for stage "${stage.definition.id}"`);
     }
+    const handler = HANDLERS[stage.definition.id]!;
     return handler({ episodeDir: ctx.episodeDir, ref: ctx.ref, log: ctx.log });
   }
 }
