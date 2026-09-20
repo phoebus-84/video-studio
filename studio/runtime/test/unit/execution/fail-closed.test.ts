@@ -237,3 +237,80 @@ describe("failing closed", () => {
     expect(brief.lease.state).toBe("expired");
   });
 });
+
+// ── the autopilot gate ──────────────────────────────────────────────────────
+//
+// `gates.autopilot: false` was enforced by nothing: "autopilot" appeared
+// nowhere in service.ts. It looked enforced only because every such stage in
+// the shipped manifests also lacks a gateway handler and stopped one gate
+// later, at `canDispatch`. These tests remove that coincidence.
+describe("a stage that may not run unattended", () => {
+  /** One stage with a handler behind it, gated by `autopilot`. */
+  async function unattendedPipeline(autopilot: boolean): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "exec-autopilot-"));
+    roots.push(dir);
+    await writeFile(join(dir, "unattended.yaml"), [
+      "pipeline:",
+      "  id: unattended",
+      '  version: "1.0.0"',
+      "  stages:",
+      "    - id: brief",
+      '      name: "Brief"',
+      "      type: editorial",
+      "      outputs:",
+      "        - contract: brief.md",
+      '          version: "1.0.0"',
+      "      gates:",
+      `        autopilot: ${autopilot}`,
+      "        review: none",
+      "        retry_on_failure: 0",
+      "      depends_on: []",
+      "",
+    ].join("\n"));
+    return dir;
+  }
+
+  it("is blocked even when the dispatcher can perform it", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: await unattendedPipeline(false),
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget,
+    });
+
+    const result = await svc.run(REF, "unattended", { stage: "brief" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/autopilot: false/);
+    expect(result.value.reason).toMatch(/unattended/);
+  });
+
+  it("leases nothing, dispatches nothing and writes nothing", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: await unattendedPipeline(false),
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget,
+    });
+
+    await svc.run(REF, "unattended", { stage: "brief" });
+
+    await expect(readFile(join(dir, "artifacts", "brief.md"), "utf-8")).rejects.toThrow();
+    await expect(readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8")).rejects.toThrow();
+  });
+
+  it("runs the same stage once the manifest permits it", async () => {
+    // The control: nothing but the flag separates this from the refusal above.
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: await unattendedPipeline(true),
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget,
+    });
+
+    const result = await svc.run(REF, "unattended", { stage: "brief" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("completed");
+  });
+});

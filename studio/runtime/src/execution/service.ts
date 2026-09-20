@@ -244,10 +244,79 @@ export class ExecutionService {
       ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt, dryRun: opts.dryRun });
 
     // ── Gate ──────────────────────────────────────────────────────────────
-    if (!dependenciesMet(stage, derived)) {
-      const missing = (stage.definition.dependsOn ?? [])
-        .filter((id) => derived.get(id)?.status !== "completed");
-      return blocked(`"${stageId}" depends on ${missing.map((m) => `"${m}"`).join(", ")}, which ${missing.length === 1 ? "has" : "have"} not completed`);
+    // A dependency is satisfied when it completed AND its review, if one is
+    // required, is not outstanding. Completion is what happened; acceptance is
+    // whether it counts. Conflating them is how downstream stages came to build
+    // on artifacts nobody had accepted.
+    const unmet = (stage.definition.dependsOn ?? [])
+      .filter((id) => derived.get(id)?.status !== "completed");
+    if (unmet.length > 0) {
+      return blocked(
+        `"${stageId}" depends on ${unmet.map((m) => `"${m}"`).join(", ")}, ` +
+        `which ${unmet.length === 1 ? "has" : "have"} not completed`,
+      );
+    }
+
+    // ── Attendance ────────────────────────────────────────────────────────
+    // `gates.autopilot: false` means "a person has to be at the controls for
+    // this". The service has no notion of attendance, so the only honest
+    // answer is to refuse: it cannot run this stage on anyone's behalf.
+    //
+    // This was enforced by nothing at all — "autopilot" appeared nowhere in
+    // this file. It merely looked enforced, because every `autopilot: false`
+    // stage in the shipped manifests (script, compose, safety-review) also
+    // happens to have no gateway handler and so stopped at `canDispatch`.
+    // Give one a handler — or ship a manifest that gates an ordinary stage —
+    // and it ran unattended, which is the one thing the flag exists to
+    // prevent.
+    //
+    // Below the unmet-dependency check, which names an earlier and more
+    // useful problem, and above everything that leases, dispatches or spends.
+    if (!stage.definition.gates.autopilot) {
+      return blocked(
+        `"${stageId}" declares autopilot: false and may not run unattended; ` +
+        `a person has to run it`,
+      );
+    }
+
+    for (const depId of stage.definition.dependsOn ?? []) {
+      if (this.options.review) {
+        // An injected gate is authoritative only where it actually knows
+        // something. It used to be authoritative for everything, including
+        // stages it had never heard of — and since "I have no record" came
+        // back as `outstanding: false`, injecting a gate SUPPRESSED the
+        // manifest fallback below and made the service more permissive than
+        // having no gate at all. That is precisely backwards, and it was the
+        // gateway — the only composition that ships — that got the weak path.
+        const verdict = await this.options.review.isOutstanding(depId, episodeDir);
+        if (verdict.state === "approved") {
+          // A current, satisfied record beats the manifest: this dependency
+          // is accepted even if its manifest declares a review.
+          continue;
+        }
+        if (verdict.state === "outstanding") {
+          return blocked(
+            `"${stageId}" cannot run: "${depId}" ${verdict.reason ?? "has an outstanding review"}`,
+          );
+        }
+        // "no-record": the gate is not evidence either way, so fall through
+        // to the manifest rule rather than reading silence as acceptance.
+      }
+
+      // The manifest rule, reached with no gate configured or with a gate
+      // that holds nothing on this dependency. The service cannot know
+      // whether a required review happened, so it does not guess. Absence is
+      // refusal exactly where something is protected — a dependency the
+      // manifest never asked to be reviewed proceeds untouched.
+      const depStage = stages.find((s) => s.definition.id === depId);
+      const depNeedsReview = depStage?.definition.gates.review !== "none";
+      if (depNeedsReview) {
+        return blocked(
+          `"${stageId}" cannot run: "${depId}" declares ${depStage!.definition.gates.review} ` +
+          `review and no accepted review is recorded for it, so whether it was accepted ` +
+          `cannot be known`,
+        );
+      }
     }
 
     const ctx: DispatchContext = {
@@ -258,6 +327,9 @@ export class ExecutionService {
 
     if (!this.options.dispatcher) {
       return blocked(`no dispatcher is configured, so "${stageId}" cannot be performed`);
+    }
+    if (this.options.dispatcher.canDispatch?.(stage) === false) {
+      return blocked(`the configured dispatcher does not handle "${stageId}"`);
     }
     if (!this.options.budget) {
       return blocked(`no budget guard is configured, so "${stageId}" may not spend`);
@@ -416,8 +488,17 @@ export class ExecutionService {
     });
     await sm.complete(instance);
 
-    return ok({ stageId, status: "completed", outputs: relative, attemptNumber, leaseId,
-      durationMs: Date.now() - startedAt });
+    // A stage that declares a review has run, and its outputs hold up — but it
+    // is not accepted. Its journal record says completed because that is true;
+    // its outcome says awaiting_review because that is what the caller needs.
+    const needsReview = stage.definition.gates.review !== "none";
+    return ok({
+      stageId,
+      status: needsReview ? "awaiting_review" : "completed",
+      outputs: relative, attemptNumber, leaseId,
+      durationMs: Date.now() - startedAt,
+      ...(needsReview ? { reason: `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet` } : {}),
+    });
   }
 
   /**

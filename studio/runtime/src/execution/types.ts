@@ -34,6 +34,52 @@ export interface DispatchContext {
  */
 export interface StageDispatcher {
   dispatch(stage: ResolvedStage, ctx: DispatchContext): Promise<string[]>;
+  /**
+   * Whether this dispatcher performs this stage at all.
+   *
+   * A dispatcher that does not handle a stage is a refusal someone must clear —
+   * no adapter exists, no handler is registered — not an attempt that broke.
+   * Omit it to mean "I handle everything I am given".
+   */
+  canDispatch?(stage: ResolvedStage): boolean;
+}
+
+/**
+ * What a review gate knows about a stage.
+ *
+ * Three answers, not two. A boolean cannot tell "I hold a current record and
+ * it accepts this stage" apart from "I have never heard of this stage", and
+ * the service needs that distinction. While this was a boolean, an injected
+ * gate answering `false` for a stage it had no record of suppressed the
+ * service's manifest fallback — which made injecting a gate strictly WEAKER
+ * than injecting none, in the one composition that ships.
+ */
+export type ReviewGateState =
+  /** A review exists, is current, and accepted what the stage produced. */
+  | "approved"
+  /** Asked for and not granted, or granted and since invalidated. */
+  | "outstanding"
+  /**
+   * The gate holds nothing about this stage. Not evidence of acceptance and
+   * not evidence of refusal — the service falls back to the manifest.
+   */
+  | "no-record";
+
+export interface ReviewVerdict {
+  state: ReviewGateState;
+  /** Why, when `outstanding`. Written to go in front of a person. */
+  reason?: string;
+}
+
+/**
+ * Whether a stage's review is satisfied, outstanding, or unknown to the gate.
+ *
+ * Injected rather than owned, because what an approval IS belongs to
+ * avg-qr4.3, and the service deciding it first is the mistake this epic exists
+ * to close. The gateway supplies one backed by gate-review records.
+ */
+export interface ReviewGate {
+  isOutstanding(stageId: string, episodeDir: string): Promise<ReviewVerdict>;
 }
 
 /** A budget reservation, opaque to the service. */
@@ -72,7 +118,13 @@ export type OutcomeStatus =
   /** The stage never started. Someone else's condition to clear. */
   | "blocked"
   /** Nothing was selectable — every stage is done, or none is runnable. */
-  | "idle";
+  | "idle"
+  /**
+   * The stage ran and its outputs hold up, but it declares a review and is not
+   * accepted yet. Its dependents must not treat it as done — completion is what
+   * happened, acceptance is whether it counts.
+   */
+  | "awaiting_review";
 
 export interface StageOutcome {
   /** Null when nothing was selected. */
@@ -136,6 +188,14 @@ export interface ExecutionServiceOptions {
   builtinPipelines?: string;
   dispatcher?: StageDispatcher;
   budget?: BudgetGuard;
+  /**
+   * Consulted for dependency acceptance. Its `approved` and `outstanding`
+   * answers are authoritative; `no-record` falls through to the manifest rule,
+   * which refuses where a dependency declares a review. So a gate can only
+   * ever make the service stricter, never more permissive than having none —
+   * see the dependency check in service.ts.
+   */
+  review?: ReviewGate;
   /** Recorded on every lease, so an expired one names who held it. */
   holder?: string;
   /** How long a lease lasts. Defaults to the engine's default. */
