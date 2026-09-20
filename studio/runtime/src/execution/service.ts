@@ -20,6 +20,7 @@ import { episodePath } from "@studio/contracts/src/layout.mjs";
 import { parseJournal, JOURNAL_RELATIVE_PATH, appendJournalEvent } from "@studio/contracts/src/journal.mjs";
 import type { JournalEvent } from "@studio/contracts/src/journal.mjs";
 import { deriveExecutionState, leaseState } from "@studio/contracts/src/execution-state.mjs";
+import type { StageAttempt } from "@studio/contracts/src/execution-state.mjs";
 import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
@@ -564,6 +565,22 @@ export class ExecutionService {
     const instanceState = derived.get(stageId)!;
     const open = instanceState.attempts.find((a) => a.outcome === undefined);
 
+    /**
+     * The one refusal a lapsed attempt is allowed to make, wherever it is
+     * reached from: say so to the caller, write nothing to the journal.
+     */
+    const lapsed = (attempt: StageAttempt): Result<StageOutcome, ExecutionError> => ok({
+      stageId,
+      status: "failed",
+      reason:
+        `the lease on "${stageId}" lapsed at ${attempt.expiresAt} and nothing was recorded ` +
+        `for it; the stage is retryable and may already have been taken by someone else`,
+      outputs: [],
+      attemptNumber: attempt.number,
+      leaseId: attempt.leaseId,
+      durationMs: Date.now() - startedAt,
+    });
+
     // A lapsed claim is not an open attempt. `deriveExecutionState` closes an
     // attempt whose lease has expired as a `timeout` and moves the stage to
     // `failed`, so the refusal below IS the lease expiring — there is no
@@ -589,19 +606,7 @@ export class ExecutionService {
       const mine = input.leaseId
         ? instanceState.attempts.find((a) => a.leaseId === input.leaseId)
         : instanceState.attempts[instanceState.attempts.length - 1];
-      if (mine?.outcome === "timeout") {
-        return ok({
-          stageId,
-          status: "failed",
-          reason:
-            `the lease on "${stageId}" lapsed at ${mine.expiresAt} and nothing was recorded ` +
-            `for it; the stage is retryable and may already have been taken by someone else`,
-          outputs: [],
-          attemptNumber: mine.number,
-          leaseId: mine.leaseId,
-          durationMs: Date.now() - startedAt,
-        });
-      }
+      if (mine?.outcome === "timeout") return lapsed(mine);
       return ok({
         stageId,
         status: "blocked",
@@ -625,6 +630,27 @@ export class ExecutionService {
     const leaseId = open.leaseId;
     const attemptNumber = open.number;
 
+    /**
+     * Whether this attempt may still write, asked again immediately before
+     * every append.
+     *
+     * The structural refusal above is only true at the instant
+     * `deriveExecutionState` ran: `closeIfExpired` had proved the lease live
+     * then, which is why there was an open attempt at all. Nothing holds the
+     * lease still afterwards, and `validateOutputs` sits between there and
+     * the writes below stat-ing a list of paths whose length the performer
+     * chooses. A lease that dies in that gap must append nothing — if a
+     * second holder reclaimed the stage and finished it, this line lands
+     * after its terminal event and replay throws REPLAY_INVALID on every
+     * future `status()` and `run()` for the life of the episode, because the
+     * journal is append-only.
+     *
+     * Read off the journal's own `expiresAt`, not a deadline tracked
+     * alongside it: there is exactly one record of when a claim dies.
+     */
+    const held = (): boolean =>
+      !open.expiresAt || Date.parse(open.expiresAt) > this.now().getTime();
+
     const ttlMs = this.options.leaseTtlMs ?? DEFAULT_ENGINE_CONFIG.leaseTtlMs;
     const engineConfig = { ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs };
     const sm = new StageStateMachine(this.lock(episodeDir), engineConfig);
@@ -638,6 +664,7 @@ export class ExecutionService {
 
     if (input.failed) {
       const message = input.error ?? "the performer reported failure without saying why";
+      if (!held()) return lapsed(open);
       await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, message);
       return ok({
         stageId, status: "failed", reason: message, outputs: [],
@@ -648,6 +675,7 @@ export class ExecutionService {
     const outputs = input.outputs ?? [];
     const invalid = await this.validateOutputs(episodeDir, outputs);
     if (invalid) {
+      if (!held()) return lapsed(open);
       await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, invalid);
       return ok({
         stageId, status: "failed", reason: invalid, outputs: [],
@@ -660,6 +688,7 @@ export class ExecutionService {
     // The journal is written before the lease is released. If this process
     // dies in between, the record says what happened and the lease expires on
     // its own; releasing first would leave a completed stage looking unstarted.
+    if (!held()) return lapsed(open);
     await appendJournalEvent(episodeDir, {
       type: "stage-completed", actor: "runtime", episode: ref,
       data: { stageId, leaseId, attemptNumber, outputs: relative },

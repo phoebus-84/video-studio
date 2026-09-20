@@ -275,7 +275,7 @@ describe("completing a claim", () => {
   });
 
   it("refuses a leaseId that does not match the open claim", async () => {
-    const { root } = await episode();
+    const { root, dir } = await episode();
     const svc = service(root);
 
     await svc.claim(REF, "narrated-illustrated-video");
@@ -284,6 +284,112 @@ describe("completing a claim", () => {
     });
 
     expect(done.ok && done.value.status).toBe("blocked");
+    // And it refused without writing. A `blocked` status alone would pass
+    // against an implementation that appended a terminal event for the live
+    // holder's lease and only then reported the mismatch.
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+});
+
+describe("a lease that dies between the replay and the write", () => {
+  // The structural refusal — no open attempt, so nothing to complete — is
+  // only true at the instant `deriveExecutionState` runs. Everything after
+  // it, `validateOutputs` above all, takes time the lease is not held still
+  // for. Nothing in the rest of the suite can catch a lapse in that window:
+  // a wall clock cannot be made to land there reliably, and the injected
+  // clock is read once per phase, which is exactly what these use.
+
+  const BASE = new Date("2026-09-20T10:00:00.000Z");
+  const TTL = 60_000;
+
+  /**
+   * A clock that is live on its first reading and long past the lease on
+   * every one after it.
+   *
+   * `complete` reads it once to replay the journal and once more immediately
+   * before it writes, so this is the narrowest possible expression of the
+   * race: the lease was live when replay proved the attempt open, and had
+   * gone by the time the append came round.
+   */
+  function lapsesAfterReplay() {
+    let reads = 0;
+    return () => new Date(BASE.getTime() + (reads++ === 0 ? TTL / 2 : TTL * 10));
+  }
+
+  /** Claims the stage at BASE, then hands back a service to complete with. */
+  async function claimed() {
+    const { root, dir } = await episode();
+    const claimer = service(root, { leaseTtlMs: TTL, now: () => BASE });
+    const outcome = await claimer.claim(REF, "narrated-illustrated-video");
+    expect(outcome.ok && outcome.value.status).toBe("claimed");
+    // A separate service, as a second process would be: its clock starts
+    // being read at the completion, not at the claim.
+    const finisher = service(root, { leaseTtlMs: TTL, now: lapsesAfterReplay() });
+    return { root, dir, finisher };
+  }
+
+  it("appends no stage-completed when the lease lapsed while the outputs were validated", async () => {
+    const { dir, finisher } = await claimed();
+    await writeFile(join(dir, "artifacts/brief.md"), "a real brief");
+
+    const done = await finisher.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok && done.value.status).toBe("failed");
+    expect(done.ok && done.value.reason).toMatch(/lapsed/);
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+
+  it("appends no stage-failed either when the outputs were invalid and the lease lapsed", async () => {
+    const { dir, finisher } = await claimed();
+    // Nothing was written, so validation fails — but the lease is gone by
+    // then, and a stale stage-failed is as fatal to replay as a stale
+    // stage-completed.
+    const done = await finisher.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok && done.value.status).toBe("failed");
+    expect(done.ok && done.value.reason).toMatch(/lapsed/);
+    expect(done.ok && done.value.reason).not.toMatch(/was not written/);
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+
+  it("appends nothing for a reported failure whose lease lapsed", async () => {
+    // This path's window is near zero — there is no filesystem work between
+    // the replay and the write. Guarded anyway: three guarded writes are
+    // easier to reason about than two guarded and one argued safe.
+    const { dir, finisher } = await claimed();
+
+    const done = await finisher.complete(REF, "narrated-illustrated-video", "brief", {
+      failed: true, error: "the model refused the prompt",
+    });
+
+    expect(done.ok && done.value.status).toBe("failed");
+    expect(done.ok && done.value.reason).toMatch(/lapsed/);
+    const events = await journal(dir);
+    expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+
+  it("still replays, and a second claimant can take the stage", async () => {
+    // The point of the silence, asserted rather than assumed.
+    const { root, dir, finisher } = await claimed();
+    await writeFile(join(dir, "artifacts/brief.md"), "a real brief");
+    await finisher.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    const later = service(root, {
+      leaseTtlMs: TTL, now: () => new Date(BASE.getTime() + TTL * 10),
+    });
+    const status = await later.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    const second = await later.claim(REF, "narrated-illustrated-video");
+    expect(second.ok && second.value.status).toBe("claimed");
   });
 });
 
