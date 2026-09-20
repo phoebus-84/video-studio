@@ -591,16 +591,24 @@ const DEFAULT_CLAIM_TTL_MS = 15 * 60 * 1000;
  * names the wrong cause entirely. The service treats `0` and `NaN` as
  * deliberate, so this is the only place either can be caught.
  *
- * An empty value is refused rather than defaulted, which is the opposite of
- * what `builtinPipelines` does with one three lines up. The asymmetry is
- * deliberate: an empty search path degrades to the default search and costs
- * nothing, while an empty TTL destroys the claim it was meant to size. A
- * deployment script that exported this variable meant something by it, and
- * quietly substituting 15 minutes would hide a broken one.
+ * The distinction this draws is "not set" against "set wrong", and empty is
+ * the one invalid-looking value that belongs on the first side. In shell,
+ * `export AVG_CLAIM_TTL_MS=` and `AVG_CLAIM_TTL_MS=${AVG_CLAIM_TTL_MS:-}`
+ * are ordinary ways to NOT set a variable, so a CI doing either would hard
+ * fail on every `vpr` invocation over a value it never meant to supply.
+ * `abc`, `0` and `-1` are the other side: somebody typed a value and got it
+ * wrong, and `0` in particular burns the stage in silence, so those refuse
+ * loudly.
+ *
+ * Which also keeps this agreeing with `builtinPipelines` three lines above,
+ * where `|| undefined` exists so that an empty string means unset and the
+ * operator's escape hatch survives one. Two adjacent environment variables
+ * disagreeing about what empty means is the kind of thing nobody discovers
+ * until it bites.
  */
 function claimTtlMs(): Result<number, string> {
   const raw = process.env[CLAIM_TTL_ENV];
-  if (raw === undefined) return ok(DEFAULT_CLAIM_TTL_MS);
+  if (raw === undefined || raw === "") return ok(DEFAULT_CLAIM_TTL_MS);
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return err(

@@ -366,14 +366,16 @@ describe("vpr run / vpr complete", () => {
       expect(result.status).toBe(1);
     });
 
-    it("refuses an unusable AVG_CLAIM_TTL_MS instead of claiming with it", async () => {
-      // `Number(env ?? default)` catches only `undefined`: "" reaches
-      // `Number("")` and yields 0, so the CLI claimed, journaled both events
-      // and left a stage whose every completion reports the lease lapsed —
-      // burned, with no error printed anywhere.
+    it("refuses a mistyped AVG_CLAIM_TTL_MS instead of claiming with it", async () => {
+      // `Number(env ?? default)` catches only `undefined`, so `0` and `abc`
+      // reached the service as a deliberate TTL. `0` is the bad one: the CLI
+      // claimed, journaled both events, and left a stage whose every later
+      // completion reports the lease lapsed — burned, with no error printed
+      // anywhere. `abc` gave NaN and surfaced as `cannot start from its
+      // current state ("pending")`, naming the wrong cause entirely.
       const { root, dir } = await episodeFixture();
 
-      for (const bad of ["", "abc", "0", "-1"]) {
+      for (const bad of ["abc", "0", "-1"]) {
         const result = vpr(
           ["run", "childrens/fairy-tales/ep", "--library", root, "--json"],
           { AVG_CLAIM_TTL_MS: bad },
@@ -383,6 +385,30 @@ describe("vpr run / vpr complete", () => {
       }
       // Refused before anything was leased.
       await expect(readJournal(dir)).rejects.toThrow();
+    });
+
+    it("treats an empty AVG_CLAIM_TTL_MS as unset and takes the default", async () => {
+      // "not set" against "set wrong". `export AVG_CLAIM_TTL_MS=` and
+      // `AVG_CLAIM_TTL_MS=${AVG_CLAIM_TTL_MS:-}` are ordinary shell ways of
+      // NOT setting a variable, so refusing on empty would hard-fail a CI
+      // over a value it never meant to supply — and `builtinPipelines` one
+      // line away already reads empty as unset. Two adjacent environment
+      // variables must not disagree about what empty means.
+      const { root, dir } = await episodeFixture();
+
+      const result = vpr(
+        ["run", "childrens/fairy-tales/ep", "--library", root, "--json"],
+        { AVG_CLAIM_TTL_MS: "" },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.json().status).toBe("claimed");
+      // The 15-minute default, not `Number("")` — which is 0, and would have
+      // leased a claim that was already dead.
+      const remaining = Date.parse(result.json().expiresAt) - Date.now();
+      expect(remaining).toBeGreaterThan(14 * 60_000);
+      expect(remaining).toBeLessThanOrEqual(15 * 60_000);
+      expect((await readJournal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
     });
 
     it("honours a valid AVG_CLAIM_TTL_MS", async () => {
