@@ -32,6 +32,16 @@ import type {
   DispatchContext, StageOutcome,
 } from "./types.js";
 
+/** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
+interface ClaimInternal {
+  outcome: StageOutcome;
+  /** The selected stage. Absent when nothing was selected. */
+  stage?: ResolvedStage;
+  /** Ready for dispatch, with `attemptNumber` set. Absent when nothing was selected. */
+  ctx?: DispatchContext;
+  episodeDir: string;
+}
+
 export class ExecutionService {
   constructor(private readonly options: ExecutionServiceOptions) {}
 
@@ -194,11 +204,28 @@ export class ExecutionService {
     return null;
   }
 
-  async run(
+  /**
+   * Select a stage, check every gate, take the lease, and record that the
+   * stage has started — then stop.
+   *
+   * `run` and `claim` are the same code up to this point, and deliberately so:
+   * a synchronous dispatcher and an out-of-process performer that each wrote
+   * their own `stage-leased` would be the next instance of the split this
+   * epic exists to close, and the hardest to notice, because both would be
+   * correct in isolation.
+   *
+   * `precheck` runs after selection and gating and before anything is leased.
+   * `run` uses it to refuse a stage its dispatcher does not handle, so that
+   * no stage is ever leased by a caller that cannot perform it. A bare
+   * `claim` passes none: a claim is a promise to perform from somewhere else,
+   * and requiring a dispatcher for one would defeat the point.
+   */
+  private async claimInternal(
     ref: EpisodeRef,
     pipeline: string,
     opts: { stage?: string; dryRun?: boolean } = {},
-  ): Promise<Result<StageOutcome, ExecutionError>> {
+    precheck?: (stage: ResolvedStage) => string | null,
+  ): Promise<Result<ClaimInternal, ExecutionError>> {
     const startedAt = Date.now();
     const log = this.options.log ?? (() => {});
 
@@ -236,12 +263,18 @@ export class ExecutionService {
     }
 
     if (!stage) {
-      return ok({ stageId: null, status: "idle", outputs: [], durationMs: Date.now() - startedAt });
+      return ok({
+        outcome: { stageId: null, status: "idle", outputs: [], durationMs: Date.now() - startedAt },
+        episodeDir,
+      });
     }
 
     const stageId = stage.definition.id;
-    const blocked = (reason: string): Result<StageOutcome, ExecutionError> =>
-      ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt, dryRun: opts.dryRun });
+    const blocked = (reason: string): Result<ClaimInternal, ExecutionError> =>
+      ok({
+        outcome: { stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt, dryRun: opts.dryRun },
+        episodeDir,
+      });
 
     // ── Gate ──────────────────────────────────────────────────────────────
     // A dependency is satisfied when it completed AND its review, if one is
@@ -325,12 +358,6 @@ export class ExecutionService {
       log,
     };
 
-    if (!this.options.dispatcher) {
-      return blocked(`no dispatcher is configured, so "${stageId}" cannot be performed`);
-    }
-    if (this.options.dispatcher.canDispatch?.(stage) === false) {
-      return blocked(`the configured dispatcher does not handle "${stageId}"`);
-    }
     if (!this.options.budget) {
       return blocked(`no budget guard is configured, so "${stageId}" may not spend`);
     }
@@ -338,6 +365,12 @@ export class ExecutionService {
     if (!permitted.ok) {
       return blocked(`budget refused "${stageId}": ${permitted.error.message}`);
     }
+
+    // Whatever the caller needs true before a lease is taken. Placed here so
+    // it sees a stage that has passed every gate, and so a refusal costs
+    // nothing: nothing has been leased or written yet.
+    const refusal = precheck?.(stage);
+    if (refusal) return blocked(refusal);
 
     // ── The state the stage is actually in ────────────────────────────────
     // The retry cap and the current state are checked ABOVE the dry-run
@@ -390,8 +423,11 @@ export class ExecutionService {
     // `dryRun` flag stays too, for callers that switch on it.
     if (opts.dryRun) {
       return ok({
-        stageId, status: "would-run", reason: "dry run — would have dispatched",
-        outputs: [], durationMs: Date.now() - startedAt, dryRun: true,
+        outcome: {
+          stageId, status: "would-run", reason: "dry run — would have dispatched",
+          outputs: [], durationMs: Date.now() - startedAt, dryRun: true,
+        },
+        episodeDir, stage, ctx,
       });
     }
 
@@ -437,6 +473,90 @@ export class ExecutionService {
       data: { stageId, leaseId, attemptNumber },
     });
 
+    return ok({
+      outcome: {
+        stageId, status: "claimed", outputs: [],
+        attemptNumber, leaseId, expiresAt,
+        durationMs: Date.now() - startedAt,
+      },
+      episodeDir, stage,
+      ctx: { ...ctx, attemptNumber },
+    });
+  }
+
+  /**
+   * Take a stage for a performer that is not this process.
+   *
+   * The stage is leased and recorded as started; the work happens elsewhere;
+   * `complete` closes it. The lease bounds how long the claim is honoured —
+   * an abandoned claim needs no command of its own, because replay derives
+   * the timeout from the lease's own `expiresAt`.
+   */
+  async claim(
+    ref: EpisodeRef,
+    pipeline: string,
+    opts: { stage?: string; dryRun?: boolean } = {},
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const claimed = await this.claimInternal(ref, pipeline, opts);
+    return claimed.ok ? ok(claimed.value.outcome) : claimed;
+  }
+
+  /**
+   * Perform one stage here and now.
+   *
+   * Exactly `claim`, then the configured dispatcher, then `complete` — not a
+   * parallel implementation that happens to agree with them.
+   */
+  async run(
+    ref: EpisodeRef,
+    pipeline: string,
+    opts: { stage?: string; dryRun?: boolean } = {},
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+
+    const claimed = await this.claimInternal(ref, pipeline, opts, (stage) => {
+      if (!this.options.dispatcher) {
+        return `no dispatcher is configured, so "${stage.definition.id}" cannot be performed`;
+      }
+      if (this.options.dispatcher.canDispatch?.(stage) === false) {
+        return `the configured dispatcher does not handle "${stage.definition.id}"`;
+      }
+      return null;
+    });
+    if (!claimed.ok) return claimed;
+
+    const { outcome, stage, ctx, episodeDir } = claimed.value;
+    if (outcome.status !== "claimed" || !stage || !ctx) return ok(outcome);
+
+    const stageId = stage.definition.id;
+    // Non-null rather than a destructure: `claimed` carries these on every
+    // `claimed` outcome, but the type cannot say so, and the tail below is
+    // the original code, which takes them as plain strings and numbers.
+    const leaseId = outcome.leaseId!;
+    const attemptNumber = outcome.attemptNumber!;
+    const expiresAt = outcome.expiresAt!;
+
+    // Scaffolding, replaced wholesale by `complete()` in the next task: the
+    // tail still needs the state machine and the engine instance that
+    // `claimInternal` no longer exposes, so they are rebuilt from the
+    // journal the claim just wrote, with the claim's own lease adopted.
+    const ttlMs = this.options.leaseTtlMs ?? DEFAULT_ENGINE_CONFIG.leaseTtlMs;
+    const engineConfig = { ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs };
+    const sm = new StageStateMachine(new FileLock(path.join(episodeDir, ".locks")), engineConfig);
+    sm.adopt(stageId, {
+      resource: `stage:${stageId}`,
+      token: leaseId,
+      expiresAt: new Date(expiresAt),
+    });
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    const derived = deriveExecutionState(
+      events.value, resolved.value.stages.map((s) => s.definition.id), this.now(),
+    );
+    const instance = this.toEngineInstance(derived.get(stageId)!, stage);
+
     // Once the lease has lapsed this attempt may say nothing about the stage,
     // in any journal line: see `lapsed` below.
     const lapsed = (detail = ""): Result<StageOutcome, ExecutionError> => ok({
@@ -449,7 +569,7 @@ export class ExecutionService {
     // ── Dispatch ──────────────────────────────────────────────────────────
     let outputs: string[];
     try {
-      outputs = await this.options.dispatcher.dispatch(stage, { ...ctx, attemptNumber });
+      outputs = await this.options.dispatcher!.dispatch(stage, { ...ctx, attemptNumber });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (this.leaseLapsed(expiresAt)) return lapsed(` (it then threw: ${message})`);

@@ -124,7 +124,15 @@ export type OutcomeStatus =
    * accepted yet. Its dependents must not treat it as done — completion is what
    * happened, acceptance is whether it counts.
    */
-  | "awaiting_review";
+  | "awaiting_review"
+  /**
+   * The stage is leased and started, and something out of process is
+   * performing it. Only `claim` returns this; `run` performs the work itself
+   * and never leaves a stage in this state on return.
+   *
+   * A caller looping until nothing advances must treat this as a halt.
+   */
+  | "claimed";
 
 export interface StageOutcome {
   /** Null when nothing was selected. */
@@ -135,6 +143,11 @@ export interface StageOutcome {
   outputs: string[];
   attemptNumber?: number;
   leaseId?: string;
+  /**
+   * When this claim lapses, ISO-8601. Set on `claimed`, so a performer knows
+   * its deadline and `complete` can refuse a claim that has passed it.
+   */
+  expiresAt?: string;
   durationMs: number;
   /** True when this was a dry run: nothing was leased, dispatched or written. */
   dryRun?: boolean;
