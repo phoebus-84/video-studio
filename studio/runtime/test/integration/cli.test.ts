@@ -8,6 +8,17 @@ import { appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH } from "@studio
 import { deriveGateState } from "@studio/contracts/src/gate-review.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * The compiled CLI, not the source.
+ *
+ * Every test in this file spawns this file, so it only ever exercises
+ * whatever was last built into `dist/` — never a live read of `src/cli.ts`.
+ * Run this suite via `npm test -w @studio/runtime`, whose `pretest` rebuilds
+ * first; a bare `vitest run test/integration/cli.test.ts` (with or without
+ * `--root studio/runtime`) skips that build and silently tests stale code.
+ * That gap is not hypothetical: re-adding a field this suite asserts is
+ * absent, then running vitest directly without rebuilding, passes every test.
+ */
 const cliPath = path.resolve(__dirname, "../../dist/src/cli.js");
 
 describe("CLI integration", () => {
@@ -669,10 +680,14 @@ describe("vpr run / vpr complete", () => {
       // This is the change with the largest blast radius on this branch:
       // every episode under library/ has real artifacts on disk and no
       // journal, and the old file-existence check called every one of them
-      // complete. The artifact exists here, the journal is empty, and the
-      // correct report is `pending` — that is intended, not a regression.
+      // complete. All three facts are asserted below, not just the first
+      // and the last: the artifact exists, the journal is empty (or, as
+      // here, absent — `episodeFixture()` never writes one), and only given
+      // both of those does `pending` mean what this test claims it means
+      // rather than a bug this test would otherwise hide.
       const { root, dir } = await episodeFixture();
       await writeFile(path.join(dir, "artifacts/brief.md"), "a brief written before journals existed");
+      await expect(readJournal(dir)).rejects.toThrow();
 
       const result = vpr(["status", "childrens/fairy-tales/ep", "--library", root, "--json"]);
 
