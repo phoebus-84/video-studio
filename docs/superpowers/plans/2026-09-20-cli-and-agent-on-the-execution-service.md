@@ -2327,13 +2327,21 @@ export type StageState =
 // added there and not here yields no buttons, never the wrong ones.
 
 export interface StageStatus {
-  id: string;
+  /**
+   * `stageId`, NOT `id`. The gateway's /status now returns the execution
+   * service's report verbatim, and its field is `stageId`. An earlier draft
+   * of this task specified `id` here, which would have kept
+   * `runStage(stage.id)` posting to `/stages/undefined/execute` — the same
+   * defect that silently broke `workspace.ts` and `events/publisher.ts`,
+   * preserved in the one consumer the plan was supposed to be fixing.
+   */
+  stageId: string;
   state: StageState;
   dependsOn: string[];
   /** Artifact labels this stage produces, e.g. ["script.md"]. */
   produces: string[];
-  /** Why, when `state` is `blocked`. Shown rather than hidden: it names what to fix. */
-  blockedReason?: string;
+  /** Why the stage is in this state, when there is something to say. Set for `blocked` and `pending`. */
+  stateReason?: string;
 }
 
 /**
@@ -2364,11 +2372,45 @@ export function actionsFor(state: string): Array<"run" | "approve"> {
 
 In `studio/web/src/contracts/gateway.ts` and `studio/gateway/src/contracts/types.ts`, delete `"awaiting_approval"` and `"skipped"` from the stage-status union. Compile after each: a reference elsewhere means something reads a state nothing produces, which is worth seeing rather than preserving.
 
+- [ ] **Step 4b: Fix the error path and the success message**
+
+Three things broke or were already wrong when `/status` stopped being a CLI passthrough. All three are in `studio/web/src/lib/production-store.svelte.ts`.
+
+**`res.error` is now an object, not a string.** It is `{ code, message }`. Two places assume a string:
+
+```ts
+// Was: needsSnapshot = /pipeline not found/i.test(res.error ?? "")
+// which now stringifies to "[object Object]" and can never match.
+this.needsSnapshot = res.error?.code === "PIPELINE_UNRESOLVED";
+this.error = this.needsSnapshot ? null : (res.error?.message ?? "Status failed");
+```
+
+Matching on the code rather than on prose is strictly better: the message is free text and was never a contract. `needsSnapshot` is what turns "this episode has never been resolved" from a failure into an offer to fix it, so if it stops matching, a fresh episode shows a raw error instead of the affordance.
+
+Do the same in `#act`, which renders `res.error` directly and would print `[object Object]` for the single-stage execute and `/rerun-plan`.
+
+**`#act` reports success for a refusal.** It sets `lastMessage` to `"Done"` whenever `ok !== false`, but the routes now return `{ ok: true, outcome: { status: "blocked", reason } }` — the service reached a verdict and refused. Read the outcome:
+
+```ts
+const outcome = res.outcome;
+if (outcome && outcome.status !== "completed" && outcome.status !== "awaiting_review") {
+  this.error = outcome.reason ?? `The runtime did not run that stage (${outcome.status})`;
+} else {
+  this.lastMessage = outcome?.reason ?? res.data?.message ?? res.message ?? "Done";
+}
+```
+
+A button that reports success for work that did not happen is the defect this whole epic exists to remove; it is what "Run stage" did for its entire life.
+
+**Four call sites send `rerun-affected`,** which is not a `RerunMode` member and which `/rerun-plan` now rejects at the schema with a 400. Grep for it under `studio/web/src/` and send `retry-current` instead.
+
 - [ ] **Step 5: Check the store's other readers of `state`**
 
 ```bash
-grep -rn --include='*.ts' --include='*.svelte' -e 'awaiting_approval' -e "state ===" -e 'stage.state' studio/web/src/
+grep -rn --include='*.ts' --include='*.svelte' -e 'awaiting_approval' -e "state ===" -e 'stage.state' -e 'stage\.id' -e 'rerun-affected' studio/web/src/
 ```
+
+`stage.id` matters most: `ProductionPanel.svelte` calls `runStage(stage.id)`, which posts to `/stages/undefined/execute` until it becomes `stage.stageId`.
 
 Update anything comparing against the removed spellings. A Svelte component branching on `complete` (singular) needs `completed`.
 
