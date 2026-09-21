@@ -427,10 +427,30 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
+  // Not `remaining[stagesIdx + 1]!` — the same shape of mistake `--mode`
+  // avoids two lines above: asserting the token past a trailing flag exists
+  // turns a mistyped command line into a FATAL (uncaught TypeError, EX_RUNTIME)
+  // instead of the usage error it actually is.
   const stagesIdx = remaining.indexOf("--stages");
+  if (stagesIdx >= 0 && !remaining[stagesIdx + 1]) {
+    emit(ctx, { error: "--stages requires a comma-separated list of stage ids, e.g. --stages brief,script" });
+    return EX_USAGE;
+  }
   const selected = stagesIdx >= 0
     ? remaining[stagesIdx + 1]!.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
+
+  // `--stages` only means anything to `rerun-selected` — the planner reads
+  // `selectedStages` for `rerun-affected-downstream` too, but that mode is
+  // refused above before this point is reached. Parsing it and then
+  // discarding it for `retry-current`/`full-rebuild` would silently ignore
+  // input the caller went out of their way to supply.
+  if (selected.length > 0 && mode !== "rerun-selected") {
+    emit(ctx, {
+      error: `--stages is only used by "rerun-selected" mode; --mode "${mode}" does not accept it`,
+    });
+    return EX_USAGE;
+  }
 
   const ttl = claimTtlMs();
   if (!ttl.ok) {
@@ -444,7 +464,7 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   const plan = await service.planRerun(parsed, pipeline, mode as RerunMode, selected);
   if (!plan.ok) {
     emit(ctx, { error: `${plan.error.code}: ${plan.error.message}` });
-    return EX_RUNTIME;
+    return exitCodeFor(plan.error);
   }
 
   if (ctx.dryRun) {
@@ -462,11 +482,15 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
       error: `${outcomes.error.code}: ${outcomes.error.message}`,
       ...(outcomes.error.partialOutcomes ? { partial: outcomes.error.partialOutcomes } : {}),
     });
-    return EX_RUNTIME;
+    return exitCodeFor(outcomes.error);
   }
   emit(ctx, {
     message: `Rerun (${mode}): ${outcomes.value.length} stage(s)`,
     mode, stages: plan.value.rerunStageIds,
+    // `stages` is the plan; `rerun()` stops at the first stage that does not
+    // complete, so a caller cannot infer from `stages` alone which of them
+    // were actually attempted. This is that list, in attempt order.
+    executed: outcomes.value.map((o) => o.stageId),
     outcomes: outcomes.value.map(outcomeFields),
   });
   return EX_OK;

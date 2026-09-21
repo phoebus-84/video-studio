@@ -279,4 +279,41 @@ describe("planRerun", () => {
     expect(result.value.rerunStageIds).toContain("brief");
     expect(result.value.episodeSlug).toBe("childrens/fairy-tales/ep");
   });
+
+  it("refuses an unknown selected stage id rather than silently dropping it", async () => {
+    // `planRerun` (the pure function in src/rerun/planner.ts) builds its
+    // rerun set from the raw selection, then its entry loop iterates only
+    // `pipeline.stages` — so an id the pipeline does not declare simply
+    // never appears in `rerunStageIds`, with nothing to say it was refused.
+    // `cmdRerun` then hands that already-filtered (possibly empty) list to
+    // `service.rerun`, bypassing `rerun`'s OWN per-id validation entirely
+    // (that method only ever sees ids the plan already approved). This is
+    // the service's fix: validate `selectedStages` against the resolved
+    // pipeline before the planner ever sees them, so an unknown id fails
+    // loudly here instead of vanishing two layers away.
+    const { root } = await episode();
+    const svc = new ExecutionService({ libraryRoot: root, builtinPipelines: PIPELINES });
+
+    const result = await svc.planRerun(
+      REF, "narrated-illustrated-video", "rerun-selected", ["nonexistent-stage"],
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("STAGE_UNKNOWN");
+    expect(result.error.message).toMatch(/nonexistent-stage/);
+  });
+
+  it("mutation check: a mix of one real and one unknown id still refuses, not partially plans", async () => {
+    const { root } = await episode();
+    const svc = new ExecutionService({ libraryRoot: root, builtinPipelines: PIPELINES });
+
+    const result = await svc.planRerun(
+      REF, "narrated-illustrated-video", "rerun-selected", ["brief", "nonexistent-stage"],
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("STAGE_UNKNOWN");
+  });
 });

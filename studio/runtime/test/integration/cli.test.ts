@@ -862,4 +862,89 @@ describe("vpr rerun", () => {
     expect(result.status).toBe(0);
     expect(result.json().mode).toBe("retry-current");
   });
+
+  it("refuses an unknown --stages id instead of silently rerunning zero stages", async () => {
+    // This task's own defect, recreated one layer up: `planRerun` filters
+    // `rerunSet` down to ids the pipeline declares before building entries,
+    // so an unknown selected id used to vanish rather than fail —
+    // `cmdRerun` then handed the already-filtered (empty) plan to
+    // `service.rerun`, bypassing that method's own per-id validation
+    // entirely. The result was "0 stage(s)", exit 0, for a request that
+    // named a real (if misspelled) intent — exactly the shape of answer
+    // this task exists to abolish. `service.planRerun` now validates
+    // `selectedStages` against the resolved pipeline before the planner
+    // ever sees them.
+    const { root } = await episodeFixture();
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-selected",
+      "--stages", "nonexistent-stage", "--library", root, "--json",
+    ]);
+
+    // Exit 1 (EX_USAGE), not 0 and not 2: STAGE_UNKNOWN is a mistyped
+    // argument, and `exitCodeFor` says so.
+    expect(result.status).toBe(1);
+    const out = result.json();
+    expect(out.error).toMatch(/STAGE_UNKNOWN/);
+    expect(out.error).toMatch(/nonexistent-stage/);
+    // Never present when the call was refused — the old bug's signature.
+    expect(out.stages).toBeUndefined();
+  });
+
+  it("refuses --stages as the trailing token instead of crashing", async () => {
+    // `remaining[stagesIdx + 1]!.split(",")` threw when `--stages` was the
+    // last argument — a mistyped command line surfacing as a FATAL
+    // (uncaught TypeError, EX_RUNTIME) rather than the usage error it is.
+    // `--mode`, two lines above in the source, handles the identical shape
+    // without asserting; this must match.
+    const { root } = await episodeFixture();
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-selected",
+      "--library", root, "--json", "--stages",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.json().error).toMatch(/--stages/);
+    // Not a FATAL: the process must not have thrown past `main`'s own
+    // catch (which would print "FATAL:" and exit 2).
+    expect(result.json().error).not.toMatch(/FATAL/);
+  });
+
+  it("refuses --stages for a mode that does not accept it, rather than discarding it", async () => {
+    const { root } = await episodeFixture();
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--stages", "brief",
+      "--library", root, "--json",
+    ]);
+
+    expect(result.status).toBe(1);
+    const out = result.json();
+    expect(out.error).toMatch(/--stages/);
+    expect(out.error).toMatch(/rerun-selected/);
+    expect(out.error).toMatch(/retry-current/);
+  });
+
+  it("reports which stages were actually attempted, not only which were planned", async () => {
+    // `stages` is the plan; `service.rerun` stops at the first stage that
+    // does not complete. Without `executed`, a JSON consumer cannot tell
+    // the two apart without re-deriving it from `outcomes`.
+    const { root, dir } = await episodeFixture();
+    vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+    await writeFile(path.join(dir, "artifacts/brief.md"), "a brief");
+    vpr([
+      "complete", "childrens/fairy-tales/ep", "brief",
+      "--outputs", "artifacts/brief.md", "--library", root, "--json",
+    ]);
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-selected",
+      "--stages", "brief", "--library", root, "--json",
+    ]);
+
+    expect(result.status).toBe(0);
+    const out = result.json();
+    expect(out.executed).toEqual(["brief"]);
+  });
 });

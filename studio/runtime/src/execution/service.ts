@@ -959,6 +959,21 @@ export class ExecutionService {
     const resolved = await this.resolve(pipeline);
     if (!resolved.ok) return resolved;
 
+    // Validated before anything else — including before the journal is read
+    // — for the same reason `rerun()` validates every id up front: an
+    // unknown id silently dropped from the rerun set is not a smaller rerun,
+    // it is a rerun of the wrong thing with no record that anything was
+    // refused. Without this, `rerun-selected --stages typo-id` planned zero
+    // stages and reported "0 stage(s)" at exit 0 — this task's own defect,
+    // recreated one layer up from where Task 3 already closed it in
+    // `rerun()`.
+    const declared = new Set(resolved.value.stages.map((s) => s.definition.id));
+    for (const stageId of selectedStages) {
+      if (!declared.has(stageId)) {
+        return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+      }
+    }
+
     const episodeDir = this.episodeDir(ref);
     const events = await this.readJournal(episodeDir);
     if (!events.ok) return events;
