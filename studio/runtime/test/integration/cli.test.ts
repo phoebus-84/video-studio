@@ -720,3 +720,146 @@ describe("vpr run / vpr complete", () => {
     });
   });
 });
+
+// ── rerun ────────────────────────────────────────────────────────────────────
+//
+// `cmdRerun` used to print `Rerun plan (<mode>): 0 stage(s)` with an empty
+// `stages` array, unconditionally, for every mode and every episode — it never
+// planned anything. It now asks `ExecutionService.planRerun`, which replays
+// the journal into the same stage map `status` uses. `rerun-affected-downstream`
+// is refused by name rather than silently planning nothing, because it is the
+// one mode that needs a `StalenessReport` this build does not compute
+// (avg-33r); the CLI's old default, `rerun-affected`, matched no `RerunMode`
+// member and is refused too, pointing at the real name.
+
+describe("vpr rerun", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
+  });
+
+  const PIPELINES = path.resolve(__dirname, "../../../pipelines/pipelines");
+
+  function vpr(args: string[], env: Record<string, string> = {}) {
+    const result = spawnSync("node", [cliPath, ...args], {
+      encoding: "utf-8",
+      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES, ...env },
+    });
+    return {
+      stdout: result.stdout?.toString() ?? "",
+      stderr: result.stderr?.toString() ?? "",
+      status: result.status ?? 1,
+      json: () => JSON.parse(result.stdout?.toString() ?? "{}"),
+    };
+  }
+
+  async function episodeFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), "vpr-cli-rerun-"));
+    roots.push(root);
+    const dir = path.join(root, "childrens", "series", "fairy-tales", "episodes", "ep");
+    await mkdir(path.join(dir, "artifacts"), { recursive: true });
+    return { root, dir };
+  }
+
+  it("names the stages it would rerun, rather than reporting zero", async () => {
+    const { root, dir } = await episodeFixture();
+    vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+    await writeFile(path.join(dir, "artifacts/brief.md"), "a brief");
+    vpr([
+      "complete", "childrens/fairy-tales/ep", "brief",
+      "--outputs", "artifacts/brief.md", "--library", root, "--json",
+    ]);
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-selected",
+      "--stages", "brief", "--library", root, "--json", "--dry-run",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.json().stages).toEqual(["brief"]);
+  });
+
+  it("refuses rerun-affected-downstream by name and says what owns it", async () => {
+    const { root } = await episodeFixture();
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-affected-downstream",
+      "--library", root, "--json",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.json().error).toMatch(/staleness/i);
+  });
+
+  it("refuses the mode string that never matched a mode", async () => {
+    const { root } = await episodeFixture();
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-affected", "--library", root, "--json",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.json().error).toMatch(/rerun-affected-downstream/);
+  });
+
+  it("defaults to retry-current when --mode is omitted, and plans nothing for a pending stage", async () => {
+    // Distinct from the old defect: this "0 stage(s)" is a real computation —
+    // `brief` is `pending`, not `failed` or `running`, so `retry-current`
+    // correctly finds nothing to retry. The old code reported the same shape
+    // of answer for every mode and every episode, including ones that had
+    // never been touched, which is not this.
+    const { root } = await episodeFixture();
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--library", root, "--json", "--dry-run",
+    ]);
+
+    expect(result.status).toBe(0);
+    const out = result.json();
+    expect(out.mode).toBe("retry-current");
+    expect(out.stages).toEqual([]);
+  });
+
+  it("actually calls service.rerun for a selected, completed stage rather than only planning it", async () => {
+    // The CLI injects no dispatcher (see `makeService`'s own comment) — that
+    // is the gateway's job, not a terminal's — so `service.rerun`, which
+    // performs via `run()`, refuses to dispatch and reports `blocked` for
+    // every stage it is given. This still proves the plan reached the
+    // service and drove a real (non-dry-run) call: a stage `blocked` for a
+    // named, legible reason is a different outcome than the old code's
+    // silent, always-empty "0 stage(s)".
+    const { root, dir } = await episodeFixture();
+    vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+    await writeFile(path.join(dir, "artifacts/brief.md"), "a brief");
+    vpr([
+      "complete", "childrens/fairy-tales/ep", "brief",
+      "--outputs", "artifacts/brief.md", "--library", root, "--json",
+    ]);
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-selected",
+      "--stages", "brief", "--library", root, "--json",
+    ]);
+
+    expect(result.status).toBe(0);
+    const out = result.json();
+    expect(out.stages).toEqual(["brief"]);
+    expect(out.outcomes[0].stage).toBe("brief");
+    expect(out.outcomes[0].status).toBe("blocked");
+    expect(out.outcomes[0].reason).toMatch(/dispatcher/);
+  });
+
+  it("reads the episode from the positionals, not a value flag's argument", async () => {
+    // The same trap `run`'s positional-parsing test guards against:
+    // `remaining.find((a) => !a.startsWith("--"))` would take `--library`'s
+    // value as the episode path.
+    const { root } = await episodeFixture();
+
+    const result = vpr([
+      "rerun", "--library", root, "childrens/fairy-tales/ep", "--json", "--dry-run",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.json().mode).toBe("retry-current");
+  });
+});

@@ -28,6 +28,8 @@ import { ok, err, type Result } from "../result.js";
 import { StageStateMachine, LeaseError, attemptsSinceLastSuccess } from "../engine/state-machine.js";
 import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from "../engine/types.js";
 import { FileLock } from "../ports/file-lock.js";
+import { planRerun } from "../rerun/index.js";
+import type { RerunMode, RerunPlan } from "../rerun/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
   StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict,
@@ -932,6 +934,68 @@ export class ExecutionService {
       if (outcome.value.status !== "completed") break;
     }
     return ok(outcomes);
+  }
+
+  /**
+   * Which stages a rerun would touch.
+   *
+   * The stage map `planRerun` needs is exactly what replay produces, so this
+   * is replay plus the planner — no new machinery, and no second notion of
+   * what a rerun covers.
+   *
+   * No `StalenessReport` is computed here (avg-33r owns that), so this always
+   * calls the planner with `report` absent — which is why the planner throws
+   * for `rerun-affected-downstream` rather than silently planning nothing.
+   * The episode slug is built from `ref` and passed through explicitly, so
+   * the plan names the episode it was actually computed for rather than
+   * falling back to the pipeline's name.
+   */
+  async planRerun(
+    ref: EpisodeRef,
+    pipeline: string,
+    mode: RerunMode,
+    selectedStages: string[] = [],
+  ): Promise<Result<RerunPlan, ExecutionError>> {
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+
+    const episodeDir = this.episodeDir(ref);
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+
+    const stageIds = resolved.value.stages.map((s) => s.definition.id);
+    let derived;
+    try {
+      derived = deriveExecutionState(events.value, stageIds, this.now());
+    } catch (e) {
+      return err({
+        code: "REPLAY_INVALID",
+        message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+
+    const engineInstances = new Map(
+      resolved.value.stages.map((s) => [
+        s.definition.id, this.toEngineInstance(derived.get(s.definition.id)!, s),
+      ]),
+    );
+
+    const episodeSlug = `${ref.channel}/${ref.series}/${ref.episode}`;
+    try {
+      return ok(planRerun(undefined, resolved.value, engineInstances, mode, selectedStages, episodeSlug));
+    } catch (e) {
+      // The only way the planner throws today is `rerun-affected-downstream`
+      // with no report — a mode this composition never computes staleness
+      // for. That is a caller asking for something this build cannot do, not
+      // a broken pipeline or a corrupt journal, so it earns the same exit
+      // code as `STAGE_UNKNOWN` (see `exitCodeFor` in cli.ts) even though no
+      // stage is actually unknown; `ExecutionError` has no code that names
+      // "this mode is not implemented" more precisely yet.
+      return err({
+        code: "STAGE_UNKNOWN",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 }
 

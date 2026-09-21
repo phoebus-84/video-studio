@@ -32,6 +32,7 @@ import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-revie
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
 import { ExecutionService } from "./execution/index.js";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
+import type { RerunMode } from "./rerun/index.js";
 import { err, ok } from "./result.js";
 import type { Result } from "./result.js";
 
@@ -386,14 +387,88 @@ async function cmdValidate(ctx: CliContext, args: string[]): Promise<number> {
 
 // ── rerun ───────────────────────────────────────────────────────────────────
 
+/**
+ * Modes `planRerun` can compute with no staleness report — which is every
+ * mode but `rerun-affected-downstream`, since that is the only one that reads
+ * one. See the comment on `planRerun` in `src/rerun/planner.ts`.
+ */
+const JOURNAL_DERIVABLE_MODES = ["retry-current", "rerun-selected", "full-rebuild"] as const;
+
 async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
-  if (args.length < 1) {
-    emit(ctx, { error: "Usage: vpr rerun <channel>/<series>/<episode>" });
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  const pathArg = positionalArgs(remaining)[0];
+  if (!pathArg) {
+    emit(ctx, { error: "Usage: vpr rerun <channel>/<series>/<episode> [--mode <mode>] [--stages a,b]" });
     return EX_USAGE;
   }
-  const modeIdx = args.indexOf("--mode");
-  const mode = modeIdx >= 0 ? args[modeIdx + 1] : "rerun-affected";
-  emit(ctx, { message: `Rerun plan (${mode}): ${ctx.dryRun ? "[DRY RUN] " : ""}0 stage(s)`, mode, dryRun: ctx.dryRun, stages: [] });
+  const parsed = parsePath(pathArg);
+  if (!parsed) {
+    emit(ctx, { error: `Invalid path "${pathArg}"` });
+    return EX_USAGE;
+  }
+
+  const modeIdx = remaining.indexOf("--mode");
+  const mode = (modeIdx >= 0 ? remaining[modeIdx + 1] : "retry-current") as string;
+
+  // Refused here, before the service is asked, so the CLI's error names what
+  // owns this mode rather than the service's generic "not a known stage".
+  if (mode === "rerun-affected-downstream") {
+    emit(ctx, {
+      error: 'mode "rerun-affected-downstream" needs staleness propagation, ' +
+        "which is not implemented yet (avg-33r). Available: " + JOURNAL_DERIVABLE_MODES.join(", "),
+    });
+    return EX_USAGE;
+  }
+  if (!JOURNAL_DERIVABLE_MODES.includes(mode as typeof JOURNAL_DERIVABLE_MODES[number])) {
+    emit(ctx, {
+      error: `Unknown mode "${mode}". Available: ${JOURNAL_DERIVABLE_MODES.join(", ")}` +
+        ' (and "rerun-affected-downstream", once avg-33r lands)',
+    });
+    return EX_USAGE;
+  }
+
+  const stagesIdx = remaining.indexOf("--stages");
+  const selected = stagesIdx >= 0
+    ? remaining[stagesIdx + 1]!.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
+    return EX_USAGE;
+  }
+
+  const service = makeService(args, ttl.value);
+  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
+
+  const plan = await service.planRerun(parsed, pipeline, mode as RerunMode, selected);
+  if (!plan.ok) {
+    emit(ctx, { error: `${plan.error.code}: ${plan.error.message}` });
+    return EX_RUNTIME;
+  }
+
+  if (ctx.dryRun) {
+    emit(ctx, {
+      message: `[DRY RUN] Rerun plan (${mode}): ${plan.value.rerunStageIds.length} stage(s)`,
+      mode, dryRun: true, stages: plan.value.rerunStageIds,
+      estimatedCost: plan.value.totalEstimatedCost,
+    });
+    return EX_OK;
+  }
+
+  const outcomes = await service.rerun(parsed, pipeline, plan.value.rerunStageIds);
+  if (!outcomes.ok) {
+    emit(ctx, {
+      error: `${outcomes.error.code}: ${outcomes.error.message}`,
+      ...(outcomes.error.partialOutcomes ? { partial: outcomes.error.partialOutcomes } : {}),
+    });
+    return EX_RUNTIME;
+  }
+  emit(ctx, {
+    message: `Rerun (${mode}): ${outcomes.value.length} stage(s)`,
+    mode, stages: plan.value.rerunStageIds,
+    outcomes: outcomes.value.map(outcomeFields),
+  });
   return EX_OK;
 }
 
@@ -652,12 +727,17 @@ function exitCodeFor(error: ExecutionError): number {
  */
 const VALUE_FLAGS = new Set([
   "--outputs", "--error", "--lease", "--library", "--pipeline", "--stage",
+  // `rerun`'s own value-taking flags: `--mode` names a `RerunMode`, `--stages`
+  // a comma-separated stage id list. Both must be listed here or their values
+  // leak into `positionalArgs` — harmlessly today, since only index 0 of that
+  // list is used, but silently wrong the moment a second positional is added.
+  "--mode", "--stages",
 ]);
 
 /**
  * The bare arguments, with flag values removed.
  *
- * Shared by `run` and `complete` because the naive version —
+ * Shared by `run`, `complete` and `rerun` because the naive version —
  * `args.find((a) => !a.startsWith("--"))` — is actively destructive now that
  * `run` writes. `vpr run --library a/b/c childrens/fairy-tales/ep` took
  * `a/b/c` as the episode, leased a stage and journaled `stage-leased` and
@@ -963,7 +1043,7 @@ const COMMANDS: Record<string, CliCommand> = {
   validate: { name: "validate", description: "Validate pipeline DAG or snapshot integrity", usage: "vpr validate <pipeline|snapshot> [path] [--json]", examples: ["vpr validate pipeline my-channel/my-series/ep001"], run: cmdValidate },
   run: { name: "run", description: "Claim the next runnable stage for a performer", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001", "vpr run my-channel/my-series/ep001 --dry-run"], run: cmdRun },
   complete: { name: "complete", description: "Close a claimed stage with the outputs it produced", usage: "vpr complete <channel>/<series>/<episode> <stage-id> [--lease <id>] --outputs <path>[,<path>] | --failed [--error <msg>]", examples: ["vpr complete my-channel/my-series/ep001 brief --lease l-7 --outputs artifacts/brief.md", "vpr complete my-channel/my-series/ep001 brief --failed --error 'the model refused'"], run: cmdComplete },
-  rerun: { name: "rerun", description: "Plan targeted reruns with cost estimates", usage: "vpr rerun <channel>/<series>/<episode> [--mode <mode>] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode rerun-affected"], run: cmdRerun },
+  rerun: { name: "rerun", description: "Plan targeted reruns with cost estimates", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },
 };

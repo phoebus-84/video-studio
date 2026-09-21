@@ -15,14 +15,29 @@ import type {
 const DEFAULT_STAGE_COST = 0.5;
 
 /**
- * Generate a rerun plan from staleness report, pipeline, and stage instances.
+ * Generate a rerun plan from pipeline, stage instances, and mode.
+ *
+ * `report` is optional because exactly one mode reads it. The three others
+ * derive their rerun set from the stage map alone — which is what
+ * `deriveExecutionState` produces — so requiring staleness for all four would
+ * make a caller fabricate an empty report to satisfy a signature, and an
+ * empty report silently plans nothing. The type says which mode depends on
+ * staleness; the throw says so at the one moment it matters.
+ *
+ * `episodeSlug` is likewise optional: it is cosmetic (nothing downstream
+ * reads `RerunPlan.episodeSlug`), and the one thing this function must not do
+ * is repeat `report`'s mistake by reading `report.episodeSlug` unconditionally.
+ * A caller that knows the episode — the service wrapper, which holds the
+ * `EpisodeRef` — should pass it; absent that, and absent a report, the
+ * pipeline's own name is the least-wrong non-empty fallback.
  */
 export function planRerun(
-  report: StalenessReport,
+  report: StalenessReport | undefined,
   pipeline: ResolvedPipeline,
   stages: Map<string, StageInstance>,
   mode: RerunMode,
   selectedStages?: string[],
+  episodeSlug?: string,
 ): RerunPlan {
   const stageIds = pipeline.stages.map((s) => s.definition.id);
   const entries: RerunStageEntry[] = [];
@@ -48,6 +63,11 @@ export function planRerun(
       break;
     case "rerun-affected-downstream":
       // Selected + all stale downstream
+      if (!report) {
+        throw new Error(
+          'mode "rerun-affected-downstream" needs a staleness report, which is not computed yet (avg-33r)',
+        );
+      }
       rerunSet = new Set([...(selectedStages ?? []), ...report.stale]);
       break;
     case "full-rebuild":
@@ -94,7 +114,7 @@ export function planRerun(
   }
 
   return {
-    episodeSlug: report.episodeSlug,
+    episodeSlug: episodeSlug ?? report?.episodeSlug ?? pipeline.name,
     mode,
     stages: entries,
     totalEstimatedCost: totalCost,
