@@ -37,12 +37,14 @@ Check the runtime agrees the library is well-formed:
 node studio/runtime/dist/src/cli.js doctor --library "$PWD/library" --json
 ```
 
-`--library` wins; with the flag absent `vpr` falls back to `AVG_LIBRARY_ROOT`,
-and with neither set it has no library at all and every episode reports
-`Pipeline not found`. Pass the flag. Which root is in effect matters more than
-it used to: `vpr run` and `vpr complete` write the episode's journal, and the
-journal is the only record of what ran — pointed at the wrong tree, it is
-authoritative about the wrong episode.
+`doctor` is the one command that requires `--library` outright: it reads no
+environment variable and refuses without the flag. Everywhere else `--library`
+wins, `AVG_LIBRARY_ROOT` is the fallback, and with neither set the root is the
+working directory — where there is usually no library, so every episode
+reports `Pipeline not found`. Pass the flag. Which root is in effect matters
+more than it used to: `vpr run` and `vpr complete` write the episode's
+journal, and the journal is the only record of what ran — pointed at the wrong
+tree, it is authoritative about the wrong episode.
 
 ## 1. Agent alone — the normal way to work
 

@@ -177,13 +177,15 @@ async function emptyPipelineDir() {
  * answers a POST.
  */
 async function executeRoute(root: string, over: { maxStagesPerExecute?: number } = {}) {
-  vi.stubEnv("AVG_LIBRARY_ROOT", root);
+  // The stub is a decoy and must NOT name the real root: pointed at the same
+  // directory it would prove nothing, because an env fallback would write
+  // exactly where these tests look and pass by coincidence. It names a
+  // sibling that no assertion reads, so a route reaching for the variable
+  // leaves the real root empty and the tests fail.
+  vi.stubEnv("AVG_LIBRARY_ROOT", join(root, "..", "decoy-env-root"));
   const app = Fastify();
   const workspace = { getEpisode: async () => null } as unknown as WorkspaceService;
-  // The root is passed, not left to the stubbed environment: the routes take
-  // it as a required option now, and the stub above stays only as a decoy —
-  // anything that still reaches for the variable writes where these tests do
-  // not look rather than passing by coincidence.
+  // The root is passed explicitly; the routes take it as a required option.
   registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { ...over, libraryRoot: root });
   await app.ready();
   return {
