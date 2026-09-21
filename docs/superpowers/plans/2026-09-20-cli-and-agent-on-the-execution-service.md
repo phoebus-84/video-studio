@@ -1124,7 +1124,7 @@ ready that a run then refused."
 - Consumes: `ExecutionService`, `claim`, `complete`, `CompleteInput`, `StageOutcome` from `../execution/index.js`.
 - Produces: `cmdComplete(ctx: CliContext, args: string[]): Promise<number>` registered as `complete`.
 
-**Context for the implementer:** `cmdRun` currently filters `pipeline.stages` for one whose declared outputs are missing on disk and prints "Ready to execute: <id>". It persists nothing and consults no gate. Replace the body entirely. The CLI helpers you need already exist in this file: `parsePath`, `libraryFrom`, `extractPipeline`, `emit`, and the exit-code constants `EX_OK`, `EX_USAGE`, `EX_RUNTIME`.
+**Context for the implementer:** `cmdRun` currently filters `pipeline.stages` for one whose declared outputs are missing on disk and prints "Ready to execute: `<id>`". It persists nothing and consults no gate. Replace the body entirely. The CLI helpers you need already exist in this file: `parsePath`, `libraryFrom`, `extractPipeline`, `emit`, and the exit-code constants `EX_OK`, `EX_USAGE`, `EX_RUNTIME`.
 
 The CLI must inject a `BudgetGuard`, because absence is refusal and a claim with no guard would always be blocked. There is no budget subsystem wired anywhere yet (`BudgetLedger` has no callers; see `avg-91o`), so the CLI injects an explicit pass-through with a comment naming that gap — the same thing the gateway does, made visible rather than implied.
 
@@ -1298,7 +1298,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
   const { pipeline: pipelineName, remaining } = extractPipeline(args);
   const pathArg = remaining.find((a: string) => !a.startsWith("--"));
   if (!pathArg) {
-    emit(ctx, { error: "Usage: vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--dry-run]" });
+    emit(ctx, { error: "Usage: vpr run `<channel>/<series>/<episode>` [--stage `<id>`] [--pipeline `<name>`] [--dry-run]" });
     return EX_USAGE;
   }
   const parsed = parsePath(pathArg);
@@ -1329,7 +1329,7 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, {
       message:
         `Claimed "${outcome.stageId}" until ${outcome.expiresAt}. ` +
-        `Perform it, then: vpr complete ${pathArg} ${outcome.stageId} --outputs <path>`,
+        `Perform it, then: vpr complete ${pathArg} ${outcome.stageId} --outputs \`<path>\``,
       ...outcomeFields(outcome),
     });
     return EX_OK;
@@ -1356,8 +1356,8 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
     !a.startsWith("--") && !remaining[i - 1]?.startsWith("--"));
   if (positional.length < 2) {
     emit(ctx, {
-      error: "Usage: vpr complete <channel>/<series>/<episode> <stage-id> " +
-        "--outputs <path>[,<path>...] | --failed [--error <message>]",
+      error: "Usage: vpr complete `<channel>/<series>/<episode>` `<stage-id>` " +
+        "--outputs `<path>[,<path>...]` | --failed [--error `<message>`]",
     });
     return EX_USAGE;
   }
@@ -1414,8 +1414,8 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
 In the `COMMANDS` registry, change the `run` entry's description and usage, and add `complete` after it:
 
 ```ts
-  run: { name: "run", description: "Claim the next runnable stage for a performer", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001", "vpr run my-channel/my-series/ep001 --dry-run"], run: cmdRun },
-  complete: { name: "complete", description: "Close a claimed stage with the outputs it produced", usage: "vpr complete <channel>/<series>/<episode> <stage-id> --outputs <path>[,<path>] | --failed [--error <msg>]", examples: ["vpr complete my-channel/my-series/ep001 brief --outputs artifacts/brief.md", "vpr complete my-channel/my-series/ep001 brief --failed --error 'the model refused'"], run: cmdComplete },
+  run: { name: "run", description: "Claim the next runnable stage for a performer", usage: "vpr run `<channel>/<series>/<episode>` [--stage `<id>`] [--pipeline `<name>`] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001", "vpr run my-channel/my-series/ep001 --dry-run"], run: cmdRun },
+  complete: { name: "complete", description: "Close a claimed stage with the outputs it produced", usage: "vpr complete `<channel>/<series>/<episode>` `<stage-id>` --outputs `<path>[,<path>]` | --failed [--error `<msg>`]", examples: ["vpr complete my-channel/my-series/ep001 brief --outputs artifacts/brief.md", "vpr complete my-channel/my-series/ep001 brief --failed --error 'the model refused'"], run: cmdComplete },
 ```
 
 - [ ] **Step 7: Run the tests**
@@ -1576,7 +1576,7 @@ measured is worse than no number."
 - Consumes: `makeService` from Task 4; `ExecutionService.status` and `ExecutionService.rerun`.
 - Produces: `planRerun(report: StalenessReport | undefined, pipeline, stages, mode, selectedStages?)` — `report` becomes optional and the `rerun-affected-downstream` branch raises when it is absent.
 
-**Context for the implementer:** `cmdRerun` today emits `Rerun plan (<mode>): 0 stage(s)` with an empty `stages` array, always, for every mode, whether or not the episode exists. `planRerun` reads its `report` argument in exactly one place — `planner.ts:51`, the `rerun-affected-downstream` case — so the three other modes need no staleness at all. The CLI's current default mode string, `rerun-affected`, matches no member of `RerunMode` and has never done anything.
+**Context for the implementer:** `cmdRerun` today emits `` `Rerun plan (`<mode>`): 0 stage(s)` `` with an empty `stages` array, always, for every mode, whether or not the episode exists. `planRerun` reads its `report` argument in exactly one place — `planner.ts:51`, the `rerun-affected-downstream` case — so the three other modes need no staleness at all. The CLI's current default mode string, `rerun-affected`, matches no member of `RerunMode` and has never done anything.
 
 - [ ] **Step 1: Write the failing tests**
 
