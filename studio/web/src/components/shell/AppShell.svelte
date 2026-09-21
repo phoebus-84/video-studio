@@ -82,7 +82,7 @@
       case "reconnect":
         location.reload();
         break;
-      case "rerun-affected":
+      case "rerun-stale":
       case "retry":
       case "run":
       case "pause":

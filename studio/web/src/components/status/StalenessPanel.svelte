@@ -72,19 +72,56 @@
     const client = getGatewayClient();
     plan = { phase: "loading" };
     try {
+      /*
+       * `rerun-selected` with the ids this panel is displaying.
+       *
+       * The mode used to be "rerun-affected", which matches no `RerunMode`
+       * member and never has; /rerun-plan now refuses it at the schema with
+       * a 400, so this call could only ever land in the catch below. The
+       * real name for what this panel means is
+       * "rerun-affected-downstream", and the service refuses that too —
+       * computing it needs staleness propagation (avg-33r). But the panel
+       * has already worked out the stale and affected sets itself, so it
+       * can name them: `rerun-selected` plans exactly the stages listed
+       * below it, which is what the button claims.
+       */
+      const selected = [
+        ...staleStages.map((s) => s.id),
+        ...affectedStages.map((s) => s.id),
+      ];
       const result = (await client.fetchJSON(
         `/api/channels/${w.channel}/series/${w.series}/episodes/${w.slug}/rerun-plan`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "rerun-affected" }),
+          body: JSON.stringify({ mode: "rerun-selected", stageIds: selected }),
         },
-      )) as { ok: boolean; plan?: { message?: string; stages?: unknown[] } };
-      const count = result.plan?.stages?.length ?? staleStages.length + affectedStages.length;
+      )) as {
+        ok: boolean;
+        error?: string | { code?: string; message?: string };
+        plan?: { rerunStageIds?: string[]; totalEstimatedCost?: number };
+      };
+      /* `ok: false` is a refusal the service reached deliberately — an
+         unknown stage id, an unresolvable pipeline — and arrives as HTTP
+         200, so it has to be read rather than assumed away. */
+      if (!result.ok) {
+        const e = result.error;
+        plan = {
+          phase: "error",
+          message: (typeof e === "string" ? e : e?.message) ?? "The service refused that plan",
+        };
+        return;
+      }
+      /* `plan.stages` holds an entry for EVERY stage, rerun and preserved
+         alike, so its length was never the number that would rerun.
+         `rerunStageIds` is. There is no `plan.message`. */
+      const count = result.plan?.rerunStageIds?.length ?? selected.length;
+      const cost = result.plan?.totalEstimatedCost;
       plan = {
         phase: "ready",
         stageCount: count,
-        message: result.plan?.message ?? `${count} stages would rerun`,
+        message: `${count} stage${count === 1 ? "" : "s"} would rerun`
+          + (typeof cost === "number" && cost > 0 ? ` · about $${cost.toFixed(2)}` : ""),
       };
     } catch (err) {
       plan = {
@@ -107,7 +144,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             anchor: `episode/${w.slug}`,
-            body: `Rerun requested from the studio: ${staleStages.map((s) => s.id).join(", ")} stale${affectedStages.length > 0 ? `, ${affectedStages.map((s) => s.id).join(", ")} affected downstream` : ""}. Mode: rerun-affected.`,
+            body: `Rerun requested from the studio: ${staleStages.map((s) => s.id).join(", ")} stale${affectedStages.length > 0 ? `, ${affectedStages.map((s) => s.id).join(", ")} affected downstream` : ""}. Mode: rerun-selected.`,
           }),
         },
       );

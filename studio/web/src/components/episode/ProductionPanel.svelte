@@ -53,41 +53,53 @@
         {busy ? "Resolving…" : "Resolve pipeline"}
       </button>
     </div>
-  {:else if production.error}
+  {:else if production.error && production.stages.length === 0}
     <p class="error" role="alert">{production.error}</p>
   {:else if production.stages.length === 0}
     <p class="note">No stages reported.</p>
   {:else}
+    <!-- Shown beside the pipeline, not instead of it: a refusal is a fact
+         about one stage, and hiding the other nine to report it leaves the
+         reader with no idea what the episode looks like. -->
+    {#if production.error}
+      <p class="error" role="alert">{production.error}</p>
+    {/if}
     {#if production.lastMessage}
       <p class="said" role="status">{production.lastMessage}</p>
     {/if}
 
     <ol class="stages">
-      {#each production.stages as stage (stage.id)}
+      {#each production.stages as stage (stage.stageId)}
         {@const actions = actionsFor(stage.state)}
         <li>
           <div class="row">
             <span class="state s-{stage.state}">{stage.state}</span>
-            <span class="id">{stage.id}</span>
+            <span class="id">{stage.stageId}</span>
 
             <span class="acts">
               {#each actions as action}
                 <button
                   onclick={() =>
                     action === "run"
-                      ? production.runStage(stage.id)
-                      : production.approveStage(stage.id)}
+                      ? production.runStage(stage.stageId)
+                      : production.approveStage(stage.stageId)}
                   disabled={busy}
                   title={action === "run"
-                    ? `Run ${stage.id}`
-                    : `Approve ${stage.id} and let the pipeline continue`}
+                    ? `Run ${stage.stageId}`
+                    : `Approve ${stage.stageId} and let the pipeline continue`}
                 >
-                  {production.busyStage === stage.id ? "…" : action}
+                  {production.busyStage === stage.stageId ? "…" : action}
                 </button>
               {/each}
             </span>
           </div>
 
+          <!-- A pending or blocked stage now offers no buttons at all, so the
+               service's own sentence about why is the only thing it has to
+               say. Shown rather than dropped: it names what to fix. -->
+          {#if stage.stateReason}
+            <p class="why">{stage.stateReason}</p>
+          {/if}
           {#if stage.produces.length}
             <p class="produces">{stage.produces.join(", ")}</p>
           {/if}
@@ -210,7 +222,8 @@
   }
 
   .s-runnable { background: #e8f0fb; color: #2c5aa0; }
-  .s-complete, .s-completed { background: #eaf5ec; color: #2e7d4f; }
+  .s-completed { background: #eaf5ec; color: #2e7d4f; }
+  .s-awaiting_review { background: #fdf3e2; color: #8a5a0b; }
   .s-blocked, .s-failed { background: #fdeceb; color: #c0392b; }
 
   .acts {
@@ -250,9 +263,14 @@
   }
 
   .produces,
-  .deps {
+  .deps,
+  .why {
     margin: 1px 0 0 70px;
     font-size: 11px;
     color: var(--vs-text-secondary, #999);
+  }
+
+  .why {
+    color: var(--vs-text-secondary, #777);
   }
 </style>

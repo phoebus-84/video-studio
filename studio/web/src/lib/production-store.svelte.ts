@@ -6,19 +6,48 @@
  * a scene and have no way to ask for it again.
  *
  * This is the acting half — stage status, and the four things you can do about
- * it. Every action reports what the runtime actually said; nothing here
+ * it. Every action reports what the service actually said; nothing here
  * pretends to have succeeded.
  */
 
 import { getGatewayClient } from "./gateway.svelte.ts";
 
+/**
+ * A stage's place in its pipeline, as the execution service reports it.
+ *
+ * Seven members and no synonyms. The previous set carried `awaiting_approval`
+ * beside `awaiting_review` and `complete` beside `completed` — two spellings
+ * for one state each, from two vocabularies, of which the runtime emitted
+ * neither pair consistently.
+ */
+export type StageState =
+  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review";
+
+// This mirrors `StageState` in studio/runtime/src/execution/types.ts. The
+// studio cannot import from the runtime package, so the two are separate
+// declarations of one vocabulary and must be changed together. `actionsFor`'s
+// `default` branch is what keeps a drift safe rather than silent: a member
+// added there and not here yields no buttons, never the wrong ones.
+
 export interface StageStatus {
-  id: string;
-  /** runnable, pending, blocked, complete… as reported by the runtime. */
-  state: string;
+  /**
+   * `stageId`, NOT `id`. The gateway's /status returns the execution
+   * service's report verbatim, and its field is `stageId`. While this said
+   * `id`, `runStage(stage.id)` posted to `/stages/undefined/execute` — the
+   * same defect that silently broke `routes/workspace.ts` and
+   * `events/publisher.ts`.
+   */
+  stageId: string;
+  state: StageState;
   dependsOn: string[];
   /** Artifact labels this stage produces, e.g. ["script.md"]. */
   produces: string[];
+  /**
+   * Why the stage is in this state, when there is something to say. Set for
+   * `blocked` and `pending`. It is the only thing a stage with no available
+   * action has to offer a reader, so the panel shows it.
+   */
+  stateReason?: string;
 }
 
 export interface EpisodeRef {
@@ -27,14 +56,85 @@ export interface EpisodeRef {
   episode: string;
 }
 
-/** What the studio is allowed to offer for a stage in a given state. */
+/**
+ * What a route says went wrong.
+ *
+ * Two shapes, because two kinds of route answer here. The execution service's
+ * routes — execute, claim, complete, rerun-plan, status — return
+ * `ExecutionError`, `{ code, message }`. The two that still shell out through
+ * `RuntimeClient` — approve, and snapshot on its success path — return a bare
+ * string. Anything that renders one of these must handle both: while this was
+ * typed `string`, `res.error` for /execute rendered as `[object Object]`.
+ */
+export type RouteError = string | { code?: string; message?: string };
+
+/** The error as a sentence, whichever of the two shapes arrived. */
+export function errorText(error: RouteError | undefined): string | null {
+  if (typeof error === "string") return error.length > 0 ? error : null;
+  return error?.message ?? null;
+}
+
+/** The error's code, when the route returned the structured shape. */
+function errorCode(error: RouteError | undefined): string | null {
+  return typeof error === "object" && error !== null ? (error.code ?? null) : null;
+}
+
+/**
+ * What a single-stage call reports back.
+ *
+ * Mirrors `StageOutcome` in studio/runtime/src/execution/types.ts, narrowed to
+ * the fields the studio reads.
+ */
+interface StageOutcomeView {
+  stageId?: string | null;
+  status: string;
+  reason?: string;
+  outputs?: string[];
+}
+
+/**
+ * The outcome statuses that mean the stage moved forward.
+ *
+ * Everything else the service can return — `blocked`, `failed`, `idle`,
+ * `claimed` — is a verdict that the work did not happen, delivered inside an
+ * `ok: true` envelope because the service reached it deliberately.
+ */
+const ADVANCED = new Set(["completed", "awaiting_review", "would-run"]);
+
+/** What happened, for an outcome that carries no reason of its own. */
+function describeOutcome(outcome: StageOutcomeView): string {
+  const who = outcome.stageId ?? "The stage";
+  if (outcome.status === "completed") {
+    return (outcome.outputs ?? []).length > 0
+      ? `${who} completed — wrote ${(outcome.outputs ?? []).join(", ")}`
+      : `${who} completed`;
+  }
+  if (outcome.status === "awaiting_review") return `${who} completed and is awaiting review`;
+  if (outcome.status === "would-run") return `${who} would run — nothing was written`;
+  return `${who}: ${outcome.status}`;
+}
+
+/**
+ * What the studio is allowed to offer for a stage in a given state.
+ *
+ * Only what the service will accept. A button the service refuses is worse
+ * than no button: the Run Stage button used to report success for a request
+ * that printed advice to a log and executed nothing.
+ */
 export function actionsFor(state: string): Array<"run" | "approve"> {
-  if (state === "runnable") return ["run"];
-  if (state === "awaiting_approval" || state === "awaiting_review") return ["approve"];
-  // A complete stage can be run again; a blocked or pending one cannot, because
-  // its dependencies have not been satisfied yet.
-  if (state === "complete" || state === "completed") return ["run"];
-  return [];
+  switch (state) {
+    // Runnable now; completed and failed are reruns, which the service
+    // supports for an explicitly named stage.
+    case "runnable":
+    case "completed":
+    case "failed":
+      return ["run"];
+    case "awaiting_review":
+      return ["approve"];
+    // pending, blocked, running — and anything this build does not know.
+    default:
+      return [];
+  }
 }
 
 class ProductionStore {
@@ -46,7 +146,7 @@ class ProductionStore {
   /** Stage id currently running an action, so the UI can disable it. */
   busyStage = $state<string | null>(null);
   error = $state<string | null>(null);
-  /** Last thing the runtime said, shown verbatim rather than summarised. */
+  /** Last thing the service said, shown verbatim rather than summarised. */
   lastMessage = $state<string | null>(null);
   /** True when the episode has no resolved pipeline snapshot yet. */
   needsSnapshot = $state(false);
@@ -70,14 +170,20 @@ class ProductionStore {
       const res = await getGatewayClient().fetchJSON<{
         ok: boolean;
         data?: { pipeline?: string; stages?: StageStatus[] };
-        error?: string;
+        error?: RouteError;
       }>(`${this.#base()}/status`);
 
       if (!res.ok) {
         // An episode with no snapshot is a normal state, not a failure: it has
         // simply never been resolved. Say so, and offer the fix.
-        this.needsSnapshot = /pipeline not found/i.test(res.error ?? "");
-        this.error = this.needsSnapshot ? null : (res.error ?? "Status failed");
+        //
+        // Matched on the code, not on the prose: the message is free text and
+        // was never a contract. While this tested /pipeline not found/ against
+        // `res.error`, the object stringified to "[object Object]" and could
+        // never match, so a fresh episode showed a raw error where the offer
+        // to resolve it belongs.
+        this.needsSnapshot = errorCode(res.error) === "PIPELINE_UNRESOLVED";
+        this.error = this.needsSnapshot ? null : (errorText(res.error) ?? "Status failed");
         this.stages = [];
         return;
       }
@@ -106,7 +212,8 @@ class ProductionStore {
     try {
       const res = await getGatewayClient().fetchJSON<{
         ok?: boolean;
-        error?: string;
+        error?: RouteError;
+        outcome?: StageOutcomeView;
         data?: { message?: string };
         message?: string;
         snapshot?: { message?: string };
@@ -117,11 +224,32 @@ class ProductionStore {
       });
 
       if (res.ok === false) {
-        this.error = res.error ?? "The runtime refused that";
+        this.error = errorText(res.error) ?? "The service refused that";
         return;
       }
-      this.lastMessage = res.data?.message ?? res.snapshot?.message ?? res.message ?? "Done";
+
+      // `ok: true` means the service reached a verdict, not that the work
+      // happened. The single-stage routes answer `{ ok: true, outcome: {
+      // status: "blocked", reason } }` for a stage they declined to run, and
+      // this used to set lastMessage to "Done" for it — a button reporting
+      // success for work that never took place, which is what Run Stage did
+      // for its entire life.
+      const outcome = res.outcome;
+      const refusal = outcome && !ADVANCED.has(outcome.status)
+        ? (outcome.reason ?? describeOutcome(outcome))
+        : null;
+      const said = refusal
+        ? null
+        : outcome
+          ? (outcome.reason ?? describeOutcome(outcome))
+          : (res.data?.message ?? res.snapshot?.message ?? res.message ?? "Done");
+
+      // Reloaded before the verdict is applied, not after: a refused or failed
+      // attempt still changes the stage list, and `load` clears `error` on the
+      // way in, so setting it first would erase what we are here to report.
       await this.load(this.ref);
+      if (refusal) this.error ??= refusal;
+      else this.lastMessage = said;
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {

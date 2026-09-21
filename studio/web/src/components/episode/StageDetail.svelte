@@ -42,7 +42,7 @@
         <div class="sd-actions">
           <button onclick={() => episode.selectStage(stage.id)}>Rerun from here</button>
           <button class="sd-primary">
-            {state === "blocked" ? "Fix and retry" : state === "awaiting_approval" ? "Approve stage" : "Run stage"}
+            {state === "blocked" ? "Fix and retry" : state === "awaiting_review" ? "Approve stage" : "Run stage"}
           </button>
         </div>
       </header>

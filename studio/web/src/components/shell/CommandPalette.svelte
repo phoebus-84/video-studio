@@ -95,11 +95,11 @@
     }
 
     out.push({
-      id: "act:rerun-affected",
+      id: "act:rerun-stale",
       group: "action",
       label: "Rerun what is stale",
       hint: "",
-      run: () => onaction("rerun-affected"),
+      run: () => onaction("rerun-stale"),
     });
     out.push({
       id: "act:show-stale",

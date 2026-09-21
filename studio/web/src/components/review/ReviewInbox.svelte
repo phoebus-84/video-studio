@@ -212,15 +212,15 @@
                  go. -->
             <div class="inbox-act">
               <span class="inbox-act-what">
-                produced by <code>{stage.id}</code> · {stage.state}
+                produced by <code>{stage.stageId}</code> · {stage.state}
               </span>
               <button
                 class="inbox-act-btn"
-                onclick={() => production.runStage(stage.id)}
+                onclick={() => production.runStage(stage.stageId)}
                 disabled={production.busyStage !== null}
-                title="Run {stage.id} again to address this review"
+                title="Run {stage.stageId} again to address this review"
               >
-                {production.busyStage === stage.id ? "regenerating…" : "regenerate"}
+                {production.busyStage === stage.stageId ? "regenerating…" : "regenerate"}
               </button>
             </div>
             {#if production.error}

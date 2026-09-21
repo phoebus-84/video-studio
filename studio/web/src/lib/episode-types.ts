@@ -47,11 +47,10 @@ export type StageDisplayState =
   | "pending"
   | "queued"
   | "running"
-  | "awaiting_approval"
+  | "awaiting_review"
   | "completed"
   | "failed"
   | "cancelled"
-  | "skipped"
   | "blocked"
   | "stale";
 
@@ -59,11 +58,10 @@ export const STAGE_LABELS: Record<StageDisplayState, string> = {
   pending: "Pending",
   queued: "Queued",
   running: "Running",
-  awaiting_approval: "Approval",
+  awaiting_review: "Awaiting review",
   completed: "Done",
   failed: "Failed",
   cancelled: "Cancelled",
-  skipped: "Skipped",
   blocked: "Blocked",
   stale: "Stale",
 };

@@ -209,7 +209,11 @@ export function deriveStatusStrip(input: StatusInput): StatusStrip {
       detail: staleDetail(episode),
       progress: null,
       actions: [
-        { id: "rerun-affected", label: "Rerun affected only", primary: true },
+        /* A studio action id, not a `RerunMode`. Named "rerun-stale" rather
+           than "rerun-affected" precisely so nobody wires it straight into
+           /rerun-plan as a mode: "rerun-affected" matches no member of
+           `RerunMode` and the schema now rejects it. */
+        { id: "rerun-stale", label: "Rerun affected only", primary: true },
         { id: "show-stale", label: "Show what changed", primary: false },
         { id: "accept", label: "Accept as-is", primary: false },
       ],
