@@ -96,14 +96,34 @@ export function registerProductionRoutes(
   app: FastifyInstance,
   runtime: RuntimeClient,
   workspace: WorkspaceService,
-  /**
-   * How much work one /execute call may do. Configurable because it is a
-   * deployment choice, and because the truncation branch below is otherwise
-   * only reachable by a pipeline with more than twenty runnable stages.
-   */
-  options: { maxStagesPerExecute?: number } = {},
+  options: {
+    /**
+     * How much work one /execute call may do. Configurable because it is a
+     * deployment choice, and because the truncation branch below is otherwise
+     * only reachable by a pipeline with more than twenty runnable stages.
+     */
+    maxStagesPerExecute?: number;
+    /**
+     * The library this gateway serves, resolved by the server. Omitted only
+     * by callers that mean the environment — tests that stub
+     * `AVG_LIBRARY_ROOT` around a temp tree. `registerRoutes` always supplies
+     * it; see the comment there for what a route that guesses its own root
+     * does to the journal.
+     */
+    libraryRoot?: string;
+  } = {},
 ): void {
   const maxStagesPerExecute = options.maxStagesPerExecute ?? MAX_STAGES_PER_EXECUTE;
+
+  /**
+   * The gateway's composition, pointed at the library the server serves.
+   *
+   * Six handlers below need it. Routed through one function for the same
+   * reason `makeExecutionService` exists at all: the site that forgets an
+   * argument is the one that writes the journal somewhere nobody is looking.
+   */
+  const serviceFor = (request: { log: { info: (message: string) => void } }) =>
+    makeExecutionService((message) => request.log.info(message), options.libraryRoot);
   // ── Snapshot ──────────────────────────────────────────────────────────────
   app.post("/api/channels/:channel/series/:series/episodes/:episode/snapshot", {
     schema: {
@@ -166,7 +186,7 @@ export function registerProductionRoutes(
     const { dryRun } = request.body as { dryRun?: boolean };
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
-    const service = makeExecutionService((message) => request.log.info(message));
+    const service = serviceFor(request);
     const outcome = await service.run(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
 
     // `ok` means the service reached a verdict. A `blocked` outcome is
@@ -211,7 +231,7 @@ export function registerProductionRoutes(
     const { dryRun } = request.body as { dryRun?: boolean };
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
-    const service = makeExecutionService((message) => request.log.info(message));
+    const service = serviceFor(request);
     const outcome = await service.claim(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
     return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
@@ -239,6 +259,9 @@ export function registerProductionRoutes(
         type: "object",
         properties: {
           outputs: { type: "array", items: { type: "string" } },
+          // Required, but by the handler rather than by this schema, so the
+          // refusal reads as one sentence about why rather than as a schema
+          // violation naming a field the caller has never heard of.
           leaseId: { type: "string" },
           failed: { type: "boolean", default: false },
           error: { type: "string" },
@@ -264,10 +287,31 @@ export function registerProductionRoutes(
       });
     }
 
-    const service = makeExecutionService((message) => request.log.info(message));
+    // Required here, optional in the service. `complete()` without a lease id
+    // closes whatever open claim it finds, which is what lets a performer
+    // whose lease lapsed close a second holder's claim. The CLI is allowed to
+    // omit it because a human cannot recover a lease id — `LeaseState` carries
+    // none. An HTTP caller has the claim response in hand, so refusing is what
+    // makes the route's own description true.
+    //
+    // Enforced for a failure report too, not only for outputs: a `failed`
+    // completion appends `stage-failed` against the claim it closes, so an
+    // omitted lease id fails somebody else's live attempt. Same hazard, and
+    // nothing legitimate needs the looser path — a genuinely abandoned claim
+    // self-heals when its lease expires.
+    if (!body.leaseId) {
+      throw new GatewayError({
+        code: ErrorCode.VALIDATION,
+        message:
+          "leaseId is required: pass the one this stage's claim returned. Without it the " +
+          "service closes whichever claim is open, which may not be yours",
+      });
+    }
+
+    const service = serviceFor(request);
     const outcome = await service.complete(ref, pipeline, stageId, {
       ...(body.failed ? { failed: true, error: body.error } : { outputs: body.outputs }),
-      ...(body.leaseId ? { leaseId: body.leaseId } : {}),
+      leaseId: body.leaseId,
     });
     return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
@@ -299,7 +343,7 @@ export function registerProductionRoutes(
     const { pipeline: requestedPipeline, dryRun } = request.body as { pipeline?: string; dryRun?: boolean };
     const pipeline = await inheritedPipeline(workspace, ref, requestedPipeline) ?? DEFAULT_PIPELINE;
 
-    const service = makeExecutionService((message) => request.log.info(message));
+    const service = serviceFor(request);
 
     if (dryRun) {
       const outcome = await service.run(ref, pipeline, { dryRun: true });
@@ -357,7 +401,7 @@ export function registerProductionRoutes(
     const ref = parseEpisode(request.params as Record<string, string>);
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
-    const service = makeExecutionService((message) => request.log.info(message));
+    const service = serviceFor(request);
     const status = await service.status(ref, pipeline);
     if (!status.ok) return { ok: false, error: status.error };
     // The `data` envelope stays: the studio reads `res.data.stages`
@@ -437,7 +481,7 @@ export function registerProductionRoutes(
     const { mode, stageIds } = (request.body ?? {}) as { mode?: RerunMode; stageIds?: string[] };
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
-    const service = makeExecutionService((message) => request.log.info(message));
+    const service = serviceFor(request);
     const plan = await service.planRerun(ref, pipeline, mode ?? "retry-current", stageIds ?? []);
     return plan.ok ? { ok: true, plan: plan.value } : { ok: false, error: plan.error };
   });

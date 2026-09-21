@@ -50,18 +50,25 @@ async function episodeDir() {
 /**
  * The real routes over the real Fastify stack, pointed at a throwaway library.
  *
+ * The root is passed as an option, which is how `registerRoutes` supplies it
+ * in the server — not left to `AVG_LIBRARY_ROOT`. `AVG_LIBRARY_ROOT` is
+ * deliberately stubbed to a DIFFERENT directory, so any handler that quietly
+ * falls back to the environment writes somewhere these tests do not look and
+ * fails loudly instead of passing by coincidence.
+ *
  * `runtime` is a stub: nothing these routes still reach uses it. The three
  * that do — snapshot, approve, init — are Task 8's.
  */
 async function appWithEpisode() {
   const { root, dir } = await episodeDir();
-  vi.stubEnv("AVG_LIBRARY_ROOT", root);
+  const decoy = await mkdtemp(join(tmpdir(), "gw-decoy-env-"));
+  roots.push(decoy);
+  vi.stubEnv("AVG_LIBRARY_ROOT", decoy);
   const app = Fastify();
   const workspace = { getEpisode: async () => null } as unknown as WorkspaceService;
-  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace);
+  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { libraryRoot: root });
   await app.ready();
-  roots.push(); // app closed by the caller
-  return { app, root, dir };
+  return { app, root, dir, decoy };
 }
 
 /**
@@ -305,6 +312,47 @@ describe("claim and complete over HTTP", () => {
     expect(res.json().message).toMatch(/outputs is required/);
   });
 
+  it("refuses a completion that names no leaseId", async () => {
+    // The route's description tells a caller it has no excuse to omit this.
+    // Leaving the field optional while saying so is the gap: `complete()`
+    // without a lease id closes whichever claim is open, which is exactly the
+    // hazard — a performer whose lease lapsed closing a second holder's claim.
+    const { app, dir } = await appWithEpisode();
+    await app.inject({ method: "POST", url: `${BASE}/stages/brief/claim`, payload: {} });
+    await writeFile(join(dir, "artifacts", "brief.md"), "a real brief");
+
+    const res = await app.inject({
+      method: "POST",
+      url: `${BASE}/stages/brief/complete`,
+      payload: { outputs: ["artifacts/brief.md"] },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.json().message).toMatch(/leaseId is required/);
+    // The open claim is untouched: nothing was closed on a guess.
+    expect((await journal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+
+  it("refuses a failure report that names no leaseId", async () => {
+    // A `failed` completion appends stage-failed against the claim it closes,
+    // so an omitted lease id fails somebody else's live attempt. Same hazard
+    // as the outputs path, and refused the same way.
+    const { app, dir } = await appWithEpisode();
+    await app.inject({ method: "POST", url: `${BASE}/stages/brief/claim`, payload: {} });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `${BASE}/stages/brief/complete`,
+      payload: { failed: true, error: "the model refused" },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.json().message).toMatch(/leaseId is required/);
+    expect((await journal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+
   it("records a performer's reported failure", async () => {
     const { app, dir } = await appWithEpisode();
     const claimed = await app.inject({
@@ -323,6 +371,56 @@ describe("claim and complete over HTTP", () => {
     expect(res.json().outcome.reason).toBe("the model refused");
     expect((await journal(dir)).map((e) => e.type))
       .toEqual(["stage-leased", "stage-started", "stage-failed"]);
+  });
+});
+
+// ── The library root the routes write into ──────────────────────────────────
+
+describe("the library root", () => {
+  it("writes the journal into the root it was given, not the one in the environment", async () => {
+    // These routes used to reach the library through RuntimeClient, which
+    // server.ts builds with
+    // `AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library"`. Composing
+    // the service with `AVG_LIBRARY_ROOT ?? "./library"` dropped
+    // `config.libraryRoots` — and nothing in this repo sets the variable,
+    // while studio/gateway/config.json configures `../../library`. A claim
+    // would have leased and journaled a stage into a `./library` beside the
+    // process's cwd while the configured episode directory stayed empty, and
+    // /status would then report a fully unstarted episode for a half-produced
+    // one. The journal is the only record of what ran; writing it into a
+    // shadow tree makes it authoritative about the wrong thing.
+    const { app, dir, decoy } = await appWithEpisode();
+
+    const claimed = await app.inject({
+      method: "POST", url: `${BASE}/stages/brief/claim`, payload: {},
+    });
+    await app.close();
+
+    expect(claimed.json().outcome.status).toBe("claimed");
+    // Written where the server said, ...
+    expect((await journal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+    // ... and nowhere else. `AVG_LIBRARY_ROOT` points at the decoy.
+    await expect(readFile(join(
+      decoy, REF.channel, "series", REF.series, "episodes", REF.episode, JOURNAL_RELATIVE_PATH,
+    ), "utf-8")).rejects.toThrow();
+    await expect(readFile(join(
+      process.cwd(), "library", REF.channel, "series", REF.series, "episodes", REF.episode,
+      JOURNAL_RELATIVE_PATH,
+    ), "utf-8")).rejects.toThrow();
+  });
+
+  it("reports status from the root it was given", async () => {
+    // The read half of the same defect: a /status pointed at the wrong tree
+    // reports every stage pending for an episode that has run.
+    const { app, dir } = await appWithEpisode();
+    await seedUpTo(dir, "brief");
+
+    const res = await app.inject({ method: "GET", url: `${BASE}/status` });
+    await app.close();
+
+    const brief = res.json().data.stages
+      .find((s: { stageId: string }) => s.stageId === "brief");
+    expect(brief.status).toBe("completed");
   });
 });
 
@@ -395,8 +493,10 @@ describe("POST /rerun-plan", () => {
 // ── GET /episodes/:episode — the second consumer of the status projection ───
 
 describe("the episode detail's pipeline enrichment", () => {
-  async function detailApp(root: string, detail: Record<string, unknown>) {
-    vi.stubEnv("AVG_LIBRARY_ROOT", root);
+  async function detailApp(
+    root: string | undefined,
+    detail: Record<string, unknown>,
+  ) {
     const app = Fastify();
     const workspace = {
       getEpisode: async () => detail,
@@ -405,7 +505,7 @@ describe("the episode detail's pipeline enrichment", () => {
       listEpisodes: async () => [],
       findEvents: async () => [],
     } as unknown as WorkspaceService;
-    registerWorkspaceRoutes(app, workspace);
+    registerWorkspaceRoutes(app, workspace, root);
     await app.ready();
     return app;
   }
@@ -440,6 +540,24 @@ describe("the episode detail's pipeline enrichment", () => {
     // episode view colours on.
     expect(brief.status).toBe("completed");
     expect(brief.dependsOn).toEqual([]);
+  });
+
+  it("does not resolve a pipeline for a deployment that configured no library", async () => {
+    // What the `if (runtime)` guard used to buy. Without it every
+    // episode-detail request pays for a pipeline resolution and a journal
+    // read, on a gateway that has no library to read.
+    const app = await detailApp(undefined, {
+      slug: REF.episode,
+      pipeline: "narrated-illustrated-video",
+      stages: [{ id: "from-workspace", name: "From Workspace" }],
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/channels/${REF.channel}/series/${REF.series}/episodes/${REF.episode}`,
+    });
+    await app.close();
+
+    expect(res.json().stages).toEqual([{ id: "from-workspace", name: "From Workspace" }]);
   });
 
   it("falls back to the workspace's own stages when the pipeline cannot be resolved", async () => {

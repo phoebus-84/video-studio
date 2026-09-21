@@ -165,7 +165,7 @@ export async function createGateway(
     maxAge: 0,  // Disable browser caching — assets regenerate frequently
   });
 
-  registerRoutes(app, config, ws, runtime, piHealth, adapterBridge, piManager);
+  registerRoutes(app, config, libraryRoot, ws, runtime, piHealth, adapterBridge, piManager);
   registerEditorRoutes(app, {
     root: libraryRoot,
     bus: events.bus,

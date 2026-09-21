@@ -12,6 +12,16 @@ import {
 export function registerWorkspaceRoutes(
   app: FastifyInstance,
   workspace: WorkspaceService,
+  /**
+   * The library this gateway serves, resolved by the server.
+   *
+   * Its presence is also the switch for the pipeline enrichment below, which
+   * is what the `if (runtime)` guard used to be: a caller that supplies no
+   * library is a caller with no execution service behind it, and must not pay
+   * for a pipeline resolution and a journal read on every episode-detail
+   * request to be told so.
+   */
+  libraryRoot?: string,
 ): void {
   /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -97,24 +107,37 @@ export function registerWorkspaceRoutes(
       //
       // The key stays `id`: that is what this route has always published and
       // what studio/web/src/lib/episode-store.svelte.ts reads.
-      try {
-        const pipelineName = ((epData as any).pipeline as string | undefined) || DEFAULT_PIPELINE;
-        const service = makeExecutionService((message) => request.log.info(message));
-        const status = await service.status({ channel, series, episode: epSlug }, pipelineName);
-        if (status.ok) {
-          (epData as any).pipeline = status.value.pipeline ?? (epData as any).pipeline;
-          (epData as any).stages = status.value.stages.map((s) => ({
-            id: s.stageId,
-            name: s.name || s.stageId,
-            status: s.state,
-            dependsOn: s.dependsOn,
-            produces: s.produces,
-          }));
+      if (libraryRoot) {
+        try {
+          const pipelineName = ((epData as any).pipeline as string | undefined) || DEFAULT_PIPELINE;
+          const service = makeExecutionService((message) => request.log.info(message), libraryRoot);
+          const status = await service.status({ channel, series, episode: epSlug }, pipelineName);
+          if (status.ok) {
+            (epData as any).pipeline = status.value.pipeline ?? (epData as any).pipeline;
+            (epData as any).stages = status.value.stages.map((s) => ({
+              id: s.stageId,
+              name: s.name || s.stageId,
+              status: s.state,
+              dependsOn: s.dependsOn,
+              produces: s.produces,
+            }));
+          } else {
+            // Said out loud, not discarded. The fallback below is correct —
+            // an episode whose pipeline will not resolve still has a detail
+            // page — but a silent one turns "this pipeline is misspelled in
+            // the series manifest" into "the studio shows stale stages and
+            // nobody knows why".
+            request.log.warn(
+              `episode detail: no pipeline status for ${channel}/${series}/${epSlug} ` +
+              `(${status.error.code}: ${status.error.message}); showing the workspace's own stages`,
+            );
+          }
+        } catch (err) {
+          request.log.warn(
+            `episode detail: pipeline status failed for ${channel}/${series}/${epSlug}: ` +
+            `${err instanceof Error ? err.message : String(err)}; showing the workspace's own stages`,
+          );
         }
-      } catch {
-        // The pipeline could not be resolved or the journal could not be
-        // read — fall back to the static data the workspace holds, which is
-        // what this route did when the runtime was unreachable.
       }
 
       return epData;

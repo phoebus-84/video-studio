@@ -283,3 +283,149 @@ the flake above, which lives in `integration.test.ts` and predates it.
   which at least means it is now fixable in one place. The publisher takes the
   server's resolved root explicitly; the routes could be given it the same way
   by threading it through `registerProductionRoutes`.
+
+---
+
+# Review round 2
+
+Two findings from the coordinator, plus two of the four minors. Commit: see
+`git log` following `12fca45`.
+
+## CRITICAL — the migrated routes lost the server-resolved library root
+
+**Upheld, and it was worse than my report said.** I had written the divergence
+off as "pre-existing in `/execute`". It is pre-existing *for `/execute`* and a
+**regression for the other four**: `/status`, the single-stage execute and
+`/rerun-plan` previously reached the library through `RuntimeClient`, which
+`server.ts:56` constructs with
+`path.resolve(AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library")`.
+They honoured `config.libraryRoots`. `makeExecutionService` defaulted to
+`AVG_LIBRARY_ROOT ?? "./library"` and dropped it, and the two new claim/
+complete routes shipped with the same defect.
+
+Nothing in the repo sets `AVG_LIBRARY_ROOT`; `studio/gateway/config.json` sets
+`libraryRoots: ["../../library"]`. So under `npm run dev -w @studio/gateway`
+the configured root is `<repo>/library` and the service read `<cwd>/library`.
+A claim leased and journaled a stage into the shadow tree while the configured
+episode directory stayed empty, and `/status` — reading the same shadow tree —
+reported a fully unstarted episode for a half-produced one. Calling that a
+display problem was wrong: the journal is the service's only record of what
+ran, and this whole epic exists to make it authoritative.
+
+**Fix.** The server's resolved root is threaded through, the way it already
+was for `EventPublisher`:
+
+- `registerRoutes(app, config, libraryRoot, workspace, runtime, …)` — a new
+  **required** third parameter, not optional, with the reasoning above on it.
+  One caller, `server.ts:168`, which already has the value at :56.
+- `registerProductionRoutes(…, { libraryRoot })` — on the existing options bag,
+  so `gate-enforcement.test.ts`'s four-argument call is untouched.
+- `registerWorkspaceRoutes(app, workspace, libraryRoot)`.
+- Inside `production.ts`, one `serviceFor(request)` helper closes over
+  `options.libraryRoot` and all six handlers call it. Six inline
+  `makeExecutionService` calls were six chances to forget the argument —
+  the same reasoning that put the composition in `runtime/service.ts` in the
+  first place.
+
+`makeExecutionService`'s env fallback stays for callers that mean it (tests
+stubbing `AVG_LIBRARY_ROOT` around a temp tree); `registerRoutes` always
+supplies the root, so no production path reaches the fallback.
+
+**Pinned, and the pin covers the whole file rather than one test.**
+`appWithEpisode()` now passes the temp library as `{ libraryRoot }` *and*
+stubs `AVG_LIBRARY_ROOT` to a **different** throwaway directory. Any handler
+that falls back to the environment writes where no assertion looks. Two
+dedicated tests state the property directly:
+
+- *"writes the journal into the root it was given, not the one in the
+  environment"* — claims over HTTP, then asserts the journal is under the
+  configured root, **not** under the decoy and **not** under
+  `<cwd>/library/...`. The write path, which is the one that corrupts.
+- *"reports status from the root it was given"* — the read half: a seeded
+  `brief` reports `completed`, not `pending`.
+
+**Mutation check:** dropping `options.libraryRoot` / `libraryRoot` from the two
+`makeExecutionService` call sites fails **10 tests**, including both pins.
+
+## IMPORTANT — `leaseId` forwarded but not required
+
+**Upheld.** The description said a caller had no excuse to omit it and the
+schema left it optional, so an HTTP caller still got close-whatever-you-find.
+
+Now refused before the service is touched, with a message naming the reason.
+
+**One deliberate widening of the instruction, flagged rather than slipped in:**
+the review said "required for non-`failed` completions". I required it for
+**every** completion, `failed` included. A `failed` completion appends
+`stage-failed` against the claim it closes, so an omitted lease id fails
+somebody else's live attempt — the identical hazard, and arguably worse than
+the outputs case since it burns a retry. Nothing legitimate needs the looser
+path: a genuinely abandoned claim self-heals when its lease expires, and
+`complete()` refuses a lapsed attempt anyway. Both routes are new, so nothing
+breaks. Narrowing it back to non-`failed` is a one-line change if you disagree
+— delete the `failed` half of the comment and guard the check with
+`!body.failed`.
+
+Enforced in the handler rather than by adding `leaseId` to the schema's
+`required`, so the refusal reads as one sentence about why instead of as a
+schema violation naming a field the caller has never heard of.
+
+Two tests: *"refuses a completion that names no leaseId"* and *"refuses a
+failure report that names no leaseId"*. Both also assert the open claim is
+left at `[stage-leased, stage-started]` — nothing was closed on a guess.
+
+## Minor 1 — the no-op `roots.push()`
+
+Deleted. It was left over from an earlier shape of the helper.
+
+## Minor 3 — the workspace enrichment ran unguarded and swallowed failures
+
+**Guard restored**, as the presence of `libraryRoot`: a caller that supplies no
+library is a caller with no execution service behind it, and must not pay for a
+pipeline resolution and a journal read on every episode-detail request to be
+told so. Exactly equivalent to the old `if (runtime)` — that was always true in
+production too, and only ever excused embedders and tests.
+
+**Failures logged, not discarded.** A non-ok status now logs
+`episode detail: no pipeline status for <ref> (<code>: <message>); showing the
+workspace's own stages` at `warn`, and the catch logs the thrown message the
+same way. The fallback is still correct — an episode whose pipeline will not
+resolve still has a detail page — but a silent one turns "this pipeline is
+misspelled in the series manifest" into "the studio shows stale stages and
+nobody knows why".
+
+Test: *"does not resolve a pipeline for a deployment that configured no
+library"*.
+
+## Minors 2 and 4 — skipped as directed
+
+The bare-Fastify error-shape assertion and `publisher.ts`'s hardcoded default
+poll target (`childrens/fairy-tales/little-red`) are untouched. Both
+pre-existing.
+
+## Verification
+
+```
+$ npm run typecheck -w @studio/gateway
+> tsc --noEmit                        (clean)
+
+$ npm test -w @studio/gateway
+ Test Files  27 passed (27)
+      Tests  322 passed (322)         (317 + 5 new; 297 pre-existing untouched)
+
+$ npm test -w @studio/runtime
+ Test Files  39 passed (39)
+      Tests  501 passed (501)
+```
+
+Nothing under `studio/runtime` was touched in this round, so no rebuild was
+needed; the suite was run regardless. No `integration.test.ts` flake in this
+round's runs — see `avg-82z`, re-run rather than chase.
+
+## Concerns retired
+
+The fourth bullet of the original *Concerns* section — "the routes' library
+root still ignores `config.libraryRoots`" — is closed by the Critical fix
+above, for all six routes including `/execute`. The remaining three
+(`routes/runtime.ts` for Task 8; the `/status` error shape and the phantom
+`rerun-affected` in the studio for Task 9) stand.
