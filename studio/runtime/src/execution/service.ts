@@ -986,13 +986,17 @@ export class ExecutionService {
     } catch (e) {
       // The only way the planner throws today is `rerun-affected-downstream`
       // with no report — a mode this composition never computes staleness
-      // for. That is a caller asking for something this build cannot do, not
-      // a broken pipeline or a corrupt journal, so it earns the same exit
-      // code as `STAGE_UNKNOWN` (see `exitCodeFor` in cli.ts) even though no
-      // stage is actually unknown; `ExecutionError` has no code that names
-      // "this mode is not implemented" more precisely yet.
+      // for. `MODE_UNSUPPORTED`, not `STAGE_UNKNOWN`: no stage is unknown
+      // here, a mode is unimplemented, and a caller told `STAGE_UNKNOWN`
+      // would reasonably go looking for a typo in a stage id that was never
+      // the problem — exactly the kind of code-says-something-other-than-
+      // what-it-holds bug this module exists to remove. `cmdRerun` refuses
+      // this mode by name before ever reaching the service, so this branch
+      // is unreachable from the CLI today; it exists for direct callers —
+      // Task 7's gateway route among them — that ask the service without
+      // going through the CLI's own guard.
       return err({
-        code: "STAGE_UNKNOWN",
+        code: "MODE_UNSUPPORTED",
         message: e instanceof Error ? e.message : String(e),
       });
     }

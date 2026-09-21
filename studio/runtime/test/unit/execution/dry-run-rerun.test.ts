@@ -238,3 +238,45 @@ describe("rerun", () => {
     expect(result.value[1]!.reason).toMatch(/script/);
   });
 });
+
+// ── planRerun ────────────────────────────────────────────────────────────
+//
+// `cmdRerun` refuses `rerun-affected-downstream` by name before ever calling
+// the service, so no CLI-driven test can reach `ExecutionService.planRerun`'s
+// own refusal for that mode. This calls the service directly, the way a
+// non-CLI caller (Task 7's gateway route) will.
+
+describe("planRerun", () => {
+  it("reports MODE_UNSUPPORTED, not STAGE_UNKNOWN, for rerun-affected-downstream", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget,
+    });
+
+    const result = await svc.planRerun(REF, "narrated-illustrated-video", "rerun-affected-downstream");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Not STAGE_UNKNOWN: no stage is unknown here — no stage id was even
+    // named — a mode this build does not implement is a different fact,
+    // and the wrong code would send a caller looking for a typo in a
+    // stage id that was never the problem.
+    expect(result.error.code).toBe("MODE_UNSUPPORTED");
+    expect(result.error.message).toMatch(/staleness/i);
+  });
+
+  it("plans full-rebuild without a dispatcher or budget guard configured", async () => {
+    // planRerun only replays and plans; it must not require the ports that
+    // run() needs to actually dispatch.
+    const { root } = await episode();
+    const svc = new ExecutionService({ libraryRoot: root, builtinPipelines: PIPELINES });
+
+    const result = await svc.planRerun(REF, "narrated-illustrated-video", "full-rebuild");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.rerunStageIds).toContain("brief");
+    expect(result.value.episodeSlug).toBe("childrens/fairy-tales/ep");
+  });
+});

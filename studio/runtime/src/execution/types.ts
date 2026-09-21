@@ -266,7 +266,17 @@ export interface ExecutionError {
      * problem from a corrupt line and calls for a different response.
      */
     | "REPLAY_INVALID"
-    | "STAGE_UNKNOWN";
+    | "STAGE_UNKNOWN"
+    /**
+     * The caller asked for something this build does not implement — a
+     * `RerunMode` the planner understands but cannot compute without
+     * machinery that does not exist yet (staleness propagation, avg-33r) —
+     * as distinct from `STAGE_UNKNOWN`, which is asking for something that
+     * does not exist at all. Conflating the two names the wrong fix: a
+     * caller told `STAGE_UNKNOWN` for an unimplemented mode would reasonably
+     * go looking for a typo in a stage id that was never the problem.
+     */
+    | "MODE_UNSUPPORTED";
   message: string;
   /**
    * Set only when a hard error interrupts `rerun` partway through its list.

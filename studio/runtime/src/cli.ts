@@ -707,12 +707,17 @@ function claimTtlMs(): Result<number, string> {
  *
  * A stage the pipeline never declared is a mistyped argument, not a broken
  * system: `EX_USAGE`, so a script can tell "you asked for something that does
- * not exist" from "the journal could not be read". Everything else —
- * unreadable journal, unresolvable pipeline, journal and pipeline in
- * disagreement — is `EX_RUNTIME`.
+ * not exist" from "the journal could not be read". A `RerunMode` this build
+ * does not implement is the same family of caller mistake — the request
+ * named something real (a mode `RerunMode` declares) that this composition
+ * cannot honor yet — so `MODE_UNSUPPORTED` earns `EX_USAGE` alongside it.
+ * `cmdRerun` refuses `rerun-affected-downstream` before calling the service,
+ * so no CLI path reaches this today; it is here for whichever caller does.
+ * Everything else — unreadable journal, unresolvable pipeline, journal and
+ * pipeline in disagreement — is `EX_RUNTIME`.
  */
 function exitCodeFor(error: ExecutionError): number {
-  return error.code === "STAGE_UNKNOWN" ? EX_USAGE : EX_RUNTIME;
+  return error.code === "STAGE_UNKNOWN" || error.code === "MODE_UNSUPPORTED" ? EX_USAGE : EX_RUNTIME;
 }
 
 /**
