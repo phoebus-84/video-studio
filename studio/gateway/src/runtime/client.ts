@@ -3,6 +3,11 @@
 // Invokes the video-pipeline-runtime CLI (vpr) via child_process.
 // All commands use --json for machine-readable output.
 // Timeouts and error handling protect the gateway from hung processes.
+//
+// `run`, `status`, `rerun` and `validate` are gone: those are execution, and
+// execution goes through ExecutionService (see ../runtime/service.ts). What
+// remains here is workspace setup and approval, which the service does not
+// own.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -125,41 +130,10 @@ export class RuntimeClient {
     return this.exec(args);
   }
 
-  /** vpr status <channel>/<series>/<episode> [--pipeline <name>] */
-  async status(ref: EpisodeRef, pipeline?: string): Promise<RuntimeCommandResult> {
-    const args = ["status", `${ref.channel}/${ref.series}/${ref.episode}`];
-    if (pipeline) args.push("--pipeline", pipeline);
-    return this.exec(args);
-  }
-
-  /** vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] */
-  async run(ref: EpisodeRef, stageId?: string, dryRun = false, pipeline?: string): Promise<RuntimeCommandResult> {
-    const args = ["run", `${ref.channel}/${ref.series}/${ref.episode}`];
-    if (stageId) args.push("--stage", stageId);
-    if (pipeline) args.push("--pipeline", pipeline);
-    if (dryRun) args.push("--dry-run");
-    return this.exec(args, { timeoutMs: 300_000 }); // 5 min for runs
-  }
-
-  /** vpr rerun <channel>/<series>/<episode> */
-  async rerun(ref: EpisodeRef, mode?: string, dryRun = false): Promise<RuntimeCommandResult> {
-    const args = ["rerun", `${ref.channel}/${ref.series}/${ref.episode}`];
-    if (mode) args.push("--mode", mode);
-    if (dryRun) args.push("--dry-run");
-    return this.exec(args);
-  }
-
   /** vpr approve <channel>/<series>/<episode> <stage> */
   async approve(ref: EpisodeRef, stageId: string, dryRun = false): Promise<RuntimeCommandResult> {
     const args = ["approve", `${ref.channel}/${ref.series}/${ref.episode}`, stageId];
     if (dryRun) args.push("--dry-run");
-    return this.exec(args);
-  }
-
-  /** vpr validate pipeline|snapshot [target] */
-  async validate(what: "pipeline" | "snapshot", target?: string): Promise<RuntimeCommandResult> {
-    const args = ["validate", what];
-    if (target) args.push(target);
     return this.exec(args);
   }
 

@@ -6,7 +6,6 @@ import { collectHealth, gatewayHealth } from "../health/index.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
 import { canonicalizeRoots } from "../lib/roots.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
-import { registerRuntimeRoutes } from "./runtime.js";
 import { registerProductionRoutes } from "./production.js";
 import type { PiRpcHealth } from "../rpc/health.js";
 import type { AdapterBridge } from "../rpc/adapter-bridge.js";
@@ -117,9 +116,6 @@ export function registerRoutes(
 
   // ── Workspace discovery ──────────────────────────────────────────────────
   registerWorkspaceRoutes(app, workspace, libraryRoot);
-
-  // ── Runtime endpoints ────────────────────────────────────────────────────
-  registerRuntimeRoutes(app, runtime);
 
   // ── Production orchestration ─────────────────────────────────────────────
   registerProductionRoutes(app, runtime, workspace, { libraryRoot });

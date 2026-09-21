@@ -82,7 +82,7 @@ export async function createGateway(
   // ── Auth ─────────────────────────────────────────────────────────────────
   const authMiddleware = createAuthMiddleware(token, config.token.allowDevToken);
 
-  const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/runtime/health", "/ws"]);
+  const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/ws"]);
   const PUBLIC_PREFIXES = ["/library/"];
 
   // Global preHandler: all routes require auth except public paths.
