@@ -468,10 +468,16 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   }
 
   if (ctx.dryRun) {
+    // No `estimatedCost`. The plan carries a `totalEstimatedCost`, but it is
+    // a unitless weight summed from attempt counts
+    // (studio/runtime/src/rerun/planner.ts) — emitting it under that name
+    // hands the operator a number shaped like money that no part of this
+    // repo can price. What the stages are is the answer to "what would this
+    // do".
     emit(ctx, {
       message: `[DRY RUN] Rerun plan (${mode}): ${plan.value.rerunStageIds.length} stage(s)`,
       mode, dryRun: true, stages: plan.value.rerunStageIds,
-      estimatedCost: plan.value.totalEstimatedCost,
+      preserved: plan.value.preservedStageIds,
     });
     return EX_OK;
   }
@@ -1072,7 +1078,12 @@ const COMMANDS: Record<string, CliCommand> = {
   validate: { name: "validate", description: "Validate pipeline DAG or snapshot integrity", usage: "vpr validate <pipeline|snapshot> [path] [--json]", examples: ["vpr validate pipeline my-channel/my-series/ep001"], run: cmdValidate },
   run: { name: "run", description: "Claim the next runnable stage for a performer", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001", "vpr run my-channel/my-series/ep001 --dry-run"], run: cmdRun },
   complete: { name: "complete", description: "Close a claimed stage with the outputs it produced", usage: "vpr complete <channel>/<series>/<episode> <stage-id> [--lease <id>] --outputs <path>[,<path>] | --failed [--error <msg>]", examples: ["vpr complete my-channel/my-series/ep001 brief --lease l-7 --outputs artifacts/brief.md", "vpr complete my-channel/my-series/ep001 brief --failed --error 'the model refused'"], run: cmdComplete },
-  rerun: { name: "rerun", description: "Plan targeted reruns with cost estimates", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
+  // The usage line lists every mode the command ACCEPTS, including the one
+  // it refuses by name: `rerun-affected-downstream` reaches a deliberate
+  // avg-33r explanation, and a help text that hides it turns a considered
+  // refusal into "unknown mode". The gateway schema and the agent's union
+  // both declare-and-refuse it; this was the one surface that did not.
+  rerun: { name: "rerun", description: "Plan targeted reruns: which stages re-run, which are preserved", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|rerun-affected-downstream|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },
 };

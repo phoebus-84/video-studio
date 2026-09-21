@@ -312,8 +312,12 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_plan_rerun",
     label: "Plan Rerun",
+    // No "cost estimates": the plan's `estimatedCost` is a unitless weight
+    // derived from attempt counts (studio/runtime/src/rerun/planner.ts), and
+    // a description that calls it money is how Pi comes to quote a price
+    // nothing in this repo can compute.
     description:
-      "Plan a targeted rerun with cost estimates and preserved work.",
+      "Plan a targeted rerun: which stages would re-run, and which prior work is preserved.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -403,8 +407,13 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_budget_status",
     label: "Budget Status",
+    // No "reserved": BudgetReport (studio/gateway/src/routes/budget.ts)
+    // carries limitMicros, consumedMicros and remainingMicros and nothing
+    // else. Reservations are taken and never released (avg-91o), so there is
+    // no reserved figure to report and a tool that promises one invites Pi
+    // to read a field that does not exist.
     description:
-      "Get current budget status including reserved, consumed, and remaining funds.",
+      "Get the episode's budget: the limit, what has been consumed, and what remains.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),

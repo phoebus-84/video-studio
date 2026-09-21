@@ -51,8 +51,11 @@ const EXECUTION_EVENTS = Object.freeze([
  * future replay too: one re-run would make that episode's execution state
  * permanently underivable. `completed -> pending` is therefore allowed here.
  * It is a legitimate retry, not a violation.
+ *
+ * Exported, and pinned equal to the engine's copy by
+ * studio/runtime/test/unit/engine/transition-table-agreement.test.ts.
  */
-const VALID_TRANSITIONS = Object.freeze({
+export const VALID_TRANSITIONS = Object.freeze({
   pending: ["running"],
   running: ["completed", "failed"],
   completed: ["pending"],

@@ -689,6 +689,38 @@ export class ExecutionService {
       durationMs: Date.now() - startedAt,
     });
 
+    /**
+     * A terminal event did not land.
+     *
+     * `appendJournalEvent` returns null rather than throwing when the write
+     * fails, and the caller of a TERMINAL write has nothing to roll back:
+     * the stage ran, the outputs exist on disk, and the journal is the only
+     * record of what ran. Saying "completed" anyway would report something
+     * this process does not hold — replay reads an attempt still open, the
+     * lease lapses, `closeIfExpired` turns it into a timeout, and the stage
+     * that produced outputs comes back as `failed` with nothing anywhere
+     * saying why. So the outcome says what is true: the work happened, the
+     * record of it did not, and the stage will run again.
+     *
+     * The lease is deliberately NOT released. Releasing the lockfile while
+     * the journal still shows the attempt open would let a second holder
+     * take a stage replay reports as `running`, and be refused by the state
+     * machine anyway. Letting the lease lapse on its own is what the journal
+     * already describes.
+     */
+    const unrecorded = (what: string): Result<StageOutcome, ExecutionError> => ok({
+      stageId,
+      status: "failed",
+      reason:
+        `"${stageId}" ${what}, but the journal write recording that did not land; ` +
+        `nothing outside this process knows it happened, so the stage will re-run ` +
+        `once its lease lapses`,
+      outputs: [],
+      attemptNumber: open?.number ?? 0,
+      leaseId: open?.leaseId,
+      durationMs: Date.now() - startedAt,
+    });
+
     // A lapsed claim is not an open attempt. `deriveExecutionState` closes an
     // attempt whose lease has expired as a `timeout` and moves the stage to
     // `failed`, so the refusal below IS the lease expiring — there is no
@@ -773,7 +805,8 @@ export class ExecutionService {
     if (input.failed) {
       const message = input.error ?? "the performer reported failure without saying why";
       if (!held()) return lapsed(open);
-      await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, message);
+      const recorded = await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, message);
+      if (!recorded) return unrecorded(`failed ("${message}")`);
       return ok({
         stageId, status: "failed", reason: message, outputs: [],
         attemptNumber, leaseId, durationMs: Date.now() - startedAt,
@@ -784,7 +817,8 @@ export class ExecutionService {
     const invalid = await this.validateOutputs(episodeDir, outputs);
     if (invalid) {
       if (!held()) return lapsed(open);
-      await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, invalid);
+      const recorded = await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, invalid);
+      if (!recorded) return unrecorded(`failed ("${invalid}")`);
       return ok({
         stageId, status: "failed", reason: invalid, outputs: [],
         attemptNumber, leaseId, durationMs: Date.now() - startedAt,
@@ -797,10 +831,16 @@ export class ExecutionService {
     // dies in between, the record says what happened and the lease expires on
     // its own; releasing first would leave a completed stage looking unstarted.
     if (!held()) return lapsed(open);
-    await appendJournalEvent(episodeDir, {
+    const completed = await appendJournalEvent(episodeDir, {
       type: "stage-completed", actor: "runtime", episode: ref,
       data: { stageId, leaseId, attemptNumber, outputs: relative },
     });
+    // The `stage-leased` append is checked and rolled back; this one is
+    // checked and surfaced. Both are dropped writes; only the first can be
+    // undone. Saying `completed` off a write that did not land is exactly
+    // the thing this service exists to stop — reporting something other
+    // than what the journal holds.
+    if (!completed) return unrecorded("produced its outputs");
     await sm.complete(instance);
 
     // Completion is what happened; acceptance is whether it counts. The
@@ -875,20 +915,32 @@ export class ExecutionService {
   /**
    * Record a failed attempt and release its lease, in that order.
    *
-   * Only ever reached with an attempt replay still shows as open. A lapsed
-   * one has no open attempt, so `complete` refuses above this and writes
-   * nothing — see the reasoning on that branch.
+   * Only ever reached with an attempt this process still holds: both call
+   * sites ask `held()` immediately before calling, which reads the lease's
+   * own `expiresAt` off the journal. That guard, not the structural "no open
+   * attempt" refusal higher up, is what keeps a lapsed holder from appending
+   * a terminal event after a second holder has already closed the stage —
+   * the structural check was only true at the instant `deriveExecutionState`
+   * ran, and `validateOutputs` sits between there and here.
+   *
+   * Returns whether the journal write landed. `appendJournalEvent` returns
+   * null instead of throwing, and a dropped `stage-failed` means the lease
+   * is still open as far as every other reader is concerned; the lease is
+   * left to lapse rather than released, so the journal and the lockfile
+   * agree. The caller says so out loud.
    */
   private async recordFailure(
     episodeDir: string, ref: EpisodeRef, sm: StageStateMachine,
     instance: EngineStageInstance, stageId: string, leaseId: string,
     attemptNumber: number, error: string,
-  ): Promise<void> {
-    await appendJournalEvent(episodeDir, {
+  ): Promise<boolean> {
+    const recorded = await appendJournalEvent(episodeDir, {
       type: "stage-failed", actor: "runtime", episode: ref,
       data: { stageId, leaseId, attemptNumber, error, retryable: true },
     });
+    if (!recorded) return false;
     await sm.fail(instance, error, true);
+    return true;
   }
 
   /**

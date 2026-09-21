@@ -481,6 +481,58 @@ describe("the gateway assembled by createGateway", () => {
     // `AVG_LIBRARY_ROOT ?? "./library"` resolves to with the variable unset.
     await expect(stat(join(process.cwd(), "library", REF.channel))).rejects.toThrow();
   });
+
+  it("lists episodes from the same library it executes them in", async () => {
+    // The surviving half of the same defect. `createGateway` resolved
+    // `libraryRoot` from `AVG_LIBRARY_ROOT ?? config.libraryRoots[0]` and
+    // gave it to the execution service, the watcher and both route
+    // registrars — then built the FileSystemWorkspaceService from the raw
+    // `config.libraryRoots`, which does not know about the variable. With
+    // AVG_LIBRARY_ROOT set and `libraryRoots` left at its `["."]` default,
+    // the thing that LISTS episodes for the studio and the thing that
+    // EXECUTES them read different trees: the studio showed fixture
+    // channels while a claim leased and journaled into the real library.
+    // Producing an episode into a library the gateway does not serve has
+    // already cost this project an episode once.
+    const root = await mkdtemp(join(tmpdir(), "gw-workspace-root-"));
+    roots.push(root);
+    const dir = join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
+    await mkdir(join(dir, "artifacts"), { recursive: true });
+    vi.stubEnv("AVG_LIBRARY_ROOT", root);
+
+    const config = loadConfig();
+    config.port = 0;
+    config.host = "127.0.0.1";
+    config.token.file = join(root, "gateway.token");
+    config.libraryRoots = ["."];   // the default: the env is the only pointer
+    const token = resolveToken(config.token);
+
+    const gateway = await createGateway(config, token);
+    try {
+      const listed = await gateway.app.inject({
+        method: "GET", url: "/api/channels",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(listed.statusCode).toBe(200);
+      const slugs = (listed.json() as { slug: string }[]).map((c) => c.slug);
+      // The library the env names — not the fixture service's canned
+      // "tech-explainer" / "tutorials", which is what this returned before.
+      expect(slugs).toEqual([REF.channel]);
+
+      // And it is the same tree the claim writes into.
+      const claimed = await gateway.app.inject({
+        method: "POST",
+        url: `${BASE}/stages/brief/claim`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: {},
+      });
+      expect(claimed.json().outcome.status).toBe("claimed");
+    } finally {
+      await gateway.stop();
+    }
+
+    expect((await journal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
 });
 
 // ── POST /rerun-plan ────────────────────────────────────────────────────────

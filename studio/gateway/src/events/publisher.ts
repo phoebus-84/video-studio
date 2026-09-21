@@ -23,12 +23,12 @@ export interface EventPublisherOptions {
   /** How often to poll the execution service (ms). Default 10s. */
   pollMs?: number;
   /**
-   * Where the library lives. The server resolves this once; without it the
-   * publisher would take `AVG_LIBRARY_ROOT ?? "./library"` and poll a
-   * different tree from the one the gateway serves whenever the root came
-   * from `libraryRoots` rather than the environment.
+   * Where the library lives. The server resolves this once; required,
+   * because a publisher that fell back to `AVG_LIBRARY_ROOT ?? "./library"`
+   * would poll a different tree from the one the gateway serves whenever the
+   * root came from `libraryRoots` rather than the environment.
    */
-  libraryRoot?: string;
+  libraryRoot: string;
 }
 
 /**
@@ -45,7 +45,7 @@ interface StageState {
 export class EventPublisher {
   private bus: EventBus;
   private pollMs: number;
-  private libraryRoot?: string;
+  private libraryRoot: string;
   private knownStages = new Map<string, StageState[]>();
   private interval: ReturnType<typeof setInterval> | null = null;
 

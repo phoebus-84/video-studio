@@ -26,18 +26,23 @@ export const DEFAULT_PIPELINE = "narrated-illustrated-video";
 export function makeExecutionService(
   log: (message: string) => void,
   /**
-   * Where the library lives, for callers that already resolved it.
+   * Where the library lives, resolved by the server and passed down.
    *
-   * The routes omit it and take the environment, which is what they have. The
-   * server resolves `AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library"`
-   * and hands long-lived collaborators — the event publisher — the answer, so
-   * a gateway configured purely through `libraryRoots` does not poll a
-   * `./library` nobody put anything in.
+   * Required, and deliberately so. This used to be optional with an
+   * `AVG_LIBRARY_ROOT ?? "./library"` fallback, on the theory that "the
+   * routes omit it and take the environment" — which stopped being true when
+   * `registerRoutes` started requiring the root and every caller started
+   * threading it. An optional parameter with that fallback is an invitation
+   * to omit it again, and omitting it is the branch's worst defect: nothing
+   * in this repo sets AVG_LIBRARY_ROOT, so a caller that fell back would
+   * lease and journal stages into a `./library` beside the process's cwd
+   * while the configured library stayed empty. The journal is the only
+   * record of what ran; there is one library, and the caller knows it.
    */
-  libraryRoot?: string,
+  libraryRoot: string,
 ): ExecutionService {
   return new ExecutionService({
-    libraryRoot: libraryRoot ?? process.env.AVG_LIBRARY_ROOT ?? "./library",
+    libraryRoot,
     // `|| undefined` rather than the bare call: builtinPipelinesPath()
     // returns "" when package resolution fails, and createDefaultLoader's
     // `??` does not fall back on an empty string — so AVG_BUILTIN_PIPELINES,

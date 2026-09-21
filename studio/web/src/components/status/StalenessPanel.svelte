@@ -99,7 +99,7 @@
       )) as {
         ok: boolean;
         error?: string | { code?: string; message?: string };
-        plan?: { rerunStageIds?: string[]; totalEstimatedCost?: number };
+        plan?: { rerunStageIds?: string[] };
       };
       /* `ok: false` is a refusal the service reached deliberately — an
          unknown stage id, an unresolvable pipeline — and arrives as HTTP
@@ -116,12 +116,16 @@
          alike, so its length was never the number that would rerun.
          `rerunStageIds` is. There is no `plan.message`. */
       const count = result.plan?.rerunStageIds?.length ?? selected.length;
-      const cost = result.plan?.totalEstimatedCost;
+      /* No cost. `plan.totalEstimatedCost` exists, and this panel used to
+         render it as `about $1.50` — but it is a unitless weight summed from
+         attempt counts (studio/runtime/src/rerun/planner.ts), not money, and
+         nothing in this repo prices a stage. A fabricated spend figure is
+         the number an operator trusts to decide whether to keep going; the
+         same reasoning already removed an invented total from /budget. */
       plan = {
         phase: "ready",
         stageCount: count,
-        message: `${count} stage${count === 1 ? "" : "s"} would rerun`
-          + (typeof cost === "number" && cost > 0 ? ` · about $${cost.toFixed(2)}` : ""),
+        message: `${count} stage${count === 1 ? "" : "s"} would rerun`,
       };
     } catch (err) {
       plan = {

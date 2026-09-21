@@ -180,7 +180,11 @@ async function executeRoute(root: string, over: { maxStagesPerExecute?: number }
   vi.stubEnv("AVG_LIBRARY_ROOT", root);
   const app = Fastify();
   const workspace = { getEpisode: async () => null } as unknown as WorkspaceService;
-  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, over);
+  // The root is passed, not left to the stubbed environment: the routes take
+  // it as a required option now, and the stub above stays only as a decoy —
+  // anything that still reaches for the variable writes where these tests do
+  // not look rather than passing by coincidence.
+  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { ...over, libraryRoot: root });
   await app.ready();
   return {
     app,

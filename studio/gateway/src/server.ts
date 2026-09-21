@@ -53,9 +53,14 @@ export async function createGateway(
   // Resolve the library root once, to an absolute path. A relative default
   // breaks downstream consumers (e.g. the pipeline runtime resolves
   // "<root>/../video-built-in-pipelines" and the watcher).
-  const libraryRoot = path.resolve(
-    process.env.AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library",
-  );
+  //
+  // Written as two bindings from one expression rather than two expressions:
+  // everything downstream — the watcher, the static mount, the execution
+  // service, both route registrars AND the workspace service that lists what
+  // the studio shows — has to name the same tree, and the way they stop
+  // naming the same tree is by each re-deriving it.
+  const configuredLibrary = process.env.AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library";
+  const libraryRoot = path.resolve(configuredLibrary);
 
   const app = Fastify({
     logger: {
@@ -133,10 +138,20 @@ export async function createGateway(
   const adapterBridge = new AdapterBridge();
 
   // ── Routes ───────────────────────────────────────────────────────────────
-  // Pick workspace service: real filesystem if roots > 0, otherwise fixture
+  // Pick workspace service: the real filesystem when this gateway was pointed
+  // at a library, otherwise the fixture.
+  //
+  // It reads `libraryRoot` — the same resolved tree the execution service,
+  // the watcher and the static mount use. It used to be built from the raw
+  // `config.libraryRoots`, which meant that with AVG_LIBRARY_ROOT set the
+  // thing that LISTS episodes for the studio and the thing that EXECUTES them
+  // read different trees: the studio would show one library's episodes while
+  // a claim leased and journaled into another. See the comment on
+  // `registerRoutes`' `libraryRoot` parameter — this class of failure has
+  // already cost this project an episode.
   const ws: WorkspaceService = workspace ?? (
-    config.libraryRoots.length > 0 && config.libraryRoots[0] !== "."
-      ? new FileSystemWorkspaceService(config.libraryRoots)
+    configuredLibrary !== "."
+      ? new FileSystemWorkspaceService([libraryRoot])
       : new FixtureWorkspaceService()
   );
 

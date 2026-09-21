@@ -104,14 +104,15 @@ export function registerProductionRoutes(
      */
     maxStagesPerExecute?: number;
     /**
-     * The library this gateway serves, resolved by the server. Omitted only
-     * by callers that mean the environment — tests that stub
-     * `AVG_LIBRARY_ROOT` around a temp tree. `registerRoutes` always supplies
-     * it; see the comment there for what a route that guesses its own root
-     * does to the journal.
+     * The library this gateway serves, resolved by the server.
+     *
+     * Required: every handler below composes an ExecutionService, and an
+     * execution service writes the journal. See the comment on
+     * `registerRoutes`' parameter of the same name for what a route that
+     * guesses its own root does to the journal.
      */
-    libraryRoot?: string;
-  } = {},
+    libraryRoot: string;
+  },
 ): void {
   const maxStagesPerExecute = options.maxStagesPerExecute ?? MAX_STAGES_PER_EXECUTE;
 
@@ -447,7 +448,7 @@ export function registerProductionRoutes(
   // ── Rerun plan ────────────────────────────────────────────────────────────
   app.post("/api/channels/:channel/series/:series/episodes/:episode/rerun-plan", {
     schema: {
-      description: "Plan a targeted rerun with cost estimates.",
+      description: "Plan a targeted rerun: which stages would re-run, and which prior work is preserved.",
       tags: ["production"],
       params: {
         type: "object",

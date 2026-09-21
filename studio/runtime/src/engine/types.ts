@@ -87,7 +87,9 @@ export const VALID_TRANSITIONS: Record<StageStatus, StageStatus[]> = {
   // operation — rerun/planner.ts exists to plan it — so `completed` is not the
   // end of the stage's life, only of that attempt. Mirrors the same allowance
   // in @studio/contracts' execution-state replay; if you are tempted to
-  // "restore" completed: [], read that module's table comment first.
+  // "restore" completed: [], read that module's table comment first. The two
+  // tables are pinned equal by
+  // studio/runtime/test/unit/engine/transition-table-agreement.test.ts.
   completed: ["pending"],
   failed: ["pending"], // retry resets to pending
 };

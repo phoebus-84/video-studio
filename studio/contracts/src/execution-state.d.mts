@@ -35,6 +35,16 @@ export interface StageInstance {
   createdAt: string | null;
 }
 
+/**
+ * The transition table replay enforces.
+ *
+ * Exported so the engine's copy (studio/runtime/src/engine/types.ts) can be
+ * pinned equal to it by a test. Both tables are consulted on every claim —
+ * this one during replay, the engine's during `sm.transition` — and two
+ * copies of one meaning drift.
+ */
+export declare const VALID_TRANSITIONS: Readonly<Record<StageStatus, StageStatus[]>>;
+
 export declare function deriveExecutionState(
   events: JournalEvent[],
   stageIds: string[],
