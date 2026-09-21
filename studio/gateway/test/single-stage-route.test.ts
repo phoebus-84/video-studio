@@ -17,10 +17,13 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
+import { loadConfig } from "../src/config/index.js";
+import { resolveToken } from "../src/auth/index.js";
+import { createGateway } from "../src/server.js";
 import { registerProductionRoutes } from "../src/routes/production.js";
 import { registerWorkspaceRoutes } from "../src/routes/workspace.js";
 import { EventPublisher } from "../src/events/publisher.js";
@@ -421,6 +424,62 @@ describe("the library root", () => {
     const brief = res.json().data.stages
       .find((s: { stageId: string }) => s.stageId === "brief");
     expect(brief.status).toBe("completed");
+  });
+});
+
+// ── The composition root ────────────────────────────────────────────────────
+
+describe("the gateway assembled by createGateway", () => {
+  it("claims into the configured library, with AVG_LIBRARY_ROOT unset", async () => {
+    // The tests above call `registerProductionRoutes` directly, so they pin
+    // the registrar and not the wiring. Dropping the threading at
+    // routes/index.ts's two call sites left all of them green — the only
+    // thing that caught it was `noUnusedParameters` noticing `libraryRoot`
+    // had become unused, which is incidental and would stop catching it the
+    // moment anything else in that function read the value. Since this was
+    // the worst defect on the branch and was invisible for exactly this
+    // reason the first time, the composition root gets its own test.
+    //
+    // Built the way the server builds it: no AVG_LIBRARY_ROOT at all, the
+    // root supplied only through `config.libraryRoots`, and the request going
+    // through the real auth hook. `app.inject` rather than `start()` — this
+    // needs the assembled app, not a bound port, and binding one is the flake
+    // in integration.test.ts (avg-82z).
+    vi.stubEnv("AVG_LIBRARY_ROOT", undefined);
+    expect(process.env.AVG_LIBRARY_ROOT).toBeUndefined();
+
+    const root = await mkdtemp(join(tmpdir(), "gw-composition-root-"));
+    roots.push(root);
+    const dir = join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
+    await mkdir(join(dir, "artifacts"), { recursive: true });
+
+    const config = loadConfig();
+    config.port = 0;
+    config.host = "127.0.0.1";
+    config.token.file = join(root, "gateway.token");
+    config.libraryRoots = [root];
+    const token = resolveToken(config.token);
+
+    const gateway = await createGateway(config, token);
+    try {
+      const claimed = await gateway.app.inject({
+        method: "POST",
+        url: `${BASE}/stages/brief/claim`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: {},
+      });
+
+      expect(claimed.statusCode).toBe(200);
+      expect(claimed.json().outcome.status).toBe("claimed");
+    } finally {
+      await gateway.stop();
+    }
+
+    // The journal landed in the library the config named ...
+    expect((await journal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+    // ... and nothing was created beside the process's cwd, which is where
+    // `AVG_LIBRARY_ROOT ?? "./library"` resolves to with the variable unset.
+    await expect(stat(join(process.cwd(), "library", REF.channel))).rejects.toThrow();
   });
 });
 

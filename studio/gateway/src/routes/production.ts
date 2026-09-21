@@ -241,9 +241,13 @@ export function registerProductionRoutes(
     schema: {
       description:
         "Close a claimed stage with the outputs the performer wrote, or report that it failed. " +
-        "Pass the leaseId the matching claim returned: without it the service closes whatever " +
-        "open claim it finds, so a performer whose lease lapsed could close a second holder's " +
-        "claim. A caller over HTTP has the claim response in hand and has no excuse to omit it.",
+        "leaseId is REQUIRED on every call, including a failure report: without it the service " +
+        "closes whatever open claim it finds, so a performer whose lease lapsed could close a " +
+        "second holder's claim. Pass the one the matching claim returned — a caller over HTTP " +
+        "has the claim response in hand and has no excuse to omit it. " +
+        "outputs is required too, unless failed is set. " +
+        "Both are enforced by the handler rather than by this schema, so the refusal arrives " +
+        "as a sentence explaining why; a client generated from this spec must still send them.",
       tags: ["production"],
       params: {
         type: "object",

@@ -429,3 +429,85 @@ root still ignores `config.libraryRoots`" — is closed by the Critical fix
 above, for all six routes including `/execute`. The remaining three
 (`routes/runtime.ts` for Task 8; the `/status` error shape and the phantom
 `rerun-affected` in the studio for Task 9) stand.
+
+---
+
+# Review round 3
+
+## The composition root was untested
+
+**Upheld.** My round-2 pins call `registerProductionRoutes` and
+`registerWorkspaceRoutes` directly, so they pin the registrars and not the
+wiring between `server.ts` and them. Dropping the threading at
+`routes/index.ts:119` and `:125` left the suite at **322/322 green**; the only
+thing that caught it was `noUnusedParameters` noticing `libraryRoot` had gone
+unused — incidental, and it stops catching anything the moment that function
+reads the value for any other purpose (a log line, one registrar but not the
+other). The worst defect on the branch was one refactor from silently
+returning, for the same reason it was invisible the first time.
+
+**Test added:** *"claims into the configured library, with AVG_LIBRARY_ROOT
+unset"*, in a new `describe("the gateway assembled by createGateway")`.
+
+It builds the gateway the way the server does — `loadConfig()`, a real token
+through `resolveToken`, `config.libraryRoots = [tmp]`, and
+`vi.stubEnv("AVG_LIBRARY_ROOT", undefined)` with an assertion that the
+variable really is gone — then claims `brief` through the real auth hook and
+asserts:
+
+- the journal is under the configured root, as `[stage-leased, stage-started]`;
+- **nothing exists at `<cwd>/library/childrens`**, which is where
+  `AVG_LIBRARY_ROOT ?? "./library"` resolves with the variable unset.
+
+`app.inject` rather than `gateway.start()`: this needs the assembled app, not
+a bound port, and binding one is the `integration.test.ts` flake (`avg-82z`).
+`gateway.stop()` runs in a `finally`, so the publisher interval, the Pi manager
+and the watcher do not outlive the test.
+
+**Discrimination verified.** With the threading dropped at those two call
+sites — and `void libraryRoot;` added so the mutation is purely the wiring
+rather than a typecheck error — the run is `1 failed | 25 passed`, and the one
+failure is the new test. It is the only thing standing between that edit and a
+green suite, which is exactly the gap named.
+
+The mutated run also left a real `studio/gateway/library/childrens/series/fairy-tales/episodes/ep/journal/events.jsonl`
+on disk, holding a genuine `stage-leased`/`stage-started` pair for a stage
+nobody could see had been claimed. That is the Critical made physical rather
+than argued. Removed; the tree is clean and no run with the fix in place
+creates it.
+
+## `leaseId` absent from the generated OpenAPI's `required`
+
+**Folded in as prose, handler enforcement kept.** The route `description` now
+opens with `leaseId is REQUIRED on every call, including a failure report`,
+gives the reason, notes that `outputs` is required unless `failed` is set, and
+states plainly that both are enforced by the handler rather than by the schema
+so a client generated from the spec must still send them. A reader or a
+generator's doc comment now carries the fact even though `required` does not.
+
+## Recorded, not actioned
+
+`server.ts:139` builds `FileSystemWorkspaceService` from the raw
+`config.libraryRoots` array rather than the resolved `libraryRoot`, so with
+`AVG_LIBRARY_ROOT` set the workspace service and the execution service read
+different trees. Pre-existing and outside this task, per the coordinator.
+
+## Verification
+
+```
+$ npm run typecheck -w @studio/gateway
+> tsc --noEmit                        (clean)
+
+$ npm test -w @studio/gateway
+ Test Files  27 passed (27)
+      Tests  323 passed (323)         (322 + 1; 297 pre-existing untouched)
+
+$ npm test -w @studio/runtime
+ Test Files  39 passed (39)
+      Tests  501 passed (501)
+```
+
+Nothing under `studio/runtime` was touched, so no rebuild was required; the
+suite was run anyway. No `integration.test.ts` flake in this round. Working
+tree clean apart from `.beads/interactions.jsonl`, which this task never
+touched, and no stray `studio/gateway/library/`.
