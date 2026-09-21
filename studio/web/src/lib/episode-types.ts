@@ -46,6 +46,7 @@ export interface ResolvedStage extends PipelineStage {
 export type StageDisplayState =
   | "pending"
   | "queued"
+  | "runnable"
   | "running"
   | "awaiting_review"
   | "completed"
@@ -57,6 +58,7 @@ export type StageDisplayState =
 export const STAGE_LABELS: Record<StageDisplayState, string> = {
   pending: "Pending",
   queued: "Queued",
+  runnable: "Ready",
   running: "Running",
   awaiting_review: "Awaiting review",
   completed: "Done",

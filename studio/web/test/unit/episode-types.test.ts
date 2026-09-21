@@ -51,8 +51,8 @@ test("every display state has a label", () => {
   // nothing about WHICH ten and had to be re-guessed the moment the
   // vocabulary changed: `awaiting_approval` and `skipped` left it when the
   // gateway's stage-status union dropped them — nothing has ever produced
-  // either — and `awaiting_review`, which the service does emit, took their
-  // place.
+  // either — and `awaiting_review` and `runnable`, which the service does
+  // emit, took their place.
   expect(Object.keys(STAGE_LABELS).sort()).toEqual([
     "awaiting_review",
     "blocked",
@@ -61,6 +61,7 @@ test("every display state has a label", () => {
     "failed",
     "pending",
     "queued",
+    "runnable",
     "running",
     "stale",
   ]);

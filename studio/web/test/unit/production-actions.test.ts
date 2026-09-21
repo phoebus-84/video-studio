@@ -181,6 +181,60 @@ describe("what an action reports back", () => {
     expect(production.error).toBe("vpr approve exited 1");
   });
 
+  it("keeps the refusal when the reload fails too, rather than replacing it", async () => {
+    // `??=` dropped the refusal whenever `load` set an error of its own, so a
+    // refused run behind a broken status read looked like a status problem
+    // and nothing else.
+    fetchJSON
+      .mockResolvedValueOnce({
+        ok: true,
+        outcome: { stageId: "script", status: "blocked", reason: "budget guard refused", outputs: [], durationMs: 1 },
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { code: "JOURNAL_UNREADABLE", message: "line 4 is not JSON" },
+      });
+
+    await production.runStage("script");
+    expect(production.error).toContain("budget guard refused");
+    expect(production.error).toContain("line 4 is not JSON");
+  });
+
+  it("treats a claim as the stage advancing, not as a refusal", async () => {
+    // Nothing in the studio calls /claim yet. When something does, a
+    // successful claim must not arrive as an error.
+    fetchJSON
+      .mockResolvedValueOnce({
+        ok: true,
+        outcome: { stageId: "script", status: "claimed", outputs: [], durationMs: 1 },
+      })
+      .mockResolvedValueOnce(statusOf("running"));
+
+    await production.runStage("script");
+    expect(production.error).toBeNull();
+    expect(production.lastMessage).toBe("script is claimed — perform it, then complete it");
+  });
+
+  it("surfaces a failed resolve, which arrives as a throw and leaves needsSnapshot set", async () => {
+    // /snapshot reports failure by throwing GatewayError, so it comes back
+    // non-2xx and fetchJSON throws: `load` never runs and `needsSnapshot`
+    // stays true, which keeps ProductionPanel in the branch that offers the
+    // button. That branch has to render `error`, or a failed resolve looks
+    // like the click did nothing.
+    fetchJSON.mockResolvedValueOnce({
+      ok: false,
+      error: { code: "PIPELINE_UNRESOLVED", message: "never resolved" },
+    });
+    await production.load(REF);
+    expect(production.needsSnapshot).toBe(true);
+
+    fetchJSON.mockRejectedValueOnce(new Error("Pipeline \"x\" could not be resolved: ENOENT"));
+    await production.resolveSnapshot();
+    expect(production.needsSnapshot).toBe(true);
+    expect(production.error).toBe('Pipeline "x" could not be resolved: ENOENT');
+    expect(production.lastMessage).toBeNull();
+  });
+
   it("reports what the snapshot route said, which carries no outcome", async () => {
     fetchJSON
       .mockResolvedValueOnce({ ok: true, snapshot: {}, message: "Snapshot created" })

@@ -84,11 +84,15 @@ export interface PipelineStage {
  * episode-detail projection passes through verbatim (routes/workspace.ts maps
  * `status: s.state`). It replaced `awaiting_approval`, which nothing has ever
  * produced; `skipped` went with it, unreachable since `runAutopilot` was
- * deleted in avg-2n7.
+ * deleted in avg-2n7. `runnable` arrives by the same route and for the same
+ * reason — it is the state an actionable stage is most often in, and while it
+ * was undeclared it reached `STAGE_LABELS` as a missing key and rendered as a
+ * blank chip.
  */
 export type StageStatus =
   | "pending"
   | "queued"
+  | "runnable"
   | "running"
   | "awaiting_review"
   | "completed"

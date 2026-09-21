@@ -52,6 +52,14 @@
       <button class="primary" onclick={() => production.resolveSnapshot()} disabled={busy}>
         {busy ? "Resolving…" : "Resolve pipeline"}
       </button>
+      <!-- /snapshot reports failure by throwing, so it arrives non-2xx and
+           `load` never runs: `needsSnapshot` stays true and this branch keeps
+           rendering. Without this line a failed resolve looks like the button
+           did nothing — the same silence this panel was fixed to stop telling,
+           one branch over. -->
+      {#if production.error}
+        <p class="error" role="alert">{production.error}</p>
+      {/if}
     </div>
   {:else if production.error && production.stages.length === 0}
     <p class="error" role="alert">{production.error}</p>

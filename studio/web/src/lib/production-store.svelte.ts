@@ -95,11 +95,16 @@ interface StageOutcomeView {
 /**
  * The outcome statuses that mean the stage moved forward.
  *
- * Everything else the service can return — `blocked`, `failed`, `idle`,
- * `claimed` — is a verdict that the work did not happen, delivered inside an
- * `ok: true` envelope because the service reached it deliberately.
+ * `claimed` is here even though nothing in the studio calls /claim yet: a
+ * successful claim IS the stage advancing — it is leased and a performer is
+ * on it — and leaving it out would have made the one thing a future claim
+ * button does correctly render as an error. Anything absent from this set is
+ * a verdict that the work did not happen (`blocked`, `failed`, `idle`),
+ * delivered inside an `ok: true` envelope because the service reached it
+ * deliberately. A status added to `OutcomeStatus` and not here reports as a
+ * refusal, which is the safe direction to be wrong in.
  */
-const ADVANCED = new Set(["completed", "awaiting_review", "would-run"]);
+const ADVANCED = new Set(["completed", "awaiting_review", "would-run", "claimed"]);
 
 /** What happened, for an outcome that carries no reason of its own. */
 function describeOutcome(outcome: StageOutcomeView): string {
@@ -111,6 +116,7 @@ function describeOutcome(outcome: StageOutcomeView): string {
   }
   if (outcome.status === "awaiting_review") return `${who} completed and is awaiting review`;
   if (outcome.status === "would-run") return `${who} would run — nothing was written`;
+  if (outcome.status === "claimed") return `${who} is claimed — perform it, then complete it`;
   return `${who}: ${outcome.status}`;
 }
 
@@ -248,8 +254,18 @@ class ProductionStore {
       // attempt still changes the stage list, and `load` clears `error` on the
       // way in, so setting it first would erase what we are here to report.
       await this.load(this.ref);
-      if (refusal) this.error ??= refusal;
-      else this.lastMessage = said;
+      if (refusal) {
+        // The refusal answers what the user clicked, so it is never dropped.
+        // `??=` did drop it whenever the reload set an error of its own — the
+        // reader then saw a status failure with no hint that their run had
+        // been refused, which is the exact substitution this task exists to
+        // close. A reload error is a second, separate fact; both are shown.
+        this.error = this.error && this.error !== refusal
+          ? `${refusal}\n\nReading status afterwards also failed: ${this.error}`
+          : refusal;
+      } else {
+        this.lastMessage = said;
+      }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
