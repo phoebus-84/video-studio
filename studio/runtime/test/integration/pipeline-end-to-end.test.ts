@@ -8,9 +8,11 @@
 // performed out of process, four dispatched here — and then asks the journal
 // it wrote whether it agrees with itself.
 //
-// The load-bearing assertion is the last one: replaying the finished journal
-// from scratch must reproduce exactly what `status()` reports. That is what
-// makes this a test of the claim/complete design rather than of the test.
+// What carries the weight is the shape of the history: one lease, one start
+// and one terminal event per stage, one attempt each, every event of a stage
+// naming the same lease, and thirty events in total. A journal read back from
+// disk then has to derive exactly what `status()` reports, which pins that
+// `status` infers nothing from files or from what this process remembers.
 // ---------------------------------------------------------------------------
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -78,10 +80,14 @@ const GRAPH: [id: string, dependsOn: string[]][] = [
  *   to express that a person is at the controls, so the only honest answer it
  *   can give is to refuse. That refusal is asserted against the real manifest
  *   in the second test below.
- * - `terminal-recordings`, `illustrations`, `compose` and `qa` declare
- *   `review: human`. With no accepted review recordable, a dependent of any
- *   of them is refused too — so even lifting autopilot would stop the shipped
- *   manifest at `compose`.
+ * - `script`, `terminal-recordings`, `illustrations`, `compose` and `qa` —
+ *   five stages — declare `review: human`. With no accepted review
+ *   recordable, every dependent of one of them is refused too. `script` is
+ *   the first, so lifting autopilot alone would not carry the shipped
+ *   manifest further: it would complete `brief`, return `awaiting_review`
+ *   for `script`, and stop one stage later at `art-direction`, on `script`'s
+ *   unrecorded review. The review wall stands immediately behind the
+ *   attendance one, not eight stages downstream.
  *
  * Both wait on avg-qr4.3, which is what attendance and approval mean. The
  * fixture keeps the graph and opens the gates; nothing else differs.
@@ -165,7 +171,10 @@ describe("a pipeline from brief to qa", () => {
       const claimed = await svc.claim(REF, "e2e", { stage: stageId });
       expect(claimed.ok).toBe(true);
       if (!claimed.ok) return;
-      expect(claimed.value.status).toBe("claimed");
+      // The refusal, not just the status: this is the assertion a broken
+      // seam trips first, and the service's own sentence explains it better
+      // than "expected 'blocked' to be 'claimed'" can.
+      expect(claimed.value.status, claimed.value.reason).toBe("claimed");
       expect(claimed.value.attemptNumber).toBe(1);
       expect(claimed.value.leaseId).toBeTruthy();
 
@@ -258,10 +267,14 @@ describe("a pipeline from brief to qa", () => {
     expect(new Set(leases.values()).size).toBe(10);
 
     // ── Replay reproduces the final state ───────────────────────────────
-    // The one assertion that tests the design rather than the test: a reader
-    // holding nothing but the journal must arrive at exactly what the service
-    // reports. If the claim/complete seam writes a history that does not add
-    // up to the state it claims, it fails here.
+    // A reader holding nothing but the journal bytes arrives at exactly what
+    // the service reports. Both sides call `deriveExecutionState`, so this
+    // cannot catch a bug inside the derivation itself — what it establishes
+    // is that `status` adds nothing of its own on top of it: no state carried
+    // in the process that ran the stages, nothing inferred from which files
+    // happen to exist, and a journal that parses under `strict`. The attempt,
+    // holder, lease and output assertions above are what check the history
+    // the seam actually wrote.
     expect(
       stageIds.map((id) => {
         const i = derived.get(id)!;
