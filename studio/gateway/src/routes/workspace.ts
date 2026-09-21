@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WorkspaceService } from "../workspace/service";
-import type { RuntimeClient } from "../runtime/client.js";
+import { makeExecutionService, DEFAULT_PIPELINE } from "../runtime/service.js";
 import {
   channelNotFound,
   WorkspaceError,
@@ -12,7 +12,6 @@ import {
 export function registerWorkspaceRoutes(
   app: FastifyInstance,
   workspace: WorkspaceService,
-  runtime?: RuntimeClient,
 ): void {
   /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -87,25 +86,35 @@ export function registerWorkspaceRoutes(
     try {
       const epData = await workspace.getEpisode(channel, series, epSlug);
 
-      // ── Enrich with pipeline status from runtime ──────────────────────
-      if (runtime) {
-        try {
-          const pipelineName = (epData as any).pipeline ?? "fairy-tale-adaptation";
-          const status = await runtime.status({ channel, series, episode: epSlug }, pipelineName as string);
-          if (status.ok && status.data) {
-            const data = status.data as Record<string, unknown>;
-            (epData as any).pipeline = data.pipeline ?? (epData as any).pipeline;
-            (epData as any).stages = (data.stages as Array<Record<string, unknown>>)?.map((s: any) => ({
-              id: s.id,
-              name: s.name ?? s.id,
-              status: s.state ?? "pending",
-              dependsOn: s.dependsOn ?? [],
-              produces: s.produces ?? [],
-            })) ?? (epData as any).stages;
-          }
-        } catch {
-          // Runtime unavailable — use static data from workspace
+      // ── Enrich with pipeline status from the execution service ────────
+      //
+      // The same `service.status()` the /status route reports, so the
+      // episode list and the production panel cannot describe one episode
+      // two ways. It used to shell out to `vpr status` and read `s.id` off
+      // each stage; the service reports `stageId`, so every stage in this
+      // projection had been arriving with `id: undefined` since the status
+      // shape changed underneath it — and nothing here had a test.
+      //
+      // The key stays `id`: that is what this route has always published and
+      // what studio/web/src/lib/episode-store.svelte.ts reads.
+      try {
+        const pipelineName = ((epData as any).pipeline as string | undefined) || DEFAULT_PIPELINE;
+        const service = makeExecutionService((message) => request.log.info(message));
+        const status = await service.status({ channel, series, episode: epSlug }, pipelineName);
+        if (status.ok) {
+          (epData as any).pipeline = status.value.pipeline ?? (epData as any).pipeline;
+          (epData as any).stages = status.value.stages.map((s) => ({
+            id: s.stageId,
+            name: s.name || s.stageId,
+            status: s.state,
+            dependsOn: s.dependsOn,
+            produces: s.produces,
+          }));
         }
+      } catch {
+        // The pipeline could not be resolved or the journal could not be
+        // read — fall back to the static data the workspace holds, which is
+        // what this route did when the runtime was unreachable.
       }
 
       return epData;

@@ -8,10 +8,9 @@ import type { FastifyInstance } from "fastify";
 import type { RuntimeClient, EpisodeRef } from "../runtime/client.js";
 import type { WorkspaceService } from "../workspace/service.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
-import { ExecutionService, type StageOutcome } from "@studio/runtime";
-import { GatewayDispatcher } from "../runtime/dispatcher.js";
-import { GatewayReviewGate } from "../runtime/review-gate.js";
-import { builtinPipelinesPath } from "../runtime/client.js";
+import type { StageOutcome } from "@studio/runtime";
+import type { RerunMode } from "@studio/runtime";
+import { makeExecutionService, DEFAULT_PIPELINE } from "../runtime/service.js";
 
 /** A single execute call advances at most this many stages before returning. */
 const MAX_STAGES_PER_EXECUTE = 20;
@@ -165,9 +164,112 @@ export function registerProductionRoutes(
     const ref = parseEpisode(request.params as Record<string, string>);
     const stageId = (request.params as Record<string, string>).stage!;
     const { dryRun } = request.body as { dryRun?: boolean };
-    const pipeline = await inheritedPipeline(workspace, ref);
-    const result = await runtime.run(ref, stageId, dryRun, pipeline);
-    return { ok: result.ok, data: result.data, error: result.error };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+
+    const service = makeExecutionService((message) => request.log.info(message));
+    const outcome = await service.run(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
+
+    // `ok` means the service reached a verdict. A `blocked` outcome is
+    // `ok: true` with a `blocked` status — the same convention /execute uses,
+    // and it is safe here because the outcome is in the body for the caller
+    // to read. This route used to shell out to `vpr run`, which printed
+    // "Ready to execute: <stage>" and exited 0: the studio's Run Stage button
+    // reported success and nothing had happened.
+    return outcome.ok
+      ? { ok: true, outcome: outcome.value }
+      : { ok: false, error: outcome.error };
+  });
+
+  // ── Claim a stage for an out-of-process performer ─────────────────────────
+  app.post("/api/channels/:channel/series/:series/episodes/:episode/stages/:stage/claim", {
+    schema: {
+      description:
+        "Lease a stage and record that it has started, for a performer that is not this process. " +
+        "The caller must close it with the matching complete call, passing back the leaseId this " +
+        "returns; an abandoned claim expires on its own.",
+      tags: ["production"],
+      params: {
+        type: "object",
+        required: ["channel", "series", "episode", "stage"],
+        properties: {
+          channel: { type: "string" },
+          series: { type: "string" },
+          episode: { type: "string" },
+          stage: { type: "string" },
+        },
+      },
+      body: {
+        type: "object",
+        properties: {
+          dryRun: { type: "boolean", default: false },
+        },
+      },
+    },
+  }, async (request) => {
+    const ref = parseEpisode(request.params as Record<string, string>);
+    const stageId = (request.params as Record<string, string>).stage!;
+    const { dryRun } = request.body as { dryRun?: boolean };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+
+    const service = makeExecutionService((message) => request.log.info(message));
+    const outcome = await service.claim(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
+    return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
+  });
+
+  // ── Complete a claimed stage ──────────────────────────────────────────────
+  app.post("/api/channels/:channel/series/:series/episodes/:episode/stages/:stage/complete", {
+    schema: {
+      description:
+        "Close a claimed stage with the outputs the performer wrote, or report that it failed. " +
+        "Pass the leaseId the matching claim returned: without it the service closes whatever " +
+        "open claim it finds, so a performer whose lease lapsed could close a second holder's " +
+        "claim. A caller over HTTP has the claim response in hand and has no excuse to omit it.",
+      tags: ["production"],
+      params: {
+        type: "object",
+        required: ["channel", "series", "episode", "stage"],
+        properties: {
+          channel: { type: "string" },
+          series: { type: "string" },
+          episode: { type: "string" },
+          stage: { type: "string" },
+        },
+      },
+      body: {
+        type: "object",
+        properties: {
+          outputs: { type: "array", items: { type: "string" } },
+          leaseId: { type: "string" },
+          failed: { type: "boolean", default: false },
+          error: { type: "string" },
+        },
+      },
+    },
+  }, async (request) => {
+    const ref = parseEpisode(request.params as Record<string, string>);
+    const stageId = (request.params as Record<string, string>).stage!;
+    const body = (request.body ?? {}) as {
+      outputs?: string[]; leaseId?: string; failed?: boolean; error?: string;
+    };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+
+    // The performer names what it wrote; the service does not go looking.
+    // A completion with neither outputs nor a failure report is the caller
+    // asking the gateway to infer which files count, which is the inference
+    // this whole path exists to remove.
+    if (!body.failed && (body.outputs ?? []).length === 0) {
+      throw new GatewayError({
+        code: ErrorCode.VALIDATION,
+        message: "outputs is required: name the files the performer wrote, or set failed",
+      });
+    }
+
+    const service = makeExecutionService((message) => request.log.info(message));
+    const outcome = await service.complete(ref, pipeline, stageId, {
+      ...(body.failed ? { failed: true, error: body.error } : { outputs: body.outputs }),
+      ...(body.leaseId ? { leaseId: body.leaseId } : {}),
+    });
+    return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
 
   // ── Execute full pipeline ─────────────────────────────────────────────────
@@ -195,25 +297,9 @@ export function registerProductionRoutes(
   }, async (request, _reply) => {
     const ref = parseEpisode(request.params as Record<string, string>);
     const { pipeline: requestedPipeline, dryRun } = request.body as { pipeline?: string; dryRun?: boolean };
-    const pipeline = await inheritedPipeline(workspace, ref, requestedPipeline) ?? "narrated-illustrated-video";
+    const pipeline = await inheritedPipeline(workspace, ref, requestedPipeline) ?? DEFAULT_PIPELINE;
 
-    const libraryRoot = process.env.AVG_LIBRARY_ROOT ?? "./library";
-    const service = new ExecutionService({
-      libraryRoot,
-      // `|| undefined` rather than the bare call: builtinPipelinesPath()
-      // returns "" when package resolution fails, and createDefaultLoader's
-      // `??` does not fall back on an empty string — so AVG_BUILTIN_PIPELINES,
-      // the operator's escape hatch, would be dead exactly when it is needed.
-      // Without this the loader searches only the library root, and every
-      // built-in pipeline resolves to nothing: the same reasoning the deleted
-      // loadGates carried.
-      builtinPipelines: builtinPipelinesPath() || undefined,
-      dispatcher: new GatewayDispatcher(),
-      review: new GatewayReviewGate(),
-      budget: { maySpend: async () => ({ ok: true as const, value: { reserveId: "gateway", estimatedCost: 0 } }) },
-      holder: `gateway/pid-${process.pid}`,
-      log: (message) => request.log.info(message),
-    });
+    const service = makeExecutionService((message) => request.log.info(message));
 
     if (dryRun) {
       const outcome = await service.run(ref, pipeline, { dryRun: true });
@@ -269,9 +355,19 @@ export function registerProductionRoutes(
     },
   }, async (request) => {
     const ref = parseEpisode(request.params as Record<string, string>);
-    const pipeline = await inheritedPipeline(workspace, ref);
-    const result = await runtime.status(ref, pipeline);
-    return { ok: result.ok, data: result.data, error: result.error };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+
+    const service = makeExecutionService((message) => request.log.info(message));
+    const status = await service.status(ref, pipeline);
+    if (!status.ok) return { ok: false, error: status.error };
+    // The `data` envelope stays: the studio reads `res.data.stages`
+    // (studio/web/src/lib/production-store.svelte.ts). Returning the
+    // service's report at the top level would be tidier and would show the
+    // studio an empty pipeline. There is no response schema on this route,
+    // deliberately — Fastify strips properties a response schema does not
+    // declare, and an out-of-date one here would silently delete `state` and
+    // `stateReason`, which is what a caller switches on.
+    return { ok: true, data: { pipeline: status.value.pipeline, stages: status.value.stages } };
   });
 
   // ── Staleness ─────────────────────────────────────────────────────────────
@@ -317,16 +413,33 @@ export function registerProductionRoutes(
       body: {
         type: "object",
         properties: {
-          mode: { type: "string", enum: ["retry-current", "rerun-selected", "rerun-affected", "full-rebuild"] },
+          // The four RerunMode members, spelled as the type spells them.
+          // This enum used to offer "rerun-affected", which matches no
+          // RerunMode and never has — the real fourth is
+          // "rerun-affected-downstream". The studio sent the phantom on
+          // every staleness rerun, and it reached a CLI that shrugged.
+          //
+          // "rerun-affected-downstream" is declared here and refused by the
+          // service with MODE_UNSUPPORTED: computing it needs staleness
+          // propagation (avg-33r), which nothing wires up. Declared-and-
+          // refused is the honest pairing; dropping it from the schema would
+          // answer "no such mode" to a mode that exists and is planned.
+          mode: {
+            type: "string",
+            enum: ["retry-current", "rerun-selected", "rerun-affected-downstream", "full-rebuild"],
+          },
           stageIds: { type: "array", items: { type: "string" } },
         },
       },
     },
   }, async (request) => {
     const ref = parseEpisode(request.params as Record<string, string>);
-    const { mode } = request.body as { mode?: string };
-    const result = await runtime.rerun(ref, mode);
-    return { ok: result.ok, plan: result.data, error: result.error };
+    const { mode, stageIds } = (request.body ?? {}) as { mode?: RerunMode; stageIds?: string[] };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+
+    const service = makeExecutionService((message) => request.log.info(message));
+    const plan = await service.planRerun(ref, pipeline, mode ?? "retry-current", stageIds ?? []);
+    return plan.ok ? { ok: true, plan: plan.value } : { ok: false, error: plan.error };
   });
 
   // ── Approve stage ─────────────────────────────────────────────────────────

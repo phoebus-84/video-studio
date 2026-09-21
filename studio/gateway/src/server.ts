@@ -113,7 +113,7 @@ export async function createGateway(
 
   // ── Event publisher (poll-based stage transitions) ─────────────────────
   const { EventPublisher } = await import("./events/publisher.js");
-  const publisher = new EventPublisher({ bus: events.bus });
+  const publisher = new EventPublisher({ bus: events.bus, libraryRoot });
 
   // ── Pi RPC health ─────────────────────────────────────────────────────
   const { PiRpcHealth } = await import("./rpc/health.js");
@@ -150,7 +150,7 @@ export async function createGateway(
   );
 
   // ── Start event publisher ─────────────────────────────────────────────
-  publisher.start(runtime, watcher);
+  publisher.start(watcher);
 
   // ── Serve library assets as static files ─────────────────────────────
   // Uploads are capped so a stray request cannot fill the library's disk.
