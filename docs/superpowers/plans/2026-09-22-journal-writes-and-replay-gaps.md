@@ -377,7 +377,16 @@ git commit -m "fix(contracts): throw on a malformed event, keep null for a faile
 
 **Context for the implementer:** `claimInternal` writes `stage-leased`, checks it, then writes `stage-started` and does **not** check it. It is the only execution append in the service that is unchecked. After Task 1 a dropped `stage-started` is survivable, but it is still a lost write, and proceeding to dispatch after one is knowingly running work whose record already has a hole.
 
-The rollback is safe here for the same reason it is safe for `stage-leased`: nothing has been dispatched yet. `stage-completed` and `stage-failed` cannot roll back, which is why they leave the lease to lapse instead.
+**The lease is NOT released here** — and this corrects the spec's section-3 table, which
+gives the reason "nothing recorded, nothing ran" for both `stage-leased` and `stage-started`.
+For `stage-started` the first half is false: the `stage-leased` event landed, so the journal
+says the stage is held. Releasing the lockfile would make the lockfile and the journal
+disagree, which is the defect class this epic exists to close. `stage-leased` is genuinely
+different — that write did not land, so releasing is what makes the two agree.
+
+So `stage-started` gets the terminal appends' treatment, not the lease append's: return
+`blocked`, leave the lease to lapse. The stage becomes claimable again when the lease expires,
+exactly as it does when a process dies immediately after leasing.
 
 The comment above the `stage-leased` check currently reads "a dropped `stage-started` or `stage-completed` self-heals (the lease expires, the stage becomes retryable)". That is backwards and must be corrected: a dropped `stage-completed` does self-heal, and a dropped `stage-started` is the one that leaves a hole.
 
@@ -441,7 +450,7 @@ Add it immediately after the existing `dropStageLeased` test (which ends around 
     const dispatcher = writingDispatcher(dir);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: PIPELINES,
-      dispatcher, budget: permissiveBudget, holder: "test/1",
+      dispatcher, budget: permissiveBudget, holder: "test/1", leaseTtlMs: 40,
     });
 
     journalMockState.dropStageStarted = true;
@@ -454,11 +463,21 @@ Add it immediately after the existing `dropStageLeased` test (which ends around 
     expect(result.value.reason).toMatch(/journal write/);
     expect(dispatcher.dispatch).not.toHaveBeenCalled();
 
-    // The lease was released, so a later run leases and dispatches normally.
-    const second = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
-    expect(second.ok).toBe(true);
-    if (!second.ok) return;
-    expect(second.value.status).toBe("completed");
+    // The lease is still held, because the journal says it is. A second run
+    // while it is live must be refused — the lockfile and the journal agree.
+    const immediate = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(immediate.ok).toBe(true);
+    if (!immediate.ok) return;
+    expect(immediate.value.status).toBe("blocked");
+    expect(immediate.value.reason).toMatch(/already held/);
+
+    // And it becomes claimable again by lapse, not by a release that would
+    // have contradicted the log.
+    await new Promise((r) => setTimeout(r, 60));
+    const later = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(later.ok).toBe(true);
+    if (!later.ok) return;
+    expect(later.value.status).toBe("completed");
 
     // The dropped attempt left its lease event and nothing after it — no
     // stage-started, and no terminal event claiming an attempt that never ran.
@@ -466,6 +485,11 @@ Add it immediately after the existing `dropStageLeased` test (which ends around 
     expect(types).toEqual(["stage-leased", "stage-leased", "stage-started", "stage-completed"]);
   });
 ```
+
+**The service in this test needs a short lease**, so the lapse is observable. Construct it with
+`leaseTtlMs: 40` alongside the other options — `leaseTtlMs` is an `ExecutionService` option
+(`studio/runtime/src/execution/types.ts:308`) and neighbouring suites already use short values
+(`fail-closed.test.ts:202` uses `20`).
 
 - [ ] **Step 3: Run to verify it fails**
 
@@ -478,11 +502,10 @@ In `studio/runtime/src/execution/service.ts`, replace the block from the `if (!l
 
 ```ts
     if (!leased) {
-      // Nothing else has been recorded yet — release the lease we just took
-      // and stop before dispatching. The two terminal appends below cannot do
-      // this: by the time they run the work has happened, so they leave the
-      // lease to lapse instead, and the journal and the lockfile keep saying
-      // the same thing.
+      // Release and stop. This is the ONE append where releasing is right:
+      // the write did not land, so the journal says nothing about this stage,
+      // and dropping the lockfile is what keeps the two agreeing. Every append
+      // after this one has a lease event in the log behind it.
       await sm.releaseAll();
       return blocked(`"${stageId}" could not be leased: the journal write for its lease did not land`);
     }
@@ -491,14 +514,17 @@ In `studio/runtime/src/execution/service.ts`, replace the block from the `if (!l
       data: { stageId, leaseId, attemptNumber },
     });
     if (!started) {
-      // Same rollback, same reason: nothing has been dispatched yet.
+      // Stop, but do NOT release: the `stage-leased` event above landed, so
+      // the journal says this stage is held. Dropping the lockfile now would
+      // leave the lockfile and the journal disagreeing, which is the failure
+      // this service exists to prevent. The lease lapses on its own and the
+      // stage becomes claimable again then — the same path a process that
+      // dies right after leasing already takes.
       //
-      // Replay survives this gap — it records `startRecorded: false` on the
-      // attempt rather than throwing — but surviving it is not a licence to
-      // create it. A lost write here means writes are failing on this machine,
-      // and running the stage anyway produces work whose record is already
-      // incomplete.
-      await sm.releaseAll();
+      // Replay survives this gap: it records `startRecorded: false` rather
+      // than throwing. Surviving it is not a licence to create it. A lost
+      // write here means writes are failing on this machine, and dispatching
+      // anyway produces work whose record is already incomplete.
       return blocked(`"${stageId}" could not be started: the journal write for its start did not land`);
     }
 ```

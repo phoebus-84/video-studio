@@ -120,21 +120,28 @@ is a wider change bought for a distinction no caller makes.
 
 ### 3. The service checks every write
 
-The `stage-started` append gets exactly what the `stage-leased` append already
-gets: release the lease, return `blocked`, dispatch nothing. That rollback is
-complete at this point in the sequence, because nothing has run yet — which is
-the same reason the `stage-leased` rollback is safe, and why neither
-`stage-completed` nor `stage-failed` can do it.
+The `stage-started` append returns `blocked` and dispatches nothing. It does
+**not** release the lease: the `stage-leased` event landed, so the journal
+already says this stage is held, and dropping the lockfile would leave the two
+records contradicting each other. The stage becomes claimable again when the
+lease lapses — the same path a process that dies immediately after leasing
+already takes.
 
-After this, every execution append in the service is checked, and the three
-distinct treatments are:
+After this, every execution append in the service is checked:
 
 | append | on a dropped write | why |
 |---|---|---|
-| `stage-leased` | release the lease, return `blocked` | nothing recorded, nothing ran |
-| `stage-started` | release the lease, return `blocked` | nothing recorded, nothing ran |
-| `stage-completed` | return `unrecorded`, leave the lease to lapse | the work happened; the lease and the journal must keep agreeing |
+| `stage-leased` | release the lease, return `blocked` | the write did not land, so the journal says nothing about this stage; releasing is what keeps the lockfile and the journal agreeing |
+| `stage-started` | return `blocked`, leave the lease to lapse | the lease event DID land, so the journal says the stage is held; releasing would make the two disagree |
+| `stage-completed` | return `unrecorded`, leave the lease to lapse | same reason, and the work has already happened |
 | `stage-failed` | return `false`, leave the lease to lapse | same |
+
+An earlier draft of this table gave `stage-leased` and `stage-started` the same
+treatment and the same reason, "nothing recorded, nothing ran". For
+`stage-started` the first half is false, and it is the half that decides: the
+lease event is in the log. The dividing line is not whether work has run, it is
+**whether the journal already claims the stage**, and `stage-leased` is the only
+append where it does not.
 
 The comment above the `stage-leased` check is corrected: it currently names
 `stage-started` as self-healing, which this design's first section shows it is
