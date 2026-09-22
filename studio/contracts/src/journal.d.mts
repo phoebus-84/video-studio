@@ -54,7 +54,11 @@ export declare function ulid(now?: number): string;
 
 export declare function buildJournalEvent(input: JournalEventInput): JournalEvent;
 
-/** Returns the event that was written, or null when it could not be. */
+/**
+ * Returns the event that was written, or null when the filesystem refused it.
+ *
+ * Throws when `input` is malformed — that is a caller bug, not a failed write.
+ */
 export declare function appendJournalEvent(
   episodeDir: string,
   input: JournalEventInput,
