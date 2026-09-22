@@ -217,6 +217,10 @@ export class ExecutionService {
         state = stateReason ? "blocked" : "runnable";
       }
 
+      const gaps = instance.attempts
+        .filter((a) => a.startRecorded === false)
+        .map((a) => `attempt ${a.number} has no recorded start`);
+
       reports.push({
         stageId: stage.definition.id,
         name: stage.definition.name,
@@ -232,6 +236,7 @@ export class ExecutionService {
         // never run. `outputArtifacts` above is the journal's record of what
         // was actually written.
         produces: (stage.definition.produces ?? []).map((artifact) => artifact.label),
+        ...(gaps.length > 0 ? { gaps } : {}),
         ...(stateReason ? { stateReason } : {}),
       });
     }

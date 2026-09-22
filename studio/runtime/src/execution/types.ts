@@ -246,6 +246,18 @@ export interface StageStatusReport {
    * never run, and `outputArtifacts` cannot.
    */
   produces: string[];
+  /**
+   * What this stage's history is missing, when it is missing something.
+   *
+   * One sentence per gap, in the same spirit as `stateReason`: text a caller
+   * can show verbatim. Today the only gap is an attempt whose `stage-started`
+   * event never landed, which replay records rather than throwing on.
+   *
+   * Absent when there is nothing to say. A gap means a journal write was lost
+   * on the machine that ran this stage — the stage's own result may be fine,
+   * but something else may have been lost at the same time.
+   */
+  gaps?: string[];
 }
 
 export interface EpisodeStatus {

@@ -154,6 +154,33 @@ describe("ExecutionService.status", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("JOURNAL_UNREADABLE");
   });
+
+  it("reports an attempt whose start was never recorded", async () => {
+    // The gap is evidence that a write was lost on this machine. Leaving it
+    // visible only to replay would be recording it nowhere a human looks.
+    const { root, dir } = await episode();
+    // stage-leased then straight to stage-completed: the stage-started write
+    // was lost. Before Task 1 this journal made the episode permanently
+    // underivable; now it derives, and the hole has to be visible.
+    await journalLine(dir, "stage-leased", {
+      stageId: "brief", leaseId: "L1", attemptNumber: 1,
+      ttlMs: 300000, expiresAt: "2999-01-01T00:00:00Z", holder: "runtime/pid-7",
+    });
+    await journalLine(dir, "stage-completed", {
+      stageId: "brief", leaseId: "L1", attemptNumber: 1, outputs: ["artifacts/brief.md"],
+    });
+
+    const result = await service(root).status(REF, "narrated-illustrated-video");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const brief = result.value.stages.find((s) => s.stageId === "brief")!;
+    expect(brief.status).toBe("completed");
+    expect(brief.gaps).toEqual(["attempt 1 has no recorded start"]);
+
+    // Absent, not empty, on a stage with nothing to report.
+    const script = result.value.stages.find((s) => s.stageId === "script")!;
+    expect("gaps" in script).toBe(false);
+  });
 });
 
 describe("status agrees with what run will do", () => {
