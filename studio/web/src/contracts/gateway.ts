@@ -77,15 +77,32 @@ export interface PipelineStage {
   dependsOn: string[];
 }
 
+/**
+ * A stage's status as the gateway publishes it.
+ *
+ * `awaiting_review` is the execution service's spelling, and the spelling the
+ * episode-detail projection passes through verbatim (routes/workspace.ts maps
+ * `status: s.state`). It replaced `awaiting_approval`, which nothing has ever
+ * produced; `skipped` went with it, unreachable since `runAutopilot` was
+ * deleted in avg-2n7. `runnable` arrives by the same route and for the same
+ * reason — it is the state an actionable stage is most often in, and while it
+ * was undeclared it reached `STAGE_LABELS` as a missing key and rendered as a
+ * blank chip. `blocked` arrives the same way and was missed by the same
+ * reading: it is a member of the execution service's `StageState`, and
+ * routes/workspace.ts publishes `status: s.state` for every stage without
+ * filtering. Declaring one member of a projection and not another is how a
+ * real state renders as an empty label.
+ */
 export type StageStatus =
   | "pending"
   | "queued"
+  | "runnable"
+  | "blocked"
   | "running"
-  | "awaiting_approval"
+  | "awaiting_review"
   | "completed"
   | "failed"
-  | "cancelled"
-  | "skipped";
+  | "cancelled";
 
 /* ── episode detail ── */
 

@@ -37,7 +37,14 @@ Check the runtime agrees the library is well-formed:
 node studio/runtime/dist/src/cli.js doctor --library "$PWD/library" --json
 ```
 
-`vpr` requires `--library` explicitly; it does not read `AVG_LIBRARY_ROOT`.
+`doctor` is the one command that requires `--library` outright: it reads no
+environment variable and refuses without the flag. Everywhere else `--library`
+wins, `AVG_LIBRARY_ROOT` is the fallback, and with neither set the root is the
+working directory — where there is usually no library, so every episode
+reports `Pipeline not found`. Pass the flag. Which root is in effect matters
+more than it used to: `vpr run` and `vpr complete` write the episode's
+journal, and the journal is the only record of what ran — pointed at the wrong
+tree, it is authoritative about the wrong episode.
 
 ## 1. Agent alone — the normal way to work
 
@@ -181,11 +188,69 @@ echo '{"id":"1","method":"health","params":{}}' \
 
 JSONL request in, JSONL response out. Pi's own RPC mode is `pi --mode rpc`.
 
+## 4. Driving stages by hand: `vpr run`, `complete`, `status`
+
+The execution service owns what ran, when, and whether it counted. `vpr` is one
+of its callers; the gateway and the agent are the others, and all three go
+through the same service, so a stage claimed in one is visible to the rest.
+
+Every command below takes `--library <path>` (see section 0) and `--json`.
+
+**`vpr run`** claims the next runnable stage — or the one named by `--stage` —
+and prints the command that closes it:
+
+```bash
+node studio/runtime/dist/src/cli.js run my-channel/my-series/ep001 \
+  --library "$PWD/library"
+# Claimed "brief" until 2026-09-21T10:35:00.000Z. Perform it, then:
+#   vpr complete my-channel/my-series/ep001 brief --library … --lease l-7 --outputs PATH
+```
+
+It claims; it does not perform. The lease is what the claim is worth: hold it,
+do the work, and close the stage before it expires (`AVG_CLAIM_TTL_MS`, default
+fifteen minutes). An abandoned claim needs no cleanup command — the lease lapses
+and the stage becomes runnable again.
+
+`--dry-run` says which stage it *would* claim and takes no lease.
+
+**`vpr complete`** closes a claimed stage. `--outputs` is required unless you
+pass `--failed`: the performer is the only party that knows what it produced,
+and a completion with no outputs named is a claim that a stage ran with nothing
+to show for it.
+
+```bash
+node studio/runtime/dist/src/cli.js complete my-channel/my-series/ep001 brief \
+  --library "$PWD/library" --lease l-7 --outputs artifacts/brief.md
+node studio/runtime/dist/src/cli.js complete my-channel/my-series/ep001 brief \
+  --library "$PWD/library" --failed --error "the model refused"
+```
+
+Outputs must exist and must live inside the episode directory. A stage whose
+pipeline declares a review gate completes as `awaiting_review`, and exits 0 —
+completion is what happened, acceptance is a separate decision.
+
+**`vpr status`** replays the episode's journal and reports each stage's state:
+
+```bash
+node studio/runtime/dist/src/cli.js status my-channel/my-series/ep001 \
+  --library "$PWD/library" --json
+```
+
+It reports what the journal records, not what is on disk. **An episode full of
+artifacts but with no journal reports every stage `pending`** — that is
+correct, not a bug: files in a directory are not evidence that a stage ran
+under a lease, and the previous behaviour (inferring completion from file
+existence) is what made the CLI's report disagree with everything else.
+
+There is no budget line in the output. There is no ledger behind one yet
+(avg-91o), and a zero is a number an operator would act on.
+
 ## Environment
 
 | Variable | Default | Effect |
 |---|---|---|
 | `AVG_LIBRARY_ROOT` | `./library` | Where channels and episodes live |
+| `AVG_CLAIM_TTL_MS` | 900000 (15 min) | How long a `vpr run` claim holds its lease |
 | `AVG_GATEWAY_URL` | `http://127.0.0.1:5198` | Gateway to stream events to |
 | `AVG_GATEWAY_TOKEN` | `library/.gateway-token` | Gateway auth |
 | `FAL_KEY` | — | Required for `image.generate` / `image.edit` |
@@ -204,7 +269,9 @@ untracked `.env`, never in a committed file.
 repository root is `../../library`.
 
 **`vpr exited with code 1`** — run it by hand with `--library` to see the real
-error; the CLI requires that flag.
+error. Pass the flag rather than relying on `AVG_LIBRARY_ROOT`: the fallback
+exists, but a command that journals into a library you did not mean is worse
+than one that refuses.
 
 **A capability fails mid-session** — check `npm run doctor`. The agent is
 designed to fail rather than substitute a provider, so an unmet requirement

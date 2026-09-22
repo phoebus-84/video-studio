@@ -47,8 +47,24 @@ test("blocked takes priority over stale", () => {
 });
 
 test("every display state has a label", () => {
-  const labels = Object.keys(STAGE_LABELS);
-  expect(labels.length).toBe(10);
+  // Asserted as the set rather than as a count. It was `toBe(10)`, which said
+  // nothing about WHICH ten and had to be re-guessed the moment the
+  // vocabulary changed: `awaiting_approval` and `skipped` left it when the
+  // gateway's stage-status union dropped them — nothing has ever produced
+  // either — and `awaiting_review` and `runnable`, which the service does
+  // emit, took their place.
+  expect(Object.keys(STAGE_LABELS).sort()).toEqual([
+    "awaiting_review",
+    "blocked",
+    "cancelled",
+    "completed",
+    "failed",
+    "pending",
+    "queued",
+    "runnable",
+    "running",
+    "stale",
+  ]);
   for (const val of Object.values(STAGE_LABELS)) {
     expect(val.length).toBeGreaterThan(0);
   }

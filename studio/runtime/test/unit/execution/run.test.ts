@@ -22,7 +22,11 @@ afterEach(async () => {
 // "dropped stage-leased write" test below (Finding 3). vi.hoisted so the
 // vi.mock factory — which is itself hoisted above these imports — can close
 // over it.
-const journalMockState = vi.hoisted(() => ({ dropStageLeased: false }));
+const journalMockState = vi.hoisted(() => ({
+  dropStageLeased: false,
+  /** A terminal event type to drop, or null. */
+  dropTerminal: null as null | "stage-completed" | "stage-failed",
+}));
 
 vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@studio/contracts/src/journal.mjs")>();
@@ -32,6 +36,9 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
       if (input.type === "stage-leased" && journalMockState.dropStageLeased) {
         return null;
       }
+      if (input.type === journalMockState.dropTerminal) {
+        return null;
+      }
       return actual.appendJournalEvent(episodeDir, input);
     },
   };
@@ -39,6 +46,7 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
 
 afterEach(() => {
   journalMockState.dropStageLeased = false;
+  journalMockState.dropTerminal = null;
 });
 
 async function episode() {
@@ -482,5 +490,66 @@ describe("ExecutionService.run", () => {
 
     const types = (await journal(dir)).map((e: any) => e.type);
     expect(types).toEqual(["stage-leased", "stage-started", "stage-completed"]);
+  });
+
+  // The other half of the same gap (final review). `stage-leased` is checked
+  // and rolled back; the TERMINAL writes were not checked at all. A dropped
+  // `stage-completed` left a stage that ran and produced outputs reported as
+  // `completed` by this process and as `running` by every other reader —
+  // until the lease lapsed and replay turned it into `failed` with no error
+  // recorded anywhere. Nothing can roll back work that happened, so the only
+  // honest move is to say so.
+
+  it("reports failure, not completion, when the stage-completed write does not land", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget, holder: "test/1",
+    });
+
+    journalMockState.dropTerminal = "stage-completed";
+    const result = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropTerminal = null;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("failed");
+    // The reason names the cause and the consequence: the record is missing,
+    // and the stage will run again.
+    expect(result.value.reason).toMatch(/did not land/);
+    expect(result.value.reason).toMatch(/re-run/);
+
+    // And the journal says exactly what it holds — an attempt still open.
+    // The outcome agrees with it, which is the whole point.
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual(["stage-leased", "stage-started"]);
+
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    expect(status.value.stages.find((s) => s.stageId === "brief")?.state).not.toBe("completed");
+  });
+
+  it("reports failure when the stage-failed write does not land", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher: failingDispatcher("the renderer died"), budget: permissiveBudget, holder: "test/1",
+    });
+
+    journalMockState.dropTerminal = "stage-failed";
+    const result = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropTerminal = null;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("failed");
+    expect(result.value.reason).toMatch(/did not land/);
+    // The dispatcher's own message survives: it is the one thing `complete`
+    // cannot read back out of the journal.
+    expect(result.value.reason).toMatch(/the renderer died/);
+
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual(["stage-leased", "stage-started"]);
   });
 });

@@ -202,7 +202,10 @@ export type {
   ReviewResolvedEvent,
   SettingsChangedEvent,
   SnapshotCreatedEvent,
-  StageState,
+  // Aliased: the execution service's `StageState` (exported below) is the one
+  // callers want, and src/journal/ is the separate, unwired implementation
+  // this package's execution path must not use.
+  StageState as JournalStageState,
   ArtifactState,
   BudgetState,
   ReviewState,
@@ -286,7 +289,7 @@ export type {
 export { ExecutionService, dependenciesMet } from "./execution/index.js";
 export type {
   DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict,
-  OutcomeStatus, StageOutcome, StageStatusReport, EpisodeStatus,
+  OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
   ExecutionError, ExecutionServiceOptions,
 } from "./execution/index.js";
 

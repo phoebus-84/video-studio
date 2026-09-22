@@ -20,6 +20,7 @@ import { episodePath } from "@studio/contracts/src/layout.mjs";
 import { parseJournal, JOURNAL_RELATIVE_PATH, appendJournalEvent } from "@studio/contracts/src/journal.mjs";
 import type { JournalEvent } from "@studio/contracts/src/journal.mjs";
 import { deriveExecutionState, leaseState } from "@studio/contracts/src/execution-state.mjs";
+import type { StageAttempt } from "@studio/contracts/src/execution-state.mjs";
 import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
@@ -27,10 +28,35 @@ import { ok, err, type Result } from "../result.js";
 import { StageStateMachine, LeaseError, attemptsSinceLastSuccess } from "../engine/state-machine.js";
 import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from "../engine/types.js";
 import { FileLock } from "../ports/file-lock.js";
+import { planRerun } from "../rerun/index.js";
+import type { RerunMode, RerunPlan } from "../rerun/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
-  DispatchContext, StageOutcome,
+  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict,
 } from "./types.js";
+
+/** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
+interface ClaimInternal {
+  outcome: StageOutcome;
+  /** The selected stage. Absent when nothing was selected. */
+  stage?: ResolvedStage;
+  /** Ready for dispatch, with `attemptNumber` set. Absent when nothing was selected. */
+  ctx?: DispatchContext;
+  episodeDir: string;
+}
+
+/**
+ * The refusal a composition with no budget guard earns.
+ *
+ * Shared by `claimInternal` and `status` so the two say the same sentence
+ * about the same stage. It is a PRESENCE check and nothing more: `status`
+ * must never call `maySpend`, which mints a reservation nothing in this tree
+ * releases (avg-91o), and a polled read endpoint that quietly reserved budget
+ * would be a worse bug than the disagreement this module removes.
+ */
+function noBudgetGuardRefusal(stageId: string): string {
+  return `no budget guard is configured, so "${stageId}" may not spend`;
+}
 
 export class ExecutionService {
   constructor(private readonly options: ExecutionServiceOptions) {}
@@ -41,6 +67,19 @@ export class ExecutionService {
 
   private episodeDir(ref: EpisodeRef): string {
     return episodePath(this.options.libraryRoot, ref.channel, ref.series, ref.episode);
+  }
+
+  /**
+   * The lock the state machine arbitrates a stage with.
+   *
+   * Built here rather than inline so the service's injected clock governs the
+   * lockfile's expiry as well as replay's. On the wall clock they disagree: a
+   * caller that moves `now` past a lease's TTL sees replay call the attempt
+   * timed out while the lockfile it left behind is still live, and the stage
+   * stays unclaimable until real time catches up.
+   */
+  private lock(episodeDir: string): FileLock {
+    return new FileLock(path.join(episodeDir, ".locks"), () => this.now().getTime());
   }
 
   /** Resolve the pipeline, failing rather than guessing when it cannot be read. */
@@ -122,18 +161,80 @@ export class ExecutionService {
       });
     }
 
-    const reports: StageStatusReport[] = stages.map((stage) => {
+    // One review verdict per dependency per `status()` call, shared by every
+    // stage in the loop below. See `whyBlocked`.
+    const verdicts = new Map<string, ReviewVerdict>();
+
+    const reports: StageStatusReport[] = [];
+    for (const stage of stages) {
       const instance = derived.get(stage.definition.id)!;
-      return {
+      const lease = leaseState(instance, now);
+      const depsMet = dependenciesMet(stage, derived);
+      // Only a stage that has not run yet has a question to ask: the rest are
+      // described by what the journal already recorded.
+      let stateReason: string | null = null;
+      if (instance.status === "pending") {
+        try {
+          stateReason = await this.whyBlocked(stage, stages, derived, episodeDir, verdicts);
+        } catch (e) {
+          // An injected gate that throws instead of returning a verdict used
+          // to escape `status` as an unhandled rejection. Every other failure
+          // here is a typed refusal, and this is the read-only path a CLI
+          // polls: a gate nobody can get an answer out of is a stage nobody
+          // should be told is runnable, not a crash in the poller.
+          stateReason =
+            `"${stage.definition.id}" cannot be judged: its review gate failed: ` +
+            `${e instanceof Error ? e.message : String(e)}`;
+        }
+        // The budget guard's PRESENCE, which `claimInternal` checks below the
+        // gates above. Its verdict is not asked for — `maySpend` reserves.
+        // Ordered after `whyBlocked` so both paths name the same first
+        // problem, and so this never masks a dependency or review refusal.
+        if (!stateReason && !this.options.budget) {
+          stateReason = noBudgetGuardRefusal(stage.definition.id);
+        }
+      }
+
+      let state: StageState;
+      if (instance.status === "completed") {
+        // A completed stage that declares a review reports `awaiting_review`
+        // even where a ReviewGate would say `approved`. That is a known
+        // simplification: reconciling it needs avg-qr4.3's definition of what
+        // an approval is, and the studio's action for `awaiting_review` is
+        // "approve", which is harmless to offer twice.
+        state = stage.definition.gates.review !== "none" ? "awaiting_review" : "completed";
+      } else if (instance.status === "running") {
+        state = "running";
+      } else if (instance.status === "failed") {
+        state = "failed";
+      } else if (!depsMet) {
+        // Waiting its turn, not stuck. `blocked` is reserved for a refusal
+        // somebody has to clear — an outstanding review, `autopilot: false` —
+        // because that is the distinction a caller acts on. `stateReason`
+        // still carries what it is waiting for.
+        state = "pending";
+      } else {
+        state = stateReason ? "blocked" : "runnable";
+      }
+
+      reports.push({
         stageId: stage.definition.id,
         name: stage.definition.name,
         status: instance.status,
         attempts: instance.attempts.length,
         outputArtifacts: instance.outputArtifacts,
-        lease: leaseState(instance, now),
-        dependenciesMet: dependenciesMet(stage, derived),
-      };
-    });
+        lease,
+        dependenciesMet: depsMet,
+        state,
+        dependsOn: stage.definition.dependsOn ?? [],
+        // The manifest's declared labels, which is what lets a caller ask
+        // "which stage produces artifacts/script.md?" of a stage that has
+        // never run. `outputArtifacts` above is the journal's record of what
+        // was actually written.
+        produces: (stage.definition.produces ?? []).map((artifact) => artifact.label),
+        ...(stateReason ? { stateReason } : {}),
+      });
+    }
 
     return ok({ ref, pipeline, stages: reports });
   }
@@ -194,11 +295,135 @@ export class ExecutionService {
     return null;
   }
 
-  async run(
+  /**
+   * Why this stage may not run, or null.
+   *
+   * Shared by `claimInternal` and `status` so the two cannot disagree. They
+   * did: `status` used the exported `dependenciesMet`, which tests only for
+   * `completed`, while a run also consulted the review gate — so status
+   * reported a stage as ready that a run then refused.
+   *
+   * `verdicts` memoises the review gate for the length of one caller's
+   * question. `status` asks this of every stage, and a fan-in of eight behind
+   * one reviewed stage asked `isOutstanding` about that stage eight times for
+   * a single poll — and `GatewayReviewGate.isOutstanding` re-reads the whole
+   * journal and sha256s every artifact the review covered, which for the
+   * shipped pipeline includes the narration wav and the final mp4. Sharing
+   * one map across the loop also stops a report contradicting itself when an
+   * artifact changes mid-loop. `claimInternal` passes none: a claim asks
+   * about one stage, once.
+   */
+  private async whyBlocked(
+    stage: ResolvedStage,
+    stages: ResolvedStage[],
+    derived: Map<string, { status: string }>,
+    episodeDir: string,
+    verdicts?: Map<string, ReviewVerdict>,
+  ): Promise<string | null> {
+    const stageId = stage.definition.id;
+
+    // A dependency is satisfied when it completed AND its review, if one is
+    // required, is not outstanding. Completion is what happened; acceptance is
+    // whether it counts. Conflating them is how downstream stages came to build
+    // on artifacts nobody had accepted.
+    const unmet = (stage.definition.dependsOn ?? [])
+      .filter((id) => derived.get(id)?.status !== "completed");
+    if (unmet.length > 0) {
+      return `"${stageId}" depends on ${unmet.map((m) => `"${m}"`).join(", ")}, ` +
+        `which ${unmet.length === 1 ? "has" : "have"} not completed`;
+    }
+
+    // ── Attendance ────────────────────────────────────────────────────────
+    // `gates.autopilot: false` means "a person has to be at the controls for
+    // this". The service has no notion of attendance, so the only honest
+    // answer is to refuse: it cannot run this stage on anyone's behalf.
+    //
+    // This was enforced by nothing at all — "autopilot" appeared nowhere in
+    // this file. It merely looked enforced, because every `autopilot: false`
+    // stage in the shipped manifests (script, compose, safety-review) also
+    // happens to have no gateway handler and so stopped at `canDispatch`.
+    // Give one a handler — or ship a manifest that gates an ordinary stage —
+    // and it ran unattended, which is the one thing the flag exists to
+    // prevent.
+    //
+    // Below the unmet-dependency check, which names an earlier and more
+    // useful problem, and above everything that leases, dispatches or spends.
+    if (!stage.definition.gates.autopilot) {
+      return `"${stageId}" declares autopilot: false and may not run unattended; ` +
+        `a person has to run it`;
+    }
+
+    for (const depId of stage.definition.dependsOn ?? []) {
+      if (this.options.review) {
+        // An injected gate is authoritative only where it actually knows
+        // something. It used to be authoritative for everything, including
+        // stages it had never heard of — and since "I have no record" came
+        // back as `outstanding: false`, injecting a gate SUPPRESSED the
+        // manifest fallback below and made the service more permissive than
+        // having no gate at all. That is precisely backwards, and it was the
+        // gateway — the only composition that ships — that got the weak path.
+        let verdict = verdicts?.get(depId);
+        if (!verdict) {
+          verdict = await this.options.review.isOutstanding(depId, episodeDir);
+          verdicts?.set(depId, verdict);
+        }
+        if (verdict.state === "approved") {
+          // A current, satisfied record beats the manifest: this dependency
+          // is accepted even if its manifest declares a review.
+          continue;
+        }
+        if (verdict.state === "outstanding") {
+          return `"${stageId}" cannot run: "${depId}" ${verdict.reason ?? "has an outstanding review"}`;
+        }
+        // "no-record": the gate is not evidence either way, so fall through
+        // to the manifest rule rather than reading silence as acceptance.
+      }
+
+      // The manifest rule, reached with no gate configured or with a gate
+      // that holds nothing on this dependency. The service cannot know
+      // whether a required review happened, so it does not guess. Absence is
+      // refusal exactly where something is protected — a dependency the
+      // manifest never asked to be reviewed proceeds untouched.
+      const depStage = stages.find((s) => s.definition.id === depId);
+      const depNeedsReview = depStage?.definition.gates.review !== "none";
+      if (depNeedsReview) {
+        return `"${stageId}" cannot run: "${depId}" declares ${depStage!.definition.gates.review} ` +
+          `review and no accepted review is recorded for it, so whether it was accepted ` +
+          `cannot be known`;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Select a stage, check every gate, take the lease, and record that the
+   * stage has started — then stop.
+   *
+   * `run` and `claim` are the same code up to this point, and deliberately so:
+   * a synchronous dispatcher and an out-of-process performer that each wrote
+   * their own `stage-leased` would be the next instance of the split this
+   * epic exists to close, and the hardest to notice, because both would be
+   * correct in isolation.
+   *
+   * `precheck` runs after selection and the manifest's own gates, and before
+   * anything is leased or spent. `run` uses it to refuse a stage its
+   * dispatcher does not handle, so that no stage is ever leased by a caller
+   * that cannot perform it — and so that a stage nothing here can perform
+   * never reaches the budget guard and mints a reservation for work that is
+   * then refused.
+   *
+   * A bare `claim` passes none: a claim is a promise to perform from
+   * somewhere else, and requiring a dispatcher for one would defeat the
+   * point. The precheck can only ever make `run` refuse sooner than `claim`
+   * does — every gate above it applies to both.
+   */
+  private async claimInternal(
     ref: EpisodeRef,
     pipeline: string,
     opts: { stage?: string; dryRun?: boolean } = {},
-  ): Promise<Result<StageOutcome, ExecutionError>> {
+    precheck?: (stage: ResolvedStage) => string | null,
+  ): Promise<Result<ClaimInternal, ExecutionError>> {
     const startedAt = Date.now();
     const log = this.options.log ?? (() => {});
 
@@ -236,88 +461,24 @@ export class ExecutionService {
     }
 
     if (!stage) {
-      return ok({ stageId: null, status: "idle", outputs: [], durationMs: Date.now() - startedAt });
+      return ok({
+        outcome: { stageId: null, status: "idle", outputs: [], durationMs: Date.now() - startedAt },
+        episodeDir,
+      });
     }
 
     const stageId = stage.definition.id;
-    const blocked = (reason: string): Result<StageOutcome, ExecutionError> =>
-      ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt, dryRun: opts.dryRun });
+    const blocked = (reason: string): Result<ClaimInternal, ExecutionError> =>
+      ok({
+        outcome: { stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt, dryRun: opts.dryRun },
+        episodeDir,
+      });
 
     // ── Gate ──────────────────────────────────────────────────────────────
-    // A dependency is satisfied when it completed AND its review, if one is
-    // required, is not outstanding. Completion is what happened; acceptance is
-    // whether it counts. Conflating them is how downstream stages came to build
-    // on artifacts nobody had accepted.
-    const unmet = (stage.definition.dependsOn ?? [])
-      .filter((id) => derived.get(id)?.status !== "completed");
-    if (unmet.length > 0) {
-      return blocked(
-        `"${stageId}" depends on ${unmet.map((m) => `"${m}"`).join(", ")}, ` +
-        `which ${unmet.length === 1 ? "has" : "have"} not completed`,
-      );
-    }
-
-    // ── Attendance ────────────────────────────────────────────────────────
-    // `gates.autopilot: false` means "a person has to be at the controls for
-    // this". The service has no notion of attendance, so the only honest
-    // answer is to refuse: it cannot run this stage on anyone's behalf.
-    //
-    // This was enforced by nothing at all — "autopilot" appeared nowhere in
-    // this file. It merely looked enforced, because every `autopilot: false`
-    // stage in the shipped manifests (script, compose, safety-review) also
-    // happens to have no gateway handler and so stopped at `canDispatch`.
-    // Give one a handler — or ship a manifest that gates an ordinary stage —
-    // and it ran unattended, which is the one thing the flag exists to
-    // prevent.
-    //
-    // Below the unmet-dependency check, which names an earlier and more
-    // useful problem, and above everything that leases, dispatches or spends.
-    if (!stage.definition.gates.autopilot) {
-      return blocked(
-        `"${stageId}" declares autopilot: false and may not run unattended; ` +
-        `a person has to run it`,
-      );
-    }
-
-    for (const depId of stage.definition.dependsOn ?? []) {
-      if (this.options.review) {
-        // An injected gate is authoritative only where it actually knows
-        // something. It used to be authoritative for everything, including
-        // stages it had never heard of — and since "I have no record" came
-        // back as `outstanding: false`, injecting a gate SUPPRESSED the
-        // manifest fallback below and made the service more permissive than
-        // having no gate at all. That is precisely backwards, and it was the
-        // gateway — the only composition that ships — that got the weak path.
-        const verdict = await this.options.review.isOutstanding(depId, episodeDir);
-        if (verdict.state === "approved") {
-          // A current, satisfied record beats the manifest: this dependency
-          // is accepted even if its manifest declares a review.
-          continue;
-        }
-        if (verdict.state === "outstanding") {
-          return blocked(
-            `"${stageId}" cannot run: "${depId}" ${verdict.reason ?? "has an outstanding review"}`,
-          );
-        }
-        // "no-record": the gate is not evidence either way, so fall through
-        // to the manifest rule rather than reading silence as acceptance.
-      }
-
-      // The manifest rule, reached with no gate configured or with a gate
-      // that holds nothing on this dependency. The service cannot know
-      // whether a required review happened, so it does not guess. Absence is
-      // refusal exactly where something is protected — a dependency the
-      // manifest never asked to be reviewed proceeds untouched.
-      const depStage = stages.find((s) => s.definition.id === depId);
-      const depNeedsReview = depStage?.definition.gates.review !== "none";
-      if (depNeedsReview) {
-        return blocked(
-          `"${stageId}" cannot run: "${depId}" declares ${depStage!.definition.gates.review} ` +
-          `review and no accepted review is recorded for it, so whether it was accepted ` +
-          `cannot be known`,
-        );
-      }
-    }
+    // Dependencies, attendance and review, answered by the same code `status`
+    // uses, so the two cannot report different things about one stage.
+    const refusal = await this.whyBlocked(stage, stages, derived, episodeDir);
+    if (refusal) return blocked(refusal);
 
     const ctx: DispatchContext = {
       episodeDir, ref,
@@ -325,14 +486,14 @@ export class ExecutionService {
       log,
     };
 
-    if (!this.options.dispatcher) {
-      return blocked(`no dispatcher is configured, so "${stageId}" cannot be performed`);
-    }
-    if (this.options.dispatcher.canDispatch?.(stage) === false) {
-      return blocked(`the configured dispatcher does not handle "${stageId}"`);
-    }
+    // Whatever the caller needs true before a lease is taken. Placed here so
+    // it sees a stage the manifest's own gates have already cleared, and so a
+    // refusal costs nothing: nothing has been leased, written or spent yet.
+    const precheckRefusal = precheck?.(stage);
+    if (precheckRefusal) return blocked(precheckRefusal);
+
     if (!this.options.budget) {
-      return blocked(`no budget guard is configured, so "${stageId}" may not spend`);
+      return blocked(noBudgetGuardRefusal(stageId));
     }
     const permitted = await this.options.budget.maySpend(stage, ctx);
     if (!permitted.ok) {
@@ -349,7 +510,7 @@ export class ExecutionService {
     // writes belong below the return.
     const ttlMs = this.options.leaseTtlMs ?? DEFAULT_ENGINE_CONFIG.leaseTtlMs;
     const engineConfig = { ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs };
-    const sm = new StageStateMachine(new FileLock(path.join(episodeDir, ".locks")), engineConfig);
+    const sm = new StageStateMachine(this.lock(episodeDir), engineConfig);
 
     let instance = this.toEngineInstance(derived.get(stageId)!, stage);
 
@@ -390,8 +551,11 @@ export class ExecutionService {
     // `dryRun` flag stays too, for callers that switch on it.
     if (opts.dryRun) {
       return ok({
-        stageId, status: "would-run", reason: "dry run — would have dispatched",
-        outputs: [], durationMs: Date.now() - startedAt, dryRun: true,
+        outcome: {
+          stageId, status: "would-run", reason: "dry run — would have dispatched",
+          outputs: [], durationMs: Date.now() - startedAt, dryRun: true,
+        },
+        episodeDir, stage, ctx,
       });
     }
 
@@ -437,109 +601,346 @@ export class ExecutionService {
       data: { stageId, leaseId, attemptNumber },
     });
 
-    // Once the lease has lapsed this attempt may say nothing about the stage,
-    // in any journal line: see `lapsed` below.
-    const lapsed = (detail = ""): Result<StageOutcome, ExecutionError> => ok({
-      stageId, status: "failed",
-      reason: `the lease on "${stageId}" expired after ${ttlMs}ms, while the stage was ` +
-        `still running${detail}`,
-      outputs: [], attemptNumber, leaseId, durationMs: Date.now() - startedAt,
+    return ok({
+      outcome: {
+        stageId, status: "claimed", outputs: [],
+        attemptNumber, leaseId, expiresAt,
+        durationMs: Date.now() - startedAt,
+      },
+      episodeDir, stage,
+      ctx: { ...ctx, attemptNumber },
+    });
+  }
+
+  /**
+   * Take a stage for a performer that is not this process.
+   *
+   * The stage is leased and recorded as started; the work happens elsewhere;
+   * `complete` closes it. The lease bounds how long the claim is honoured —
+   * an abandoned claim needs no command of its own, because replay derives
+   * the timeout from the lease's own `expiresAt`.
+   */
+  async claim(
+    ref: EpisodeRef,
+    pipeline: string,
+    opts: { stage?: string; dryRun?: boolean } = {},
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const claimed = await this.claimInternal(ref, pipeline, opts);
+    return claimed.ok ? ok(claimed.value.outcome) : claimed;
+  }
+
+  /**
+   * Close a claim: validate what the performer wrote, record it, release the
+   * lease.
+   *
+   * Runs in a process that may not be the one that claimed, so everything it
+   * needs comes from the journal. The open attempt carries the lease id, the
+   * attempt number and the expiry.
+   */
+  async complete(
+    ref: EpisodeRef,
+    pipeline: string,
+    stageId: string,
+    input: CompleteInput,
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+
+    const stage = resolved.value.stages.find((s) => s.definition.id === stageId);
+    if (!stage) {
+      return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+    }
+
+    const episodeDir = this.episodeDir(ref);
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+
+    const now = this.now();
+    let derived;
+    try {
+      derived = deriveExecutionState(
+        events.value, resolved.value.stages.map((s) => s.definition.id), now,
+      );
+    } catch (e) {
+      return err({
+        code: "REPLAY_INVALID",
+        message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+
+    const instanceState = derived.get(stageId)!;
+    const open = instanceState.attempts.find((a) => a.outcome === undefined);
+
+    /**
+     * The one refusal a lapsed attempt is allowed to make, wherever it is
+     * reached from: say so to the caller, write nothing to the journal.
+     */
+    const lapsed = (attempt: StageAttempt): Result<StageOutcome, ExecutionError> => ok({
+      stageId,
+      status: "failed",
+      reason:
+        `the lease on "${stageId}" lapsed at ${attempt.expiresAt} and nothing was recorded ` +
+        `for it; the stage is retryable and may already have been taken by someone else`,
+      outputs: [],
+      attemptNumber: attempt.number,
+      leaseId: attempt.leaseId,
+      durationMs: Date.now() - startedAt,
     });
 
-    // ── Dispatch ──────────────────────────────────────────────────────────
-    let outputs: string[];
-    try {
-      outputs = await this.options.dispatcher.dispatch(stage, { ...ctx, attemptNumber });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (this.leaseLapsed(expiresAt)) return lapsed(` (it then threw: ${message})`);
-      await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, message);
-      return ok({ stageId, status: "failed", reason: message, outputs: [], attemptNumber, leaseId,
-        durationMs: Date.now() - startedAt });
+    /**
+     * A terminal event did not land.
+     *
+     * `appendJournalEvent` returns null rather than throwing when the write
+     * fails, and the caller of a TERMINAL write has nothing to roll back:
+     * the stage ran, the outputs exist on disk, and the journal is the only
+     * record of what ran. Saying "completed" anyway would report something
+     * this process does not hold — replay reads an attempt still open, the
+     * lease lapses, `closeIfExpired` turns it into a timeout, and the stage
+     * that produced outputs comes back as `failed` with nothing anywhere
+     * saying why. So the outcome says what is true: the work happened, the
+     * record of it did not, and the stage will run again.
+     *
+     * The lease is deliberately NOT released. Releasing the lockfile while
+     * the journal still shows the attempt open would let a second holder
+     * take a stage replay reports as `running`, and be refused by the state
+     * machine anyway. Letting the lease lapse on its own is what the journal
+     * already describes.
+     */
+    const unrecorded = (what: string): Result<StageOutcome, ExecutionError> => ok({
+      stageId,
+      status: "failed",
+      reason:
+        `"${stageId}" ${what}, but the journal write recording that did not land; ` +
+        `nothing outside this process knows it happened, so the stage will re-run ` +
+        `once its lease lapses`,
+      outputs: [],
+      attemptNumber: open?.number ?? 0,
+      leaseId: open?.leaseId,
+      durationMs: Date.now() - startedAt,
+    });
+
+    // A lapsed claim is not an open attempt. `deriveExecutionState` closes an
+    // attempt whose lease has expired as a `timeout` and moves the stage to
+    // `failed`, so the refusal below IS the lease expiring — there is no
+    // separate clock comparison to get wrong.
+    //
+    // Which is what keeps a lapsed performer silent, and the silence is the
+    // point. Once a lease expires another holder may already have reclaimed
+    // the lockfile and appended its own lease, start and terminal event; a
+    // terminal event for the stale lease landing after that makes replay
+    // throw (`cannot go from completed to failed`), and because the journal
+    // is append-only it throws on every future replay too — every later
+    // `status()` and `run()` on the episode returns REPLAY_INVALID forever.
+    // Nothing is lost by saying nothing: replay's `closeIfExpired` derives
+    // the timeout from the lease's own `expiresAt`, which the `stage-leased`
+    // event already carries.
+    if (!open) {
+      // Which attempt was this caller's: the one it names, or — for a
+      // performer that kept no lease id — the stage's last. Not the last one
+      // in both cases: by the time an overrunning holder reports, a second
+      // holder may already have taken the stage and finished it, so the last
+      // attempt would be the second holder's success. The first holder's own
+      // claim still lapsed, and a lapse is what it has to be told about.
+      const mine = input.leaseId
+        ? instanceState.attempts.find((a) => a.leaseId === input.leaseId)
+        : instanceState.attempts[instanceState.attempts.length - 1];
+      if (mine?.outcome === "timeout") return lapsed(mine);
+      return ok({
+        stageId,
+        status: "blocked",
+        reason: `"${stageId}" has no open claim to complete`,
+        outputs: [],
+        durationMs: Date.now() - startedAt,
+      });
     }
 
-    // The lease may have expired while the stage was working. If it has,
-    // something else may already have taken the stage, so this attempt's
-    // outputs cannot be trusted — and nothing is written.
-    if (this.leaseLapsed(expiresAt)) return lapsed();
+    if (input.leaseId && input.leaseId !== open.leaseId) {
+      return ok({
+        stageId, status: "blocked",
+        reason: `the open claim on "${stageId}" is "${open.leaseId}", not "${input.leaseId}"`,
+        outputs: [], durationMs: Date.now() - startedAt,
+      });
+    }
 
-    // ── Validate ──────────────────────────────────────────────────────────
+    // The journal's lease id, never the caller's — the check above has just
+    // established they agree, and adopting the caller's value would let any
+    // process that can read the journal release the live holder's lockfile.
+    const leaseId = open.leaseId;
+    const attemptNumber = open.number;
+
+    /**
+     * Whether this attempt may still write, asked again immediately before
+     * every append.
+     *
+     * The structural refusal above is only true at the instant
+     * `deriveExecutionState` ran: `closeIfExpired` had proved the lease live
+     * then, which is why there was an open attempt at all. Nothing holds the
+     * lease still afterwards, and `validateOutputs` sits between there and
+     * the writes below stat-ing a list of paths whose length the performer
+     * chooses. A lease that dies in that gap must append nothing — if a
+     * second holder reclaimed the stage and finished it, this line lands
+     * after its terminal event and replay throws REPLAY_INVALID on every
+     * future `status()` and `run()` for the life of the episode, because the
+     * journal is append-only.
+     *
+     * Read off the journal's own `expiresAt`, not a deadline tracked
+     * alongside it: there is exactly one record of when a claim dies.
+     */
+    const held = (): boolean =>
+      !open.expiresAt || Date.parse(open.expiresAt) > this.now().getTime();
+
+    const ttlMs = this.options.leaseTtlMs ?? DEFAULT_ENGINE_CONFIG.leaseTtlMs;
+    const engineConfig = { ...DEFAULT_ENGINE_CONFIG, leaseTtlMs: ttlMs };
+    const sm = new StageStateMachine(this.lock(episodeDir), engineConfig);
+    // Adopted so the terminal transition below releases the lockfile. Without
+    // it a stage claimed by one process and completed by another holds its
+    // lock until the TTL, blocking a retry that should be immediate.
+    if (open.expiresAt) {
+      sm.adopt(stageId, { resource: `stage:${stageId}`, token: leaseId, expiresAt: new Date(open.expiresAt) });
+    }
+    const instance = this.toEngineInstance(instanceState, stage);
+
+    if (input.failed) {
+      const message = input.error ?? "the performer reported failure without saying why";
+      if (!held()) return lapsed(open);
+      const recorded = await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, message);
+      if (!recorded) return unrecorded(`failed ("${message}")`);
+      return ok({
+        stageId, status: "failed", reason: message, outputs: [],
+        attemptNumber, leaseId, durationMs: Date.now() - startedAt,
+      });
+    }
+
+    const outputs = input.outputs ?? [];
     const invalid = await this.validateOutputs(episodeDir, outputs);
-    // Validation is filesystem work and takes time; re-checked so that the
-    // gap between the check above and either write below stays as small as
-    // it can be made without renewing the lease.
-    if (this.leaseLapsed(expiresAt)) {
-      return lapsed(invalid ? ` (its outputs were also invalid: ${invalid})` : "");
-    }
     if (invalid) {
-      await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, invalid);
-      return ok({ stageId, status: "failed", reason: invalid, outputs: [], attemptNumber, leaseId,
-        durationMs: Date.now() - startedAt });
+      if (!held()) return lapsed(open);
+      const recorded = await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, invalid);
+      if (!recorded) return unrecorded(`failed ("${invalid}")`);
+      return ok({
+        stageId, status: "failed", reason: invalid, outputs: [],
+        attemptNumber, leaseId, durationMs: Date.now() - startedAt,
+      });
     }
 
     const relative = outputs.map((o) => path.isAbsolute(o) ? path.relative(episodeDir, o) : o);
 
-    // The journal is written before the lease is released. If this process dies
-    // in between, the record says what happened and the lease expires on its
-    // own; releasing first would leave a completed stage looking unstarted.
-    await appendJournalEvent(episodeDir, {
+    // The journal is written before the lease is released. If this process
+    // dies in between, the record says what happened and the lease expires on
+    // its own; releasing first would leave a completed stage looking unstarted.
+    if (!held()) return lapsed(open);
+    const completed = await appendJournalEvent(episodeDir, {
       type: "stage-completed", actor: "runtime", episode: ref,
       data: { stageId, leaseId, attemptNumber, outputs: relative },
     });
+    // The `stage-leased` append is checked and rolled back; this one is
+    // checked and surfaced. Both are dropped writes; only the first can be
+    // undone. Saying `completed` off a write that did not land is exactly
+    // the thing this service exists to stop — reporting something other
+    // than what the journal holds.
+    if (!completed) return unrecorded("produced its outputs");
     await sm.complete(instance);
 
-    // A stage that declares a review has run, and its outputs hold up — but it
-    // is not accepted. Its journal record says completed because that is true;
-    // its outcome says awaiting_review because that is what the caller needs.
+    // Completion is what happened; acceptance is whether it counts. The
+    // journal says completed because that is true; the outcome says
+    // awaiting_review because that is what the caller needs.
     const needsReview = stage.definition.gates.review !== "none";
     return ok({
       stageId,
       status: needsReview ? "awaiting_review" : "completed",
       outputs: relative, attemptNumber, leaseId,
       durationMs: Date.now() - startedAt,
-      ...(needsReview ? { reason: `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet` } : {}),
+      ...(needsReview
+        ? { reason: `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet` }
+        : {}),
     });
   }
 
   /**
-   * Whether this attempt's lease has lapsed, and with it this attempt's
-   * right to write anything at all about the stage.
+   * Perform one stage here and now.
    *
-   * Once the lease expires, another holder may already have reclaimed the
-   * lockfile and appended its own `stage-leased`/`stage-started`. A terminal
-   * event for the stale lease landing after that holder's own terminal event
-   * makes replay throw (`cannot go from completed to failed`) — and since the
-   * journal is append-only, it throws on every future replay too: every
-   * later `status()` and `run()` on that episode returns REPLAY_INVALID
-   * forever. Landing before it is only marginally better: replay survives but
-   * reports a state nobody was ever in.
-   *
-   * So a lapsed attempt writes nothing. Nothing is lost by the silence:
-   * replay's `closeIfExpired` derives the timeout from the lease's own
-   * `expiresAt`, which is already in the journal, so an explicit event adds
-   * no information and risks the whole episode.
+   * Exactly `claim`, then the configured dispatcher, then `complete` — not a
+   * parallel implementation that happens to agree with them.
    */
-  private leaseLapsed(expiresAt: string): boolean {
-    return this.now().getTime() >= Date.parse(expiresAt);
+  async run(
+    ref: EpisodeRef,
+    pipeline: string,
+    opts: { stage?: string; dryRun?: boolean } = {},
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+
+    const claimed = await this.claimInternal(ref, pipeline, opts, (stage) => {
+      if (!this.options.dispatcher) {
+        return `no dispatcher is configured, so "${stage.definition.id}" cannot be performed`;
+      }
+      if (this.options.dispatcher.canDispatch?.(stage) === false) {
+        return `the configured dispatcher does not handle "${stage.definition.id}"`;
+      }
+      return null;
+    });
+    if (!claimed.ok) return claimed;
+
+    const { outcome, stage, ctx } = claimed.value;
+    if (outcome.status !== "claimed" || !stage || !ctx) return ok(outcome);
+
+    const stageId = stage.definition.id;
+    // Non-null rather than a destructure: `claimed` carries this on every
+    // `claimed` outcome, but the type cannot say so.
+    const leaseId = outcome.leaseId!;
+
+    // ── Dispatch ──────────────────────────────────────────────────────────
+    let outputs: string[];
+    try {
+      outputs = await this.options.dispatcher!.dispatch(stage, ctx);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      // `complete` decides whether this failure may still be recorded — a
+      // lapsed claim writes nothing at all. Either way the caller hears what
+      // its dispatcher actually did, which is the one thing `complete`
+      // cannot read back out of the journal.
+      const failed = await this.complete(ref, pipeline, stageId, { leaseId, failed: true, error: message });
+      if (!failed.ok) return failed;
+      const reason = failed.value.reason === message
+        ? message
+        : `${failed.value.reason} (it then threw: ${message})`;
+      return ok({ ...failed.value, reason, durationMs: Date.now() - startedAt });
+    }
+
+    const done = await this.complete(ref, pipeline, stageId, { outputs, leaseId });
+    return done.ok ? ok({ ...done.value, durationMs: Date.now() - startedAt }) : done;
   }
 
   /**
    * Record a failed attempt and release its lease, in that order.
    *
-   * Every call site must check `leaseLapsed` first: a dispatcher that throws
-   * after its lease lapsed must not append either, for exactly the reason
-   * that method documents.
+   * Only ever reached with an attempt this process still holds: both call
+   * sites ask `held()` immediately before calling, which reads the lease's
+   * own `expiresAt` off the journal. That guard, not the structural "no open
+   * attempt" refusal higher up, is what keeps a lapsed holder from appending
+   * a terminal event after a second holder has already closed the stage —
+   * the structural check was only true at the instant `deriveExecutionState`
+   * ran, and `validateOutputs` sits between there and here.
+   *
+   * Returns whether the journal write landed. `appendJournalEvent` returns
+   * null instead of throwing, and a dropped `stage-failed` means the lease
+   * is still open as far as every other reader is concerned; the lease is
+   * left to lapse rather than released, so the journal and the lockfile
+   * agree. The caller says so out loud.
    */
   private async recordFailure(
     episodeDir: string, ref: EpisodeRef, sm: StageStateMachine,
     instance: EngineStageInstance, stageId: string, leaseId: string,
     attemptNumber: number, error: string,
-  ): Promise<void> {
-    await appendJournalEvent(episodeDir, {
+  ): Promise<boolean> {
+    const recorded = await appendJournalEvent(episodeDir, {
       type: "stage-failed", actor: "runtime", episode: ref,
       data: { stageId, leaseId, attemptNumber, error, retryable: true },
     });
+    if (!recorded) return false;
     await sm.fail(instance, error, true);
+    return true;
   }
 
   /**
@@ -585,6 +986,87 @@ export class ExecutionService {
       if (outcome.value.status !== "completed") break;
     }
     return ok(outcomes);
+  }
+
+  /**
+   * Which stages a rerun would touch.
+   *
+   * The stage map `planRerun` needs is exactly what replay produces, so this
+   * is replay plus the planner — no new machinery, and no second notion of
+   * what a rerun covers.
+   *
+   * No `StalenessReport` is computed here (avg-33r owns that), so this always
+   * calls the planner with `report` absent — which is why the planner throws
+   * for `rerun-affected-downstream` rather than silently planning nothing.
+   * The episode slug is built from `ref` and passed through explicitly, so
+   * the plan names the episode it was actually computed for rather than
+   * falling back to the pipeline's name.
+   */
+  async planRerun(
+    ref: EpisodeRef,
+    pipeline: string,
+    mode: RerunMode,
+    selectedStages: string[] = [],
+  ): Promise<Result<RerunPlan, ExecutionError>> {
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+
+    // Validated before anything else — including before the journal is read
+    // — for the same reason `rerun()` validates every id up front: an
+    // unknown id silently dropped from the rerun set is not a smaller rerun,
+    // it is a rerun of the wrong thing with no record that anything was
+    // refused. Without this, `rerun-selected --stages typo-id` planned zero
+    // stages and reported "0 stage(s)" at exit 0 — this task's own defect,
+    // recreated one layer up from where Task 3 already closed it in
+    // `rerun()`.
+    const declared = new Set(resolved.value.stages.map((s) => s.definition.id));
+    for (const stageId of selectedStages) {
+      if (!declared.has(stageId)) {
+        return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+      }
+    }
+
+    const episodeDir = this.episodeDir(ref);
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+
+    const stageIds = resolved.value.stages.map((s) => s.definition.id);
+    let derived;
+    try {
+      derived = deriveExecutionState(events.value, stageIds, this.now());
+    } catch (e) {
+      return err({
+        code: "REPLAY_INVALID",
+        message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+
+    const engineInstances = new Map(
+      resolved.value.stages.map((s) => [
+        s.definition.id, this.toEngineInstance(derived.get(s.definition.id)!, s),
+      ]),
+    );
+
+    const episodeSlug = `${ref.channel}/${ref.series}/${ref.episode}`;
+    try {
+      return ok(planRerun(undefined, resolved.value, engineInstances, mode, selectedStages, episodeSlug));
+    } catch (e) {
+      // The only way the planner throws today is `rerun-affected-downstream`
+      // with no report — a mode this composition never computes staleness
+      // for. `MODE_UNSUPPORTED`, not `STAGE_UNKNOWN`: no stage is unknown
+      // here, a mode is unimplemented, and a caller told `STAGE_UNKNOWN`
+      // would reasonably go looking for a typo in a stage id that was never
+      // the problem — exactly the kind of code-says-something-other-than-
+      // what-it-holds bug this module exists to remove. `cmdRerun` refuses
+      // this mode by name before ever reaching the service, so this branch
+      // is unreachable from the CLI today; it exists for direct callers —
+      // Task 7's gateway route among them — that ask the service without
+      // going through the CLI's own guard.
+      return err({
+        code: "MODE_UNSUPPORTED",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 }
 

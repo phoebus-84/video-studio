@@ -197,6 +197,24 @@ export class StageStateMachine {
     this.activeLeases.clear();
   }
 
+  /**
+   * Register a lease this machine did not acquire.
+   *
+   * `activeLeases` is per-instance memory, so a machine that completes a stage
+   * a DIFFERENT process claimed holds no lease for it and releases nothing —
+   * the lockfile would then linger until its TTL, blocking a retry that should
+   * have been immediate. Claim and complete are deliberately separate calls,
+   * possibly in separate processes; adopting the lease recorded in the journal
+   * is how the second of them can release it.
+   *
+   * The lease is not re-validated here. `FileLock.release` is token-checked
+   * and refuses an expired lease, so adopting a stale one cannot release the
+   * lease that replaced it.
+   */
+  adopt(stageId: string, lease: Lease): void {
+    this.activeLeases.set(stageId, lease);
+  }
+
   get activeLeaseCount(): number {
     return this.activeLeases.size;
   }

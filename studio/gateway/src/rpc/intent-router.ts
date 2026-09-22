@@ -152,7 +152,7 @@ export async function handleIntent(
           channel: ctx.episodeSlug.split("/")[0],
           series: ctx.episodeSlug.split("/")[1],
           episode: ctx.episodeSlug.split("/")[2],
-          mode: ctx.payload.mode as string ?? "rerun-affected",
+          mode: ctx.payload.mode as string ?? "retry-current",
           stageIds: ctx.payload.stageIds as string[] ?? [ctx.stageId].filter(Boolean),
         });
         return {

@@ -124,7 +124,15 @@ export type OutcomeStatus =
    * accepted yet. Its dependents must not treat it as done — completion is what
    * happened, acceptance is whether it counts.
    */
-  | "awaiting_review";
+  | "awaiting_review"
+  /**
+   * The stage is leased and started, and something out of process is
+   * performing it. Only `claim` returns this; `run` performs the work itself
+   * and never leaves a stage in this state on return.
+   *
+   * A caller looping until nothing advances must treat this as a halt.
+   */
+  | "claimed";
 
 export interface StageOutcome {
   /** Null when nothing was selected. */
@@ -135,10 +143,70 @@ export interface StageOutcome {
   outputs: string[];
   attemptNumber?: number;
   leaseId?: string;
+  /**
+   * When this claim lapses, ISO-8601. Set on `claimed`, so a performer knows
+   * its deadline and `complete` can refuse a claim that has passed it.
+   */
+  expiresAt?: string;
   durationMs: number;
   /** True when this was a dry run: nothing was leased, dispatched or written. */
   dryRun?: boolean;
 }
+
+/** What a performer reports when it finishes a claimed stage. */
+export interface CompleteInput {
+  /**
+   * The paths the performer wrote, absolute or relative to the episode
+   * directory. Required unless `failed`.
+   *
+   * The performer names its outputs; the service does not go looking for
+   * them. Resolving the manifest's labels to files would mean `artifactExists`
+   * and its six-candidates-per-label search, which is the inference this
+   * module exists to remove. A performer that cannot say what it wrote has
+   * not finished.
+   */
+  outputs?: string[];
+  /**
+   * The claim being closed. When omitted, the stage's single open attempt is
+   * used — and if there is none, the claim has lapsed and is refused.
+   */
+  leaseId?: string;
+  /** The performer is reporting that the work failed. */
+  failed?: boolean;
+  /** Why, when `failed`. */
+  error?: string;
+}
+
+/**
+ * A stage's place in its pipeline.
+ *
+ * `StageStatusReport.status` has four members, which is everything the journal
+ * can say about a stage on its own. These seven are answers about a stage IN
+ * its pipeline: `runnable`, `blocked` and `awaiting_review` need the
+ * dependency check, the manifest's gates and the review gate.
+ *
+ * `status` answers the CLAIM question, and says so here rather than implying
+ * more. A stage reported `runnable` has passed every gate a claim applies:
+ * its dependencies have completed, their reviews are satisfied, it does not
+ * declare `autopilot: false`, and a budget guard is configured. Those come
+ * from the same code a claim runs, so the two cannot disagree about them.
+ *
+ * Two things it deliberately does not promise:
+ *
+ * - Whether THIS composition can also perform the stage itself. `run` refuses
+ *   a stage its injected dispatcher does not handle, but that is a run-only
+ *   gate, and `status` cannot know whether its caller means to run or to
+ *   claim. The CLI injects no dispatcher at all and performs claimed stages
+ *   by hand, so reporting "no dispatcher is configured" as `blocked` would be
+ *   false for that caller.
+ * - Whether the configured budget guard would refuse this particular stage.
+ *   Discovering that means calling `maySpend`, which mints a reservation
+ *   nothing in this tree releases; a polled read endpoint that reserved
+ *   budget on every tick would be a worse bug than the disagreement it
+ *   removes. The guard's presence is checked, its verdict is not asked for.
+ */
+export type StageState =
+  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review";
 
 /** One stage's place in the episode, as the journal records it. */
 export interface StageStatusReport {
@@ -150,6 +218,34 @@ export interface StageStatusReport {
   lease: { state: "none" | "live" | "expired"; holder?: string; expiresAt?: string };
   /** True when every stage it depends on has completed. */
   dependenciesMet: boolean;
+  /**
+   * As a claim would see it. This is what a caller should switch on; see
+   * `StageState` for what `runnable` does and does not promise.
+   */
+  state: StageState;
+  /**
+   * Why the stage is in the `state` it is in, when there is something to say.
+   *
+   * Set for `blocked` (the gate that refuses) and for `pending` (what it is
+   * still waiting on); absent otherwise. Both come from the same refusal the
+   * run path would give, so this is the sentence a caller can show verbatim.
+   *
+   * Not `blockedReason`: it is populated for stages that are not blocked, and
+   * a field whose name reports something other than what it holds is the
+   * defect this module exists to remove.
+   */
+  stateReason?: string;
+  /** The stage ids this stage is built on, as the manifest declares them. */
+  dependsOn: string[];
+  /**
+   * The artifact labels the manifest says this stage will write.
+   *
+   * Not `outputArtifacts`, which is what the journal recorded as actually
+   * written. A declaration and a record are different facts: `produces`
+   * answers "which stage makes artifacts/script.md?" for a stage that has
+   * never run, and `outputArtifacts` cannot.
+   */
+  produces: string[];
 }
 
 export interface EpisodeStatus {
@@ -170,7 +266,17 @@ export interface ExecutionError {
      * problem from a corrupt line and calls for a different response.
      */
     | "REPLAY_INVALID"
-    | "STAGE_UNKNOWN";
+    | "STAGE_UNKNOWN"
+    /**
+     * The caller asked for something this build does not implement — a
+     * `RerunMode` the planner understands but cannot compute without
+     * machinery that does not exist yet (staleness propagation, avg-33r) —
+     * as distinct from `STAGE_UNKNOWN`, which is asking for something that
+     * does not exist at all. Conflating the two names the wrong fix: a
+     * caller told `STAGE_UNKNOWN` for an unimplemented mode would reasonably
+     * go looking for a typo in a stage id that was never the problem.
+     */
+    | "MODE_UNSUPPORTED";
   message: string;
   /**
    * Set only when a hard error interrupts `rerun` partway through its list.

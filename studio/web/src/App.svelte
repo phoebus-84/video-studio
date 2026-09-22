@@ -37,7 +37,7 @@
       status: "awaiting_review" as const,
       stages: EPISODE_FIXTURE.stages.map((s) =>
         s.id === "illustrations"
-          ? { ...s, status: "awaiting_approval" as const, progress: 1 }
+          ? { ...s, status: "awaiting_review" as const, progress: 1 }
           : s,
       ),
     },

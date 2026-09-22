@@ -92,7 +92,9 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     name: "pva_run_stage",
     label: "Run Stage",
     description:
-      "Execute a single pipeline stage and wait for completion.",
+      "Run a single pipeline stage using the gateway's own handler for it — illustrations, " +
+      "captions, timing, qa. Returns when the stage has finished. Stages with no handler come " +
+      "back blocked rather than running: claim those with pva_claim_stage and perform them yourself.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -126,13 +128,118 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     },
   });
 
+  // --- Tool: pva_claim_stage -----------------------------------------------
+
+  pi.registerTool({
+    name: "pva_claim_stage",
+    label: "Claim Stage",
+    description:
+      "Take a pipeline stage so you can perform it yourself. Leases the stage, records that it " +
+      "has started, and returns a leaseId and a deadline. Use this for stages the gateway has no " +
+      "automated handler for — brief, script, art-direction — then do the work and call " +
+      "pva_complete_stage with the leaseId this returns. The claim expires on its own if you " +
+      "abandon it.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      stageId: Type.String({ description: "Stage ID to claim" }),
+      dryRun: Type.Optional(Type.Boolean({ description: "Preview the claim without leasing" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const client = await getClient();
+        const result = await client.fetch(
+          `/api/channels/${params.channel}/series/${params.series}/episodes/${params.episode}/stages/${params.stageId}/claim`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dryRun: params.dryRun ?? false }),
+          },
+        );
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: { claim: result },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Claim failed: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  // --- Tool: pva_complete_stage --------------------------------------------
+
+  pi.registerTool({
+    name: "pva_complete_stage",
+    label: "Complete Stage",
+    description:
+      "Close a stage you claimed. leaseId is required on every call, including a failure report " +
+      "— pass the leaseId that pva_claim_stage's response returned. The gateway refuses a call " +
+      "without it: completing with no lease id closes whatever open claim it finds, which could " +
+      "close a different holder's live claim if yours had already lapsed. Name the files you " +
+      "wrote — the runtime checks they exist and are non-empty, and records them; outputs is " +
+      "required unless failed is set. Pass failed with an error instead if the work did not " +
+      "succeed. A claim that has already expired is refused: take the stage again with " +
+      "pva_claim_stage before redoing the work.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      stageId: Type.String({ description: "Stage ID to complete" }),
+      leaseId: Type.String({
+        description: "The lease id returned by pva_claim_stage for this stage. Required on every call.",
+      }),
+      outputs: Type.Optional(Type.Array(Type.String(), {
+        description: "Paths written, relative to the episode directory. Required unless failed.",
+      })),
+      failed: Type.Optional(Type.Boolean({ description: "The work did not succeed" })),
+      error: Type.Optional(Type.String({ description: "Why, when failed" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const client = await getClient();
+        const result = await client.fetch(
+          `/api/channels/${params.channel}/series/${params.series}/episodes/${params.episode}/stages/${params.stageId}/complete`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              outputs: params.outputs ?? [],
+              leaseId: params.leaseId,
+              failed: params.failed ?? false,
+              error: params.error,
+            }),
+          },
+        );
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: { completion: result },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Completion failed: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {},
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
   // --- Tool: pva_run_pipeline --------------------------------------------
 
   pi.registerTool({
     name: "pva_run_pipeline",
     label: "Run Pipeline",
     description:
-      "Execute all pending pipeline stages in topological order.",
+      "Run pending stages in dependency order, stopping at the first stage that is blocked, " +
+      "fails, or is awaiting review. Stops at any stage the gateway has no handler for — " +
+      "claim that stage and perform it, then call this again to continue.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -171,7 +278,9 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     name: "pva_check_staleness",
     label: "Check Staleness",
     description:
-      "Check which artifacts are stale after changes to upstream stages.",
+      "Not implemented yet: staleness propagation is unbuilt (avg-33r), and this returns an " +
+      "empty result rather than a computed one. Do not treat an empty result as evidence that " +
+      "nothing is stale.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -203,8 +312,12 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_plan_rerun",
     label: "Plan Rerun",
+    // No "cost estimates": the plan's `estimatedCost` is a unitless weight
+    // derived from attempt counts (studio/runtime/src/rerun/planner.ts), and
+    // a description that calls it money is how Pi comes to quote a price
+    // nothing in this repo can compute.
     description:
-      "Plan a targeted rerun with cost estimates and preserved work.",
+      "Plan a targeted rerun: which stages would re-run, and which prior work is preserved.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -213,9 +326,13 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
         Type.Union([
           Type.Literal("retry-current"),
           Type.Literal("rerun-selected"),
-          Type.Literal("rerun-affected"),
+          Type.Literal("rerun-affected-downstream"),
           Type.Literal("full-rebuild"),
-        ], { description: "Rerun mode" }),
+        ], {
+          description:
+            "Rerun mode. rerun-affected-downstream needs staleness propagation (avg-33r), which " +
+            "is unbuilt: it is accepted here but the gateway refuses it with MODE_UNSUPPORTED.",
+        }),
       ),
       stageIds: Type.Optional(Type.Array(Type.String(), { description: "Specific stages to rerun (rerun-selected mode)" })),
     }),
@@ -227,7 +344,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: params.mode ?? "rerun-affected", stageIds: params.stageIds ?? [] }),
+            body: JSON.stringify({ mode: params.mode ?? "retry-current", stageIds: params.stageIds ?? [] }),
           },
         );
 
@@ -290,8 +407,13 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_budget_status",
     label: "Budget Status",
+    // No "reserved": BudgetReport (studio/gateway/src/routes/budget.ts)
+    // carries limitMicros, consumedMicros and remainingMicros and nothing
+    // else. Reservations are taken and never released (avg-91o), so there is
+    // no reserved figure to report and a tool that promises one invites Pi
+    // to read a field that does not exist.
     description:
-      "Get current budget status including reserved, consumed, and remaining funds.",
+      "Get the episode's budget: the limit, what has been consumed, and what remains.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),

@@ -6,7 +6,6 @@ import { collectHealth, gatewayHealth } from "../health/index.js";
 import { ErrorCode, GatewayError } from "../errors/index.js";
 import { canonicalizeRoots } from "../lib/roots.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
-import { registerRuntimeRoutes } from "./runtime.js";
 import { registerProductionRoutes } from "./production.js";
 import type { PiRpcHealth } from "../rpc/health.js";
 import type { AdapterBridge } from "../rpc/adapter-bridge.js";
@@ -18,6 +17,23 @@ import type { PiProcessManager } from "../rpc/process-manager.js";
 export function registerRoutes(
   app: FastifyInstance,
   config: Config,
+  /**
+   * The library this gateway serves, already resolved by the server from
+   * `AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library"`.
+   *
+   * Passed rather than re-derived, and required rather than optional: every
+   * route that composes an ExecutionService writes the episode journal, and
+   * the journal is the only record of what ran. A route that fell back to
+   * `AVG_LIBRARY_ROOT ?? "./library"` on its own would, on a gateway
+   * configured purely through `libraryRoots` — which is every gateway in this
+   * repo, since nothing sets the variable — lease and journal a stage into a
+   * `./library` beside the process's cwd while the configured episode
+   * directory stayed empty. See the comment on `libraryRoots` below: a full
+   * episode has already been produced into a library this gateway does not
+   * serve, and that was only a display problem. This would make the journal
+   * authoritative about the wrong tree.
+   */
+  libraryRoot: string,
   workspace: WorkspaceService,
   runtime: RuntimeClient,
   piHealth?: PiRpcHealth,
@@ -99,13 +115,10 @@ export function registerRoutes(
   });
 
   // ── Workspace discovery ──────────────────────────────────────────────────
-  registerWorkspaceRoutes(app, workspace, runtime);
-
-  // ── Runtime endpoints ────────────────────────────────────────────────────
-  registerRuntimeRoutes(app, runtime);
+  registerWorkspaceRoutes(app, workspace, libraryRoot);
 
   // ── Production orchestration ─────────────────────────────────────────────
-  registerProductionRoutes(app, runtime, workspace);
+  registerProductionRoutes(app, runtime, workspace, { libraryRoot });
 
   // ── Pi agent lifecycle ───────────────────────────────────────────────────
   if (piHealth) {

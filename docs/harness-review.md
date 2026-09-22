@@ -59,16 +59,25 @@ media/checker cannot pass QA; changing a reviewed artifact invalidates the revie
 
 ### P0 — Runtime invariants exist in modules but are bypassed by active paths
 
-**Evidence:** `studio/runtime/src/cli.ts`, `cmdStatus`, infers completion from
-output-file existence and emits a zero-consumption budget. `cmdRun` selects the
-first stage missing outputs; it does not drive the lease/state-machine/policy
-engine. `cmdRerun` returns an empty plan. The separate engine/policy/staleness
-modules are richer, but those guarantees do not follow from the CLI's behavior.
+**Evidence (fixed, avg-qr4 "CLI and agent on the execution service"):**
+`studio/runtime/src/cli.ts`, `cmdStatus`, *used to* infer completion from
+output-file existence and emit a zero-consumption budget; it now replays the
+episode journal through `ExecutionService.status` and reports no budget at all,
+because nothing measures one yet (avg-91o). `cmdRun` *used to* select the first
+stage missing outputs without driving the lease/state-machine/policy engine; it
+now claims a stage through the service, takes a real lease, and prints the
+`vpr complete` line that closes it. `cmdRerun` *used to* return an empty plan;
+it now plans through the same service, and refuses `rerun-affected-downstream`
+by name rather than planning nothing (avg-33r).
 
 `studio/gateway/src/runtime/executor.ts` produces artifacts directly using a
-hard-coded stage-name registry, contrary to ADR-0027. `studio/agent/src/pipeline-tools.ts`
-also describes tools as executing/waiting while the runtime run command chiefly
-returns stage instructions. There are multiple interpretations of “run.”
+hard-coded stage-name registry, contrary to ADR-0027 — still true, and not
+addressed by the work above. `studio/agent/src/pipeline-tools.ts` *used to*
+describe tools as executing/waiting while the runtime run command chiefly
+returned stage instructions; its `pva_run_stage`, `pva_claim_stage` and
+`pva_complete_stage` now go to the gateway's claim/complete routes, which are
+the same execution service the CLI uses. There is one reading of “run” on
+those paths; the legacy executor is the remaining one.
 
 **Change:** one execution service shared by agent and browser:
 

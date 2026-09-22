@@ -16,7 +16,11 @@ export interface RerunStageEntry {
   action: "rerun" | "preserve" | "cancel";
   /** Reason for the action. */
   reason: string;
-  /** Estimated cost (from prior attempts or default). */
+  /**
+   * A unitless relative weight derived from this stage's prior attempts —
+   * NOT money. See `stageWeight` in ./planner.ts. No surface may render it
+   * with a currency symbol; nothing in this repo has ever priced a stage.
+   */
   estimatedCost: number;
   /** Whether prior artifacts will be preserved. */
   preservesArtifacts: boolean;
@@ -34,7 +38,10 @@ export interface RerunPlan {
   mode: RerunMode;
   /** Stages in the plan. */
   stages: RerunStageEntry[];
-  /** Total estimated cost for the rerun. */
+  /**
+   * The sum of the re-run stages' `estimatedCost` weights — unitless, and
+   * not a spend estimate. See `stageWeight` in ./planner.ts.
+   */
   totalEstimatedCost: number;
   /** Stages whose prior work is preserved. */
   preservedStageIds: string[];

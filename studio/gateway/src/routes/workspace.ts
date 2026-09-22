@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WorkspaceService } from "../workspace/service";
-import type { RuntimeClient } from "../runtime/client.js";
+import { makeExecutionService, DEFAULT_PIPELINE } from "../runtime/service.js";
 import {
   channelNotFound,
   WorkspaceError,
@@ -12,7 +12,16 @@ import {
 export function registerWorkspaceRoutes(
   app: FastifyInstance,
   workspace: WorkspaceService,
-  runtime?: RuntimeClient,
+  /**
+   * The library this gateway serves, resolved by the server.
+   *
+   * Its presence is also the switch for the pipeline enrichment below, which
+   * is what the `if (runtime)` guard used to be: a caller that supplies no
+   * library is a caller with no execution service behind it, and must not pay
+   * for a pipeline resolution and a journal read on every episode-detail
+   * request to be told so.
+   */
+  libraryRoot?: string,
 ): void {
   /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -87,24 +96,47 @@ export function registerWorkspaceRoutes(
     try {
       const epData = await workspace.getEpisode(channel, series, epSlug);
 
-      // ── Enrich with pipeline status from runtime ──────────────────────
-      if (runtime) {
+      // ── Enrich with pipeline status from the execution service ────────
+      //
+      // The same `service.status()` the /status route reports, so the
+      // episode list and the production panel cannot describe one episode
+      // two ways. It used to shell out to `vpr status` and read `s.id` off
+      // each stage; the service reports `stageId`, so every stage in this
+      // projection had been arriving with `id: undefined` since the status
+      // shape changed underneath it — and nothing here had a test.
+      //
+      // The key stays `id`: that is what this route has always published and
+      // what studio/web/src/lib/episode-store.svelte.ts reads.
+      if (libraryRoot) {
         try {
-          const pipelineName = (epData as any).pipeline ?? "fairy-tale-adaptation";
-          const status = await runtime.status({ channel, series, episode: epSlug }, pipelineName as string);
-          if (status.ok && status.data) {
-            const data = status.data as Record<string, unknown>;
-            (epData as any).pipeline = data.pipeline ?? (epData as any).pipeline;
-            (epData as any).stages = (data.stages as Array<Record<string, unknown>>)?.map((s: any) => ({
-              id: s.id,
-              name: s.name ?? s.id,
-              status: s.state ?? "pending",
-              dependsOn: s.dependsOn ?? [],
-              produces: s.produces ?? [],
-            })) ?? (epData as any).stages;
+          const pipelineName = ((epData as any).pipeline as string | undefined) || DEFAULT_PIPELINE;
+          const service = makeExecutionService((message) => request.log.info(message), libraryRoot);
+          const status = await service.status({ channel, series, episode: epSlug }, pipelineName);
+          if (status.ok) {
+            (epData as any).pipeline = status.value.pipeline ?? (epData as any).pipeline;
+            (epData as any).stages = status.value.stages.map((s) => ({
+              id: s.stageId,
+              name: s.name || s.stageId,
+              status: s.state,
+              dependsOn: s.dependsOn,
+              produces: s.produces,
+            }));
+          } else {
+            // Said out loud, not discarded. The fallback below is correct —
+            // an episode whose pipeline will not resolve still has a detail
+            // page — but a silent one turns "this pipeline is misspelled in
+            // the series manifest" into "the studio shows stale stages and
+            // nobody knows why".
+            request.log.warn(
+              `episode detail: no pipeline status for ${channel}/${series}/${epSlug} ` +
+              `(${status.error.code}: ${status.error.message}); showing the workspace's own stages`,
+            );
           }
-        } catch {
-          // Runtime unavailable — use static data from workspace
+        } catch (err) {
+          request.log.warn(
+            `episode detail: pipeline status failed for ${channel}/${series}/${epSlug}: ` +
+            `${err instanceof Error ? err.message : String(err)}; showing the workspace's own stages`,
+          );
         }
       }
 

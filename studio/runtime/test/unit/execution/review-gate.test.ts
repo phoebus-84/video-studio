@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { ExecutionService } from "../../../src/execution/service.js";
 import type { ReviewGate, ReviewGateState, StageDispatcher } from "../../../src/execution/types.js";
 import { ok } from "../../../src/result.js";
+import { reviewChainPipeline } from "./helpers/review-chain.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PIPELINES = resolve(__dirname, "../../../../pipelines/pipelines");
@@ -49,80 +50,12 @@ function gateFor(stageId: string, state: ReviewGateState, reason?: string): Revi
   };
 }
 
-// The real narrated-illustrated-video manifest cannot exercise most of these
-// properties: its only `review: human` stages are `script` and `compose`,
-// both of which declare `autopilot: false`, and `terminal-recordings`,
-// `illustrations` and `qa` all sit behind `script` and so cannot be reached
-// by running. A synthetic three-stage chain gives exactly the shape this
-// suite needs: one ungated stage, a `review: human` stage depending on it,
-// and a third stage depending on that — the last of which is what lets a
-// dependency's declared review block a dependent two levels down without
-// tripping the autopilot gate.
-async function reviewChainPipeline(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "review-gate-pipeline-"));
-  roots.push(dir);
-  await writeFile(
-    join(dir, "review-chain.yaml"),
-    [
-      "pipeline:",
-      "  id: review-chain",
-      '  version: "1.0.0"',
-      "  stages:",
-      "    - id: upstream",
-      '      name: "Upstream"',
-      "      type: editorial",
-      "      outputs:",
-      "        - contract: upstream.md",
-      '          version: "1.0.0"',
-      "      gates:",
-      "        autopilot: true",
-      "        review: none",
-      "        retry_on_failure: 0",
-      "      depends_on: []",
-      "",
-      "    - id: gated",
-      '      name: "Gated"',
-      "      type: editorial",
-      "      inputs:",
-      "        - contract: upstream.md",
-      '          version: "1.0.0"',
-      "      outputs:",
-      "        - contract: gated.md",
-      '          version: "1.0.0"',
-      "      gates:",
-      "        autopilot: true",
-      "        review: human",
-      "        retry_on_failure: 0",
-      "      depends_on:",
-      "        - upstream",
-      "",
-      "    - id: downstream",
-      '      name: "Downstream"',
-      "      type: editorial",
-      "      inputs:",
-      "        - contract: gated.md",
-      '          version: "1.0.0"',
-      "      outputs:",
-      "        - contract: downstream.md",
-      '          version: "1.0.0"',
-      "      gates:",
-      "        autopilot: true",
-      "        review: none",
-      "        retry_on_failure: 0",
-      "      depends_on:",
-      "        - gated",
-      "",
-    ].join("\n"),
-  );
-  return dir;
-}
-
 describe("a stage that needs acceptance", () => {
   it("reports awaiting_review rather than completed", async () => {
     // `gated` declares review: human. Under avg-qr4.1 such a stage never
     // reads as completed, because completed is what dependents test.
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines,
       dispatcher: writer(dir), budget, review: permissive,
@@ -140,7 +73,7 @@ describe("a stage that needs acceptance", () => {
     // Completion is what happened; acceptance is whether it counts. The
     // journal records the first and must not be bent to express the second.
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines,
       dispatcher: writer(dir), budget, review: permissive,
@@ -164,7 +97,7 @@ describe("a stage that needs acceptance", () => {
 describe("the review gate on dependencies", () => {
   it("outstanding: blocks, and names the gate's reason", async () => {
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
       review: gateFor("upstream", "outstanding", "awaiting review"),
@@ -184,7 +117,7 @@ describe("the review gate on dependencies", () => {
     // `downstream` depends on `gated`, which declares review: human. A current
     // record beats the manifest's default — that is what a gate is for.
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
       review: gateFor("gated", "approved"),
@@ -201,7 +134,7 @@ describe("the review gate on dependencies", () => {
 
   it("no record: falls through to the manifest, which refuses a gated dependency", async () => {
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
       review: knowsNothing,
@@ -222,7 +155,7 @@ describe("the review gate on dependencies", () => {
     // Silence is not refusal either. `upstream` declares review: none, so
     // nothing needs a record and `gated` runs.
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
       review: knowsNothing,
@@ -243,7 +176,7 @@ describe("the review gate on dependencies", () => {
     // that injecting one turned that refusal off.
     const uninjected = await episode();
     const injected = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
 
     async function upTo(root: string, dir: string, review?: ReviewGate) {
       const svc = new ExecutionService({
@@ -273,7 +206,7 @@ describe("an absent review gate", () => {
     // review: human, and no gate is configured to say whether it was ever
     // accepted.
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines, dispatcher: writer(dir), budget,
     });
@@ -311,7 +244,7 @@ describe("a dispatcher that does not handle a stage", () => {
     // "Nothing here can do this" is a refusal someone must clear, not an
     // attempt that broke and can be retried.
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const dispatcher: StageDispatcher = {
       ...writer(dir),
       canDispatch: (stage) => stage.definition.id !== "upstream",
@@ -330,7 +263,7 @@ describe("a dispatcher that does not handle a stage", () => {
 
   it("dispatches normally when canDispatch is absent", async () => {
     const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline();
+    const pipelines = await reviewChainPipeline(roots);
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: pipelines,
       dispatcher: writer(dir), budget, review: permissive,
