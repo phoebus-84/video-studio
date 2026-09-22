@@ -268,6 +268,32 @@ describe("claim and complete over HTTP", () => {
       .toEqual(["stage-leased", "stage-started", "stage-completed"]);
   });
 
+  // Fix round 1 on task-2 (contracts): find-my-way matches an empty path
+  // segment (a URL with `//` in it) as a present-but-empty route param, so
+  // fastify's `required: [...]` schema — which only checks a key is present,
+  // not non-empty — does not catch it. An empty `series` reaching the journal
+  // as an episode ref makes `buildJournalEvent` throw (it now throws rather
+  // than returning null for a malformed event), which would happen after a
+  // lease was already taken. Rejected here, in `parseEpisode`, before any
+  // service call — and thus before any lease exists to leak.
+  it("refuses a route with an empty path segment before taking any lease", async () => {
+    const { app, dir } = await appWithEpisode();
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/channels/${REF.channel}/series//episodes/${REF.episode}/stages/brief/claim`,
+      payload: {},
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("BAD_REQUEST");
+
+    // Nothing was leased against the real episode this malformed request
+    // named a segment of.
+    await expect(stat(join(dir, ".locks"))).rejects.toThrow();
+  });
+
   it("claims a stage the gateway has no handler for — a claim promises nothing about this process", async () => {
     // `brief` above is the point: /execute refuses it because the gateway
     // cannot perform it, and /claim takes it anyway, because a claim is a

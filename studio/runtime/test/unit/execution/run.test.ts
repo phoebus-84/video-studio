@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,13 +19,18 @@ afterEach(async () => {
 });
 
 // Controls a mock of @studio/contracts' appendJournalEvent, used only by the
-// "dropped stage-leased write" test below (Finding 3). vi.hoisted so the
-// vi.mock factory — which is itself hoisted above these imports — can close
-// over it.
+// "dropped stage-leased write" test below (Finding 3), plus the
+// "stage-leased write throws" test (task-2 fix round 1) covering the other
+// half of the same contract: a malformed event throws instead of returning
+// null, and that throw must not leak the lease it was taken under. vi.hoisted
+// so the vi.mock factory — which is itself hoisted above these imports — can
+// close over it.
 const journalMockState = vi.hoisted(() => ({
   dropStageLeased: false,
   /** A terminal event type to drop, or null. */
   dropTerminal: null as null | "stage-completed" | "stage-failed",
+  /** Throw instead of writing, standing in for a malformed event. */
+  throwStageLeased: false,
 }));
 
 vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
@@ -33,6 +38,9 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
   return {
     ...actual,
     appendJournalEvent: async (episodeDir: string, input: any) => {
+      if (input.type === "stage-leased" && journalMockState.throwStageLeased) {
+        throw new Error("simulated malformed event: caller bug, not a failed write");
+      }
       if (input.type === "stage-leased" && journalMockState.dropStageLeased) {
         return null;
       }
@@ -47,6 +55,7 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
 afterEach(() => {
   journalMockState.dropStageLeased = false;
   journalMockState.dropTerminal = null;
+  journalMockState.throwStageLeased = false;
 });
 
 async function episode() {
@@ -488,6 +497,49 @@ describe("ExecutionService.run", () => {
     if (!second.ok) return;
     expect(second.value.status).toBe("completed");
 
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual(["stage-leased", "stage-started", "stage-completed"]);
+  });
+
+  // Fix round 1 on task-2 (contracts): appendJournalEvent now THROWS for a
+  // malformed event instead of returning null — a caller bug, not a failed
+  // write, and the throw must reach the caller. But `claimInternal` takes the
+  // lease with `sm.transition(instance, "running")` before this append, and a
+  // throw here used to skip the `releaseAll()` that the null-return path
+  // already had, leaking the lockfile with no journal event to explain it.
+  // This must both release the lease AND keep propagating the throw — the
+  // one thing it must never do is turn a code bug into a silent `blocked`.
+
+  it("releases the lease and still throws when the stage-leased write throws", async () => {
+    const { root, dir } = await episode();
+    const dispatcher = writingDispatcher(dir);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher, budget: permissiveBudget, holder: "test/1",
+    });
+
+    journalMockState.throwStageLeased = true;
+    await expect(svc.run(REF, "narrated-illustrated-video", { stage: "brief" }))
+      .rejects.toThrow(/simulated malformed event/);
+    journalMockState.throwStageLeased = false;
+
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+
+    // No lockfile left behind — a throw is not a write that could leave one
+    // legitimately held, so nothing should remain under `.locks`.
+    const locksDir = join(dir, ".locks");
+    const locks = await readdir(locksDir).catch(() => []);
+    expect(locks).toEqual([]);
+
+    // And the lease was actually released, not just the directory empty by
+    // accident: a later run can lease and dispatch the same stage normally.
+    const second = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.status).toBe("completed");
+
+    // No trace of the aborted attempt in the journal — the throw happened
+    // before anything was recorded.
     const types = (await journal(dir)).map((e: any) => e.type);
     expect(types).toEqual(["stage-leased", "stage-started", "stage-completed"]);
   });

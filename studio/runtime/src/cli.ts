@@ -81,7 +81,7 @@ function emit(ctx: CliContext, data: Record<string, unknown>): void {
 
 function parsePath(input: string) {
   const parts = input.split("/");
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3 || parts.some((part) => part === "")) return null;
   return { channel: parts[0]!, series: parts[1]!, episode: parts[2]! };
 }
 

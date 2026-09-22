@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -273,6 +273,30 @@ describe("vpr run / vpr complete", () => {
 
       const events = await readJournal(dir);
       expect(events.map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+    });
+
+    // Fix round 1 on task-2 (contracts): `parsePath` counted segments
+    // (`parts.length === 3`) but never checked they were non-empty, so
+    // "video-storici//giulio-cesare" parsed to a `series` of "". That ref
+    // reached `appendJournalEvent`, which now throws rather than returning
+    // null for a malformed event — and the throw hit after the lease for
+    // "brief" was already taken, leaking a lockfile with no journal event to
+    // explain it. The fix is at the boundary: an empty segment is rejected
+    // here, the same way a wrong segment count always was, before any lease
+    // is taken.
+    it("refuses a path with an empty segment as a usage error, taking no lease", async () => {
+      const { root, dir } = await episodeFixture();
+
+      const result = vpr(["run", "childrens//ep", "--library", root, "--json"]);
+
+      expect(result.status).toBe(1);
+      const out = result.json();
+      expect(out.error).toMatch(/Invalid path/);
+
+      // No lockfile left behind, and no journal — nothing was ever leased.
+      const locks = await readdir(path.join(dir, ".locks")).catch(() => []);
+      expect(locks).toEqual([]);
+      await expect(readFile(path.join(dir, JOURNAL_RELATIVE_PATH), "utf-8")).rejects.toThrow();
     });
 
     it("prints the completion command, lease and all, so the safe path is the easy one", async () => {

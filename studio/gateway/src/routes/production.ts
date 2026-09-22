@@ -77,12 +77,28 @@ function report(
   };
 }
 
+/**
+ * Route params come from find-my-way, which matches an empty path segment
+ * (e.g. a request URL containing `//`) as a present-but-empty string — so
+ * fastify's `required: [...]` schema check, which only tests for key
+ * presence, does not catch it. An empty segment reaching the journal as an
+ * episode ref makes `buildJournalEvent` throw after a lease is already held
+ * (see journal.mjs), so it is rejected here instead, before any lease is
+ * taken.
+ */
 function parseEpisode(params: Record<string, string>): EpisodeRef {
-  return {
+  const ref = {
     channel: params.channel!,
     series: params.series!,
     episode: params.episode!,
   };
+  if (!ref.channel || !ref.series || !ref.episode) {
+    throw new GatewayError({
+      code: ErrorCode.BAD_REQUEST,
+      message: "channel, series and episode must all be non-empty",
+    });
+  }
+  return ref;
 }
 
 async function inheritedPipeline(workspace: WorkspaceService, ref: EpisodeRef, explicit?: string): Promise<string | undefined> {

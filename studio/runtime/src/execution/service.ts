@@ -581,10 +581,29 @@ export class ExecutionService {
     const expiresAt = new Date(this.now().getTime() + ttlMs).toISOString();
     const holder = this.options.holder ?? `runtime/pid-${process.pid}`;
 
-    const leased = await appendJournalEvent(episodeDir, {
-      type: "stage-leased", actor: "runtime", episode: ref,
-      data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
-    });
+    // A malformed event here throws rather than returning null (see
+    // appendJournalEvent's doc comment) — that is a caller bug and must still
+    // propagate. But the lease was just taken above, and nothing has run yet
+    // to depend on it: a throw from either append must release it rather
+    // than leak the lockfile with no journal event to explain it. Catching
+    // only to release-and-rethrow keeps the throw a throw — it must never
+    // become a silent `blocked`, or a code bug reads as a busy stage.
+    let leased: JournalEvent | null;
+    try {
+      leased = await appendJournalEvent(episodeDir, {
+        type: "stage-leased", actor: "runtime", episode: ref,
+        data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
+      });
+      if (leased) {
+        await appendJournalEvent(episodeDir, {
+          type: "stage-started", actor: "runtime", episode: ref,
+          data: { stageId, leaseId, attemptNumber },
+        });
+      }
+    } catch (e) {
+      await sm.releaseAll();
+      throw e;
+    }
     if (!leased) {
       // Nothing else has been recorded yet — release the lease we just took
       // and stop before dispatching. A dropped stage-started or
@@ -596,10 +615,6 @@ export class ExecutionService {
       await sm.releaseAll();
       return blocked(`"${stageId}" could not be leased: the journal write for its lease did not land`);
     }
-    await appendJournalEvent(episodeDir, {
-      type: "stage-started", actor: "runtime", episode: ref,
-      data: { stageId, leaseId, attemptNumber },
-    });
 
     return ok({
       outcome: {
