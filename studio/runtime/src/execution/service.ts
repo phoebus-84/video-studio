@@ -582,30 +582,35 @@ export class ExecutionService {
       return blocked(`"${stageId}" cannot start from its current state ("${instance.status}")`);
     }
 
-    const attemptNumber = instance.attempts.length;
-    const expiresAt = new Date(this.now().getTime() + ttlMs).toISOString();
-    const holder = this.options.holder ?? `runtime/pid-${process.pid}`;
-
-    // A malformed event here throws rather than returning null (see
+    // A malformed event below throws rather than returning null (see
     // appendJournalEvent's doc comment) — that is a caller bug and must still
-    // propagate. But the lease was just taken above, and nothing has run yet
-    // to depend on it: a throw from either append must release it rather
-    // than leak the lockfile with no journal event to explain it. Catching
-    // only to release-and-rethrow keeps the throw a throw — it must never
-    // become a silent `blocked`, or a code bug reads as a busy stage.
+    // propagate. But the lease was just taken above and nothing has run yet
+    // to depend on it, so a throw would leak the lockfile with no journal
+    // event to explain it. Catching only to release-and-rethrow keeps the
+    // throw a throw — it must never become a silent `blocked`, or a code bug
+    // reads as a busy stage.
+    //
+    // The region covers everything between taking the lease and the
+    // `stage-leased` append, the three statements that open it included: a bad
+    // injected clock makes `toISOString()` raise, and by then the lockfile
+    // exists. It stops at that append, and the boundary is the same one the
+    // whole design turns on — whether the journal already claims the stage.
+    // Up to here it does not, so releasing is what keeps the two records
+    // agreeing. The moment `stage-leased` lands it does, and releasing would
+    // make them contradict, which is why the `stage-started` append below
+    // sits OUTSIDE this try and why the `!started` branch releases nothing.
+    // A throw from there propagates with the lease held, and the lease lapses.
+    let attemptNumber: number;
+    let expiresAt: string;
     let leased: JournalEvent | null;
-    let started: JournalEvent | null = null;
     try {
+      attemptNumber = instance.attempts.length;
+      expiresAt = new Date(this.now().getTime() + ttlMs).toISOString();
+      const holder = this.options.holder ?? `runtime/pid-${process.pid}`;
       leased = await appendJournalEvent(episodeDir, {
         type: "stage-leased", actor: "runtime", episode: ref,
         data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
       });
-      if (leased) {
-        started = await appendJournalEvent(episodeDir, {
-          type: "stage-started", actor: "runtime", episode: ref,
-          data: { stageId, leaseId, attemptNumber },
-        });
-      }
     } catch (e) {
       await sm.releaseAll();
       throw e;
@@ -618,6 +623,11 @@ export class ExecutionService {
       await sm.releaseAll();
       return blocked(`"${stageId}" could not be leased: the journal write for its lease did not land`);
     }
+
+    const started = await appendJournalEvent(episodeDir, {
+      type: "stage-started", actor: "runtime", episode: ref,
+      data: { stageId, leaseId, attemptNumber },
+    });
     if (!started) {
       // Stop, but do NOT release: the `stage-leased` event above landed, so
       // the journal says this stage is held. Dropping the lockfile now would
@@ -833,6 +843,26 @@ export class ExecutionService {
       sm.adopt(stageId, { resource: `stage:${stageId}`, token: leaseId, expiresAt: new Date(open.expiresAt) });
     }
     const instance = this.toEngineInstance(instanceState, stage);
+
+    // An open attempt on a stage replay still calls `pending` is an attempt
+    // whose `stage-started` never landed: `stage-started` is the only event
+    // that moves it to `running`. Replay tolerates that gap and records it;
+    // the engine's table — untouched here, and pinned byte-identical to
+    // replay's by test/unit/engine/transition-table-agreement.test.ts — does
+    // not, and `sm.complete`/`sm.fail` below would throw `pending → completed`
+    // AFTER the terminal event had already been appended. The work recorded,
+    // the gap recorded, and the caller told it crashed.
+    //
+    // So carry the in-memory instance through `running` first, exactly as
+    // replay's `noteMissingStart` does, rather than widening the table:
+    // `pending → completed` does not become legal, this run is just known not
+    // to have been healthy, and the journal already says so.
+    //
+    // Assigned, not `sm.transition(instance, "running")`: that overload
+    // acquires a fresh lease for `stage:<id>` — which this very attempt is
+    // holding, so it would fail — and pushes a second attempt onto an
+    // instance whose attempt is already open.
+    if (instance.status === "pending") instance.status = "running";
 
     if (input.failed) {
       const message = input.error ?? "the performer reported failure without saying why";

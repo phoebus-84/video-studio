@@ -181,6 +181,49 @@ describe("ExecutionService.status", () => {
     const script = result.value.stages.find((s) => s.stageId === "script")!;
     expect("gaps" in script).toBe(false);
   });
+
+  it("reports an orphan lease whose start never landed and whose holder never came back", async () => {
+    // The shape the service now produces ON PURPOSE when the `stage-started`
+    // write is dropped: a lease event and nothing after it, the claim
+    // refused, the lockfile left to lapse. No terminal event ever arrives, so
+    // the marker has to come from the lease expiring — otherwise the one hole
+    // this design creates deliberately is the one hole `vpr status` is blind
+    // to, and an operator cannot tell it from a stage nobody ever touched.
+    const { root, dir } = await episode();
+    await journalLine(dir, "stage-leased", {
+      stageId: "brief", leaseId: "L1", attemptNumber: 1,
+      ttlMs: 300000, expiresAt: "2020-01-01T00:00:00Z", holder: "runtime/pid-7",
+    });
+
+    const result = await service(root).status(REF, "narrated-illustrated-video");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const brief = result.value.stages.find((s) => s.stageId === "brief")!;
+    // Still `pending`, because nothing about this stage ever ran — the
+    // attempt is closed as a timeout and the stage is claimable again. That
+    // is exactly why the gap has to be said out loud: without it the report
+    // is indistinguishable from a stage nobody has touched.
+    expect(brief.status).toBe("pending");
+    expect(brief.attempts).toBe(1);
+    expect(brief.gaps).toEqual(["attempt 1 has no recorded start"]);
+  });
+
+  it("says nothing about a live claim that has not recorded its start yet", async () => {
+    // Every claim spends a moment here, between its two appends. Calling that
+    // a gap would put a warning on healthy runs in flight; only the lease
+    // expiring settles that the start is never coming.
+    const { root, dir } = await episode();
+    await journalLine(dir, "stage-leased", {
+      stageId: "brief", leaseId: "L1", attemptNumber: 1,
+      ttlMs: 300000, expiresAt: "2999-01-01T00:00:00Z", holder: "runtime/pid-7",
+    });
+
+    const result = await service(root).status(REF, "narrated-illustrated-video");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const brief = result.value.stages.find((s) => s.stageId === "brief")!;
+    expect("gaps" in brief).toBe(false);
+  });
 });
 
 describe("status agrees with what run will do", () => {

@@ -552,6 +552,75 @@ describe("ExecutionService.run", () => {
     expect(types).toEqual(["stage-leased", "stage-leased", "stage-started", "stage-completed"]);
   });
 
+  // Final review, I1: the gap replay was taught to survive reached
+  // `complete()` unhandled. `complete()` derives the stage from the journal,
+  // so a journal holding `[stage-leased]` and nothing after it gives
+  // `pending` — and the ENGINE's table, deliberately untouched by this work,
+  // has no `pending -> completed`. The `stage-completed` append landed first,
+  // so the work was recorded and the caller was still handed
+  // `FATAL: Invalid transition` (exit 2 from the CLI, 500 from the gateway)
+  // for a completion that is in the log. Task 3 creates that journal on
+  // purpose, so this is not a hypothetical precondition.
+
+  it("completes a claim whose stage-started write was lost, instead of throwing", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      budget: permissiveBudget, holder: "test/1", leaseTtlMs: 300_000,
+    });
+
+    // Exactly the state task 3 leaves behind: the lease event and nothing after it.
+    journalMockState.dropStageStarted = true;
+    const claimed = await svc.claim(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropStageStarted = false;
+    expect(claimed.ok && claimed.value.status).toBe("blocked");
+    expect((await journal(dir)).map((e: any) => e.type)).toEqual(["stage-leased"]);
+
+    await writeFile(join(dir, "artifacts/brief.md"), "a real brief");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok).toBe(true);
+    if (!done.ok) return;
+    expect(done.value.status).toBe("completed");
+    expect((await journal(dir)).map((e: any) => e.type))
+      .toEqual(["stage-leased", "stage-completed"]);
+
+    // Survived, not papered over: the hole is still on the record.
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    const brief = status.value.stages.find((s: any) => s.stageId === "brief")!;
+    expect(brief.status).toBe("completed");
+    expect(brief.gaps).toEqual(["attempt 1 has no recorded start"]);
+  });
+
+  it("fails a claim whose stage-started write was lost, instead of throwing", async () => {
+    // `recordFailure` goes through `sm.fail`, which is the same transition
+    // table one row over: `pending -> failed` is no more legal than
+    // `pending -> completed`.
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      budget: permissiveBudget, holder: "test/1", leaseTtlMs: 300_000,
+    });
+
+    journalMockState.dropStageStarted = true;
+    await svc.claim(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropStageStarted = false;
+
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      failed: true, error: "the model refused the prompt",
+    });
+
+    expect(done.ok).toBe(true);
+    if (!done.ok) return;
+    expect(done.value.status).toBe("failed");
+    expect((await journal(dir)).map((e: any) => e.type))
+      .toEqual(["stage-leased", "stage-failed"]);
+  });
+
   // Fix round 1 on task-2 (contracts): appendJournalEvent now THROWS for a
   // malformed event instead of returning null — a caller bug, not a failed
   // write, and the throw must reach the caller. But `claimInternal` takes the
