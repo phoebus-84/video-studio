@@ -104,6 +104,32 @@ function closeIfExpired(instance, now) {
 }
 
 /**
+ * A terminal event has arrived for an attempt that never recorded its start.
+ *
+ * The `stage-started` write was lost — the journal is append-only, so it can
+ * never be added, and refusing here would throw on every future replay of this
+ * episode rather than only this one. That is not failing closed, it is failing
+ * dead: `status`, `run`, `claim` and `complete` would all be permanently
+ * unavailable for the episode because one write did not land.
+ *
+ * So the attempt passes through `running` — a transition the table already
+ * allows — and carries `startRecorded: false` to say the step was inferred
+ * rather than witnessed. The marker is absent on a healthy attempt: it exists
+ * to mark the exception, not to annotate the rule.
+ *
+ * This is the same argument the table comment above makes for
+ * `completed -> pending`, applied to the case it did not reach. Note what is
+ * NOT done here: `pending -> completed` is not added to VALID_TRANSITIONS. The
+ * table still describes what a healthy run may do, and this records that this
+ * run was not healthy.
+ */
+function noteMissingStart(instance, attempt) {
+  if (instance.status !== "pending") return;
+  attempt.startRecorded = false;
+  transition(instance, "running", "the attempt started, unrecorded");
+}
+
+/**
  * Replay a journal into per-stage execution state.
  *
  * `stageIds` are the stages the resolved pipeline declares. `now` is the clock
@@ -185,12 +211,14 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
         transition(instance, "running", "the attempt started");
         break;
       case "stage-completed":
+        noteMissingStart(instance, attempt);
         transition(instance, "completed", "the attempt completed");
         attempt.endedAt = event.at;
         attempt.outcome = "success";
         instance.outputArtifacts = data.outputs ?? [];
         break;
       case "stage-failed":
+        noteMissingStart(instance, attempt);
         transition(instance, "failed", "the attempt failed");
         attempt.endedAt = event.at;
         attempt.outcome = "failure";
@@ -198,6 +226,7 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
         attempt.retryable = data.retryable;
         break;
       case "attempt-recorded":
+        noteMissingStart(instance, attempt);
         transition(instance, OUTCOME_STATUS[data.outcome], "the attempt was recorded");
         attempt.endedAt = event.at;
         attempt.outcome = data.outcome;
