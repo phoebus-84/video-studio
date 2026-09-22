@@ -589,13 +589,14 @@ export class ExecutionService {
     // only to release-and-rethrow keeps the throw a throw — it must never
     // become a silent `blocked`, or a code bug reads as a busy stage.
     let leased: JournalEvent | null;
+    let started: JournalEvent | null = null;
     try {
       leased = await appendJournalEvent(episodeDir, {
         type: "stage-leased", actor: "runtime", episode: ref,
         data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
       });
       if (leased) {
-        await appendJournalEvent(episodeDir, {
+        started = await appendJournalEvent(episodeDir, {
           type: "stage-started", actor: "runtime", episode: ref,
           data: { stageId, leaseId, attemptNumber },
         });
@@ -605,15 +606,26 @@ export class ExecutionService {
       throw e;
     }
     if (!leased) {
-      // Nothing else has been recorded yet — release the lease we just took
-      // and stop before dispatching. A dropped stage-started or
-      // stage-completed self-heals (the lease expires, the stage becomes
-      // retryable); a dropped stage-leased with stage-started still landing
-      // would leave replay looking at a terminal-shaped gap it can never
-      // close, since the journal is append-only. Failing here, before any
-      // work happens, is the only point that can be undone.
+      // Release and stop. This is the ONE append where releasing is right:
+      // the write did not land, so the journal says nothing about this stage,
+      // and dropping the lockfile is what keeps the two agreeing. Every append
+      // after this one has a lease event in the log behind it.
       await sm.releaseAll();
       return blocked(`"${stageId}" could not be leased: the journal write for its lease did not land`);
+    }
+    if (!started) {
+      // Stop, but do NOT release: the `stage-leased` event above landed, so
+      // the journal says this stage is held. Dropping the lockfile now would
+      // leave the lockfile and the journal disagreeing, which is the failure
+      // this service exists to prevent. The lease lapses on its own and the
+      // stage becomes claimable again then — the same path a process that
+      // dies right after leasing already takes.
+      //
+      // Replay survives this gap: it records `startRecorded: false` rather
+      // than throwing. Surviving it is not a licence to create it. A lost
+      // write here means writes are failing on this machine, and dispatching
+      // anyway produces work whose record is already incomplete.
+      return blocked(`"${stageId}" could not be started: the journal write for its start did not land`);
     }
 
     return ok({

@@ -27,6 +27,7 @@ afterEach(async () => {
 // close over it.
 const journalMockState = vi.hoisted(() => ({
   dropStageLeased: false,
+  dropStageStarted: false,
   /** A terminal event type to drop, or null. */
   dropTerminal: null as null | "stage-completed" | "stage-failed",
   /** Throw instead of writing, standing in for a malformed event. */
@@ -44,6 +45,9 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
       if (input.type === "stage-leased" && journalMockState.dropStageLeased) {
         return null;
       }
+      if (input.type === "stage-started" && journalMockState.dropStageStarted) {
+        return null;
+      }
       if (input.type === journalMockState.dropTerminal) {
         return null;
       }
@@ -54,6 +58,7 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
 
 afterEach(() => {
   journalMockState.dropStageLeased = false;
+  journalMockState.dropStageStarted = false;
   journalMockState.dropTerminal = null;
   journalMockState.throwStageLeased = false;
 });
@@ -499,6 +504,52 @@ describe("ExecutionService.run", () => {
 
     const types = (await journal(dir)).map((e: any) => e.type);
     expect(types).toEqual(["stage-leased", "stage-started", "stage-completed"]);
+  });
+
+  it("stops rather than dispatching when the stage-started write is dropped", async () => {
+    // The only execution append the service did not check. A dropped
+    // stage-started is survivable since replay records the gap, but it is
+    // still a lost write, and dispatching after one means knowingly doing work
+    // whose record already has a hole. Nothing has run yet at this point, so
+    // the lease can be released completely — the same reason the stage-leased
+    // rollback is safe, and the reason the terminal appends cannot do it.
+    const { root, dir } = await episode();
+    const dispatcher = writingDispatcher(dir);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher, budget: permissiveBudget, holder: "test/1", leaseTtlMs: 40,
+    });
+
+    journalMockState.dropStageStarted = true;
+    const result = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropStageStarted = false;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/journal write/);
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+
+    // The lease is still held, because the journal says it is. A second run
+    // while it is live must be refused — the lockfile and the journal agree.
+    const immediate = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(immediate.ok).toBe(true);
+    if (!immediate.ok) return;
+    expect(immediate.value.status).toBe("blocked");
+    expect(immediate.value.reason).toMatch(/already held/);
+
+    // And it becomes claimable again by lapse, not by a release that would
+    // have contradicted the log.
+    await new Promise((r) => setTimeout(r, 60));
+    const later = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(later.ok).toBe(true);
+    if (!later.ok) return;
+    expect(later.value.status).toBe("completed");
+
+    // The dropped attempt left its lease event and nothing after it — no
+    // stage-started, and no terminal event claiming an attempt that never ran.
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual(["stage-leased", "stage-leased", "stage-started", "stage-completed"]);
   });
 
   // Fix round 1 on task-2 (contracts): appendJournalEvent now THROWS for a
