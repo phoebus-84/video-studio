@@ -62,7 +62,7 @@ declares lives there. It is a scratch area that grew where nobody declared one.
 ## 2. Decisions
 
 1. `episode.yaml` becomes the one episode manifest, actually parsed and
-   validated, conforming to `EpisodeMetadata`.
+   validated, conforming to a new `EpisodeManifest` contract.
 2. `[episode]/episode.json` is folded into it and retired.
 3. `artifacts/episode.json` and `.workspace/contract.json` are **not touched**.
    They are different concepts; renaming or merging them is not this issue's
@@ -74,22 +74,54 @@ declares lives there. It is a scratch area that grew where nobody declared one.
 
 ## 3. The contract
 
-### `EpisodeMetadata.settings` becomes optional
+### A new `EpisodeManifest`, and `EpisodeMetadata` is left alone
 
-This is a schema correction, not a concession. `docs/workspace.md` defines
-settings as resolving `system -> channel -> series -> episode`, and only the
-channel and series levels have a `settings.yaml` — confirmed in
-`runtime/src/workspace/tree.ts`, where `settings.yaml` appears in `CHANNEL_TREE`
-and `SERIES_TREE` and in no episode list.
+An earlier draft of this spec had `episode.yaml` conform to the existing
+`EpisodeMetadata`, with its required `settings` relaxed. That was wrong, and the
+reason matters: `EpisodeMetadata` also requires `episodeId` and `seriesId`,
+which are ULIDs (`ep_01ARZ3NDEKTSV4RRFFQ69G5FAV`). **The file on disk is
+addressed by path and slug, not by ULID.** Conforming to it would mean minting
+identifiers for all 20 existing episodes during migration — inventing facts to
+satisfy a contract, in a migration whose whole discipline is not inventing
+facts.
+
+So `workspace.schema.json` gains a new `EpisodeManifest` definition for the
+on-disk file, and `EpisodeMetadata` is not touched at all.
+
+This is the lower-risk change as well as the more honest one. No published
+`required` is loosened, so nothing already written against the schema can break.
+And the two describe genuinely different things: `EpisodeMetadata` is the
+id-addressed aggregate view used by `WorkspaceExample`; `EpisodeManifest` is the
+path-addressed file the filesystem holds. Each schema carries a `description`
+pointing at the other so the next reader does not have to rediscover this.
+
+### `settings` is optional in `EpisodeManifest`
+
+`docs/workspace.md` defines settings as resolving
+`system -> channel -> series -> episode`, and only the channel and series levels
+have a `settings.yaml` — confirmed in `runtime/src/workspace/tree.ts`, where
+`settings.yaml` appears in `CHANNEL_TREE` and `SERIES_TREE` and in no episode
+list.
 
 Requiring a complete `SettingsLayer` — `approvalPolicy`, `budget`,
-`outputProfile`, all three mandatory — at the leaf of an inheritance chain
-contradicts the inheritance the leaf participates in. An episode that overrides
+`outputProfile`, all three mandatory — at the leaf of an inheritance chain would
+contradict the inheritance the leaf participates in. An episode that overrides
 nothing would have to restate everything it inherits, and the restatement would
-immediately be a second source of truth for values the channel and series own.
+immediately become a second source of truth for values the channel and series
+own.
 
 Episode-level overrides live under an optional `settings:` key inside
 `episode.yaml`.
+
+### The fields
+
+Required: `apiVersion`, `kind: Episode`, `slug`. Optional: `channel`, `series`,
+`title`, `description`, `createdAt`, `settings`.
+
+`slug` alone is required because it is the one fact every episode has and the
+one the directory name already proves. `channel` and `series` are optional
+because the path proves them too — they are recorded for a file that gets copied
+or moved out of its tree, not relied on for resolution.
 
 ### `description` is added
 
