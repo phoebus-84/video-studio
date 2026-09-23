@@ -68,7 +68,9 @@ declares lives there. It is a scratch area that grew where nobody declared one.
    They are different concepts; renaming or merging them is not this issue's
    business.
 4. `production/` is declared as the episode's scratch area.
-5. Every one of the 20 existing episodes is migrated to conform.
+5. Existing episodes are migrated on a best-effort basis. An episode that
+   migrates cleanly is migrated; one that does not is reported and skipped.
+   Old episodes are not worth elaborate machinery.
 
 ## 3. The contract
 
@@ -208,6 +210,33 @@ hyphens with spaces and capitalising words. `createdAt` is **omitted** — these
 episodes have no recorded creation time and a derived one would be a fabricated
 fact in a file whose purpose is to be authoritative.
 
+These happen to migrate cleanly, because the canonical creator is idempotent and
+fills a bare directory as readily as an empty one. That is a convenience, not a
+requirement: see below.
+
+### Best effort, and what that rules out
+
+Old episodes are migrated where migration is straightforward. Where it is not,
+the tool **reports the reason and moves on**. A skipped episode is a normal
+outcome printed in the summary, not a failure and not a non-zero exit.
+
+Concretely, an episode is skipped rather than forced when:
+
+- `episode.yaml` and `episode.json` both hold a `title` or `slug` and the values
+  disagree — the tool prints both and changes nothing, because guessing which
+  one a person meant is exactly the kind of inference this issue removes
+- `episode.json` is present but unparseable
+- the directory holds something unexpected where a required file belongs, for
+  instance a file named `journal` or `output`
+
+No reconciliation logic, no heuristics, no interactive prompting. The tool's
+whole job is to make the easy majority conform and to say plainly which
+episodes it did not touch and why.
+
+Accepting that some old episodes stay non-conforming is a deliberate trade. The
+contract binds what the system creates from now on; the back catalogue is
+migrated as far as it goes cheaply.
+
 ### Nothing is deleted
 
 The precedent tool promises that migration only ever moves things, and here the
@@ -253,5 +282,7 @@ malformed `episode.yaml` is now reported rather than passed.
 ## 9. What this unblocks
 
 avg-t7i gains a declared answer to "where may an artifact be". avg-7he gains a
-library where every episode has an identity to key a journal to. avg-fe2, the
-vertical slice, stops failing for reasons already understood.
+library where most episodes have an identity to key a journal to, and a printed
+list of the ones that do not. avg-fe2, the vertical slice, stops failing for
+reasons already understood — it runs on a new episode anyway, which the unified
+creator now builds correctly by construction.
