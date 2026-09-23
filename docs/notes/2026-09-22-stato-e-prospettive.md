@@ -42,6 +42,44 @@ in cui le voci più rumorose descrivono un mondo che non esiste più.
 sessione: chiudere ciò che è fatto, riscrivere ciò che è sopravvissuto, eliminare
 gli epic per-repository. Tutto ciò che segue diventa decidibile solo dopo.
 
+### Correzione del 2026-09-23: non erano finzione, erano puntatori
+
+La bonifica ha smentito in parte quanto scritto sopra, ed è bene che resti agli
+atti. Quei nove epic non contenevano lavoro proprio: il loro corpo diceva
+soltanto "entra nella directory del modulo ed esegui `bd list --parent`". Ma il
+lavoro a cui puntavano **esisteva davvero**.
+
+Tutti e dieci i database beads per-modulo sono sopravvissuti al consolidamento.
+Quello che non è sopravvissuto è la possibilità di raggiungerli: `bd` eseguito da
+`studio/contracts` risale fino alla radice git del monorepo e apre il database
+`avg-`, non quello del modulo. `studio/contracts/.beads/metadata.json` dichiara
+ancora `"dolt_database": "vwc"`, e nessuno lo legge.
+
+Leggendo direttamente i file JSONL: **36 issue non chiuse**, invisibili per cinque
+settimane. Diverse erano esattamente ciò che questo rapporto ha riscoperto da zero:
+
+- `pva-sob.19` — *"pva_compose_video è troppo ingenuo per episodi di produzione"* —
+  è il paragrafo 2 di questo rapporto, archiviato ad agosto
+- `fvc-0zz.17` — *"il campo transition di SceneInput è ignorato"* — **verificato
+  ancora vero**: `transition` è dichiarato a `composer.ts:24` e non è letto da
+  nessun'altra parte; il filter graph è un `concat` semplice, senza `xfade`
+- `fma-9km.7` — stima, prenotazione e riconciliazione della spesa fal — nessuna
+  traccia in `packages/fal-media/src`
+
+Le 27 issue ancora aperte sono state recuperate sotto otto epic `avg-`, con
+etichetta `recovered`, ciascuna con il modulo di origine, l'identificativo
+originale e la data di esportazione, e ciascuna che dichiara apertamente di **non**
+essere stata riverificata contro il codice attuale. I dieci database di modulo sono
+stati ritirati; la storia git li conserva.
+
+Il programma E1-E4 è stato risolto: E1 fatto o superato, E2 superato dal recupero,
+E3 superato dal consolidamento stesso, E4 riscritto come `avg-fe2`. Le P0 sono
+passate da 17 a 2, entrambe reali.
+
+La lezione non è "il tracker era sbagliato". È che **un puntatore verso un database
+irraggiungibile fallisce in silenzio**, esattamente come le altre superfici
+descritte in questo rapporto: dichiara qualcosa di diverso da ciò che contiene.
+
 ## 2. Il posto del compilatore è vuoto
 
 Questo è il vero buco architetturale, e a dirlo è una nota di progetto già scritta
@@ -84,6 +122,16 @@ gli episodi:
 `production/` è presente in **più episodi di `journal/`** e il contratto non ne ha
 mai sentito parlare. `giulio-cesare` tiene le sue scene animate in
 `production/animated-scenes/s04.mp4`.
+
+C'è di peggio, ed è emerso durante la bonifica del 2026-09-23. Il contratto nomina
+`episode.yaml` come manifesto dell'episodio. Sul disco:
+
+- 10 episodi hanno `episode.yaml` — quello che il contratto nomina
+- 11 hanno `episode.json` — che il contratto non menziona
+- 9 non hanno né l'uno né l'altro
+
+Il formato che il contratto non conosce è quindi **più diffuso di quello che
+dichiara canonico**, e quasi metà degli episodi non ha alcun manifesto.
 
 Questa è la causa profonda sia di `avg-t7i` ("artifactExists non trova artefatti
 reali in tre modi diversi") sia di `avg-7he` ("gli episodi esistenti non hanno
