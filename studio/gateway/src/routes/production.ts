@@ -133,12 +133,16 @@ export function registerProductionRoutes(
      * `/approve` or `/reject` is signed with. `null` for a gateway with no
      * key configured, or a test that supplies none — such a caller can
      * still record a request, it just cannot grant or refuse one on a human
-     * gate. Optional rather than required for the same reason `serviceFor`
-     * used to take `libraryRoot` alone: existing callers that predate the
-     * operator key must keep compiling, and `??` supplies the same `null`
-     * they would have passed explicitly.
+     * gate. It is also what the review gate verifies a human receipt with.
+     *
+     * Required, not optional, for the reason `makeExecutionService` gives: an
+     * optional key is an invitation for one caller to keep quietly passing
+     * `undefined` while every other one threads the resolved key. The review
+     * gate verifies human receipts with it, so the caller that forgot would
+     * report every operator approval as unverifiable — awaiting review
+     * forever — and nobody would notice until an operator asked why.
      */
-    operatorKey?: string | null;
+    operatorKey: string | null;
   },
 ): void {
   const maxStagesPerExecute = options.maxStagesPerExecute ?? MAX_STAGES_PER_EXECUTE;
@@ -151,7 +155,7 @@ export function registerProductionRoutes(
    * argument is the one that writes the journal somewhere nobody is looking.
    */
   const serviceFor = (request: { log: { info: (message: string) => void } }) =>
-    makeExecutionService((message) => request.log.info(message), options.libraryRoot, options.operatorKey ?? null);
+    makeExecutionService((message) => request.log.info(message), options.libraryRoot, options.operatorKey);
   // ── Snapshot ──────────────────────────────────────────────────────────────
   app.post("/api/channels/:channel/series/:series/episodes/:episode/snapshot", {
     schema: {

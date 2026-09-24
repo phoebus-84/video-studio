@@ -5,7 +5,8 @@
 // manifests declare. They used to drive `runAutopilot` with a fake runtime
 // that fed it a stage sequence. The gateway no longer owns that loop, so they
 // now drive the composition that replaced it: @studio/runtime's
-// ExecutionService with the gateway's own dispatcher and review gate.
+// ExecutionService with the gateway's own dispatcher and the JournalReviewGate
+// it shares with the CLI (avg-qr4.3).
 //
 // Two things changed wording rather than substance: `awaiting_approval` is
 // now `awaiting_review`, and `ExecutionReport.stages[].status` is now
@@ -27,18 +28,36 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ExecutionService } from "@studio/runtime";
+import { ExecutionService, JournalReviewGate, resolvePipeline, createDefaultLoader } from "@studio/runtime";
 import type { StageDispatcher } from "@studio/runtime";
 import { GatewayDispatcher } from "../src/runtime/dispatcher.js";
-import { GatewayReviewGate } from "../src/runtime/review-gate.js";
 import { registerProductionRoutes } from "../src/routes/production.js";
 import type { RuntimeClient } from "../src/runtime/client.js";
 import type { WorkspaceService } from "../src/workspace/service.js";
 import { appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-review.mjs";
+import { signReceipt, planHashOf } from "@studio/contracts/src/receipt.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PIPELINES = resolve(__dirname, "../../pipelines/pipelines");
+
+/**
+ * The operator key this file's compositions hold. A human approval counts
+ * only when it is signed with the key the reading composition verifies with
+ * (avg-qr4.3), so the hand-written approvals below are signed with this.
+ */
+const KEY = "gate-enforcement-operator-key";
+
+/**
+ * planHashOf a stage's real resolved definition — the hash `review()` binds
+ * a decision to. Anything else reads as "the stage definition changed".
+ */
+async function planOf(root: string, pipeline: string, stageId: string, builtin = PIPELINES) {
+  const resolved = await resolvePipeline(createDefaultLoader(root, builtin), pipeline);
+  const stage = resolved.stages.find((s) => s.definition.id === stageId);
+  if (!stage) throw new Error(`${pipeline} declares no stage ${stageId}`);
+  return planHashOf(stage.definition);
+}
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -66,7 +85,8 @@ function gatewayService(
     libraryRoot: root,
     builtinPipelines: PIPELINES,
     dispatcher: new GatewayDispatcher(),
-    review: new GatewayReviewGate(),
+    review: new JournalReviewGate(KEY),
+    operatorKey: KEY,
     budget: { maySpend: async () => ({ ok: true as const, value: { reserveId: "t", estimatedCost: 0 } }) },
     holder: "test/1",
     ...over,
@@ -114,10 +134,11 @@ async function seedUpTo(dir: string, ...stageIds: string[]) {
  * service falls back to the manifest when the gate holds no record, so a test
  * that wants to exercise something BEHIND such a stage has to put a genuine
  * approval in the journal. Written with `buildGateReview`/`hashArtifacts` over
- * bytes that really exist, because a hand-shaped record would derive as
+ * bytes that really exist, bound to the stage's real plan and signed with the
+ * composition's key, because a hand-shaped record would derive as
  * `invalidated` and prove the opposite of what the test claims.
  */
-async function seedAccepted(dir: string, stageId: string, relatives: string[]) {
+async function seedAccepted(root: string, dir: string, pipeline: string, stageId: string, relatives: string[]) {
   for (const relative of relatives) {
     await mkdir(dirname(join(dir, relative)), { recursive: true });
     await writeFile(join(dir, relative), `bytes of ${relative}`);
@@ -125,15 +146,15 @@ async function seedAccepted(dir: string, stageId: string, relatives: string[]) {
   await seedCompleted(dir, stageId, relatives);
   await appendJournalEvent(dir, {
     type: "approval-granted",
-    actor: "human",
+    actor: "runtime",
     episode: REF,
-    data: buildGateReview({
+    data: signReceipt(buildGateReview({
       stageId,
       decision: "approved",
       origin: "human",
-      actor: "human",
-      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, relatives) },
-    }),
+      actor: "runtime",
+      binding: { planHash: await planOf(root, pipeline, stageId), outputs: await hashArtifacts(dir, relatives) },
+    }), KEY),
   });
 }
 
@@ -187,7 +208,8 @@ async function executeRoute(root: string, over: { maxStagesPerExecute?: number }
   const app = Fastify();
   const workspace = { getEpisode: async () => null } as unknown as WorkspaceService;
   // The root is passed explicitly; the routes take it as a required option.
-  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { ...over, libraryRoot: root });
+  // The key, too: the route composes the same review gate as `gatewayService`.
+  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { ...over, libraryRoot: root, operatorKey: KEY });
   await app.ready();
   return {
     app,
@@ -282,7 +304,7 @@ describe("execution gates", () => {
     // illustrations declares review: human, and continuity-check depends on
     // it — so it has to be genuinely accepted, or the block below would land
     // on the dependency rather than on the missing checker.
-    await seedAccepted(dir, "illustrations", ["artifacts/frames/s1.png"]);
+    await seedAccepted(root, dir, "fairy-tale-adaptation", "illustrations", ["artifacts/frames/s1.png"]);
 
     // continuity-check declares autopilot: true but review: human, and nothing
     // actually checks continuity. Blocked, not a fabricated pass. This is the
@@ -557,10 +579,24 @@ describe("dependency gates", () => {
   ) {
     await appendJournalEvent(dir, {
       type,
-      actor: type === "approval-granted" ? "human" : "gateway",
+      actor: "runtime",
       episode: REF,
       data: review,
     });
+  }
+
+  /** A human approval of `narration` exactly as `review()` would write it. */
+  async function signedApproval(root: string, dir: string, relative: string) {
+    return signReceipt(buildGateReview({
+      stageId: "narration",
+      decision: "approved",
+      origin: "human",
+      actor: "runtime",
+      binding: {
+        planHash: await planOf(root, "narrated-illustrated-video", "narration"),
+        outputs: await hashArtifacts(dir, [relative]),
+      },
+    }), KEY);
   }
 
   it("blocks a stage whose dependency is still awaiting review", async () => {
@@ -589,16 +625,12 @@ describe("dependency gates", () => {
   it("lets the stage run once that dependency is approved", async () => {
     const { root, dir, relative } = await narrated();
 
-    // A real approval: the hashes are of the bytes actually on disk. Recording
-    // anything else would make deriveGateState answer `invalidated`, and this
-    // test would prove the opposite of what it claims.
-    await record(dir, "approval-granted", buildGateReview({
-      stageId: "narration",
-      decision: "approved",
-      origin: "human",
-      actor: "human",
-      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, [relative]) },
-    }));
+    // A real approval: the hashes are of the bytes actually on disk, the plan
+    // hash is the real stage's, and it is signed with the key the gate
+    // verifies with. Recording anything else would make deriveGateState
+    // answer `invalidated`, and this test would prove the opposite of what
+    // it claims.
+    await record(dir, "approval-granted", await signedApproval(root, dir, relative));
 
     const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
 
@@ -610,16 +642,56 @@ describe("dependency gates", () => {
     expect(result.value.status).toBe("completed");
   });
 
+  it("does not let the stage run on an unsigned human approval, which anything can append", async () => {
+    // Inverted by avg-qr4.3. This exact record — right hashes, right plan,
+    // origin human — used to satisfy the gate, and any process running as the
+    // operator's user can append it with its file tools. Without a signature
+    // nothing shows a person made it.
+    const { root, dir, relative } = await narrated();
+    const { signature: _signature, ...unsigned } = await signedApproval(root, dir, relative);
+    await record(dir, "approval-granted", unsigned);
+
+    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
+
+    await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/unsigned/);
+  });
+
+  it("does not let the stage run on an approval signed with another key", async () => {
+    const { root, dir, relative } = await narrated();
+    const { signature: _signature, ...unsigned } = await signedApproval(root, dir, relative);
+    await record(dir, "approval-granted", signReceipt(unsigned, "not-the-operator-key"));
+
+    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/does not verify/);
+  });
+
+  it("blocks when the dependency's approval was for a different stage definition", async () => {
+    const { root, dir, relative } = await narrated();
+    const { signature: _signature, ...unsigned } = await signedApproval(root, dir, relative);
+    await record(dir, "approval-granted", signReceipt({
+      ...unsigned, binding: { ...unsigned.binding, planHash: "0".repeat(64) },
+    }, KEY));
+
+    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/stage definition changed/);
+  });
+
   it("blocks when the dependency's approval no longer matches what is on disk", async () => {
     const { root, dir, relative } = await narrated();
 
-    await record(dir, "approval-granted", buildGateReview({
-      stageId: "narration",
-      decision: "approved",
-      origin: "human",
-      actor: "human",
-      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, [relative]) },
-    }));
+    await record(dir, "approval-granted", await signedApproval(root, dir, relative));
 
     // Re-rendered after the approval. The approval described bytes that are
     // gone, so it is not an approval of what would now be consumed.
@@ -709,7 +781,7 @@ describe("quality assurance", () => {
     // qa depends on compose, which declares review: human. Accepted here so
     // that qa is reached at all — the property under test is what qa writes,
     // not whether the review gate holds.
-    await seedAccepted(dir, "compose", ["artifacts/compose-log.txt"]);
+    await seedAccepted(root, dir, "narrated-illustrated-video", "compose", ["artifacts/compose-log.txt"]);
 
     // Nothing wrote output/*.mp4 or artifacts/final.mp4. QA runs — it has a
     // handler — but it declares review: human, so it is structurally unable to

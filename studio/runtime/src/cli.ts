@@ -24,7 +24,7 @@ import { SystemClock } from "./ports/clock.js";
 import { FileSystemSnapshotStore } from "./pipeline/fs-snapshot-store.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
-import { ExecutionService } from "./execution/index.js";
+import { ExecutionService, JournalReviewGate } from "./execution/index.js";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
 import { resolveCliCredential } from "./execution/principal.js";
 import type { RerunMode } from "./rerun/index.js";
@@ -327,7 +327,9 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
-  const service = makeService(args, ttl.value, null);
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const service = makeService(args, ttl.value, operatorKey);
   const status = await service.status(parsed, pipelineName ?? DEFAULT_PIPELINE);
   if (!status.ok) {
     emit(ctx, { error: `${status.error.code}: ${status.error.message}` });
@@ -459,7 +461,9 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
-  const service = makeService(args, ttl.value, null);
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const service = makeService(args, ttl.value, operatorKey);
   const pipeline = pipelineName ?? DEFAULT_PIPELINE;
 
   const plan = await service.planRerun(parsed, pipeline, mode as RerunMode, selected);
@@ -581,6 +585,26 @@ async function cmdReject(ctx: CliContext, args: string[]): Promise<number> {
 // ── run / complete ──────────────────────────────────────────────────────────
 
 /**
+ * The operator key for a command that does not itself decide a review, or
+ * the exit code to return when the key file refuses.
+ *
+ * `status`, `run`, `complete` and `rerun` consult the review gate, and a
+ * gate with no key reads every human approval as unverifiable (avg-qr4.3) —
+ * so a CLI that resolved the key only for `approve`/`reject` would report a
+ * stage its own operator approved as still awaiting review. Same resolution
+ * and same refusal as `cmdReview`: a key other users can read is an error,
+ * never quietly treated as absent; an absent key is `null`.
+ */
+function cliOperatorKey(ctx: CliContext): string | null | number {
+  try {
+    return resolveCliCredential().operatorKey;
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+}
+
+/**
  * The execution service, composed for the CLI.
  *
  * The CLI injects no dispatcher: the four handlers that perform stages
@@ -605,11 +629,14 @@ function makeService(args: string[], leaseTtlMs: number, operatorKey: string | n
     holder: `cli/pid-${process.pid}`,
     // Stated, not inherited; see `claimTtlMs`.
     leaseTtlMs,
-    // The key a human decision is signed with (avg-qr4.3). `cmdReview` passes
-    // the credential `resolveCliCredential` resolved from the filesystem;
-    // every other caller passes `null` — none of them can write a review
-    // event, so none of them need to sign one.
+    // The key a human decision is signed with, and verified with (avg-qr4.3).
+    // Every caller passes what `resolveCliCredential` resolved from the
+    // filesystem — `cmdReview` to sign, the rest so the gate below can verify.
     operatorKey,
+    // The same gate the gateway composes. Without one, a CLI fell back to the
+    // manifest rule forever and no approval — signed or not — ever let a
+    // dependent run from the terminal.
+    review: new JournalReviewGate(operatorKey),
   });
 }
 
@@ -813,7 +840,9 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
-  const service = makeService(args, ttl.value, null);
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const service = makeService(args, ttl.value, operatorKey);
   const claimed = await service.claim(parsed, pipelineName ?? DEFAULT_PIPELINE, {
     ...(stage ? { stage } : {}),
     dryRun: ctx.dryRun,
@@ -925,7 +954,9 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: ttl.error });
     return EX_USAGE;
   }
-  const service = makeService(args, ttl.value, null);
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const service = makeService(args, ttl.value, operatorKey);
 
   if (ctx.dryRun) {
     return completeDryRun(ctx, service, args, parsed, pipeline, stageId, failed, outputs);

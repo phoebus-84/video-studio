@@ -76,10 +76,16 @@ export interface ReviewVerdict {
  *
  * Injected rather than owned, because what an approval IS belongs to
  * avg-qr4.3, and the service deciding it first is the mistake this epic exists
- * to close. The gateway supplies one backed by gate-review records.
+ * to close. `JournalReviewGate` (journal-review-gate.ts) is the one both the
+ * CLI and the gateway compose, backed by signed gate-review records.
  */
 export interface ReviewGate {
-  isOutstanding(stageId: string, episodeDir: string): Promise<ReviewVerdict>;
+  /**
+   * `stage` is the definition the receipt is bound to (avg-qr4.3). Optional
+   * so test fakes that ignore it still satisfy the port; a real gate refuses
+   * without it.
+   */
+  isOutstanding(stageId: string, episodeDir: string, stage?: ResolvedStage): Promise<ReviewVerdict>;
 }
 
 /** A budget reservation, opaque to the service. */

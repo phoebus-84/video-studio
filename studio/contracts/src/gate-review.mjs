@@ -20,6 +20,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { JOURNAL_ACTORS } from "./journal.mjs";
+import { verifyReceipt } from "./receipt.mjs";
 
 /**
  * Decisions a record may carry. `rejected` rides in its own event type,
@@ -141,8 +142,18 @@ function bindingOf(data) {
  * was outrun by a re-render, copied from another episode, or simply forged
  * cannot survive being checked.
  *
- * `opts` is unused until Task 6 (avg-qr4.3) wires up signature and planHash
- * enforcement; a human grant is read exactly as today until then.
+ * The checks run in this order, and the first that fails decides (avg-qr4.3):
+ *   1. the latest review event for the stage — none means `none`, a request
+ *      means `requested`;
+ *   2. a human decision (approved or rejected) must verify against
+ *      `opts.key`: no key is `unverifiable`, no signature or a signature
+ *      that does not verify is `invalidated`. A legacy `actor: "human"`
+ *      record with no `origin` is read as human, so it lands here unsigned;
+ *   3. a verified rejection is `rejected`;
+ *   4. the approval's `binding.planHash` must equal `opts.planHash` (when the
+ *      caller supplies one), or the stage definition changed under it;
+ *   5. every artifact it names must still hash the same.
+ * Only then is it `approved`.
  *
  * `events` is the parsed journal — see parseJournal in ./journal.mjs.
  */
@@ -153,11 +164,29 @@ export async function deriveGateState(events, stageId, episodeDir, opts = {}) {
 
   const origin = latest.data?.origin ?? (latest.actor === "human" ? "human" : "agent");
   if (latest.type === "approval-requested") return { state: "requested", at: latest.at, origin };
+
+  // Human decisions must prove their origin (avg-qr4.3). Checked for
+  // rejections too: a forged rejection can only block, but one rule is
+  // easier to trust than two.
+  if (origin === "human") {
+    if (!opts.key) {
+      return { state: "unverifiable", reason: "this reader holds no operator key, so a human decision cannot be verified" };
+    }
+    if (typeof latest.data?.signature !== "string") {
+      return { state: "invalidated", reason: "the human decision is unsigned, so nothing shows a person made it" };
+    }
+    if (!verifyReceipt(latest.data, opts.key)) {
+      return { state: "invalidated", reason: "the human decision's signature does not verify" };
+    }
+  }
   if (latest.type === "approval-rejected") {
     return { state: "rejected", at: latest.at, origin, note: latest.data?.note };
   }
 
   const binding = bindingOf(latest.data);
+  if (opts.planHash !== undefined && binding.planHash !== opts.planHash) {
+    return { state: "invalidated", reason: "the stage definition changed since it was approved" };
+  }
   const recorded = [...(binding.inputs ?? []), ...(binding.outputs ?? [])];
   if (recorded.length === 0) {
     return { state: "invalidated", reason: "the approval named no artifacts, so there is nothing it could have reviewed" };

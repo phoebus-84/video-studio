@@ -21,13 +21,24 @@ export function registerWorkspaceRoutes(
    * for a pipeline resolution and a journal read on every episode-detail
    * request to be told so.
    */
-  libraryRoot?: string,
+  libraryRoot: string | undefined,
   /**
    * The operator's credential (avg-qr4.3), threaded through to the execution
-   * service like `libraryRoot`. This enrichment only reads status, but
-   * Task 6's gate needs the key on hand to verify a signature it finds.
+   * service like `libraryRoot`. This enrichment only reads status, but the
+   * review gate needs the key to verify a human receipt it finds. `null` for
+   * a caller with none.
+   *
+   * Required, not optional, for the reason `makeExecutionService` gives: an
+   * optional key is an invitation for one caller to keep quietly passing
+   * `undefined` while every other one threads the resolved key. The review
+   * gate verifies human receipts with it, so the caller that forgot would
+   * report every operator approval as unverifiable — awaiting review
+   * forever — and nobody would notice until an operator asked why.
+   *
+   * (`libraryRoot` above is `string | undefined` rather than optional only
+   * because a required parameter cannot follow an optional one.)
    */
-  operatorKey?: string | null,
+  operatorKey: string | null,
 ): void {
   /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -116,7 +127,7 @@ export function registerWorkspaceRoutes(
       if (libraryRoot) {
         try {
           const pipelineName = ((epData as any).pipeline as string | undefined) || DEFAULT_PIPELINE;
-          const service = makeExecutionService((message) => request.log.info(message), libraryRoot, operatorKey ?? null);
+          const service = makeExecutionService((message) => request.log.info(message), libraryRoot, operatorKey);
           const status = await service.status({ channel, series, episode: epSlug }, pipelineName);
           if (status.ok) {
             (epData as any).pipeline = status.value.pipeline ?? (epData as any).pipeline;

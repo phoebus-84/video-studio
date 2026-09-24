@@ -63,11 +63,15 @@ export interface BuildGateReviewInput {
   at?: string;
 }
 
-export type GateStateName = "none" | "requested" | "approved" | "rejected" | "invalidated";
+/**
+ * `unverifiable`: the latest decision is a human one and the reader holds no
+ * operator key to check it with (avg-qr4.3). Not approved, not forged — unknown.
+ */
+export type GateStateName = "none" | "requested" | "approved" | "rejected" | "invalidated" | "unverifiable";
 
 export interface GateState {
   state: GateStateName;
-  /** Why a review is invalid, when it is. */
+  /** Why a review is invalid or unverifiable, when it is. */
   reason?: string;
   at?: string;
   origin?: ReviewOrigin;

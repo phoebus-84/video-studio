@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 import { ExecutionService } from "../../../src/execution/service.js";
 import { ok } from "../../../src/result.js";
 import { reviewChainPipeline } from "./helpers/review-chain.js";
+import { JournalReviewGate } from "../../../src/execution/journal-review-gate.js";
+import { resolvePipeline } from "../../../src/pipeline/resolver.js";
+import { createDefaultLoader } from "../../../src/pipeline/fs-loader.js";
+import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-review.mjs";
+import { signReceipt, planHashOf } from "@studio/contracts/src/receipt.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PIPELINES = resolve(__dirname, "../../../../pipelines/pipelines");
@@ -320,6 +325,120 @@ describe("status agrees with what run will do", () => {
     expect(status.value.stages.find((s) => s.stageId === "gated")!.state).toBe("awaiting_review");
   });
 
+  describe("with the journal's review gate (avg-qr4.3: status stops guessing)", () => {
+    const KEY = "test-operator-key";
+
+    /** `upstream` and `gated` completed, under a real JournalReviewGate. */
+    async function gatedCompleted(key: string | null = KEY) {
+      const { root, dir } = await episode();
+      const pipelineDir = await reviewChainPipeline(roots);
+      const svc = new ExecutionService({
+        libraryRoot: root, builtinPipelines: pipelineDir, budget: permissiveBudget,
+        operatorKey: key, review: new JournalReviewGate(key),
+      });
+      await svc.claim(REF, "review-chain");
+      await writeFile(join(dir, "artifacts/upstream.md"), "x");
+      await svc.complete(REF, "review-chain", "upstream", { outputs: ["artifacts/upstream.md"] });
+      await svc.claim(REF, "review-chain", { stage: "gated" });
+      await writeFile(join(dir, "artifacts/gated.md"), "x");
+      await svc.complete(REF, "review-chain", "gated", { outputs: ["artifacts/gated.md"] });
+      return { root, dir, pipelineDir, svc };
+    }
+
+    /** The real resolved `gated` stage, so a hand-written receipt binds the plan `review()` would. */
+    async function gatedDefinition(root: string, pipelineDir: string) {
+      // Resolved the way the service resolves it, so planHashOf matches.
+      const resolved = await resolvePipeline(createDefaultLoader(root, pipelineDir), "review-chain");
+      return resolved.stages.find((s) => s.definition.id === "gated")!.definition;
+    }
+
+    async function state(svc: ExecutionService, id: string) {
+      const status = await svc.status(REF, "review-chain");
+      expect(status.ok).toBe(true);
+      if (!status.ok) throw new Error("unreachable");
+      return status.value.stages.find((s) => s.stageId === id)!;
+    }
+
+    it("reports a completed, operator-approved stage as completed, and its dependent runnable", async () => {
+      const { svc } = await gatedCompleted();
+      const approved = await svc.review(REF, "review-chain", "gated", { decision: "approved", principal: "operator" });
+      expect(approved.ok && approved.value.status).toBe("approved");
+
+      expect((await state(svc, "gated")).state).toBe("completed");
+      expect((await state(svc, "downstream")).state).toBe("runnable");
+    });
+
+    it("counts a hand-written human grant signed with the composition's key and bound to the real plan", async () => {
+      // The same receipt `review()` writes, built by hand: signed with the
+      // key the composition holds, bound to the real resolved definition.
+      const { root, dir, pipelineDir, svc } = await gatedCompleted();
+      const definition = await gatedDefinition(root, pipelineDir);
+      const data = signReceipt(buildGateReview({
+        stageId: "gated", decision: "approved", origin: "human", actor: "runtime",
+        binding: { planHash: planHashOf(definition), outputs: await hashArtifacts(dir, ["artifacts/gated.md"]) },
+      }), KEY);
+      await journalLine(dir, "approval-granted", data as unknown as Record<string, unknown>);
+
+      expect((await state(svc, "gated")).state).toBe("completed");
+    });
+
+    it("does not count an unsigned human grant: the stage stays awaiting review, with the reason", async () => {
+      // Before avg-qr4.3 this line — which anything running as the operator's
+      // user can append — satisfied the gate.
+      const { root, dir, pipelineDir, svc } = await gatedCompleted();
+      const definition = await gatedDefinition(root, pipelineDir);
+      await journalLine(dir, "approval-granted", buildGateReview({
+        stageId: "gated", decision: "approved", origin: "human", actor: "runtime",
+        binding: { planHash: planHashOf(definition), outputs: await hashArtifacts(dir, ["artifacts/gated.md"]) },
+      }) as unknown as Record<string, unknown>);
+
+      const gated = await state(svc, "gated");
+      expect(gated.state).toBe("awaiting_review");
+      expect(gated.stateReason).toMatch(/unsigned/);
+      const downstream = await state(svc, "downstream");
+      expect(downstream.state).toBe("blocked");
+      expect(downstream.stateReason).toMatch(/unsigned/);
+    });
+
+    it("does not count an agent's approval of a human-reviewed stage", async () => {
+      const { root, dir, pipelineDir, svc } = await gatedCompleted();
+      const definition = await gatedDefinition(root, pipelineDir);
+      await journalLine(dir, "approval-granted", buildGateReview({
+        stageId: "gated", decision: "approved", origin: "agent", actor: "runtime",
+        binding: { planHash: planHashOf(definition), outputs: await hashArtifacts(dir, ["artifacts/gated.md"]) },
+      }) as unknown as Record<string, unknown>);
+
+      const gated = await state(svc, "gated");
+      expect(gated.state).toBe("awaiting_review");
+      expect(gated.stateReason).toMatch(/requires human review/);
+    });
+
+    it("lets an agent's approval satisfy a skill-reviewed stage", async () => {
+      const { dir, svc } = await gatedCompleted();
+      await svc.claim(REF, "review-chain", { stage: "skilled" });
+      await writeFile(join(dir, "artifacts/skilled.md"), "x");
+      await svc.complete(REF, "review-chain", "skilled", { outputs: ["artifacts/skilled.md"] });
+      expect((await state(svc, "skilled")).state).toBe("awaiting_review");
+
+      const approved = await svc.review(REF, "review-chain", "skilled", { decision: "approved", principal: "agent" });
+      expect(approved.ok && approved.value.status).toBe("approved");
+      expect((await state(svc, "skilled")).state).toBe("completed");
+    });
+
+    it("reports a signed approval as awaiting review to a reader without the key", async () => {
+      const { root, pipelineDir, svc } = await gatedCompleted();
+      await svc.review(REF, "review-chain", "gated", { decision: "approved", principal: "operator" });
+
+      const keyless = new ExecutionService({
+        libraryRoot: root, builtinPipelines: pipelineDir, budget: permissiveBudget,
+        operatorKey: null, review: new JournalReviewGate(null),
+      });
+      const gated = await state(keyless, "gated");
+      expect(gated.state).toBe("awaiting_review");
+      expect(gated.stateReason).toMatch(/cannot be verified/);
+    });
+  });
+
   it("reports the manifest's declared dependencies and produced labels", async () => {
     // `produces` is the manifest's declaration and `outputArtifacts` is the
     // journal's record. A consumer mapping a file back to the stage that
@@ -358,7 +477,7 @@ describe("status agrees with what run will do", () => {
   });
 
   it("asks the review gate once per dependency, however many stages depend on it", async () => {
-    // `GatewayReviewGate.isOutstanding` re-reads the whole journal and
+    // `JournalReviewGate.isOutstanding` re-reads the whole journal and
     // sha256s every artifact the review covered — the narration wav and the
     // final mp4 among them. `status` is what the CLI and the studio poll, so
     // a fan-in of eight behind one reviewed stage must not be eight of those.

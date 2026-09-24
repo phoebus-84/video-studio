@@ -158,9 +158,14 @@ describe("vpr approve / vpr reject", () => {
     return { root, dir };
   }
 
+  /**
+   * The gate state as a reader holding the operator key sees it. Without the
+   * key a human decision is `unverifiable` (avg-qr4.3), which is right for a
+   * reader that cannot check it and useless for asserting what was written.
+   */
   async function gateState(dir: string, stageId: string) {
     const events = parseJournal(await readFile(path.join(dir, JOURNAL_RELATIVE_PATH), "utf-8"));
-    return deriveGateState(events, stageId, dir);
+    return deriveGateState(events, stageId, dir, { key: KEY });
   }
 
   async function events(dir: string) {
@@ -202,6 +207,40 @@ describe("vpr approve / vpr reject", () => {
     const after = await gateState(dir, "narration");
     expect(after.state).toBe("invalidated");
     expect(after.reason).toMatch(/changed since it was approved/);
+  });
+
+  it("vpr status reads the operator's own approval as completed, because it holds the key too", async () => {
+    // Every CLI command resolves the operator key, not only approve/reject:
+    // `status` consults the review gate, and a gate composed with no key
+    // reads every human decision as unverifiable — so the operator who just
+    // approved a stage would be told it is still awaiting review.
+    const { root } = await completedEpisode();
+    const env = { AVG_OPERATOR_KEY_FILE: await operatorKeyFile(root) };
+    expect(vpr(["approve", "childrens/fairy-tales/ep", "narration", "--library", root, "--json"], env).status).toBe(0);
+
+    const withKey = vpr(["status", "childrens/fairy-tales/ep", "--library", root, "--json"], env);
+    expect(withKey.status).toBe(0);
+    const narration = (withKey.json().stages as { stageId: string; state: string }[])
+      .find((s) => s.stageId === "narration")!;
+    expect(narration.state).toBe("completed");
+
+    const withoutKey = vpr(
+      ["status", "childrens/fairy-tales/ep", "--library", root, "--json"],
+      { AVG_OPERATOR_KEY_FILE: path.join(root, "absent") },
+    );
+    const unverified = (withoutKey.json().stages as { stageId: string; state: string; stateReason?: string }[])
+      .find((s) => s.stageId === "narration")!;
+    expect(unverified.state).toBe("awaiting_review");
+    expect(unverified.stateReason).toMatch(/cannot be verified/);
+  });
+
+  it("vpr status refuses a group-readable operator key rather than treating it as absent", async () => {
+    const { root } = await completedEpisode();
+    const file = path.join(root, ".loose-key");
+    await writeFile(file, KEY, { mode: 0o644 });
+    const r = vpr(["status", "childrens/fairy-tales/ep", "--library", root, "--json"], { AVG_OPERATOR_KEY_FILE: file });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/0600/);
   });
 
   it("without the key, exits non-zero and leaves a request for an operator", async () => {
@@ -279,7 +318,11 @@ describe("vpr run / vpr complete", () => {
   function vpr(args: string[], env: Record<string, string> = {}) {
     const result = spawnSync("node", [cliPath, ...args], {
       encoding: "utf-8",
-      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES, ...env },
+      // An absent key file unless a test says otherwise: every command now
+      // resolves the operator key (avg-qr4.3), and the default location is
+      // the developer's real one.
+      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES,
+             AVG_OPERATOR_KEY_FILE: path.join(tmpdir(), "vpr-cli-no-operator-key"), ...env },
     });
     return {
       stdout: result.stdout?.toString() ?? "",
@@ -844,7 +887,11 @@ describe("vpr rerun", () => {
   function vpr(args: string[], env: Record<string, string> = {}) {
     const result = spawnSync("node", [cliPath, ...args], {
       encoding: "utf-8",
-      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES, ...env },
+      // An absent key file unless a test says otherwise: every command now
+      // resolves the operator key (avg-qr4.3), and the default location is
+      // the developer's real one.
+      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES,
+             AVG_OPERATOR_KEY_FILE: path.join(tmpdir(), "vpr-cli-no-operator-key"), ...env },
     });
     return {
       stdout: result.stdout?.toString() ?? "",

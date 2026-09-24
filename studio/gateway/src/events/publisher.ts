@@ -32,11 +32,17 @@ export interface EventPublisherOptions {
   /**
    * The operator's credential (avg-qr4.3), threaded through to the execution
    * service like `libraryRoot`. This poll only reads status — it never
-   * writes a review — but Task 6's gate needs it on hand to verify a
-   * signature it finds. Optional, defaulting to `null`: a poll with no
-   * signature to check still has to run.
+   * writes a review — but the review gate needs the key to verify a human
+   * receipt it finds. `null` for a caller with none.
+   *
+   * Required, not optional, for the reason `makeExecutionService` gives: an
+   * optional key is an invitation for one caller to keep quietly passing
+   * `undefined` while every other one threads the resolved key. The review
+   * gate verifies human receipts with it, so the caller that forgot would
+   * report every operator approval as unverifiable — awaiting review
+   * forever — and nobody would notice until an operator asked why.
    */
-  operatorKey?: string | null;
+  operatorKey: string | null;
 }
 
 /**
@@ -62,7 +68,7 @@ export class EventPublisher {
     this.bus = options.bus;
     this.pollMs = options.pollMs ?? 10_000;
     this.libraryRoot = options.libraryRoot;
-    this.operatorKey = options.operatorKey ?? null;
+    this.operatorKey = options.operatorKey;
   }
 
   /** Start polling and watch for events. */

@@ -199,12 +199,31 @@ export class ExecutionService {
 
       let state: StageState;
       if (instance.status === "completed") {
-        // A completed stage that declares a review reports `awaiting_review`
-        // even where a ReviewGate would say `approved`. That is a known
-        // simplification: reconciling it needs avg-qr4.3's definition of what
-        // an approval is, and the studio's action for `awaiting_review` is
-        // "approve", which is harmless to offer twice.
-        state = stage.definition.gates.review !== "none" ? "awaiting_review" : "completed";
+        if (stage.definition.gates.review === "none") {
+          state = "completed";
+        } else {
+          // avg-qr4.3 defined what an approval is, so status no longer has to
+          // guess: ask the gate, as a dependent would — through the same memo,
+          // so a dependent judged below reuses this answer.
+          let verdict = verdicts.get(stage.definition.id);
+          if (!verdict && this.options.review) {
+            try {
+              verdict = await this.options.review.isOutstanding(stage.definition.id, episodeDir, stage);
+              verdicts.set(stage.definition.id, verdict);
+            } catch (e) {
+              // Same reasoning as the `whyBlocked` catch above: a gate that
+              // throws is a stage nobody can call accepted, not a crash in
+              // the poller.
+              stateReason =
+                `"${stage.definition.id}" cannot be judged: its review gate failed: ` +
+                `${e instanceof Error ? e.message : String(e)}`;
+            }
+          }
+          state = verdict?.state === "approved" ? "completed" : "awaiting_review";
+          if (verdict?.state === "outstanding" && verdict.reason) {
+            stateReason = `"${stage.definition.id}" ${verdict.reason}`;
+          }
+        }
       } else if (instance.status === "running") {
         state = "running";
       } else if (instance.status === "failed") {
@@ -313,7 +332,7 @@ export class ExecutionService {
    * `verdicts` memoises the review gate for the length of one caller's
    * question. `status` asks this of every stage, and a fan-in of eight behind
    * one reviewed stage asked `isOutstanding` about that stage eight times for
-   * a single poll — and `GatewayReviewGate.isOutstanding` re-reads the whole
+   * a single poll — and `JournalReviewGate.isOutstanding` re-reads the whole
    * journal and sha256s every artifact the review covered, which for the
    * shipped pipeline includes the narration wav and the final mp4. Sharing
    * one map across the loop also stops a report contradicting itself when an
@@ -361,6 +380,7 @@ export class ExecutionService {
     }
 
     for (const depId of stage.definition.dependsOn ?? []) {
+      const depStage = stages.find((s) => s.definition.id === depId);
       if (this.options.review) {
         // An injected gate is authoritative only where it actually knows
         // something. It used to be authoritative for everything, including
@@ -371,7 +391,10 @@ export class ExecutionService {
         // gateway — the only composition that ships — that got the weak path.
         let verdict = verdicts?.get(depId);
         if (!verdict) {
-          verdict = await this.options.review.isOutstanding(depId, episodeDir);
+          // The dependency's definition travels with the question: a receipt
+          // is bound to its plan hash (avg-qr4.3), and a gate asked without
+          // it refuses rather than guessing.
+          verdict = await this.options.review.isOutstanding(depId, episodeDir, depStage);
           verdicts?.set(depId, verdict);
         }
         if (verdict.state === "approved") {
@@ -391,7 +414,6 @@ export class ExecutionService {
       // whether a required review happened, so it does not guess. Absence is
       // refusal exactly where something is protected — a dependency the
       // manifest never asked to be reviewed proceeds untouched.
-      const depStage = stages.find((s) => s.definition.id === depId);
       const depNeedsReview = depStage?.definition.gates.review !== "none";
       if (depNeedsReview) {
         return `"${stageId}" cannot run: "${depId}" declares ${depStage!.definition.gates.review} ` +

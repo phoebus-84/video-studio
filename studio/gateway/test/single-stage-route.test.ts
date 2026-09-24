@@ -69,7 +69,9 @@ async function appWithEpisode() {
   vi.stubEnv("AVG_LIBRARY_ROOT", decoy);
   const app = Fastify();
   const workspace = { getEpisode: async () => null } as unknown as WorkspaceService;
-  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { libraryRoot: root });
+  // No operator key: nothing here records or reads a human decision, and
+  // the routes take the key as a required option so no caller omits it.
+  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { libraryRoot: root, operatorKey: null });
   await app.ready();
   return { app, root, dir, decoy };
 }
@@ -689,7 +691,7 @@ describe("the episode detail's pipeline enrichment", () => {
       listEpisodes: async () => [],
       findEvents: async () => [],
     } as unknown as WorkspaceService;
-    registerWorkspaceRoutes(app, workspace, root);
+    registerWorkspaceRoutes(app, workspace, root, null);
     await app.ready();
     return app;
   }
@@ -784,7 +786,7 @@ describe("the event publisher's stage transitions", () => {
     const { root, dir } = await episodeDir();
     vi.stubEnv("AVG_LIBRARY_ROOT", root);
     const { bus, seen } = capture();
-    const publisher = new EventPublisher({ bus, libraryRoot: root });
+    const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null });
 
     // First poll establishes the baseline: nothing is published for it.
     await publisher.pollForEpisode(REF);
@@ -812,7 +814,7 @@ describe("the event publisher's stage transitions", () => {
     vi.stubEnv("AVG_LIBRARY_ROOT", root);
     await seedCompleted(dir, "brief");
     const { bus, seen } = capture();
-    const publisher = new EventPublisher({ bus, libraryRoot: root });
+    const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null });
 
     await publisher.pollForEpisode(REF);
     await publisher.pollForEpisode(REF);
@@ -824,7 +826,7 @@ describe("the event publisher's stage transitions", () => {
     // deletes that method; the publisher no longer asks for the client.
     const { root } = await episodeDir();
     const { bus } = capture();
-    const publisher = new EventPublisher({ bus, libraryRoot: root, pollMs: 60_000 });
+    const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null, pollMs: 60_000 });
     publisher.start({} as unknown as WorkspaceWatcher);
     publisher.stop();
     // `start` fires one poll immediately and does not hand back its promise.
