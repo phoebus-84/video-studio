@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { deriveGateState } from "@studio/contracts/src/gate-review.mjs";
+import { verifyReceipt } from "@studio/contracts/src/receipt.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -67,35 +68,79 @@ describe("CLI integration", () => {
   });
 });
 
-// ── approve ─────────────────────────────────────────────────────────────────
+// ── approve / reject ────────────────────────────────────────────────────────
 //
 // `vpr approve` used to write `approval-granted` carrying `{ stageId }` and
-// nothing else. `deriveGateState` reads an approval that names no artifacts as
-// `invalidated`, and the journal is append-only — so a human approving a stage
-// permanently blocked every dependent of it. These tests hold the record to
-// the one shape that can be checked later: the produced artifacts, by hash.
+// nothing else, hashed no artifacts and signed nothing. It now decides
+// through `ExecutionService.review` (avg-qr4.3): the record binds the
+// stage's produced artifacts by hash, and an operator's decision is signed
+// with a key only the operator (and the gateway that minted it) can read. A
+// caller that cannot read the key is an agent, not an error — asking a
+// `review: human` stage to approve downgrades to a request instead of
+// assuming yes.
 
-describe("vpr approve", () => {
+describe("vpr approve / vpr reject", () => {
   const roots: string[] = [];
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
   });
 
   const REF = { channel: "childrens", series: "fairy-tales", episode: "ep" };
+  const KEY = "operator-key-for-tests";
 
-  function vpr(args: string[]) {
-    const result = spawnSync("node", [cliPath, ...args], { encoding: "utf-8" });
+  function vpr(args: string[], env: Record<string, string> = {}) {
+    const result = spawnSync("node", [cliPath, ...args], {
+      encoding: "utf-8",
+      env: { ...process.env, ...env },
+    });
     return {
       stdout: result.stdout?.toString() ?? "",
+      stderr: result.stderr?.toString() ?? "",
       status: result.status ?? 1,
       json: () => JSON.parse(result.stdout?.toString() ?? "{}"),
     };
+  }
+
+  /**
+   * A library whose pipeline puts `narration` under human review.
+   *
+   * The built-in `narrated-illustrated-video` manifest declares `narration`
+   * `review: none` — that stage IS the mastered narration, not a checkpoint
+   * on it. These tests need a stage a human decision actually applies to, so
+   * this shadows the built-in under the same pipeline id at the library
+   * root, which `createDefaultLoader` scans without needing
+   * `AVG_BUILTIN_PIPELINES` at all.
+   */
+  async function writeReviewedNarrationPipeline(root: string) {
+    await mkdir(path.join(root, "pipelines"), { recursive: true });
+    await writeFile(path.join(root, "pipelines", "narrated-illustrated-video.yaml"), [
+      "pipeline:",
+      "  id: narrated-illustrated-video",
+      '  version: "1.0.0"',
+      '  description: "Test fixture: narration under human review (avg-qr4.3)."',
+      "  stages:",
+      "    - id: narration",
+      '      name: "Narration"',
+      "      type: editorial",
+      '      description: "Generate narration audio"',
+      "      inputs: []",
+      "      outputs:",
+      "        - contract: narration.wav",
+      '          version: "1.0.0"',
+      "      gates:",
+      "        autopilot: true",
+      "        review: human",
+      "        retry_on_failure: 1",
+      "      depends_on: []",
+      "",
+    ].join("\n"));
   }
 
   /** An episode whose journal records `narration` as completed, with one WAV. */
   async function completedEpisode(outputs: string[] = ["artifacts/narration/s1.wav"]) {
     const root = await mkdtemp(path.join(tmpdir(), "vpr-approve-"));
     roots.push(root);
+    await writeReviewedNarrationPipeline(root);
     const dir = path.join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
     for (const relative of outputs) {
       await mkdir(path.dirname(path.join(dir, relative)), { recursive: true });
@@ -118,23 +163,38 @@ describe("vpr approve", () => {
     return deriveGateState(events, stageId, dir);
   }
 
-  it("records the stage's produced artifacts by hash, so the approval holds", async () => {
+  async function events(dir: string) {
+    return parseJournal(await readFile(path.join(dir, JOURNAL_RELATIVE_PATH), "utf-8"));
+  }
+
+  /** A 0600 operator key file under this episode's own root, for the CLI to read. */
+  async function operatorKeyFile(root: string): Promise<string> {
+    const file = path.join(root, ".operator-key");
+    await writeFile(file, KEY, { mode: 0o600 });
+    return file;
+  }
+
+  it("with the operator key, records a signed human approval", async () => {
     const { root, dir } = await completedEpisode();
+    const keyFile = await operatorKeyFile(root);
 
-    const { status, json } = vpr([
-      "approve", "childrens/fairy-tales/ep", "narration", "--library", root, "--json",
-    ]);
+    const r = vpr(
+      ["approve", "childrens/fairy-tales/ep", "narration", "--library", root, "--json"],
+      { AVG_OPERATOR_KEY_FILE: keyFile },
+    );
 
-    expect(status).toBe(0);
-    expect(json().recorded).toBe(true);
-    expect(json().artifacts).toEqual(["artifacts/narration/s1.wav"]);
+    expect(r.status).toBe(0);
+    const grant = (await events(dir)).filter((e) => e.type === "approval-granted").at(-1)!;
+    expect(verifyReceipt(grant.data as object, KEY)).toBe(true);
     expect((await gateState(dir, "narration")).state).toBe("approved");
   });
 
   it("is invalidated when an approved artifact changes afterwards", async () => {
     // The point of the hash binding: an approval describes bytes, not a name.
     const { root, dir } = await completedEpisode();
-    expect(vpr(["approve", "childrens/fairy-tales/ep", "narration", "--library", root, "--json"]).status).toBe(0);
+    const keyFile = await operatorKeyFile(root);
+    const env = { AVG_OPERATOR_KEY_FILE: keyFile };
+    expect(vpr(["approve", "childrens/fairy-tales/ep", "narration", "--library", root, "--json"], env).status).toBe(0);
     expect((await gateState(dir, "narration")).state).toBe("approved");
 
     await writeFile(path.join(dir, "artifacts", "narration", "s1.wav"), "re-rendered, different bytes");
@@ -144,31 +204,48 @@ describe("vpr approve", () => {
     expect(after.reason).toMatch(/changed since it was approved/);
   });
 
-  it("refuses a stage with no recorded completion rather than writing an empty record", async () => {
-    // An empty record is worse than no record: it derives as `invalidated`,
-    // and the journal cannot be un-appended.
+  it("without the key, exits non-zero and leaves a request for an operator", async () => {
     const { root, dir } = await completedEpisode();
 
-    const { status, json } = vpr([
-      "approve", "childrens/fairy-tales/ep", "illustrations", "--library", root, "--json",
-    ]);
+    const r = vpr(
+      ["approve", "childrens/fairy-tales/ep", "narration", "--library", root, "--json"],
+      { AVG_OPERATOR_KEY_FILE: path.join(root, "absent") },
+    );
 
-    expect(status).toBe(2);
-    expect(json().error).toMatch(/no completed attempt/);
-    expect((await gateState(dir, "illustrations")).state).toBe("none");
+    expect(r.status).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/approval requested/);
+    expect((await events(dir)).at(-1)!.type).toBe("approval-requested");
   });
 
-  it("refuses when the approved artifact is no longer on disk", async () => {
+  it("vpr reject records a signed rejection with its note", async () => {
     const { root, dir } = await completedEpisode();
-    await rm(path.join(dir, "artifacts", "narration", "s1.wav"));
+    const keyFile = await operatorKeyFile(root);
 
-    const { status, json } = vpr([
-      "approve", "childrens/fairy-tales/ep", "narration", "--library", root, "--json",
-    ]);
+    const r = vpr(
+      ["reject", "childrens/fairy-tales/ep", "narration", "--note", "too quiet", "--library", root, "--json"],
+      { AVG_OPERATOR_KEY_FILE: keyFile },
+    );
 
-    expect(status).toBe(2);
-    expect(json().error).toMatch(/Nothing was recorded/);
-    expect((await gateState(dir, "narration")).state).toBe("none");
+    expect(r.status).toBe(0);
+    const rej = (await events(dir)).at(-1)!;
+    expect(rej.type).toBe("approval-rejected");
+    expect(verifyReceipt(rej.data as object, KEY)).toBe(true);
+    expect((rej.data as { note?: string }).note).toBe("too quiet");
+  });
+
+  it("vpr reject without --note is a usage error and writes nothing", async () => {
+    const { root, dir } = await completedEpisode();
+    const keyFile = await operatorKeyFile(root);
+    const before = await events(dir);
+
+    const r = vpr(
+      ["reject", "childrens/fairy-tales/ep", "narration", "--library", root, "--json"],
+      { AVG_OPERATOR_KEY_FILE: keyFile },
+    );
+
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/--note/);
+    expect(await events(dir)).toEqual(before);
   });
 });
 

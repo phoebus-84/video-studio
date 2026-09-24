@@ -13,6 +13,7 @@ dist/
 
 # Gateway secrets
 .gateway-token
+.operator-key
 *.token
 
 # Test artifacts

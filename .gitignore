@@ -13,6 +13,7 @@ composed.json
 !.env.example
 *.token
 .gateway-token
+.operator-key
 
 # Beads runtime locks (the database itself is tracked).
 .beads.gate.lock
