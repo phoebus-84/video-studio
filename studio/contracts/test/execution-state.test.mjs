@@ -102,13 +102,20 @@ describe("deriveExecutionState", () => {
   });
 
   it("fails closed on a transition the state machine forbids", () => {
-    // A stage that was leased but never started cannot complete: pending ->
-    // completed skips the run itself, and coercing it would invent history.
+    // A stage that completed cannot then be reported as failed on the same
+    // attempt: two terminal events for one lease is not a gap to infer
+    // through, it is a contradiction in the log itself. (Pending -> completed
+    // — a lease with no stage-started before its terminal event — used to be
+    // this test's scenario, but that gap is now recorded rather than
+    // refused; see "records the gap when a stage-started never landed"
+    // below, and noteMissingStart's doc comment for why.)
     const events = [
       lease("illustrations", "L1", 1),
+      evt("stage-started", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1 }),
       evt("stage-completed", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1, outputs: ["a"] }),
+      evt("stage-failed", { stageId: "illustrations", leaseId: "L1", attemptNumber: 1, error: "x", retryable: true }),
     ];
-    assert.throws(() => deriveExecutionState(events, ["illustrations"], NOW), /pending to completed/);
+    assert.throws(() => deriveExecutionState(events, ["illustrations"], NOW), /completed to failed/);
   });
 
   it("lets a completed stage be leased again — a re-run is a retry, not a violation", () => {
@@ -179,6 +186,124 @@ describe("deriveExecutionState", () => {
     const inst = deriveExecutionState(events, ["illustrations"], NOW).get("illustrations");
     assert.equal(inst.status, "failed");
     assert.equal(inst.attempts[0].outcome, "failure");
+  });
+
+  it("records the gap when a stage-started never landed, rather than throwing", () => {
+    // The journal is append-only. A terminal event on an attempt whose start
+    // was lost used to throw pending -> completed, and would throw on every
+    // future replay too — one lost write made the episode permanently
+    // underivable. The gap is evidence; it is not a reason to refuse.
+    const events = [
+      lease("brief", "L1", 1),
+      evt("stage-completed", { stageId: "brief", leaseId: "L1", attemptNumber: 1, outputs: ["artifacts/brief.md"] }),
+    ];
+    const state = deriveExecutionState(events, ["brief"], NOW);
+    const brief = state.get("brief");
+    assert.equal(brief.status, "completed");
+    assert.equal(brief.attempts[0].startRecorded, false);
+    assert.equal(brief.attempts[0].outcome, "success");
+    assert.deepEqual(brief.outputArtifacts, ["artifacts/brief.md"]);
+  });
+
+  it("records the gap for a failed attempt too", () => {
+    const events = [
+      lease("brief", "L1", 1),
+      evt("stage-failed", { stageId: "brief", leaseId: "L1", attemptNumber: 1, error: "boom", retryable: true }),
+    ];
+    const state = deriveExecutionState(events, ["brief"], NOW);
+    assert.equal(state.get("brief").status, "failed");
+    assert.equal(state.get("brief").attempts[0].startRecorded, false);
+  });
+
+  it("records the gap for attempt-recorded too", () => {
+    const events = [
+      lease("brief", "L1", 1),
+      evt("attempt-recorded", { stageId: "brief", leaseId: "L1", attemptNumber: 1, outcome: "success", outputs: ["artifacts/brief.md"] }),
+    ];
+    const state = deriveExecutionState(events, ["brief"], NOW);
+    assert.equal(state.get("brief").status, "completed");
+    assert.equal(state.get("brief").attempts[0].startRecorded, false);
+  });
+
+  it("leaves no marker on a healthy attempt", () => {
+    // The marker exists to say something is wrong. Setting it to true on every
+    // healthy attempt would make the exceptional case invisible in a sea of
+    // routine ones, and would change the shape of every record ever written.
+    const events = [
+      lease("brief", "L1", 1),
+      evt("stage-started", { stageId: "brief", leaseId: "L1", attemptNumber: 1 }),
+      evt("stage-completed", { stageId: "brief", leaseId: "L1", attemptNumber: 1, outputs: ["artifacts/brief.md"] }),
+    ];
+    const attempt = deriveExecutionState(events, ["brief"], NOW).get("brief").attempts[0];
+    assert.equal("startRecorded" in attempt, false);
+  });
+
+  it("records the gap when an attempt lapses without ever recording its start", () => {
+    // The hole the service now creates on purpose: `stage-leased` lands, the
+    // `stage-started` write is lost, the claim stops, and NO terminal event
+    // ever arrives — the lease simply lapses and `closeIfExpired` times the
+    // attempt out. `noteMissingStart` only ever fires on a terminal event, so
+    // without marking here the single most common way a gap is produced would
+    // be the one gap `vpr status` cannot see.
+    const events = [lease("brief", "L1", 1, "2026-09-16T11:00:00Z")];
+    const brief = deriveExecutionState(events, ["brief"], NOW).get("brief");
+    assert.equal(brief.attempts[0].outcome, "timeout");
+    assert.equal(brief.attempts[0].startRecorded, false);
+  });
+
+  it("leaves no marker on an attempt that lapsed after recording its start", () => {
+    // A holder that started and then died is a plain timeout, not a gap:
+    // every event it owed the journal up to that point is in the log.
+    const events = [
+      lease("brief", "L1", 1, "2026-09-16T11:00:00Z"),
+      evt("stage-started", { stageId: "brief", leaseId: "L1", attemptNumber: 1 }),
+    ];
+    const brief = deriveExecutionState(events, ["brief"], NOW).get("brief");
+    assert.equal(brief.attempts[0].outcome, "timeout");
+    assert.equal("startRecorded" in brief.attempts[0], false);
+  });
+
+  it("leaves no marker on a live attempt that has not recorded its start yet", () => {
+    // Mid-flight between `stage-leased` and `stage-started` is the normal
+    // state of every claim for as long as those two appends take. Only
+    // CLOSING the attempt settles that the start is never going to arrive,
+    // which is why the marker belongs on the close and not on the absence.
+    const events = [lease("brief", "L1", 1)];
+    const brief = deriveExecutionState(events, ["brief"], NOW).get("brief");
+    assert.equal(brief.attempts[0].outcome, undefined);
+    assert.equal("startRecorded" in brief.attempts[0], false);
+  });
+
+  it("refuses a terminal event for an attempt a later lease has superseded", () => {
+    // A's `stage-started` is in the log two lines above, and A was already
+    // closed as a timeout before B leased. Reading this as "A never recorded
+    // its start" would tell the operator something flatly contradicted by the
+    // journal, overwrite A's timeout with success, and report the stage
+    // `completed` while B's lease is still live. The marker is for a gap
+    // inside the attempt that is still open; a terminal event for a closed
+    // one is a contradictory log, and a contradictory log fails dead.
+    const events = [
+      lease("brief", "A", 1, "2026-09-16T11:00:00Z"),
+      evt("stage-started", { stageId: "brief", leaseId: "A", attemptNumber: 1 }),
+      lease("brief", "B", 2),
+      evt("stage-completed", { stageId: "brief", leaseId: "A", attemptNumber: 1, outputs: ["artifacts/brief.md"] }),
+    ];
+    assert.throws(
+      () => deriveExecutionState(events, ["brief"], NOW),
+      /cannot go from pending to completed/,
+    );
+  });
+
+  it("still refuses a terminal event whose lease opened no attempt", () => {
+    // The mirror case stays fatal, and the asymmetry is deliberate: a gap
+    // INSIDE a known attempt can be recorded against that attempt, but an
+    // event belonging to no attempt has no lease id, ttl, holder or startedAt
+    // to attach to. Tolerating it would mean inventing an attempt rather than
+    // noting a missing event.
+    const events = [
+      evt("stage-completed", { stageId: "brief", leaseId: "NOPE", attemptNumber: 1, outputs: ["a"] }),
+    ];
+    assert.throws(() => deriveExecutionState(events, ["brief"], NOW), /never opened/);
   });
 });
 

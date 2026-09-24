@@ -13,6 +13,15 @@ export interface StageAttempt {
   ttlMs?: number;
   expiresAt?: string;
   holder?: string;
+  /**
+   * `false` when this attempt's `stage-started` event never landed and replay
+   * inferred the step from the terminal event that followed it. Absent on a
+   * healthy attempt — the field marks the exception, not the rule.
+   *
+   * Says whether one specific event was recorded, and nothing else. It is not
+   * a health score for the attempt; `outcome` already says how it ended.
+   */
+  startRecorded?: boolean;
 }
 
 /**

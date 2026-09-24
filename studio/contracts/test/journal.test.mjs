@@ -164,12 +164,27 @@ describe("episode journal", () => {
     assert.equal((await read()).length, 40);
   });
 
-  it("reports rather than throws when the event is malformed", async () => {
-    // A stage that ran must not be reported as failed because its bookkeeping
-    // could not be written.
-    assert.equal(
-      await appendJournalEvent(dir, { type: "nonsense", actor: "pi", episode: ref }),
-      null,
+  it("throws when the event is malformed", async () => {
+    // Two faults used to return the same null: an event the caller built
+    // wrong, and a journal the filesystem would not write. The first is a code
+    // bug — deterministic, identical on every retry — and surfacing it as
+    // "the write did not land" invites an operator to retry it forever.
+    //
+    // The never-throw promise below is unchanged, because it was always about
+    // the write: a stage that RAN must not be reported failed because its
+    // bookkeeping could not be written. A malformed event is not bookkeeping
+    // that could not be written; it was never valid.
+    await assert.rejects(
+      appendJournalEvent(dir, { type: "nonsense", actor: "pi", episode: ref }),
+      /Unknown journal event type/,
+    );
+  });
+
+  it("throws when an execution event is missing the fields replay needs", async () => {
+    await assert.rejects(
+      appendJournalEvent(dir, { type: "stage-completed", actor: "runtime", episode: ref,
+        data: { stageId: "s", leaseId: "L1", attemptNumber: 1 } }),
+      /must carry outputs/,
     );
   });
 

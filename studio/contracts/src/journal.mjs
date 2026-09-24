@@ -175,17 +175,22 @@ export function buildJournalEvent({ type, actor, episode, stageId, data, at }) {
  * records rather than corrupting each other, which is the property that makes
  * JSONL worth using here.
  *
- * Never throws for a caller's benefit — a stage that ran must not be reported
- * as failed because its bookkeeping could not be written. The return value says
- * whether the record landed.
+ * Two different faults, deliberately reported two different ways.
+ *
+ * A malformed event THROWS. The caller built something invalid — an unknown
+ * type or actor, a missing episode field, an execution event without the ids
+ * replay needs — and that is a code bug: deterministic, identical on retry,
+ * and fixable only by changing the caller. Reporting it as a failed write
+ * would dress a bug as a full disk and invite retrying it forever.
+ *
+ * A failed WRITE returns null. This is the promise that has always been here
+ * and still holds: a stage that ran must not be reported as failed because its
+ * bookkeeping could not be written. The return value says whether the record
+ * landed, and every execution caller checks it.
  */
 export async function appendJournalEvent(episodeDir, input) {
-  let event;
-  try {
-    event = buildJournalEvent(input);
-  } catch {
-    return null;
-  }
+  // Not wrapped: see above. A malformed event is the caller's bug to fix.
+  const event = buildJournalEvent(input);
   try {
     const target = path.join(episodeDir, JOURNAL_RELATIVE_PATH);
     await mkdir(path.dirname(target), { recursive: true });

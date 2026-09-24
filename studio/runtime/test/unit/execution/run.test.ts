@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,13 +19,19 @@ afterEach(async () => {
 });
 
 // Controls a mock of @studio/contracts' appendJournalEvent, used only by the
-// "dropped stage-leased write" test below (Finding 3). vi.hoisted so the
-// vi.mock factory — which is itself hoisted above these imports — can close
-// over it.
+// "dropped stage-leased write" test below (Finding 3), plus the
+// "stage-leased write throws" test (task-2 fix round 1) covering the other
+// half of the same contract: a malformed event throws instead of returning
+// null, and that throw must not leak the lease it was taken under. vi.hoisted
+// so the vi.mock factory — which is itself hoisted above these imports — can
+// close over it.
 const journalMockState = vi.hoisted(() => ({
   dropStageLeased: false,
+  dropStageStarted: false,
   /** A terminal event type to drop, or null. */
   dropTerminal: null as null | "stage-completed" | "stage-failed",
+  /** Throw instead of writing, standing in for a malformed event. */
+  throwStageLeased: false,
 }));
 
 vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
@@ -33,7 +39,13 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
   return {
     ...actual,
     appendJournalEvent: async (episodeDir: string, input: any) => {
+      if (input.type === "stage-leased" && journalMockState.throwStageLeased) {
+        throw new Error("simulated malformed event: caller bug, not a failed write");
+      }
       if (input.type === "stage-leased" && journalMockState.dropStageLeased) {
+        return null;
+      }
+      if (input.type === "stage-started" && journalMockState.dropStageStarted) {
         return null;
       }
       if (input.type === journalMockState.dropTerminal) {
@@ -46,7 +58,9 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
 
 afterEach(() => {
   journalMockState.dropStageLeased = false;
+  journalMockState.dropStageStarted = false;
   journalMockState.dropTerminal = null;
+  journalMockState.throwStageLeased = false;
 });
 
 async function episode() {
@@ -488,6 +502,164 @@ describe("ExecutionService.run", () => {
     if (!second.ok) return;
     expect(second.value.status).toBe("completed");
 
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual(["stage-leased", "stage-started", "stage-completed"]);
+  });
+
+  it("stops rather than dispatching when the stage-started write is dropped", async () => {
+    // The only execution append the service did not check. A dropped
+    // stage-started is survivable since replay records the gap, but it is
+    // still a lost write, and dispatching after one means knowingly doing work
+    // whose record already has a hole. Nothing has run yet at this point, so
+    // the lease can be released completely — the same reason the stage-leased
+    // rollback is safe, and the reason the terminal appends cannot do it.
+    const { root, dir } = await episode();
+    const dispatcher = writingDispatcher(dir);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher, budget: permissiveBudget, holder: "test/1", leaseTtlMs: 40,
+    });
+
+    journalMockState.dropStageStarted = true;
+    const result = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropStageStarted = false;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("blocked");
+    expect(result.value.reason).toMatch(/journal write/);
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+
+    // The lease is still held, because the journal says it is. A second run
+    // while it is live must be refused — the lockfile and the journal agree.
+    const immediate = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(immediate.ok).toBe(true);
+    if (!immediate.ok) return;
+    expect(immediate.value.status).toBe("blocked");
+    expect(immediate.value.reason).toMatch(/already held/);
+
+    // And it becomes claimable again by lapse, not by a release that would
+    // have contradicted the log.
+    await new Promise((r) => setTimeout(r, 60));
+    const later = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(later.ok).toBe(true);
+    if (!later.ok) return;
+    expect(later.value.status).toBe("completed");
+
+    // The dropped attempt left its lease event and nothing after it — no
+    // stage-started, and no terminal event claiming an attempt that never ran.
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).toEqual(["stage-leased", "stage-leased", "stage-started", "stage-completed"]);
+  });
+
+  // Final review, I1: the gap replay was taught to survive reached
+  // `complete()` unhandled. `complete()` derives the stage from the journal,
+  // so a journal holding `[stage-leased]` and nothing after it gives
+  // `pending` — and the ENGINE's table, deliberately untouched by this work,
+  // has no `pending -> completed`. The `stage-completed` append landed first,
+  // so the work was recorded and the caller was still handed
+  // `FATAL: Invalid transition` (exit 2 from the CLI, 500 from the gateway)
+  // for a completion that is in the log. Task 3 creates that journal on
+  // purpose, so this is not a hypothetical precondition.
+
+  it("completes a claim whose stage-started write was lost, instead of throwing", async () => {
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      budget: permissiveBudget, holder: "test/1", leaseTtlMs: 300_000,
+    });
+
+    // Exactly the state task 3 leaves behind: the lease event and nothing after it.
+    journalMockState.dropStageStarted = true;
+    const claimed = await svc.claim(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropStageStarted = false;
+    expect(claimed.ok && claimed.value.status).toBe("blocked");
+    expect((await journal(dir)).map((e: any) => e.type)).toEqual(["stage-leased"]);
+
+    await writeFile(join(dir, "artifacts/brief.md"), "a real brief");
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      outputs: ["artifacts/brief.md"],
+    });
+
+    expect(done.ok).toBe(true);
+    if (!done.ok) return;
+    expect(done.value.status).toBe("completed");
+    expect((await journal(dir)).map((e: any) => e.type))
+      .toEqual(["stage-leased", "stage-completed"]);
+
+    // Survived, not papered over: the hole is still on the record.
+    const status = await svc.status(REF, "narrated-illustrated-video");
+    expect(status.ok).toBe(true);
+    if (!status.ok) return;
+    const brief = status.value.stages.find((s: any) => s.stageId === "brief")!;
+    expect(brief.status).toBe("completed");
+    expect(brief.gaps).toEqual(["attempt 1 has no recorded start"]);
+  });
+
+  it("fails a claim whose stage-started write was lost, instead of throwing", async () => {
+    // `recordFailure` goes through `sm.fail`, which is the same transition
+    // table one row over: `pending -> failed` is no more legal than
+    // `pending -> completed`.
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      budget: permissiveBudget, holder: "test/1", leaseTtlMs: 300_000,
+    });
+
+    journalMockState.dropStageStarted = true;
+    await svc.claim(REF, "narrated-illustrated-video", { stage: "brief" });
+    journalMockState.dropStageStarted = false;
+
+    const done = await svc.complete(REF, "narrated-illustrated-video", "brief", {
+      failed: true, error: "the model refused the prompt",
+    });
+
+    expect(done.ok).toBe(true);
+    if (!done.ok) return;
+    expect(done.value.status).toBe("failed");
+    expect((await journal(dir)).map((e: any) => e.type))
+      .toEqual(["stage-leased", "stage-failed"]);
+  });
+
+  // Fix round 1 on task-2 (contracts): appendJournalEvent now THROWS for a
+  // malformed event instead of returning null — a caller bug, not a failed
+  // write, and the throw must reach the caller. But `claimInternal` takes the
+  // lease with `sm.transition(instance, "running")` before this append, and a
+  // throw here used to skip the `releaseAll()` that the null-return path
+  // already had, leaking the lockfile with no journal event to explain it.
+  // This must both release the lease AND keep propagating the throw — the
+  // one thing it must never do is turn a code bug into a silent `blocked`.
+
+  it("releases the lease and still throws when the stage-leased write throws", async () => {
+    const { root, dir } = await episode();
+    const dispatcher = writingDispatcher(dir);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher, budget: permissiveBudget, holder: "test/1",
+    });
+
+    journalMockState.throwStageLeased = true;
+    await expect(svc.run(REF, "narrated-illustrated-video", { stage: "brief" }))
+      .rejects.toThrow(/simulated malformed event/);
+    journalMockState.throwStageLeased = false;
+
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+
+    // No lockfile left behind — a throw is not a write that could leave one
+    // legitimately held, so nothing should remain under `.locks`.
+    const locksDir = join(dir, ".locks");
+    const locks = await readdir(locksDir).catch(() => []);
+    expect(locks).toEqual([]);
+
+    // And the lease was actually released, not just the directory empty by
+    // accident: a later run can lease and dispatch the same stage normally.
+    const second = await svc.run(REF, "narrated-illustrated-video", { stage: "brief" });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.status).toBe("completed");
+
+    // No trace of the aborted attempt in the journal — the throw happened
+    // before anything was recorded.
     const types = (await journal(dir)).map((e: any) => e.type);
     expect(types).toEqual(["stage-leased", "stage-started", "stage-completed"]);
   });

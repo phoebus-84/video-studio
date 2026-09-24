@@ -93,6 +93,9 @@ function transition(instance, to, because) {
  * stage already failed, not stuck running), and once more after the loop, to
  * close an attempt left open at the end of the journal with no later event
  * to trigger the inline check.
+ *
+ * An attempt closed here while the stage is still `pending` never recorded
+ * its start, and now never will — see the marker below.
  */
 function closeIfExpired(instance, now) {
   const open = instance.attempts.find((a) => a.outcome === undefined);
@@ -100,7 +103,57 @@ function closeIfExpired(instance, now) {
   if (new Date(open.expiresAt).getTime() > now.getTime()) return;
   open.outcome = "timeout";
   open.endedAt = open.expiresAt;
+  // `pending` with an open attempt means the only event this attempt ever
+  // wrote was its `stage-leased`: `stage-started` would have moved the stage
+  // to `running`. That is exactly the state the service leaves behind when
+  // the `stage-started` write does not land — it stops, releases nothing,
+  // and the lease lapses with no terminal event ever arriving. Since
+  // noteMissingStart only fires on a terminal event, without this the most
+  // common way a gap is produced would be the one gap nothing can report.
+  //
+  // Only on the close. A live attempt that has not started yet is normal —
+  // every claim passes through it between its two appends — and calling that
+  // a gap would flag healthy runs mid-flight. Expiry is what settles that
+  // the start is not coming.
+  if (instance.status === "pending") open.startRecorded = false;
   if (instance.status === "running") transition(instance, OUTCOME_STATUS.timeout, "the lease expired");
+}
+
+/**
+ * A terminal event has arrived for an attempt that never recorded its start.
+ *
+ * The `stage-started` write was lost — the journal is append-only, so it can
+ * never be added, and refusing here would throw on every future replay of this
+ * episode rather than only this one. That is not failing closed, it is failing
+ * dead: `status`, `run`, `claim` and `complete` would all be permanently
+ * unavailable for the episode because one write did not land.
+ *
+ * So the attempt passes through `running` — a transition the table already
+ * allows — and carries `startRecorded: false` to say the step was inferred
+ * rather than witnessed. The marker is absent on a healthy attempt: it exists
+ * to mark the exception, not to annotate the rule.
+ *
+ * This is the same argument the table comment above makes for
+ * `completed -> pending`, applied to the case it did not reach. Note what is
+ * NOT done here: `pending -> completed` is not added to VALID_TRANSITIONS. The
+ * table still describes what a healthy run may do, and this records that this
+ * run was not healthy.
+ */
+function noteMissingStart(instance, attempt) {
+  if (instance.status !== "pending") return;
+  // ...and only for the attempt that is still open. `pending` is also what a
+  // NEWER lease leaves behind, so a terminal event naming a superseded
+  // attempt — one already closed as a timeout before that lease was granted
+  // — reaches here with its own `stage-started` sitting in the log above it.
+  // Marking it would tell the operator something the journal flatly
+  // contradicts, overwrite the timeout with the terminal event's outcome,
+  // and settle the stage while the newer lease is still live. A gap inside
+  // the open attempt is survivable evidence; a terminal event for a closed
+  // one is a contradictory log, so let `transition` refuse it as it did
+  // before this function existed. Same call the mirror case already makes.
+  if (instance.attempts.find((a) => a.outcome === undefined) !== attempt) return;
+  attempt.startRecorded = false;
+  transition(instance, "running", "the attempt started, unrecorded");
 }
 
 /**
@@ -185,12 +238,14 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
         transition(instance, "running", "the attempt started");
         break;
       case "stage-completed":
+        noteMissingStart(instance, attempt);
         transition(instance, "completed", "the attempt completed");
         attempt.endedAt = event.at;
         attempt.outcome = "success";
         instance.outputArtifacts = data.outputs ?? [];
         break;
       case "stage-failed":
+        noteMissingStart(instance, attempt);
         transition(instance, "failed", "the attempt failed");
         attempt.endedAt = event.at;
         attempt.outcome = "failure";
@@ -198,6 +253,7 @@ export function deriveExecutionState(events, stageIds, now = new Date()) {
         attempt.retryable = data.retryable;
         break;
       case "attempt-recorded":
+        noteMissingStart(instance, attempt);
         transition(instance, OUTCOME_STATUS[data.outcome], "the attempt was recorded");
         attempt.endedAt = event.at;
         attempt.outcome = data.outcome;
