@@ -1286,7 +1286,7 @@ Expected: PASS.
 node tools/migrate-episode-manifests.mjs --library ./library --dry-run
 ```
 
-Read the plan it prints. Confirm it names the eight bare episodes, retires the eleven `episode.json` files, and skips anything it cannot do cleanly. Then run it for real and check `npx vpr doctor --library ./library` reports fewer findings than before.
+Read the plan it prints. Confirm it names the nine bare episodes, writes ten manifests, retires the eleven `episode.json` files, and skips anything it cannot do cleanly. Then run it for real and check `npx vpr doctor --library ./library` reports fewer findings than before.
 
 Record the before and after finding counts in the commit message.
 

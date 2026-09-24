@@ -231,11 +231,17 @@ disagree, which is the entire point of this issue.
    `episode.yaml` with a fabricated `createdAt`.
 3. Retire `[episode]/episode.json` by renaming it to `.episode.json.migrated`.
 
-### For the eight episodes with no manifest
+### For the nine episodes with no manifest
 
 `cinderella`, `hansel-and-gretel`, `little-red`,
-`the-wolf-and-the-seven-little-kids`, `three-little-pigs`, `tom-thumb`, `tomb`,
-`gpu-architecture`.
+`the-wolf-and-the-seven-little-kids`, `three-little-pigs`, `tom-thumb`,
+`jaromail`, `tomb`, `gpu-architecture`.
+
+An earlier draft said eight and omitted `jaromail`, which has `production/` and
+`output/` but no manifest — it was miscounted as "production only" rather than
+"no manifest". Ten episodes need a manifest written in total: these nine, plus
+`sleeping-beauty`, which has an `episode.json` to fold in but no
+`episode.yaml`.
 
 Slug comes from the directory name. Title is derived from the slug by replacing
 hyphens with spaces and capitalising words. `createdAt` is **omitted** — these
