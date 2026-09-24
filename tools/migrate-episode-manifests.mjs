@@ -11,7 +11,10 @@
 // does not change the exit code.
 //
 // Nothing is deleted. `library/` is gitignored, so a deleted file is gone for
-// good — the retired episode.json is renamed, never removed.
+// good — the retired episode.json is renamed, never removed. If a retirement
+// would overwrite an already-retired file (a second episode.json turning up
+// after a prior migration), the episode is skipped instead: overwriting the
+// first retired copy would destroy it just as surely as deleting it would.
 // ---------------------------------------------------------------------------
 
 import { readdir, readFile, writeFile, mkdir, rename, access } from "node:fs/promises";
@@ -55,6 +58,7 @@ const skipped = [];
 async function migrateEpisode(dir, channel, series, slug) {
   const yamlPath = join(dir, EPISODE_MANIFEST_FILE);
   const jsonPath = join(dir, "episode.json");
+  const retiredPath = join(dir, ".episode.json.migrated");
   const hasYaml = await exists(yamlPath);
   const hasJson = await exists(jsonPath);
 
@@ -66,6 +70,20 @@ async function migrateEpisode(dir, channel, series, slug) {
       skipped.push([`${channel}/${series}/${slug}`, `episode.json will not parse: ${error.message}`]);
       return;
     }
+  }
+
+  // A prior migration already retired one episode.json under this exact
+  // name. Renaming a second one on top of it would silently destroy the
+  // first — `rename` overwrites without complaint — so this is never safe
+  // to do quietly. A human has to look: two generations of episode.json
+  // under one directory is a fact about the library, not something this
+  // tool gets to resolve by picking a winner.
+  if (hasJson && (await exists(retiredPath))) {
+    skipped.push([
+      `${channel}/${series}/${slug}`,
+      `episode.json would overwrite the already-retired .episode.json.migrated — left both in place`,
+    ]);
+    return;
   }
 
   // Both present: only safe when they agree. Guessing which title a person
@@ -113,9 +131,8 @@ async function migrateEpisode(dir, channel, series, slug) {
   }
 
   if (hasJson) {
-    const retired = join(dir, ".episode.json.migrated");
-    plan.push(["retire episode.json", retired]);
-    if (!dryRun) await rename(jsonPath, retired);
+    plan.push(["retire episode.json", retiredPath]);
+    if (!dryRun) await rename(jsonPath, retiredPath);
   }
 }
 

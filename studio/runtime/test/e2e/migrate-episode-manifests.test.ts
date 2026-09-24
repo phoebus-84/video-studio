@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, readFile, rm, access } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,32 @@ async function episode(channel: string, series: string, slug: string): Promise<s
 const exists = async (p: string) => access(p).then(() => true, () => false);
 const run = (...args: string[]) =>
   execFileSync("node", [TOOL, "--library", root, ...args], { encoding: "utf-8" });
+
+/**
+ * A byte-for-byte recursive snapshot of a directory: every entry's path,
+ * kind, and (for files) content. Two snapshots compare equal only if the
+ * tree is unchanged in every respect — not just the one file a narrower
+ * assertion happens to check.
+ */
+async function snapshot(dir: string): Promise<string> {
+  const rows: string[] = [];
+  async function walk(d: string, rel: string): Promise<void> {
+    const entries = await readdir(d, { withFileTypes: true });
+    for (const e of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = join(d, e.name);
+      const relPath = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        rows.push(`d ${relPath}`);
+        await walk(full, relPath);
+      } else if (e.isFile()) {
+        const content = await readFile(full);
+        rows.push(`f ${relPath} ${content.length} ${content.toString("base64")}`);
+      }
+    }
+  }
+  await walk(dir, "");
+  return rows.join("\n");
+}
 
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "mig-")); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
@@ -56,6 +82,22 @@ describe("migrate-episode-manifests", () => {
     expect(await exists(join(dir, ".episode.json.migrated"))).toBe(true);
   });
 
+  it("never overwrites an already-retired episode.json", async () => {
+    const dir = await episode("ch", "s", "ep");
+    await writeFile(join(dir, "episode.json"), JSON.stringify({ slug: "ep", title: "T", description: "first" }));
+    run();
+    expect(await readFile(join(dir, ".episode.json.migrated"), "utf-8")).toContain("first");
+
+    // A second episode.json appears — restored from a backup, or written by an
+    // older tool. Retiring it must not destroy the one already retired.
+    await writeFile(join(dir, "episode.json"), JSON.stringify({ slug: "ep", title: "T", description: "SECOND" }));
+    const out = run();
+
+    expect(out).toMatch(/skip/i);
+    expect(await readFile(join(dir, ".episode.json.migrated"), "utf-8")).toContain("first");
+    expect(await exists(join(dir, "episode.json"))).toBe(true);
+  });
+
   it("leaves artifacts/episode.json alone — it is the scene spine", async () => {
     const dir = await episode("ch", "s", "ep");
     await mkdir(join(dir, "artifacts"), { recursive: true });
@@ -92,9 +134,16 @@ describe("migrate-episode-manifests", () => {
 
   it("changes nothing under --dry-run", async () => {
     const dir = await episode("ch", "s", "ep");
+    const before = await snapshot(dir);
+
     const out = run("--dry-run");
+
     expect(out).toContain("episode.yaml");
-    expect(await exists(join(dir, "episode.yaml"))).toBe(false);
+    // A byte-for-byte snapshot pins every write the tool can make — the
+    // manifest, each EPISODE_DIRECTORIES mkdir, each EPISODE_SEED_FILES
+    // write — behind its own `if (!dryRun)`, not just the one file a
+    // narrower check happens to look at.
+    expect(await snapshot(dir)).toBe(before);
   });
 
   it("is idempotent", async () => {
