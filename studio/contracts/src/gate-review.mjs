@@ -133,6 +133,35 @@ function bindingOf(data) {
   return data?.binding ?? { inputs: data?.inputs ?? [], outputs: data?.outputs ?? [] };
 }
 
+/** The decision each review event type implies, inverted from REVIEW_EVENT_FOR. */
+const DECISION_FOR_EVENT = Object.freeze(
+  Object.fromEntries(Object.entries(REVIEW_EVENT_FOR).map(([decision, type]) => [type, decision])),
+);
+
+/** Why an event's type and its recorded decision disagree, or null. */
+function typeMismatch(event) {
+  const implied = DECISION_FOR_EVENT[event.type];
+  if (event.data?.decision === implied) return null;
+  return `the event type ${event.type} disagrees with the recorded decision ` +
+    `(${event.data?.decision ?? "none"}), so the line was altered after it was written`;
+}
+
+/** Milliseconds since the epoch of a record's own `at`, or -Infinity. */
+function decidedAt(event) {
+  const ms = Date.parse(event.data?.at);
+  return Number.isNaN(ms) ? -Infinity : ms;
+}
+
+/** The stage's governing review event: greatest `data.at`, later line on a tie. */
+function governingReview(events, stageId) {
+  let chosen;
+  for (const event of events) {
+    if (!REVIEW_EVENTS.has(event.type) || event.data?.stageId !== stageId) continue;
+    if (!chosen || decidedAt(event) >= decidedAt(chosen)) chosen = event;
+  }
+  return chosen;
+}
+
 /**
  * The current review state of a stage.
  *
@@ -142,28 +171,41 @@ function bindingOf(data) {
  * was outrun by a re-render, copied from another episode, or simply forged
  * cannot survive being checked.
  *
+ * Which event governs: the stage's review event with the greatest `data.at`,
+ * file order breaking ties (the later line wins). Not simply the last line:
+ * `data.at` is signed on a human decision and the line's position is not, so
+ * re-appending an operator's superseded approval after their rejection must
+ * not bring the approval back (avg-qr4.3). A record whose `at` does not parse
+ * sorts before every one that does.
+ *
  * The checks run in this order, and the first that fails decides (avg-qr4.3):
- *   1. the latest review event for the stage — none means `none`, a request
- *      means `requested`;
- *   2. a human decision (approved or rejected) must verify against
+ *   1. no review event means `none`;
+ *   2. a request whose `data.decision` is `requested` means `requested`;
+ *   3. a human decision (approved or rejected) must verify against
  *      `opts.key`: no key is `unverifiable`, no signature or a signature
  *      that does not verify is `invalidated`. A legacy `actor: "human"`
  *      record with no `origin` is read as human, so it lands here unsigned;
- *   3. a verified rejection is `rejected`;
- *   4. the approval's `binding.planHash` must equal `opts.planHash` (when the
+ *   4. the event `type` must imply the recorded `data.decision` — for every
+ *      origin. The type is not signed and the decision is, so a rejection
+ *      re-typed as `approval-granted` is `invalidated`, not an approval;
+ *   5. a rejection is `rejected`;
+ *   6. the approval's `binding.planHash` must equal `opts.planHash` (when the
  *      caller supplies one), or the stage definition changed under it;
- *   5. every artifact it names must still hash the same.
+ *   7. every artifact it names must still hash the same.
  * Only then is it `approved`.
  *
  * `events` is the parsed journal — see parseJournal in ./journal.mjs.
  */
 export async function deriveGateState(events, stageId, episodeDir, opts = {}) {
-  const latest = [...events].reverse()
-    .find((event) => REVIEW_EVENTS.has(event.type) && event.data?.stageId === stageId);
+  const latest = governingReview(events, stageId);
   if (!latest) return { state: "none" };
 
   const origin = latest.data?.origin ?? (latest.actor === "human" ? "human" : "agent");
-  if (latest.type === "approval-requested") return { state: "requested", at: latest.at, origin };
+  const mismatch = typeMismatch(latest);
+  if (latest.type === "approval-requested") {
+    if (mismatch) return { state: "invalidated", reason: mismatch };
+    return { state: "requested", at: latest.at, origin };
+  }
 
   // Human decisions must prove their origin (avg-qr4.3). Checked for
   // rejections too: a forged rejection can only block, but one rule is
@@ -179,6 +221,7 @@ export async function deriveGateState(events, stageId, episodeDir, opts = {}) {
       return { state: "invalidated", reason: "the human decision's signature does not verify" };
     }
   }
+  if (mismatch) return { state: "invalidated", reason: mismatch };
   if (latest.type === "approval-rejected") {
     return { state: "rejected", at: latest.at, origin, note: latest.data?.note };
   }

@@ -162,7 +162,7 @@ describe("gate review records", () => {
     });
 
     it("reports requested when a review was asked for but not granted", async () => {
-      const events = [evt("approval-requested", { stageId: "qa", origin: "agent", binding: { inputs: [], outputs: [] } }, "gateway")];
+      const events = [evt("approval-requested", { stageId: "qa", decision: "requested", origin: "agent", binding: { inputs: [], outputs: [] } }, "gateway")];
       const state = await deriveGateState(events, "qa", dir);
       assert.equal(state.state, "requested");
     });
@@ -228,6 +228,13 @@ describe("gate review records", () => {
     it("invalidates an approval that names nothing", async () => {
       // Belt and braces: buildGateReview refuses to make one, but a record
       // written by something else must not be trusted either.
+      const events = [evt("approval-granted", { stageId: "qa", decision: "approved", origin: "agent", binding: { inputs: [], outputs: [] } }, "runtime")];
+      const state = await deriveGateState(events, "qa", dir);
+      assert.equal(state.state, "invalidated");
+      assert.match(state.reason, /named no artifacts/);
+    });
+
+    it("invalidates an approval that names nothing even without a decision field", async () => {
       const events = [evt("approval-granted", { stageId: "qa", origin: "agent", binding: { inputs: [], outputs: [] } }, "runtime")];
       const state = await deriveGateState(events, "qa", dir);
       assert.equal(state.state, "invalidated");
@@ -288,6 +295,65 @@ describe("gate review records", () => {
         const data = signReceipt(buildGateReview({ stageId: "s", decision: "rejected", origin: "human", actor: "runtime", binding: { planHash: PLAN }, note: "too dark" }), KEY);
         const s = await deriveGateState([{ type: "approval-rejected", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
         assert.equal(s.state, "rejected"); assert.equal(s.note, "too dark"); assert.equal(s.origin, "human");
+      });
+
+      /** A signed human rejection bound, as review() binds one, to the current plan and outputs. */
+      async function humanRejection(at) {
+        await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+        const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+        const data = signReceipt(buildGateReview({
+          stageId: "s", decision: "rejected", origin: "human", actor: "runtime",
+          binding: { planHash: PLAN, outputs }, note: "too dark", ...(at ? { at } : {}),
+        }), KEY);
+        return { type: "approval-rejected", actor: "runtime", at: data.at, data };
+      }
+
+      async function signedGrantAt(at) {
+        await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+        const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+        const data = signReceipt(buildGateReview({
+          stageId: "s", decision: "approved", origin: "human", actor: "runtime", binding: { planHash: PLAN, outputs }, at,
+        }), KEY);
+        return { type: "approval-granted", actor: "runtime", at, data };
+      }
+
+      it("invalidates a signed rejection re-typed as a grant: the event type must match the signed decision", async () => {
+        // The type is not signed; the decision is. Copying the operator's
+        // rejection line and changing its type used to read as approved.
+        const flipped = { ...(await humanRejection()), type: "approval-granted" };
+        const s = await deriveGateState([flipped], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(s.state, "invalidated"); assert.match(s.reason, /event type .* disagrees/);
+      });
+
+      it("applies the type/decision rule to agent records too", async () => {
+        await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+        const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+        const data = buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime", binding: { planHash: PLAN, outputs } });
+        const s = await deriveGateState([{ type: "approval-granted", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(s.state, "invalidated"); assert.match(s.reason, /disagrees/);
+        const asked = await deriveGateState([{ type: "approval-rejected", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(asked.state, "invalidated");
+      });
+
+      it("a re-appended older approval cannot supersede a later rejection", async () => {
+        const approve = await signedGrantAt("2026-09-24T10:00:00.000Z");
+        const reject = await humanRejection("2026-09-24T11:00:00.000Z");
+        const s = await deriveGateState([approve, reject, approve], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(s.state, "rejected"); assert.equal(s.note, "too dark");
+      });
+
+      it("a later approval supersedes an earlier rejection", async () => {
+        const reject = await humanRejection("2026-09-24T10:00:00.000Z");
+        const approve = await signedGrantAt("2026-09-24T11:00:00.000Z");
+        const s = await deriveGateState([reject, approve], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(s.state, "approved");
+      });
+
+      it("selects by the signed time, not by file order", async () => {
+        const approve = await signedGrantAt("2026-09-24T11:00:00.000Z");
+        const reject = await humanRejection("2026-09-24T10:00:00.000Z");
+        const s = await deriveGateState([approve, reject], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(s.state, "approved");
       });
 
       it("an agent grant needs no signature", async () => {

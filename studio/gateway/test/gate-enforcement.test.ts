@@ -574,7 +574,7 @@ describe("dependency gates", () => {
 
   async function record(
     dir: string,
-    type: "approval-requested" | "approval-granted",
+    type: "approval-requested" | "approval-granted" | "approval-rejected",
     review: Record<string, unknown>,
   ) {
     await appendJournalEvent(dir, {
@@ -583,20 +583,6 @@ describe("dependency gates", () => {
       episode: REF,
       data: review,
     });
-  }
-
-  /** A human approval of `narration` exactly as `review()` would write it. */
-  async function signedApproval(root: string, dir: string, relative: string) {
-    return signReceipt(buildGateReview({
-      stageId: "narration",
-      decision: "approved",
-      origin: "human",
-      actor: "runtime",
-      binding: {
-        planHash: await planOf(root, "narrated-illustrated-video", "narration"),
-        outputs: await hashArtifacts(dir, [relative]),
-      },
-    }), KEY);
   }
 
   it("blocks a stage whose dependency is still awaiting review", async () => {
@@ -622,24 +608,80 @@ describe("dependency gates", () => {
     expect(result.value.reason).toMatch(/awaiting review/);
   });
 
-  it("lets the stage run once that dependency is approved", async () => {
-    const { root, dir, relative } = await narrated();
+  // ── At a real human gate ───────────────────────────────────────────────
+  //
+  // `narration` declares `review: none`, so a test of what counts as a human
+  // approval must not use it: the manifest would let `captions` through with
+  // no record at all. `script` declares `review: human`, and `timing` depends
+  // on it (and on `narration`) and has a gateway handler, so a refusal here
+  // is the human gate's and a pass is the approval's doing.
+
+  /** `script` and `narration` completed; `timing` waits only on script's review. */
+  async function scripted() {
+    const { root, dir } = await narrated();
+    const script = join("artifacts", "script.md");
+    await writeFile(join(dir, script), "# A script someone has to accept");
+    await seedCompleted(dir, "script", [script]);
+    return { root, dir, script };
+  }
+
+  /** A human decision about `script` exactly as `review()` writes one: signed, bound to the real plan. */
+  async function scriptDecision(
+    root: string, dir: string, script: string,
+    over: { decision?: "approved" | "rejected"; note?: string; at?: string } = {},
+  ) {
+    return signReceipt(buildGateReview({
+      stageId: "script",
+      decision: over.decision ?? "approved",
+      origin: "human",
+      actor: "runtime",
+      binding: {
+        planHash: await planOf(root, "narrated-illustrated-video", "script"),
+        outputs: await hashArtifacts(dir, [script]),
+      },
+      ...(over.note !== undefined ? { note: over.note } : {}),
+      ...(over.at !== undefined ? { at: over.at } : {}),
+    }), KEY);
+  }
+
+  async function runTiming(root: string) {
+    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "timing" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    return result.value;
+  }
+
+  async function expectRefusedAtScript(root: string, dir: string, reason: RegExp) {
+    const outcome = await runTiming(root);
+    // The absence of work first: a status-only regression must not hide a
+    // handler that ran anyway.
+    await expect(readFile(join(dir, "artifacts", "timing.json"), "utf-8")).rejects.toThrow();
+    expect(outcome.status).toBe("blocked");
+    expect(outcome.reason).toMatch(/"script"/);
+    expect(outcome.reason).toMatch(reason);
+  }
+
+  it("blocks the dependent of a human-reviewed stage that has no approval at all", async () => {
+    const { root, dir } = await scripted();
+    await expectRefusedAtScript(root, dir, /declares human review and no accepted review is recorded/);
+  });
+
+  it("lets the stage run once its human-reviewed dependency is approved", async () => {
+    const { root, dir, script } = await scripted();
 
     // A real approval: the hashes are of the bytes actually on disk, the plan
     // hash is the real stage's, and it is signed with the key the gate
     // verifies with. Recording anything else would make deriveGateState
     // answer `invalidated`, and this test would prove the opposite of what
     // it claims.
-    await record(dir, "approval-granted", await signedApproval(root, dir, relative));
+    await record(dir, "approval-granted", await scriptDecision(root, dir, script));
 
-    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
+    const outcome = await runTiming(root);
 
     // Not merely unblocked — through to completion, with the artifact on disk.
-    expect(await readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).toMatch(/-->/);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.stageId).toBe("captions");
-    expect(result.value.status).toBe("completed");
+    expect(JSON.parse(await readFile(join(dir, "artifacts", "timing.json"), "utf-8")).segments).toBeDefined();
+    expect(outcome.stageId).toBe("timing");
+    expect(outcome.status).toBe("completed");
   });
 
   it("does not let the stage run on an unsigned human approval, which anything can append", async () => {
@@ -647,64 +689,58 @@ describe("dependency gates", () => {
     // origin human — used to satisfy the gate, and any process running as the
     // operator's user can append it with its file tools. Without a signature
     // nothing shows a person made it.
-    const { root, dir, relative } = await narrated();
-    const { signature: _signature, ...unsigned } = await signedApproval(root, dir, relative);
+    const { root, dir, script } = await scripted();
+    const { signature: _signature, ...unsigned } = await scriptDecision(root, dir, script);
     await record(dir, "approval-granted", unsigned);
-
-    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
-
-    await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe("blocked");
-    expect(result.value.reason).toMatch(/unsigned/);
+    await expectRefusedAtScript(root, dir, /unsigned/);
   });
 
   it("does not let the stage run on an approval signed with another key", async () => {
-    const { root, dir, relative } = await narrated();
-    const { signature: _signature, ...unsigned } = await signedApproval(root, dir, relative);
+    const { root, dir, script } = await scripted();
+    const { signature: _signature, ...unsigned } = await scriptDecision(root, dir, script);
     await record(dir, "approval-granted", signReceipt(unsigned, "not-the-operator-key"));
-
-    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe("blocked");
-    expect(result.value.reason).toMatch(/does not verify/);
+    await expectRefusedAtScript(root, dir, /does not verify/);
   });
 
-  it("blocks when the dependency's approval was for a different stage definition", async () => {
-    const { root, dir, relative } = await narrated();
-    const { signature: _signature, ...unsigned } = await signedApproval(root, dir, relative);
+  it("does not let the stage run on an approval for a different stage definition", async () => {
+    const { root, dir, script } = await scripted();
+    const { signature: _signature, ...unsigned } = await scriptDecision(root, dir, script);
     await record(dir, "approval-granted", signReceipt({
       ...unsigned, binding: { ...unsigned.binding, planHash: "0".repeat(64) },
     }, KEY));
+    await expectRefusedAtScript(root, dir, /stage definition changed/);
+  });
 
-    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
+  it("does not let the stage run on the operator's signed rejection re-typed as a grant", async () => {
+    // The event type is not signed; the decision is. `review()` binds a
+    // rejection to the current plan and outputs, so the copied line passes
+    // every other check.
+    const { root, dir, script } = await scripted();
+    await record(dir, "approval-granted", await scriptDecision(root, dir, script, { decision: "rejected", note: "too long" }));
+    await expectRefusedAtScript(root, dir, /disagrees with the recorded decision/);
+  });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe("blocked");
-    expect(result.value.reason).toMatch(/stage definition changed/);
+  it("does not let a re-appended, superseded approval undo a later rejection", async () => {
+    const { root, dir, script } = await scripted();
+    const approval = await scriptDecision(root, dir, script, { at: "2026-09-24T10:00:00.000Z" });
+    await record(dir, "approval-granted", approval);
+    await record(dir, "approval-rejected", await scriptDecision(root, dir, script, {
+      decision: "rejected", note: "too long", at: "2026-09-24T11:00:00.000Z",
+    }));
+    // The approval line copied byte for byte to the end of the journal.
+    await record(dir, "approval-granted", approval);
+    await expectRefusedAtScript(root, dir, /rejected: too long/);
   });
 
   it("blocks when the dependency's approval no longer matches what is on disk", async () => {
-    const { root, dir, relative } = await narrated();
+    const { root, dir, script } = await scripted();
+    await record(dir, "approval-granted", await scriptDecision(root, dir, script));
 
-    await record(dir, "approval-granted", await signedApproval(root, dir, relative));
-
-    // Re-rendered after the approval. The approval described bytes that are
+    // Rewritten after the approval. The approval described bytes that are
     // gone, so it is not an approval of what would now be consumed.
-    await writeWav(join(dir, relative), 0.9);
+    await writeFile(join(dir, script), "# A different script nobody accepted");
 
-    const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
-
-    await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe("blocked");
-    expect(result.value.reason).toMatch(/invalidated review/);
-    expect(result.value.reason).toMatch(/changed since it was approved/);
+    await expectRefusedAtScript(root, dir, /invalidated review: .*changed since it was approved/);
   });
 
   it("keeps a recorded halt at a review gate across the next execute", async () => {

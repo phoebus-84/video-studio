@@ -53,18 +53,23 @@ type Origin = "human" | "agent" | "policy";
 async function record(
   dir: string,
   stage: ResolvedStage,
-  { decision = "approved", origin, sign = origin === "human", note }:
-    { decision?: "requested" | "approved" | "rejected"; origin: Origin; sign?: boolean; note?: string },
+  { decision = "approved", origin, sign = origin === "human", note, at, type }:
+    { decision?: "requested" | "approved" | "rejected"; origin: Origin; sign?: boolean; note?: string;
+      at?: string; type?: string },
 ) {
   const outputs = await hashArtifacts(dir, ["artifacts/s.md"]);
   let data: Record<string, unknown> = buildGateReview({
     stageId: "s", decision, origin, actor: "runtime",
     binding: { planHash: planHashOf(stage.definition), outputs },
     ...(note !== undefined ? { note } : {}),
+    ...(at !== undefined ? { at } : {}),
   }) as unknown as Record<string, unknown>;
   if (sign) data = signReceipt(data, KEY);
-  const written = await appendJournalEvent(dir, { type: REVIEW_EVENT_FOR[decision], actor: "runtime", episode: REF, data });
+  const written = await appendJournalEvent(dir, {
+    type: (type ?? REVIEW_EVENT_FOR[decision]) as never, actor: "runtime", episode: REF, data,
+  });
   expect(written).toBeTruthy();
+  return data;
 }
 
 describe("JournalReviewGate", () => {
@@ -135,6 +140,36 @@ describe("JournalReviewGate", () => {
     const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/unsigned/);
+  });
+
+  it("does not read the operator's signed rejection, re-typed as a grant, as an approval", async () => {
+    // The event type is not signed; the decision inside it is.
+    const dir = await episode();
+    const stage = stageAt("human");
+    await record(dir, stage, { origin: "human", decision: "rejected", note: "too dark", type: "approval-granted" });
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    expect(verdict.state).toBe("outstanding");
+    expect(verdict.reason).toMatch(/disagrees with the recorded decision/);
+  });
+
+  it("does not let a re-appended, superseded approval undo a later rejection", async () => {
+    const dir = await episode();
+    const stage = stageAt("human");
+    const approval = await record(dir, stage, { origin: "human", at: "2026-09-24T10:00:00.000Z" });
+    await record(dir, stage, { origin: "human", decision: "rejected", note: "too dark", at: "2026-09-24T11:00:00.000Z" });
+    // The approval line copied byte for byte to the end of the journal.
+    await appendJournalEvent(dir, { type: "approval-granted", actor: "runtime", episode: REF, data: approval } as never);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    expect(verdict.state).toBe("outstanding");
+    expect(verdict.reason).toMatch(/rejected: too dark/);
+  });
+
+  it("lets a later approval supersede an earlier rejection", async () => {
+    const dir = await episode();
+    const stage = stageAt("human");
+    await record(dir, stage, { origin: "human", decision: "rejected", note: "too dark", at: "2026-09-24T10:00:00.000Z" });
+    await record(dir, stage, { origin: "human", at: "2026-09-24T11:00:00.000Z" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
   });
 
   it("reads a signed rejection as outstanding, with its note", async () => {
