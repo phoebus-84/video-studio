@@ -175,6 +175,11 @@ only code that writes a review event. It:
 `review` returns a `StageOutcome`-shaped result so the CLI and gateway render
 it the way they render `run`.
 
+**Status stops guessing.** `status()` used to report every completed reviewed
+stage as `awaiting_review`, deferring to this issue what an approval is. It now
+asks the review gate: `approved` reports `completed`; anything else reports
+`awaiting_review` with the gate's reason as `stateReason`.
+
 ### 5. Attended claims
 
 `claim()` and `run()` accept `principal`. The `autopilot: false` wall in
@@ -201,11 +206,14 @@ the gate reads "no record" and falls back to the manifest rule, which refuses.
   `vpr approve` subprocess are deleted.
 - **Agent.** `pva_approve` becomes `pva_request_approval`; its description says
   it asks and cannot grant. The `/approve` slash command stops instructing Pi to
-  approve "by operator". The intent-router's `approve` case calls the gateway's
-  approve handler with the browser's principal instead of asking Pi to.
+  approve "by operator". The intent-router's `approve` case stops forwarding to
+  Pi: it returns `rejected` with `action: "use-approve-route"`, naming the
+  stage approve route. The router has no execution service and cannot write a
+  review itself; the web already calls the route directly.
 - **Web.** `approveStage` stays; `rejectStage(stageId, note)` is added; the
-  operator key is requested where the gateway token is. The stage status
-  vocabulary settles on `awaiting_review` in `studio/web/src/contracts/gateway.ts`.
+  operator key is requested where the gateway token is. (`awaiting_review` is
+  already the web's spelling — `studio/web/src/contracts/gateway.ts:83` — so
+  the vocabulary mismatch noted on qr4.3 is closed.) The web learns `stale`.
 
 ### 8. Staleness
 
