@@ -112,6 +112,19 @@ export interface CurrentDeliverable {
   updatedAt: Timestamp;
 }
 
+export interface EpisodeManifest {
+  apiVersion: ResourceVersion;
+  kind: "Episode";
+  slug: Slug;
+  channel?: Slug;
+  series?: Slug;
+  title?: string;
+  description?: string;
+  createdAt?: string;
+  /** Episode-level overrides only. Settings resolve system -> channel -> series -> episode, so an episode that overrides nothing omits this key rather than restating what it inherits. */
+  settings?: SettingsLayer;
+}
+
 export interface EpisodeMetadata {
   apiVersion: ResourceVersion;
   kind: "Episode";

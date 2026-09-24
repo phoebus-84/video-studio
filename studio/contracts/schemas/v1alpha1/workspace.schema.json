@@ -204,9 +204,30 @@
         "updatedAt": { "$ref": "identity.schema.json#/$defs/Timestamp" }
       }
     },
+    "EpisodeManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The episode manifest as it exists on disk at episode.yaml. Addressed by path and slug, not by identifier — which is what distinguishes it from EpisodeMetadata, the id-addressed aggregate view. Only slug is required: the directory name already proves it, and every other fact may legitimately be unknown for an episode created before this contract existed.",
+      "required": ["apiVersion", "kind", "slug"],
+      "properties": {
+        "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
+        "kind": { "const": "Episode" },
+        "slug": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "channel": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "series": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "settings": {
+          "$ref": "#/$defs/SettingsLayer",
+          "description": "Episode-level overrides only. Settings resolve system -> channel -> series -> episode, so an episode that overrides nothing omits this key rather than restating what it inherits."
+        }
+      }
+    },
     "EpisodeMetadata": {
       "type": "object",
       "additionalProperties": false,
+      "description": "The id-addressed view of an episode, used by WorkspaceExample. For the file on disk see EpisodeManifest.",
       "required": ["apiVersion", "kind", "episodeId", "seriesId", "slug", "title", "settings"],
       "properties": {
         "apiVersion": { "$ref": "#/$defs/ResourceVersion" },
