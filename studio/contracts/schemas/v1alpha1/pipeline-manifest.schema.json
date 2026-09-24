@@ -32,7 +32,7 @@
       "additionalProperties": true,
       "properties": {
         "autopilot": { "type": "boolean" },
-        "review": { "type": "string", "enum": ["none", "human", "auto"] },
+        "review": { "type": "string", "enum": ["none", "human", "auto", "skill", "human-or-skill"] },
         "retry_on_failure": { "type": "integer", "minimum": 0 }
       }
     },

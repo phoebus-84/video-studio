@@ -99,10 +99,31 @@ export interface BudgetGuard {
   maySpend(stage: ResolvedStage, ctx: DispatchContext): Promise<Result<Reservation, { code: string; message: string }>>;
 }
 
+/**
+ * Who is asking. Resolved by the caller from a credential — the gateway from
+ * which token a request carried, the CLI from whether it can read the
+ * operator key — and never from anything the caller merely says about itself.
+ * Omitted means `agent`: omission never grants.
+ */
+export type Principal = "operator" | "agent";
+
+export interface ReviewInput {
+  decision: "approved" | "rejected";
+  principal: Principal;
+  /** Required for a rejection. */
+  note?: string;
+}
+
 /** Why a call ended the way it did. */
 export type OutcomeStatus =
   /** The stage ran and its declared outputs hold up. */
   | "completed"
+  /** A human decision was asked for but not given; see `ReviewInput`. */
+  | "requested"
+  /** `review()` recorded an approval. */
+  | "approved"
+  /** `review()` recorded a rejection. */
+  | "rejected"
   /**
    * A dry run: every gate passed and the stage would have been dispatched,
    * but nothing was leased, dispatched or written.
@@ -316,6 +337,12 @@ export interface ExecutionServiceOptions {
   review?: ReviewGate;
   /** Recorded on every lease, so an expired one names who held it. */
   holder?: string;
+  /**
+   * The key human receipts are signed with (avg-qr4.3). Null or absent means
+   * this composition cannot sign, so an operator review is refused rather than
+   * written unsigned.
+   */
+  operatorKey?: string | null;
   /** How long a lease lasts. Defaults to the engine's default. */
   leaseTtlMs?: number;
   /** Injected so tests can control time. */

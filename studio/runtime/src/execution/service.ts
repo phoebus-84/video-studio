@@ -21,6 +21,8 @@ import { parseJournal, JOURNAL_RELATIVE_PATH, appendJournalEvent } from "@studio
 import type { JournalEvent } from "@studio/contracts/src/journal.mjs";
 import { deriveExecutionState, leaseState } from "@studio/contracts/src/execution-state.mjs";
 import type { StageAttempt } from "@studio/contracts/src/execution-state.mjs";
+import { buildGateReview, hashArtifacts, REVIEW_EVENT_FOR } from "@studio/contracts/src/gate-review.mjs";
+import { signReceipt, planHashOf } from "@studio/contracts/src/receipt.mjs";
 import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
@@ -32,7 +34,7 @@ import { planRerun } from "../rerun/index.js";
 import type { RerunMode, RerunPlan } from "../rerun/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
-  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict,
+  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput,
 } from "./types.js";
 
 /** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
@@ -916,6 +918,108 @@ export class ExecutionService {
       durationMs: Date.now() - startedAt,
       ...(needsReview
         ? { reason: `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet` }
+        : {}),
+    });
+  }
+
+  /**
+   * Record a decision about a completed stage. The only code that writes a
+   * review event, so every caller's approval means the same thing.
+   *
+   * Origin comes from the principal, never from the request: an `operator`
+   * decides as `human` and the receipt is signed; an `agent` decides as
+   * `agent`. An agent asking to approve or reject a `review: human` stage is
+   * not refused — it is downgraded to a request, so a headless caller stops
+   * with an explicit ask instead of assuming yes (harness review, P0).
+   */
+  async review(
+    ref: EpisodeRef,
+    pipeline: string,
+    stageId: string,
+    input: ReviewInput,
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    const stage = resolved.value.stages.find((s) => s.definition.id === stageId);
+    if (!stage) {
+      return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+    }
+    const blocked = (reason: string): Result<StageOutcome, ExecutionError> =>
+      ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt });
+
+    const level = stage.definition.gates.review;
+    if (level === "none") return blocked(`"${stageId}" declares no review, so there is nothing to decide`);
+
+    const episodeDir = this.episodeDir(ref);
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+    let derived;
+    try {
+      derived = deriveExecutionState(events.value, resolved.value.stages.map((s) => s.definition.id), this.now());
+    } catch (e) {
+      return err({ code: "REPLAY_INVALID", message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}` });
+    }
+    const instance = derived.get(stageId)!;
+    if (instance.status !== "completed") {
+      return blocked(`"${stageId}" has not completed, so there is nothing to review`);
+    }
+    if (instance.outputArtifacts.length === 0) {
+      return blocked(`"${stageId}" recorded no outputs, and a decision about nothing cannot be invalidated by anything`);
+    }
+
+    let outputs;
+    try {
+      outputs = await hashArtifacts(episodeDir, instance.outputArtifacts);
+    } catch (e) {
+      return blocked(`"${stageId}" cannot be reviewed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    const asAgentOnHumanGate = input.principal !== "operator" && level === "human";
+    const decision = asAgentOnHumanGate ? "requested" : input.decision;
+    const origin = input.principal === "operator" ? "human" : "agent";
+    if (origin === "human" && !this.options.operatorKey) {
+      return blocked(`no operator key is configured to sign with, so a human decision about "${stageId}" cannot be recorded`);
+    }
+
+    let record;
+    try {
+      record = buildGateReview({
+        stageId, decision,
+        origin: decision === "requested" ? "agent" : origin,
+        actor: "runtime",
+        binding: { planHash: planHashOf(stage.definition), outputs },
+        ...(input.note !== undefined ? { note: input.note } : {}),
+      });
+    } catch (e) {
+      return blocked(e instanceof Error ? e.message : String(e));
+    }
+    if (decision !== "requested" && origin === "human") record = signReceipt(record, this.options.operatorKey!);
+
+    // Under the stage's own lock, so a decision cannot interleave with a
+    // re-run of the stage it is about. A live lease means the stage is
+    // running, and `instance.status` above has already refused that; the lock
+    // closes the window between that read and this write.
+    const lock = this.lock(episodeDir);
+    const lease = await lock.acquire(`stage:${stageId}`, 30_000);
+    if (!lease.ok) return blocked(`"${stageId}" is held by a run; try again when it finishes`);
+    let written;
+    try {
+      written = await appendJournalEvent(episodeDir, {
+        type: REVIEW_EVENT_FOR[decision], actor: "runtime", episode: ref, data: { ...record },
+      });
+    } finally {
+      await lock.release(lease.value);
+    }
+    if (!written) return blocked(`the ${decision} decision for "${stageId}" could not be written to the journal`);
+
+    return ok({
+      stageId,
+      status: decision,
+      outputs: instance.outputArtifacts,
+      durationMs: Date.now() - startedAt,
+      ...(asAgentOnHumanGate
+        ? { reason: `"${stageId}" declares human review; approval requested — an operator must approve it` }
         : {}),
     });
   }

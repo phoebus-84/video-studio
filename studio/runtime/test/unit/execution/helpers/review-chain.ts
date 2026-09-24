@@ -23,6 +23,11 @@ import { join } from "node:path";
  * dependency's declared review block a dependent two levels down without
  * tripping the autopilot gate.
  *
+ * A fourth stage, `skilled`, depends only on `upstream` and declares
+ * `review: skill` — avg-qr4.3's other review level, which an agent's own
+ * approval satisfies. It is a sibling of `gated`, not downstream of it, so a
+ * test exercising it does not also have to clear `gated`'s human review.
+ *
  * `roots` is the caller's cleanup list; the directory is pushed onto it so
  * the caller's own `afterEach` removes it.
  *
@@ -85,6 +90,22 @@ export async function reviewChainPipeline(roots: string[], fanOut = 0): Promise<
       "        retry_on_failure: 0",
       "      depends_on:",
       "        - gated",
+      "",
+      "    - id: skilled",
+      '      name: "Skilled"',
+      "      type: editorial",
+      "      inputs:",
+      "        - contract: upstream.md",
+      '          version: "1.0.0"',
+      "      outputs:",
+      "        - contract: skilled.md",
+      '          version: "1.0.0"',
+      "      gates:",
+      "        autopilot: true",
+      "        review: skill",
+      "        retry_on_failure: 0",
+      "      depends_on:",
+      "        - upstream",
       "",
       ...Array.from({ length: fanOut }, (_, i) => [
         `    - id: fan-${i + 1}`,

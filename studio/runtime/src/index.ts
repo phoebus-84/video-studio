@@ -290,7 +290,7 @@ export { ExecutionService, dependenciesMet } from "./execution/index.js";
 export type {
   DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict,
   OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
-  ExecutionError, ExecutionServiceOptions,
+  ExecutionError, ExecutionServiceOptions, Principal, ReviewInput,
 } from "./execution/index.js";
 
 // Package version (kept in sync with package.json by convention)
