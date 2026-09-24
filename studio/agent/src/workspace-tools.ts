@@ -129,9 +129,11 @@ export function registerWorkspaceTools(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params) {
       const config = await resolveConfig();
+      // The queue keys on a path, not on a file it reads. It follows the manifest so
+      // two calls creating the same episode still serialise on the same key.
       const mutationPath = join(
         episodePath(config.libraryRoot, params.channel, params.series, params.slug),
-        "episode.json",
+        "episode.yaml",
       );
       return withFileMutationQueue(mutationPath, async () => {
         const result = await createEpisodeWorkspace(params);

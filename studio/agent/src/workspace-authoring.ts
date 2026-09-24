@@ -26,7 +26,10 @@ import {
   SERIES_KNOWLEDGE,
   SERIES_CONTAINER,
   EPISODES_CONTAINER,
+  EPISODE_DIRECTORIES,
+  EPISODE_SEED_FILES,
 } from "@studio/contracts/src/layout.mjs";
+import { EPISODE_MANIFEST_FILE, renderEpisodeManifest } from "@studio/contracts/src/episode-manifest.mjs";
 import { resolveConfig } from "./config.js";
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -259,7 +262,7 @@ export async function createEpisodeWorkspace(input: CreateEpisodeInput, libraryR
   // `<root>/<channel>/series/<series>/episodes/<slug>`.
   const dir = episodePath(root, input.channel, input.series, input.slug);
   assertContained(root, dir);
-  for (const relative of ["artifacts", "assets/animation", "assets/audio", "output", "production", "reviews"]) {
+  for (const relative of EPISODE_DIRECTORIES) {
     await mkdir(path.join(dir, relative), { recursive: true });
   }
 
@@ -271,14 +274,6 @@ export async function createEpisodeWorkspace(input: CreateEpisodeInput, libraryR
     existingFiles: [],
   };
 
-  await writeExclusive(root, path.join(dir, "episode.json"), jsonDocument({
-    version: 1,
-    channel: input.channel,
-    series: input.series,
-    slug: input.slug,
-    title: input.title.trim(),
-    description: input.description.trim(),
-  }), result);
   await writeExclusive(root, path.join(dir, "artifacts", "episode.json"), jsonDocument({
     version: 1,
     title: input.title.trim(),
@@ -287,22 +282,17 @@ export async function createEpisodeWorkspace(input: CreateEpisodeInput, libraryR
   }), result);
   await createWorkspaceContract(root, dir, "episode", input.title, input.description, result);
   const now = new Date().toISOString();
-  await writeExclusive(root, path.join(dir, "episode.yaml"), `# Episode ${input.slug}\nslug: ${input.slug}\ntitle: ${input.title.trim()}\ncreatedAt: ${now}\n`, result);
-  for (const relative of ["source", "prompts", "assets/images", "assets/graphics", "attempts", "journal"]) {
-    await mkdir(path.join(dir, relative), { recursive: true });
+  await writeExclusive(root, path.join(dir, EPISODE_MANIFEST_FILE), renderEpisodeManifest({
+    slug: input.slug,
+    channel: input.channel,
+    series: input.series,
+    title: input.title.trim(),
+    description: input.description.trim(),
+    createdAt: now,
+  }), result);
+  for (const [relative, content] of Object.entries(EPISODE_SEED_FILES)) {
+    await writeExclusive(root, path.join(dir, relative), content, result);
   }
-  await writeExclusive(root, path.join(dir, "assets", "manifest.json"), jsonDocument({
-    apiVersion: "v1alpha1",
-    kind: "AssetManifest",
-    assets: [],
-  }), result);
-  await writeExclusive(root, path.join(dir, "reviews", "threads.jsonl"), "", result);
-  await writeExclusive(root, path.join(dir, "journal", "events.jsonl"), "", result);
-  await writeExclusive(root, path.join(dir, "output", "current.json"), jsonDocument({
-    apiVersion: "v1alpha1",
-    kind: "CurrentDeliverable",
-    renderId: null,
-  }), result);
   if (input.episodeRequest !== undefined) {
     await writeExclusive(root, path.join(dir, "artifacts", "episode-request.md"), `${input.episodeRequest.trim()}\n`, result);
   }

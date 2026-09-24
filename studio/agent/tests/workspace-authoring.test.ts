@@ -7,6 +7,7 @@ import {
   createEpisodeWorkspace,
   createSeriesWorkspace,
 } from "../src/workspace-authoring.js";
+import { EPISODE_DIRECTORIES } from "@studio/contracts/src/layout.mjs";
 
 const roots: string[] = [];
 
@@ -135,7 +136,8 @@ describe("workspace authoring", () => {
     expect(series.createdFiles).toEqual([]);
     expect(episode.createdFiles).toEqual([]);
     expect(series.existingFiles).toContain(`${SERIES_DIR}/series.json`);
-    expect(episode.existingFiles).toContain(`${EPISODE_DIR}/episode.json`);
+    // episode.json is retired in favour of the yaml manifest — see below.
+    expect(episode.existingFiles).toContain(`${EPISODE_DIR}/episode.yaml`);
   });
 
   it("rejects traversal and requires parents", async () => {
@@ -170,5 +172,39 @@ describe("workspace authoring", () => {
       title: "The Run-Up",
       description: "Pipeline validation pilot.",
     }, libraryRoot)).rejects.toThrow(/Series does not exist/);
+  });
+
+  it("writes one manifest, and it is the yaml one", async () => {
+    const libraryRoot = await root();
+    const { episode } = await seedTree(libraryRoot);
+    expect(episode.createdFiles).toContain(`${EPISODE_DIR}/episode.yaml`);
+    // The top-level episode.json is retired. artifacts/episode.json is the scene
+    // spine — a different document that the gateway and the web app read — and
+    // must survive.
+    expect(episode.createdFiles).not.toContain(`${EPISODE_DIR}/episode.json`);
+    expect(episode.createdFiles).toContain(`${EPISODE_DIR}/artifacts/episode.json`);
+  });
+
+  it("records the title and the description in the manifest", async () => {
+    const libraryRoot = await root();
+    await seedTree(libraryRoot);
+    const text = await readFile(join(libraryRoot, EPISODE_DIR, "episode.yaml"), "utf-8");
+    expect(text).toContain("kind: Episode");
+    expect(text).toContain('slug: "the-run-up"');
+    expect(text).toContain('title: "The Run-Up"');
+    expect(text).toContain('description: "Pipeline validation pilot."');
+    expect(text).toContain('channel: "wordless-comedy"');
+    expect(text).toContain('series: "give-me-time"');
+  });
+
+  it("creates every directory the contract declares", async () => {
+    const libraryRoot = await root();
+    await seedTree(libraryRoot);
+    for (const dir of EPISODE_DIRECTORIES) {
+      expect(
+        await isDirectory(join(libraryRoot, EPISODE_DIR, dir)),
+        `missing ${dir}`,
+      ).toBe(true);
+    }
   });
 });
