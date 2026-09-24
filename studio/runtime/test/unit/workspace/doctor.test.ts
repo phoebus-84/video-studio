@@ -91,4 +91,72 @@ describe("doctor", () => {
     // Channel-level check should be fine
     expect(report.ok).toBe(true);
   });
+
+  const EP = "/library/ch/series/s1/episodes/ep-01";
+
+  it("reports an episode.yaml that is not valid YAML", async () => {
+    // A check that confirms presence while reporting validity is the defect this
+    // branch exists to remove: an empty or broken manifest passed before.
+    const opts = makeOpts(fs);
+    const chR = await initChannel("/library", "ch", {}, opts);
+    if (!chR.ok) throw new Error("channel failed");
+    const srR = await initSeries(chR.value.path, "s1", {}, opts);
+    if (!srR.ok) throw new Error("series failed");
+    const epR = await initEpisode(srR.value.path, "ep-01", {}, opts);
+    if (!epR.ok) throw new Error("episode failed");
+
+    await fs.writeText(`${EP}/episode.yaml`, "kind: [unclosed");
+    const report = await doctor({ fs, libraryRoot: "/library" });
+    expect(report.ok).toBe(false);
+    expect(report.findings.some((f) => f.code === "E_INVALID_MANIFEST")).toBe(true);
+  });
+
+  it("reports an episode.yaml that parses but is not an episode manifest", async () => {
+    const opts = makeOpts(fs);
+    const chR = await initChannel("/library", "ch", {}, opts);
+    if (!chR.ok) throw new Error("channel failed");
+    const srR = await initSeries(chR.value.path, "s1", {}, opts);
+    if (!srR.ok) throw new Error("series failed");
+    const epR = await initEpisode(srR.value.path, "ep-01", {}, opts);
+    if (!epR.ok) throw new Error("episode failed");
+
+    await fs.writeText(`${EP}/episode.yaml`, "kind: Series\nslug: x\n");
+    const report = await doctor({ fs, libraryRoot: "/library" });
+    expect(report.ok).toBe(false);
+    expect(report.findings.some((f) => f.code === "E_INVALID_MANIFEST")).toBe(true);
+  });
+
+  it("reports a manifest whose title is the wrong type", async () => {
+    // The point of validating against the schema rather than by hand: a
+    // hand-rolled kind-and-slug check would pass this.
+    const opts = makeOpts(fs);
+    const chR = await initChannel("/library", "ch", {}, opts);
+    if (!chR.ok) throw new Error("channel failed");
+    const srR = await initSeries(chR.value.path, "s1", {}, opts);
+    if (!srR.ok) throw new Error("series failed");
+    const epR = await initEpisode(srR.value.path, "ep-01", {}, opts);
+    if (!epR.ok) throw new Error("episode failed");
+
+    await fs.writeText(
+      `${EP}/episode.yaml`,
+      'apiVersion: studio.video/v1alpha1\nkind: Episode\nslug: "ep-01"\ntitle: 7\n',
+    );
+    const report = await doctor({ fs, libraryRoot: "/library" });
+    expect(report.ok).toBe(false);
+    expect(report.findings.some((f) => f.code === "E_INVALID_MANIFEST")).toBe(true);
+  });
+
+  it("accepts the manifest initEpisode writes", async () => {
+    const opts = makeOpts(fs);
+    const chR = await initChannel("/library", "ch", {}, opts);
+    if (!chR.ok) throw new Error("channel failed");
+    const srR = await initSeries(chR.value.path, "s1", {}, opts);
+    if (!srR.ok) throw new Error("series failed");
+    const epR = await initEpisode(srR.value.path, "ep-01", {}, opts);
+    if (!epR.ok) throw new Error("episode failed");
+
+    const report = await doctor({ fs, libraryRoot: "/library" });
+    expect(report.ok).toBe(true);
+    expect(report.findings.filter((f) => f.code === "E_INVALID_MANIFEST")).toEqual([]);
+  });
 });

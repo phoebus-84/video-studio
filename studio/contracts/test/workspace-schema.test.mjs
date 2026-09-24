@@ -62,3 +62,56 @@ test("current deliverables are an explicit hash-backed pointer, not a filename c
   assert.match(pointer.media.hash.contentHash, /^sha256:[a-f0-9]{64}$/);
   assert.notEqual(pointer.media.path, "final-final-2.mp4");
 });
+
+test("an episode manifest needs only its apiVersion, kind and slug", () => {
+  const { ajv } = createValidator();
+  const validate = ajv.getSchema(`${workspace.$id}#/$defs/EpisodeManifest`);
+  assert.ok(validate, "EpisodeManifest schema definition is registered");
+  assert.equal(validate({
+    apiVersion: "studio.video/v1alpha1",
+    kind: "Episode",
+    slug: "cinderella",
+  }), true, ajv.errorsText(validate.errors));
+});
+
+test("an episode manifest carries the editorial fields when they are known", () => {
+  const { ajv } = createValidator();
+  const validate = ajv.getSchema(`${workspace.$id}#/$defs/EpisodeManifest`);
+  assert.equal(validate({
+    apiVersion: "studio.video/v1alpha1",
+    kind: "Episode",
+    slug: "giulio-cesare",
+    channel: "video-storici",
+    series: "roma-pills",
+    title: "Julius Caesar: The Man Who Changed Rome",
+    description: "Pilot episode validating the complete Roma Pills pipeline.",
+    createdAt: "2026-08-22T22:53:12.278Z",
+  }), true, ajv.errorsText(validate.errors));
+});
+
+test("an episode manifest without a slug is refused", () => {
+  const { ajv } = createValidator();
+  const validate = ajv.getSchema(`${workspace.$id}#/$defs/EpisodeManifest`);
+  assert.equal(validate({ apiVersion: "studio.video/v1alpha1", kind: "Episode" }), false);
+});
+
+test("EpisodeMetadata still demands its identifiers and settings", () => {
+  // EpisodeManifest exists precisely so this one does not have to be loosened.
+  // A change that relaxes EpisodeMetadata should fail here first.
+  const meta = workspace.$defs.EpisodeMetadata;
+  assert.deepEqual(
+    [...meta.required].sort(),
+    ["apiVersion", "episodeId", "kind", "seriesId", "settings", "slug", "title"],
+  );
+});
+
+test("an episode manifest timestamp must be UTC", () => {
+  const { ajv } = createValidator();
+  const validate = ajv.getSchema(`${workspace.$id}#/$defs/EpisodeManifest`);
+  const base = { apiVersion: "studio.video/v1alpha1", kind: "Episode", slug: "x" };
+  assert.equal(validate({ ...base, createdAt: "2026-08-22T22:53:12.278Z" }), true,
+    ajv.errorsText(validate.errors));
+  // The rest of workspace.schema.json requires a Z-suffixed timestamp; the
+  // manifest must not be the one document that accepts a local offset.
+  assert.equal(validate({ ...base, createdAt: "2026-08-22T22:53:12.278+01:00" }), false);
+});

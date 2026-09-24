@@ -70,6 +70,84 @@ export const SERIES_KNOWLEDGE = Object.freeze([
 /** Marker directory identifying a directory as a workspace of some kind. */
 export const WORKSPACE_DIR = ".workspace";
 
+/**
+ * The episode's scratch area.
+ *
+ * Work in progress that no stage may declare as an output and no artifact
+ * resolver may treat as an artifact. It exists because it already existed:
+ * five episodes hold hand-made experiments here (`animated-scenes`,
+ * `cinematic-v2`, `hybrid-v1`, `pipeline-smoke`, `remotion-infographic`) and
+ * no journal event in the library references any of them. Declaring it turns
+ * an accidental blind spot into a deliberate exclusion.
+ */
+export const EPISODE_SCRATCH = "production";
+
+/**
+ * Directories every episode has.
+ *
+ * The union of what the two creators made before they were unified, not the
+ * intersection: `assets/animation` is here because the artifact resolver
+ * already looks in it, and an episode lacking it is missing a directory the
+ * resolver searches.
+ */
+export const EPISODE_DIRECTORIES = Object.freeze([
+  "source",
+  "artifacts",
+  "prompts",
+  "assets/images",
+  "assets/graphics",
+  "assets/audio",
+  "assets/animation",
+  "attempts",
+  "reviews",
+  "journal",
+  "output",
+  EPISODE_SCRATCH,
+]);
+
+/** Files every episode is seeded with. */
+export const EPISODE_FILES = Object.freeze([
+  "episode.yaml",
+  "assets/manifest.json",
+  "reviews/threads.jsonl",
+  "journal/events.jsonl",
+  "output/current.json",
+]);
+
+/**
+ * The seed content for every episode file whose initial body is fixed.
+ *
+ * `episode.yaml` is absent because its body is not fixed — it names the
+ * episode, and `renderEpisodeManifest` builds it.
+ *
+ * The bodies live here because three separate creators wrote them
+ * independently before this module existed: the runtime's `initEpisode`, the
+ * agent's `createEpisodeWorkspace`, and the migration tool. Three verbatim
+ * copies of one document is the duplication this contract removes.
+ */
+export const EPISODE_SEED_FILES = Object.freeze({
+  "assets/manifest.json":
+    `${JSON.stringify({ apiVersion: "v1alpha1", kind: "AssetManifest", assets: [] }, null, 2)}\n`,
+  "reviews/threads.jsonl": "",
+  "journal/events.jsonl": "",
+  "output/current.json":
+    `${JSON.stringify({ apiVersion: "v1alpha1", kind: "CurrentDeliverable", renderId: null }, null, 2)}\n`,
+});
+
+/**
+ * Everything a valid episode must have.
+ *
+ * One list serves both creation and validation deliberately. Two lists — one
+ * for what a creator makes, one for what a checker demands — is how the two
+ * creators came to disagree in the first place.
+ */
+export const EPISODE_TREE = Object.freeze([
+  ...EPISODE_DIRECTORIES,
+  ...EPISODE_FILES,
+  `${WORKSPACE_DIR}/contract.json`,
+  `${WORKSPACE_DIR}/metadata.json`,
+]);
+
 // ── Path builders ───────────────────────────────────────────────────────────
 
 /** `<root>/<channel>` */

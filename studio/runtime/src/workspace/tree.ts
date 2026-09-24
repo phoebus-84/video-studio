@@ -7,6 +7,8 @@
 // Every path is relative to the workspace root at its level.
 // ---------------------------------------------------------------------------
 
+import { EPISODE_TREE } from "@studio/contracts/src/layout.mjs";
+
 /**
  * What a channel must have to be a channel.
  *
@@ -35,24 +37,15 @@ export const SERIES_TREE = [
   ".workspace/metadata.json",
 ] as const;
 
-/** Files and directories created at the episode level. */
-export const EPISODE_TREE = [
-  "episode.yaml",
-  "source",
-  "artifacts",
-  "prompts",
-  "assets/images",
-  "assets/graphics",
-  "assets/audio",
-  "assets/manifest.json",
-  "attempts",
-  "reviews/threads.jsonl",
-  "journal/events.jsonl",
-  "output",
-  "output/current.json",
-  ".workspace/contract.json",
-  ".workspace/metadata.json",
-] as const;
+/**
+ * Files and directories created at the episode level.
+ *
+ * Re-exported from @studio/contracts rather than declared here: the agent has
+ * its own episode creator and cannot import this module, so the one place both
+ * can read from is contracts. Pinned by
+ * test/unit/workspace/episode-tree-agreement.test.ts.
+ */
+export { EPISODE_TREE };
 
 /** All path lists indexed by workspace kind. */
 export const TREE_BY_KIND = {
