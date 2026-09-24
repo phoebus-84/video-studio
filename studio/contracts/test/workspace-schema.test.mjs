@@ -104,3 +104,14 @@ test("EpisodeMetadata still demands its identifiers and settings", () => {
     ["apiVersion", "episodeId", "kind", "seriesId", "settings", "slug", "title"],
   );
 });
+
+test("an episode manifest timestamp must be UTC", () => {
+  const { ajv } = createValidator();
+  const validate = ajv.getSchema(`${workspace.$id}#/$defs/EpisodeManifest`);
+  const base = { apiVersion: "studio.video/v1alpha1", kind: "Episode", slug: "x" };
+  assert.equal(validate({ ...base, createdAt: "2026-08-22T22:53:12.278Z" }), true,
+    ajv.errorsText(validate.errors));
+  // The rest of workspace.schema.json requires a Z-suffixed timestamp; the
+  // manifest must not be the one document that accepts a local offset.
+  assert.equal(validate({ ...base, createdAt: "2026-08-22T22:53:12.278+01:00" }), false);
+});

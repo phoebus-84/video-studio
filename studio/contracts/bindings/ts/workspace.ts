@@ -120,7 +120,7 @@ export interface EpisodeManifest {
   series?: Slug;
   title?: string;
   description?: string;
-  createdAt?: string;
+  createdAt?: Timestamp;
   /** Episode-level overrides only. Settings resolve system -> channel -> series -> episode, so an episode that overrides nothing omits this key rather than restating what it inherits. */
   settings?: SettingsLayer;
 }
