@@ -213,23 +213,57 @@ to create `source/`, `prompts/`, `assets/graphics`, `assets/audio`,
 `journal/events.jsonl`, `output/`, `output/current.json`,
 `.workspace/contract.json` and `.workspace/metadata.json`.
 
-The tool must not carry its own copy of that list. `init.ts` already creates the
-skeleton idempotently — `writeIfMissing` plus `mkdir` that tolerates an existing
-directory — so the migration **runs the canonical creator over each existing
-episode directory**. Migration and creation are then the same code and cannot
-disagree, which is the entire point of this issue.
+The tool must not carry its own copy of that list. It builds from the same
+`EPISODE_DIRECTORIES`, `EPISODE_SEED_FILES` and `renderEpisodeManifest` that
+`init.ts` and the agent's creator build from, skipping whatever is already
+present. Migration and creation therefore read the same declarations and cannot
+disagree about what an episode is, which is the entire point of this issue.
+(`init.ts` itself is TypeScript inside `@studio/runtime`; a plain-node tool
+cannot call it, which is why it shares the declarations rather than the code.)
 
 ### What it does per episode
 
-1. If `episode.yaml` is absent, write it **first**, folding in
-   `[episode]/episode.json` when present: `title`, `description`, `channel`,
-   `series`. Where both files hold a value and the values differ, the existing
-   `episode.yaml` wins and the conflict is printed.
-2. Run the canonical episode creator over the directory. Everything already
-   present is left untouched, including the `episode.yaml` just written — which
-   is why step 1 comes first: the creator would otherwise write its own
-   `episode.yaml` with a fabricated `createdAt`.
+1. Settle the manifest, folding in `[episode]/episode.json` when present:
+   `title`, `description`, `channel`, `series`. Where both files hold a value
+   and the values differ, the existing `episode.yaml` wins and the conflict is
+   printed. There are three states, not two:
+   - **absent** — written fresh, with a title seeded from the slug and no
+     `createdAt`.
+   - **legacy** — it parses, but carries no `apiVersion` and no `kind`. This is
+     every `episode.yaml` the old creators wrote, so it is the common case, not
+     the edge: all ten manifests in the library are this shape and all ten fail
+     `EpisodeManifest`. The file is re-rendered through `renderEpisodeManifest`
+     preserving every value it holds — `slug`, `title`, `description` and above
+     all `createdAt`, which is the only record of when the episode was made.
+     An earlier draft of this tool only wrote a manifest when none existed,
+     which left every one of those ten failing `doctor` with no action even
+     reported for them.
+   - **already conforming** — left completely alone, with no action recorded.
+   A manifest that will not parse is skipped with the parse error as its
+   reason, never overwritten: the old creator wrote `title:` unquoted, so a
+   legacy title holding a colon is unreadable, and guessing past it would
+   invent the title.
+2. Fill the rest of the tree from `EPISODE_DIRECTORIES` and
+   `EPISODE_SEED_FILES`, skipping everything already present, and write
+   `.workspace/contract.json` and `.workspace/metadata.json` when absent. The
+   workspace contract matters more than it looks: `doctor.checkLevel`
+   early-returns with a *warning* when it is missing, so an episode without one
+   is never checked at all — a migration that skipped it would leave the tool
+   reporting manifests as migrated that nothing had validated. Those two files
+   are timestamped with the current time, which honestly records when they were
+   written; they do not claim to be when the episode was created.
 3. Retire `[episode]/episode.json` by renaming it to `.episode.json.migrated`.
+
+Nothing is written unvalidated. The rendered manifest is parsed back and checked
+against `EpisodeManifest` with the same schema `doctor` uses, and an episode
+whose manifest would not conform — a channel or series directory whose name is
+not a valid slug, say — is skipped with the validation errors as its reason
+rather than handed to `doctor` as migrated.
+
+A failure on one episode does not end the run: it is recorded as that episode's
+skip, the rest of the library still migrates, and the plan and summary print
+regardless. `library/` is gitignored, so a half-migrated tree with no record of
+which half cannot be diffed against anything.
 
 ### For the nine episodes with no manifest
 
