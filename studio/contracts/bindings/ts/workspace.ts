@@ -119,6 +119,7 @@ export interface EpisodeManifest {
   channel?: Slug;
   series?: Slug;
   title?: string;
+  /** 4000 to match what the agent's episode creator has always accepted (workspace-authoring.ts validates the description to 4000). Now that the description reaches this manifest, a lower cap here would reject episodes the agent creates successfully today. */
   description?: string;
   createdAt?: Timestamp;
   /** Episode-level overrides only. Settings resolve system -> channel -> series -> episode, so an episode that overrides nothing omits this key rather than restating what it inherits. */

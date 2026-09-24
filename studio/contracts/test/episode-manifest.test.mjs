@@ -16,7 +16,7 @@ test("a manifest with only a slug renders the required keys and nothing else", (
   assert.ok(out.endsWith("\n"));
 });
 
-test("an unknown field is omitted rather than written empty", () => {
+test("an optional field with no value is omitted rather than written empty", () => {
   // The migration has episodes with no recorded creation time. A manifest
   // claiming `createdAt: ""` would be asserting a fact nobody holds.
   const out = renderEpisodeManifest({ slug: "tomb", title: "Tomb", createdAt: undefined });
