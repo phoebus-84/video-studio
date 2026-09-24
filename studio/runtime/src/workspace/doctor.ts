@@ -2,10 +2,32 @@
 // Workspace doctor — validate on-disk workspace against canonical tree
 // ---------------------------------------------------------------------------
 
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { load as loadYaml } from "js-yaml";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv";
 import type { FileSystem } from "../ports/filesystem.js";
 import { TREE_BY_KIND } from "./tree.js";
 import { SERIES_CONTAINER, EPISODES_CONTAINER } from "@studio/contracts/src/layout.mjs";
+import { EPISODE_MANIFEST_FILE } from "@studio/contracts/src/episode-manifest.mjs";
 import type { WorkspaceKind } from "./types.js";
+
+const require = createRequire(import.meta.url);
+const addFormats = require("ajv-formats") as (ajv: Ajv2020) => Ajv2020;
+
+// workspace.schema.json $refs identity.schema.json, so both go in.
+const workspaceSchema = JSON.parse(readFileSync(
+  require.resolve("@studio/contracts/schemas/v1alpha1/workspace.schema.json"), "utf-8"));
+const identitySchema = JSON.parse(readFileSync(
+  require.resolve("@studio/contracts/schemas/v1alpha1/identity.schema.json"), "utf-8"));
+
+const ajv = new Ajv2020({ strict: true, allErrors: true });
+addFormats(ajv);
+ajv.addSchema(identitySchema);
+ajv.addSchema(workspaceSchema);
+const validateEpisodeManifestSchema =
+  ajv.getSchema(`${workspaceSchema.$id}#/$defs/EpisodeManifest`)!;
 
 // ---- Types -----------------------------------------------------------------
 
@@ -152,6 +174,8 @@ async function checkLevel(
 
   // Validate JSON files
   await validateJsonFiles(fs, wsPath, kind, findings);
+
+  if (kind === "episode") await validateEpisodeManifest(fs, wsPath, findings);
 }
 
 // ---- JSON validation -------------------------------------------------------
@@ -229,6 +253,68 @@ async function validateJsonFiles(
         });
       }
     }
+  }
+}
+
+// ---- Episode manifest validation --------------------------------------------
+
+/**
+ * Validate the episode manifest's contents, not just its presence.
+ *
+ * Presence was the whole check before: an empty `episode.yaml`, or one holding
+ * a series document, passed. A check that reports something other than what it
+ * verified is the defect this module is being cleaned of.
+ *
+ * Validated against the schema rather than by hand, because a contract no code
+ * reads is how `EpisodeMetadata` came to be inert.
+ */
+async function validateEpisodeManifest(
+  fs: FileSystem,
+  wsPath: string,
+  findings: DoctorFinding[],
+): Promise<void> {
+  const fullPath = `${wsPath}/${EPISODE_MANIFEST_FILE}`;
+  const existsR = await fs.exists(fullPath);
+  if (!existsR.ok || !existsR.value) return; // already reported as missing
+
+  const readR = await fs.readText(fullPath);
+  if (!readR.ok) {
+    findings.push({
+      level: "episode", path: fullPath, code: "E_READ_ERROR",
+      message: `Cannot read file: ${readR.error.message}`,
+    });
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = loadYaml(readR.value);
+  } catch (error) {
+    findings.push({
+      level: "episode", path: fullPath, code: "E_INVALID_MANIFEST",
+      message: `Not valid YAML: ${(error as Error).message}`,
+    });
+    return;
+  }
+
+  // A YAML document holding only comments parses to undefined, which Ajv would
+  // report as a type error rather than as the empty file it is.
+  if (parsed === undefined || parsed === null) {
+    findings.push({
+      level: "episode", path: fullPath, code: "E_INVALID_MANIFEST",
+      message: "Episode manifest is empty",
+    });
+    return;
+  }
+
+  if (!validateEpisodeManifestSchema(parsed)) {
+    const detail = (validateEpisodeManifestSchema.errors ?? [])
+      .map((err: ErrorObject) => `${err.instancePath || "/"} ${err.message}`)
+      .join("; ");
+    findings.push({
+      level: "episode", path: fullPath, code: "E_INVALID_MANIFEST",
+      message: `Episode manifest does not match the contract: ${detail}`,
+    });
   }
 }
 
