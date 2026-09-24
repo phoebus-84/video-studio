@@ -565,8 +565,13 @@ Replace the `EPISODE_TREE` block in `studio/runtime/src/workspace/tree.ts` with:
  * can read from is contracts. Pinned by
  * test/unit/workspace/episode-tree-agreement.test.ts.
  */
-export { EPISODE_TREE } from "@studio/contracts/src/layout.mjs";
+import { EPISODE_TREE } from "@studio/contracts/src/layout.mjs";
+export { EPISODE_TREE };
 ```
+
+A bare `export ... from` does NOT create a local binding, and `TREE_BY_KIND`
+below references `EPISODE_TREE` directly — so the re-export alone does not
+compile. Import it and re-export the same binding.
 
 Leave `CHANNEL_TREE` and `SERIES_TREE` exactly as they are. `TREE_BY_KIND` needs no change.
 
