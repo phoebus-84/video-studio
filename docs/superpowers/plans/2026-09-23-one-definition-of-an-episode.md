@@ -173,6 +173,7 @@ git commit -m "feat(contracts): declare the on-disk episode manifest"
   - `EPISODE_SCRATCH: string` — the literal `"production"`
   - `EPISODE_DIRECTORIES: readonly string[]` — directories a creator makes
   - `EPISODE_FILES: readonly string[]` — files a creator seeds
+  - `EPISODE_SEED_FILES: Readonly<Record<string, string>>` — seed body for every seeded file except `episode.yaml`
   - `EPISODE_TREE: readonly string[]` — everything a valid episode must have
 - Produces, from `@studio/contracts/src/episode-manifest.mjs`:
   - `EPISODE_MANIFEST_FILE: string` — the literal `"episode.yaml"`
@@ -189,6 +190,7 @@ import {
   EPISODE_SCRATCH,
   EPISODE_DIRECTORIES,
   EPISODE_FILES,
+  EPISODE_SEED_FILES,
   EPISODE_TREE,
 } from "../src/layout.mjs";
 
@@ -211,6 +213,23 @@ test("the tree keeps the directories the artifact resolver already looks in", ()
   // an episode without that directory is missing one the resolver searches.
   for (const dir of ["assets/images", "assets/graphics", "assets/audio", "assets/animation"]) {
     assert.ok(EPISODE_DIRECTORIES.includes(dir), `${dir} is missing`);
+  }
+});
+
+test("every seeded file except the manifest has a fixed body", () => {
+  // episode.yaml is deliberately absent: its body names the episode, so
+  // renderEpisodeManifest builds it rather than a constant.
+  assert.deepEqual(
+    Object.keys(EPISODE_SEED_FILES).sort(),
+    EPISODE_FILES.filter((f) => f !== "episode.yaml").slice().sort(),
+  );
+});
+
+test("the seeded JSON bodies parse and end with a newline", () => {
+  for (const [name, body] of Object.entries(EPISODE_SEED_FILES)) {
+    if (!name.endsWith(".json")) continue;
+    assert.doesNotThrow(() => JSON.parse(body), name);
+    assert.ok(body.endsWith("\n"), `${name} should end with a newline`);
   }
 });
 
@@ -310,7 +329,7 @@ export const EPISODE_DIRECTORIES = Object.freeze([
   EPISODE_SCRATCH,
 ]);
 
-/** Files every episode is seeded with. Content belongs to whoever creates them. */
+/** Files every episode is seeded with. */
 export const EPISODE_FILES = Object.freeze([
   "episode.yaml",
   "assets/manifest.json",
@@ -318,6 +337,26 @@ export const EPISODE_FILES = Object.freeze([
   "journal/events.jsonl",
   "output/current.json",
 ]);
+
+/**
+ * The seed content for every episode file whose initial body is fixed.
+ *
+ * `episode.yaml` is absent because its body is not fixed — it names the
+ * episode, and `renderEpisodeManifest` builds it.
+ *
+ * The bodies live here because three separate creators wrote them
+ * independently before this module existed: the runtime's `initEpisode`, the
+ * agent's `createEpisodeWorkspace`, and the migration tool. Three verbatim
+ * copies of one document is the duplication this contract removes.
+ */
+export const EPISODE_SEED_FILES = Object.freeze({
+  "assets/manifest.json":
+    `${JSON.stringify({ apiVersion: "v1alpha1", kind: "AssetManifest", assets: [] }, null, 2)}\n`,
+  "reviews/threads.jsonl": "",
+  "journal/events.jsonl": "",
+  "output/current.json":
+    `${JSON.stringify({ apiVersion: "v1alpha1", kind: "CurrentDeliverable", renderId: null }, null, 2)}\n`,
+});
 
 /**
  * Everything a valid episode must have.
@@ -342,6 +381,7 @@ Add to `studio/contracts/src/layout.d.mts`, after `WORKSPACE_DIR`:
 export declare const EPISODE_SCRATCH: string;
 export declare const EPISODE_DIRECTORIES: readonly string[];
 export declare const EPISODE_FILES: readonly string[];
+export declare const EPISODE_SEED_FILES: Readonly<Record<string, string>>;
 export declare const EPISODE_TREE: readonly string[];
 ```
 
@@ -435,7 +475,7 @@ git commit -m "feat(contracts): one episode tree, one manifest renderer"
 - Test: `studio/runtime/test/unit/workspace/episode-tree-agreement.test.ts` (new)
 
 **Interfaces:**
-- Consumes: `EPISODE_DIRECTORIES`, `EPISODE_FILES`, `EPISODE_TREE`, `EPISODE_SCRATCH` from `@studio/contracts/src/layout.mjs`; `EPISODE_MANIFEST_FILE`, `renderEpisodeManifest` from `@studio/contracts/src/episode-manifest.mjs`.
+- Consumes: `EPISODE_DIRECTORIES`, `EPISODE_SEED_FILES`, `EPISODE_TREE` from `@studio/contracts/src/layout.mjs`; `EPISODE_MANIFEST_FILE`, `renderEpisodeManifest` from `@studio/contracts/src/episode-manifest.mjs`.
 - Produces: `EPISODE_TREE` re-exported from `studio/runtime/src/workspace/tree.ts`, unchanged in name so `doctor.ts` and `TREE_BY_KIND` need no edit.
 
 - [ ] **Step 1: Write the failing test**
@@ -537,6 +577,7 @@ In `studio/runtime/src/workspace/init.ts`, add to the imports:
 ```ts
 import {
   EPISODE_DIRECTORIES,
+  EPISODE_SEED_FILES,
 } from "@studio/contracts/src/layout.mjs";
 import {
   EPISODE_MANIFEST_FILE,
@@ -563,33 +604,12 @@ async function createEpisodeSkeleton(
   // Directories, from the one declared list.
   await makeDirs(opts, wsPath, EPISODE_DIRECTORIES);
 
-  // assets/manifest.json
-  const manifest = {
-    apiVersion: "v1alpha1",
-    kind: "AssetManifest",
-    assets: [] as unknown[],
-  };
-  await writeIfMissing(
-    opts, `${wsPath}/assets/manifest.json`,
-    JSON.stringify(manifest, null, 2) + "\n",
-  );
-
-  // reviews/threads.jsonl (empty)
-  await writeIfMissing(opts, `${wsPath}/reviews/threads.jsonl`, "");
-
-  // journal/events.jsonl (empty)
-  await writeIfMissing(opts, `${wsPath}/journal/events.jsonl`, "");
-
-  // output/current.json
-  const current = {
-    apiVersion: "v1alpha1",
-    kind: "CurrentDeliverable",
-    renderId: null,
-  };
-  await writeIfMissing(
-    opts, `${wsPath}/output/current.json`,
-    JSON.stringify(current, null, 2) + "\n",
-  );
+  // Seeded files, with the bodies the contract declares. These used to be
+  // written out longhand here, in the agent's creator, and in the migration
+  // tool — three copies of the same four documents.
+  for (const [relative, content] of Object.entries(EPISODE_SEED_FILES)) {
+    await writeIfMissing(opts, `${wsPath}/${relative}`, content);
+  }
 }
 ```
 
@@ -618,7 +638,7 @@ git commit -m "feat(runtime): build the episode from the declared tree"
 - Test: `studio/agent/tests/workspace-authoring.test.ts`
 
 **Interfaces:**
-- Consumes: `EPISODE_DIRECTORIES` from `@studio/contracts/src/layout.mjs`; `EPISODE_MANIFEST_FILE`, `renderEpisodeManifest` from `@studio/contracts/src/episode-manifest.mjs`.
+- Consumes: `EPISODE_DIRECTORIES`, `EPISODE_SEED_FILES` from `@studio/contracts/src/layout.mjs`; `EPISODE_MANIFEST_FILE`, `renderEpisodeManifest` from `@studio/contracts/src/episode-manifest.mjs`.
 - Produces: `createEpisode` no longer writes `[episode]/episode.json`. It still writes `artifacts/episode.json`, which is the scene spine and a different document.
 
 - [ ] **Step 1: Write the failing test**
@@ -678,7 +698,7 @@ Expected: FAIL — `episode.json` is still created and `episode.yaml` lacks the 
 In `studio/agent/src/workspace-authoring.ts`, add the imports:
 
 ```ts
-import { EPISODE_DIRECTORIES } from "@studio/contracts/src/layout.mjs";
+import { EPISODE_DIRECTORIES, EPISODE_SEED_FILES } from "@studio/contracts/src/layout.mjs";
 import { EPISODE_MANIFEST_FILE, renderEpisodeManifest } from "@studio/contracts/src/episode-manifest.mjs";
 ```
 
@@ -691,6 +711,19 @@ for (const relative of EPISODE_DIRECTORIES) {
 ```
 
 Delete the second directory loop (the one at line 291 creating `source`, `prompts`, `assets/images`, `assets/graphics`, `attempts`, `journal`) — `EPISODE_DIRECTORIES` now covers all of them.
+
+Replace the four `writeExclusive` calls that seed `assets/manifest.json`,
+`reviews/threads.jsonl`, `journal/events.jsonl` and `output/current.json`
+(lines 294-305) with the contract's bodies:
+
+```ts
+for (const [relative, content] of Object.entries(EPISODE_SEED_FILES)) {
+  await writeExclusive(root, path.join(dir, relative), content, result);
+}
+```
+
+Leave the `episodeRequest` and `pipelineYaml` writes that follow them exactly as
+they are — those are caller-supplied content, not seed content.
 
 Delete the `writeExclusive` call that writes `path.join(dir, "episode.json")` (line 274). **Keep** the one writing `path.join(dir, "artifacts", "episode.json")`.
 
@@ -738,7 +771,7 @@ git commit -m "feat(agent): one manifest, from the declared tree"
 - Test: `studio/runtime/test/unit/workspace/doctor.test.ts`
 
 **Interfaces:**
-- Consumes: `EPISODE_MANIFEST_FILE` from contracts; `js-yaml` (already a runtime dependency); Ajv and `workspace.schema.json` if the existing JSON validation already loads it — check `validateJsonFiles` and follow whatever it does.
+- Consumes: `EPISODE_MANIFEST_FILE` from contracts; `js-yaml`, `ajv` and `ajv-formats` (all three already runtime dependencies); `workspace.schema.json` and `identity.schema.json` from `@studio/contracts/schemas/v1alpha1/`.
 - Produces: a new finding code `E_INVALID_MANIFEST`.
 
 - [ ] **Step 1: Write the failing test**
@@ -784,6 +817,27 @@ it("reports an episode.yaml that parses but is not an episode manifest", async (
   expect(report.value.findings.some((f) => f.code === "E_INVALID_MANIFEST")).toBe(true);
 });
 
+it("reports a manifest whose title is the wrong type", async () => {
+  // The point of validating against the schema rather than by hand: a
+  // hand-rolled kind-and-slug check would pass this.
+  const opts = makeOpts(fs);
+  const chR = await initChannel("/library", "ch", {}, opts);
+  if (!chR.ok) throw new Error("channel failed");
+  const srR = await initSeries(chR.value.path, "s1", {}, opts);
+  if (!srR.ok) throw new Error("series failed");
+  const epR = await initEpisode(srR.value.path, "ep-01", {}, opts);
+  if (!epR.ok) throw new Error("episode failed");
+
+  await fs.writeText(
+    `${EP}/episode.yaml`,
+    'apiVersion: studio.video/v1alpha1\nkind: Episode\nslug: "ep-01"\ntitle: 7\n',
+  );
+  const report = await doctor({ fs, libraryRoot: "/library" });
+  expect(report.ok).toBe(true);
+  if (!report.ok) return;
+  expect(report.value.findings.some((f) => f.code === "E_INVALID_MANIFEST")).toBe(true);
+});
+
 it("accepts the manifest initEpisode writes", async () => {
   const opts = makeOpts(fs);
   const chR = await initChannel("/library", "ch", {}, opts);
@@ -820,6 +874,9 @@ In `studio/runtime/src/workspace/doctor.ts`, add after `validateJsonFiles`:
  * Presence was the whole check before: an empty `episode.yaml`, or one holding
  * a series document, passed. A check that reports something other than what it
  * verified is the defect this module is being cleaned of.
+ *
+ * Validated against the schema rather than by hand, because a contract no code
+ * reads is how `EpisodeMetadata` came to be inert.
  */
 async function validateEpisodeManifest(
   fs: FileSystem,
@@ -850,35 +907,56 @@ async function validateEpisodeManifest(
     return;
   }
 
-  const doc = parsed as Record<string, unknown> | null;
-  if (!doc || typeof doc !== "object") {
+  // A YAML document holding only comments parses to undefined, which Ajv would
+  // report as a type error rather than as the empty file it is.
+  if (parsed === undefined || parsed === null) {
     findings.push({
       level: "episode", path: fullPath, code: "E_INVALID_MANIFEST",
       message: "Episode manifest is empty",
     });
     return;
   }
-  if (doc.kind !== "Episode") {
+
+  if (!validateEpisodeManifestSchema(parsed)) {
+    const detail = (validateEpisodeManifestSchema.errors ?? [])
+      .map((err: ErrorObject) => `${err.instancePath || "/"} ${err.message}`)
+      .join("; ");
     findings.push({
       level: "episode", path: fullPath, code: "E_INVALID_MANIFEST",
-      message: `Episode manifest declares kind ${JSON.stringify(doc.kind)}, expected "Episode"`,
-    });
-    return;
-  }
-  if (typeof doc.slug !== "string" || doc.slug.length === 0) {
-    findings.push({
-      level: "episode", path: fullPath, code: "E_INVALID_MANIFEST",
-      message: "Episode manifest does not name its slug",
+      message: `Episode manifest does not match the contract: ${detail}`,
     });
   }
 }
 ```
 
-Add the imports at the top of the file:
+Add the imports and the validator at the top of the file. This mirrors
+`studio/runtime/src/pipeline/fs-loader.ts:10-16` and `:137-145` — the module
+that already validates a contract schema in this package. Copy its shape rather
+than inventing another:
 
 ```ts
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { load as loadYaml } from "js-yaml";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv";
 import { EPISODE_MANIFEST_FILE } from "@studio/contracts/src/episode-manifest.mjs";
+
+const require = createRequire(import.meta.url);
+const addFormats = require("ajv-formats") as (ajv: Ajv2020) => Ajv2020;
+
+// workspace.schema.json $refs identity.schema.json, so both go in.
+const workspaceSchema = JSON.parse(readFileSync(
+  require.resolve("@studio/contracts/schemas/v1alpha1/workspace.schema.json"), "utf-8"));
+const identitySchema = JSON.parse(readFileSync(
+  require.resolve("@studio/contracts/schemas/v1alpha1/identity.schema.json"), "utf-8"));
+
+const ajv = new Ajv2020({ strict: true, allErrors: true });
+addFormats(ajv);
+ajv.addSchema(identitySchema);
+ajv.addSchema(workspaceSchema);
+const validateEpisodeManifestSchema =
+  ajv.getSchema(`${workspaceSchema.$id}#/$defs/EpisodeManifest`)!;
 ```
 
 Call it from the episode branch of the tree check, right after `await validateJsonFiles(fs, wsPath, kind, findings);`:
@@ -910,7 +988,7 @@ git commit -m "feat(runtime): doctor validates the manifest, not just its presen
 - Test: `studio/runtime/test/e2e/migrate-episode-manifests.test.ts` (new)
 
 **Interfaces:**
-- Consumes: `EPISODE_DIRECTORIES`, `EPISODE_FILES`, `EPISODE_SCRATCH`, `episodePath`, `SERIES_CONTAINER`, `EPISODES_CONTAINER` from contracts; `EPISODE_MANIFEST_FILE`, `renderEpisodeManifest`.
+- Consumes: `SERIES_CONTAINER`, `EPISODES_CONTAINER`, `EPISODE_DIRECTORIES`, `EPISODE_SEED_FILES` from `../studio/contracts/src/layout.mjs`; `EPISODE_MANIFEST_FILE`, `renderEpisodeManifest` from `../studio/contracts/src/episode-manifest.mjs`.
 - Produces: a CLI. `node tools/migrate-episode-manifests.mjs --library <path> [--dry-run]`.
 
 **Read first:** `tools/migrate-library-layout.mjs`. Match its argument parsing, its printing style, and its promise that nothing is deleted.
@@ -1072,6 +1150,7 @@ import {
   SERIES_CONTAINER,
   EPISODES_CONTAINER,
   EPISODE_DIRECTORIES,
+  EPISODE_SEED_FILES,
 } from "../studio/contracts/src/layout.mjs";
 import {
   EPISODE_MANIFEST_FILE,
@@ -1156,12 +1235,7 @@ async function migrateEpisode(dir, channel, series, slug) {
     if (!dryRun) await mkdir(target, { recursive: true });
   }
 
-  for (const [relative, content] of [
-    ["assets/manifest.json", JSON.stringify({ apiVersion: "v1alpha1", kind: "AssetManifest", assets: [] }, null, 2) + "\n"],
-    ["reviews/threads.jsonl", ""],
-    ["journal/events.jsonl", ""],
-    ["output/current.json", JSON.stringify({ apiVersion: "v1alpha1", kind: "CurrentDeliverable", renderId: null }, null, 2) + "\n"],
-  ]) {
+  for (const [relative, content] of Object.entries(EPISODE_SEED_FILES)) {
     const target = join(dir, relative);
     if (await exists(target)) continue;
     plan.push(["seed", target]);
