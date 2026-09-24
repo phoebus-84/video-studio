@@ -227,6 +227,14 @@ describe("episode journal", () => {
     assert.deepEqual(parseJournal(""), []);
     assert.deepEqual(parseJournal("\n\n"), []);
   });
+
+  it("accepts approval-rejected as an event type", () => {
+    const e = buildJournalEvent({
+      type: "approval-rejected", actor: "runtime",
+      episode: { channel: "c", series: "s", episode: "e" }, data: { stageId: "x" },
+    });
+    assert.equal(e.type, "approval-rejected");
+  });
 });
 
 /**

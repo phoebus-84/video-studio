@@ -4,7 +4,10 @@
 
 import type { JournalActor } from "./journal.mjs";
 
-export type GateDecision = "requested" | "approved";
+export type GateDecision = "requested" | "approved" | "rejected";
+
+/** Who decided, as distinct from the journal `actor` who wrote the line. */
+export type ReviewOrigin = "human" | "agent" | "policy";
 
 export interface ArtifactHash {
   /** Path relative to the episode directory. */
@@ -23,39 +26,62 @@ export interface GateCheck {
   evidence?: string;
 }
 
+export interface GateReviewBinding {
+  /** Present on approved and rejected decisions; absent on a bare request. */
+  planHash?: string;
+  inputs: ArtifactHash[];
+  outputs: ArtifactHash[];
+}
+
 export interface GateReview {
   stageId: string;
   decision: GateDecision;
+  origin: ReviewOrigin;
   actor: JournalActor;
   at: string;
-  inputs: ArtifactHash[];
-  outputs: ArtifactHash[];
+  binding: GateReviewBinding;
   checks: GateCheck[];
   note?: string;
+  /** Present exactly when `origin: "human"` and the decision is approved or rejected. */
+  signature?: string;
+}
+
+export interface BuildGateReviewInputBinding {
+  planHash?: string;
+  inputs?: ArtifactHash[];
+  outputs?: ArtifactHash[];
 }
 
 export interface BuildGateReviewInput {
   stageId: string;
   decision: GateDecision;
+  origin: ReviewOrigin;
   actor: JournalActor;
-  inputs?: ArtifactHash[];
-  outputs?: ArtifactHash[];
+  binding: BuildGateReviewInputBinding;
   checks?: GateCheck[];
   note?: string;
   at?: string;
 }
 
-export type GateStateName = "none" | "requested" | "approved" | "invalidated";
+export type GateStateName = "none" | "requested" | "approved" | "rejected" | "invalidated";
 
 export interface GateState {
   state: GateStateName;
   /** Why a review is invalid, when it is. */
   reason?: string;
   at?: string;
-  actor?: JournalActor;
+  origin?: ReviewOrigin;
+  /** Present when state is "rejected". */
+  note?: string;
 }
 
-export declare const GATE_DECISIONS: readonly ["requested", "approved"];
+export declare const GATE_DECISIONS: readonly ["requested", "approved", "rejected"];
+export declare const REVIEW_ORIGINS: readonly ["human", "agent", "policy"];
+export declare const REVIEW_EVENT_FOR: Readonly<{
+  requested: "approval-requested";
+  approved: "approval-granted";
+  rejected: "approval-rejected";
+}>;
 
 export declare function hashArtifacts(
   episodeDir: string,
@@ -68,4 +94,5 @@ export declare function deriveGateState(
   events: unknown[],
   stageId: string,
   episodeDir: string,
+  opts?: { key?: string | null; planHash?: string },
 ): Promise<GateState>;

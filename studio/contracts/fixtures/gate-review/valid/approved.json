@@ -1,14 +1,18 @@
 {
   "stageId": "qa",
   "decision": "approved",
+  "origin": "human",
   "actor": "human",
   "at": "2026-09-15T12:00:00Z",
-  "inputs": [
-    { "path": "output/final.mp4", "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90" }
-  ],
-  "outputs": [
-    { "path": "artifacts/qa-report.json", "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0" }
-  ],
+  "binding": {
+    "planHash": "16b85a87c85489ace255fde8b857d356d943c7e022e5c1ac99173baa9081c6f5",
+    "inputs": [
+      { "path": "output/final.mp4", "sha256": "3ede38f89735ae493025084a229bbd628c5151d0b20f65c8bd19c347b94644a7" }
+    ],
+    "outputs": [
+      { "path": "artifacts/qa-report.json", "sha256": "acf6ff41a08effce545df3cac3f58562aeb2147a1bcf6b7d072bbb9c459d39ab" }
+    ]
+  },
   "checks": [
     {
       "id": "duration",
@@ -18,5 +22,6 @@
       "actual": "89.833s",
       "evidence": "ffprobe -show_entries format=duration output/final.mp4"
     }
-  ]
+  ],
+  "signature": "5ef7a2d53bd06e37f2c605a71dbcf4d0315bdeefe7a328e7bb4724e34329a2f4"
 }

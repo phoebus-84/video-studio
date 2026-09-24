@@ -10,9 +10,10 @@
 // it checkable later: `deriveGateState` re-reads those files and compares, so a
 // review that has been outrun by a re-render stops counting as a review.
 //
-// These records ride in the `data` of approval-requested and approval-granted
-// journal events, which is journal.mjs's shape for the payload — the one
-// journal-event.schema.json also describes, now that avg-i1x is closed.
+// These records ride in the `data` of approval-requested, approval-granted and
+// approval-rejected journal events, which is journal.mjs's shape for the
+// payload — the one journal-event.schema.json also describes, now that
+// avg-i1x is closed.
 // ---------------------------------------------------------------------------
 
 import { readFile } from "node:fs/promises";
@@ -21,14 +22,22 @@ import path from "node:path";
 import { JOURNAL_ACTORS } from "./journal.mjs";
 
 /**
- * Decisions a record may carry.
- *
- * There is no "rejected". JOURNAL_EVENTS has no approval-rejected type, and an
- * approval-granted event carrying a rejection would contradict itself on disk.
- * Adding the event type belongs with the approval flow (avg-qr4.3); until then
- * a stage that is not approved stays requested, which already fails closed.
+ * Decisions a record may carry. `rejected` rides in its own event type,
+ * approval-rejected (avg-qr4.3), so no event on disk contradicts itself.
  */
-export const GATE_DECISIONS = Object.freeze(["requested", "approved"]);
+export const GATE_DECISIONS = Object.freeze(["requested", "approved", "rejected"]);
+
+/**
+ * Who decided — as distinct from the journal `actor`, who wrote the line. The
+ * gateway writes a human's decision; a reader needs both answers.
+ */
+export const REVIEW_ORIGINS = Object.freeze(["human", "agent", "policy"]);
+
+export const REVIEW_EVENT_FOR = Object.freeze({
+  requested: "approval-requested",
+  approved: "approval-granted",
+  rejected: "approval-rejected",
+});
 
 /**
  * Hash each path, relative to the episode directory.
@@ -77,26 +86,23 @@ export async function hashArtifacts(episodeDir, relativePaths) {
  * Separated from the append the same way buildJournalEvent is, so the shape is
  * testable without a filesystem.
  */
-export function buildGateReview({
-  stageId,
-  decision,
-  actor,
-  inputs = [],
-  outputs = [],
-  checks = [],
-  note,
-  at,
-}) {
-  if (!stageId) {
-    throw new Error("A gate review must name its stage");
-  }
+export function buildGateReview({ stageId, decision, origin, actor, binding, checks = [], note, at }) {
+  if (!stageId) throw new Error("A gate review must name its stage");
   if (!GATE_DECISIONS.includes(decision)) {
-    throw new Error(
-      `Unknown gate review decision: ${decision} (expected ${GATE_DECISIONS.join(" or ")})`,
-    );
+    throw new Error(`Unknown gate review decision: ${decision} (expected ${GATE_DECISIONS.join(", ")})`);
   }
-  if (!JOURNAL_ACTORS.includes(actor)) {
-    throw new Error(`Unknown gate review actor: ${actor}`);
+  if (!REVIEW_ORIGINS.includes(origin)) {
+    throw new Error(`Unknown gate review origin: ${origin} (expected ${REVIEW_ORIGINS.join(", ")})`);
+  }
+  if (!JOURNAL_ACTORS.includes(actor)) throw new Error(`Unknown gate review actor: ${actor}`);
+
+  const inputs = binding?.inputs ?? [];
+  const outputs = binding?.outputs ?? [];
+  if (decision !== "requested" && !binding?.planHash) {
+    throw new Error(
+      `Stage "${stageId}" cannot be ${decision} without a planHash: ` +
+      `a decision that names no plan cannot be invalidated by the plan changing`,
+    );
   }
   if (decision === "approved" && outputs.length === 0) {
     throw new Error(
@@ -104,18 +110,26 @@ export function buildGateReview({
       `an approval of nothing cannot be invalidated by anything`,
     );
   }
+  if (decision === "rejected" && !note) {
+    throw new Error(`Stage "${stageId}" cannot be rejected without a note: a rejection nobody can act on is noise`);
+  }
 
   const review = {
-    stageId,
-    decision,
-    actor,
+    stageId, decision, origin, actor,
     at: at ?? new Date().toISOString(),
-    inputs,
-    outputs,
+    binding: { planHash: binding?.planHash, inputs, outputs },
     checks,
   };
+  if (review.binding.planHash === undefined) delete review.binding.planHash;
   if (note !== undefined) review.note = note;
   return review;
+}
+
+const REVIEW_EVENTS = new Set(Object.values(REVIEW_EVENT_FOR));
+
+/** A record's binding, reading pre-v2 records' top-level inputs/outputs. */
+function bindingOf(data) {
+  return data?.binding ?? { inputs: data?.inputs ?? [], outputs: data?.outputs ?? [] };
 }
 
 /**
@@ -127,29 +141,27 @@ export function buildGateReview({
  * was outrun by a re-render, copied from another episode, or simply forged
  * cannot survive being checked.
  *
+ * `opts` is unused until Task 6 (avg-qr4.3) wires up signature and planHash
+ * enforcement; a human grant is read exactly as today until then.
+ *
  * `events` is the parsed journal — see parseJournal in ./journal.mjs.
  */
-export async function deriveGateState(events, stageId, episodeDir) {
-  const mine = events.filter((event) => event.data?.stageId === stageId);
-
-  const latest = [...mine]
-    .reverse()
-    .find((event) => event.type === "approval-granted" || event.type === "approval-requested");
-
+export async function deriveGateState(events, stageId, episodeDir, opts = {}) {
+  const latest = [...events].reverse()
+    .find((event) => REVIEW_EVENTS.has(event.type) && event.data?.stageId === stageId);
   if (!latest) return { state: "none" };
 
-  if (latest.type === "approval-requested") {
-    return { state: "requested", at: latest.at, actor: latest.actor };
+  const origin = latest.data?.origin ?? (latest.actor === "human" ? "human" : "agent");
+  if (latest.type === "approval-requested") return { state: "requested", at: latest.at, origin };
+  if (latest.type === "approval-rejected") {
+    return { state: "rejected", at: latest.at, origin, note: latest.data?.note };
   }
 
-  const recorded = [...(latest.data?.inputs ?? []), ...(latest.data?.outputs ?? [])];
+  const binding = bindingOf(latest.data);
+  const recorded = [...(binding.inputs ?? []), ...(binding.outputs ?? [])];
   if (recorded.length === 0) {
-    return {
-      state: "invalidated",
-      reason: "the approval named no artifacts, so there is nothing it could have reviewed",
-    };
+    return { state: "invalidated", reason: "the approval named no artifacts, so there is nothing it could have reviewed" };
   }
-
   for (const { path: relative, sha256 } of recorded) {
     let current;
     try {
@@ -158,12 +170,8 @@ export async function deriveGateState(events, stageId, episodeDir) {
       return { state: "invalidated", reason: err.message };
     }
     if (current.sha256 !== sha256) {
-      return {
-        state: "invalidated",
-        reason: `"${relative}" changed since it was approved`,
-      };
+      return { state: "invalidated", reason: `"${relative}" changed since it was approved` };
     }
   }
-
-  return { state: "approved", at: latest.at, actor: latest.actor };
+  return { state: "approved", at: latest.at, origin };
 }

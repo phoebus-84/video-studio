@@ -588,7 +588,11 @@ async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
     return EX_RUNTIME;
   }
 
-  const review = buildGateReview({ stageId, decision: "approved", actor: "human", outputs });
+  // Replaced by ExecutionService.review in Task 4 of the qr4.3 plan.
+  const review = buildGateReview({
+    stageId, decision: "approved", origin: "human", actor: "human",
+    binding: { planHash: "0".repeat(64), outputs },
+  });
   const written = await appendJournalEvent(episodeDir, {
     type: "approval-granted",
     actor: "human",

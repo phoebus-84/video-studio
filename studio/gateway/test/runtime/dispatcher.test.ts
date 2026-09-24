@@ -97,8 +97,9 @@ describe("GatewayReviewGate", () => {
     await granted(dir, buildGateReview({
       stageId: "illustrations",
       decision: "approved",
+      origin: "human",
       actor: "human",
-      outputs: await hashArtifacts(dir, [relative]),
+      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, [relative]) },
     }));
 
     const verdict = await new GatewayReviewGate().isOutstanding("illustrations", dir);

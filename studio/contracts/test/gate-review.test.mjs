@@ -77,48 +77,67 @@ describe("gate review records", () => {
 
   describe("buildGateReview", () => {
     const hash = "a".repeat(64);
+    const binding = { planHash: "p".repeat(64), outputs: [{ path: "artifacts/x.md", sha256: hash }] };
 
-    it("shapes a request", () => {
-      const review = buildGateReview({
-        stageId: "safety-review",
-        decision: "requested",
-        actor: "gateway",
-        inputs: [{ path: "artifacts/script.md", sha256: hash }],
-      });
-
-      assert.equal(review.stageId, "safety-review");
-      assert.equal(review.decision, "requested");
-      assert.equal(review.actor, "gateway");
-      assert.deepEqual(review.outputs, []);
-      assert.deepEqual(review.checks, []);
-      assert.match(review.at, /^\d{4}-\d{2}-\d{2}T/);
+    it("carries origin and binding, with inputs defaulted", () => {
+      const r = buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", binding });
+      assert.equal(r.origin, "agent");
+      assert.deepEqual(r.binding.inputs, []);
+      assert.equal(r.binding.planHash, "p".repeat(64));
     });
 
-    it("rejects a decision it does not define", () => {
+    it("refuses an unknown origin", () => {
       assert.throws(
-        () => buildGateReview({ stageId: "qa", decision: "rejected", actor: "human" }),
-        /decision/,
+        () => buildGateReview({ stageId: "s", decision: "approved", origin: "robot", actor: "runtime", binding }),
+        /origin/,
       );
-      assert.deepEqual([...GATE_DECISIONS], ["requested", "approved"]);
+    });
+
+    it("refuses an approval with no planHash: it could not be invalidated by a changed plan", () => {
+      assert.throws(
+        () => buildGateReview({
+          stageId: "s", decision: "approved", origin: "agent", actor: "runtime",
+          binding: { outputs: binding.outputs },
+        }),
+        /planHash/,
+      );
+    });
+
+    it("refuses an approval that names no outputs", () => {
+      assert.throws(
+        () => buildGateReview({
+          stageId: "s", decision: "approved", origin: "agent", actor: "runtime",
+          binding: { planHash: "p".repeat(64), outputs: [] },
+        }),
+        /at least one output/,
+      );
+    });
+
+    it("accepts a rejection, and requires it to say why", () => {
+      assert.throws(
+        () => buildGateReview({ stageId: "s", decision: "rejected", origin: "agent", actor: "runtime", binding }),
+        /note/,
+      );
+      const r = buildGateReview({
+        stageId: "s", decision: "rejected", origin: "agent", actor: "runtime", binding, note: "too dark",
+      });
+      assert.equal(r.decision, "rejected");
+    });
+
+    it("lists three decisions", () => {
+      assert.deepEqual([...GATE_DECISIONS], ["requested", "approved", "rejected"]);
     });
 
     it("rejects an actor the journal does not know", () => {
       assert.throws(
-        () => buildGateReview({ stageId: "qa", decision: "requested", actor: "robot" }),
+        () => buildGateReview({ stageId: "qa", decision: "requested", origin: "agent", actor: "robot" }),
         /actor/,
-      );
-    });
-
-    it("refuses an approval that names no artifact", () => {
-      assert.throws(
-        () => buildGateReview({ stageId: "qa", decision: "approved", actor: "human", outputs: [] }),
-        /at least one/,
       );
     });
 
     it("requires a stage", () => {
       assert.throws(
-        () => buildGateReview({ decision: "requested", actor: "gateway" }),
+        () => buildGateReview({ decision: "requested", origin: "agent", actor: "gateway" }),
         /stage/,
       );
     });
@@ -142,44 +161,59 @@ describe("gate review records", () => {
     });
 
     it("reports requested when a review was asked for but not granted", async () => {
-      const events = [evt("approval-requested", { stageId: "qa", inputs: [], outputs: [] }, "gateway")];
+      const events = [evt("approval-requested", { stageId: "qa", origin: "agent", binding: { inputs: [], outputs: [] } }, "gateway")];
       const state = await deriveGateState(events, "qa", dir);
       assert.equal(state.state, "requested");
     });
 
-    it("reports approved while the reviewed bytes are unchanged", async () => {
-      const file = path.join(dir, "artifacts", "qa-report.json");
-      await writeFile(file, '{"verdict":"pass"}');
-      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
-      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs })];
+    it("reads the latest of requested, granted and rejected", async () => {
+      await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+      const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+      const binding = { planHash: "p".repeat(64), outputs };
+      const ev = (type, decision, extra = {}) => ({
+        type, at: "2026-09-24T00:00:00Z", actor: "runtime",
+        data: buildGateReview({ stageId: "s", decision, origin: "agent", actor: "runtime", binding, ...extra }),
+      });
 
-      const state = await deriveGateState(events, "qa", dir);
-
-      assert.equal(state.state, "approved");
-      assert.equal(state.actor, "human");
+      assert.equal((await deriveGateState([ev("approval-requested", "requested")], "s", dir)).state, "requested");
+      assert.equal((await deriveGateState([ev("approval-granted", "approved")], "s", dir)).state, "approved");
+      const rejected = await deriveGateState(
+        [ev("approval-granted", "approved"), ev("approval-rejected", "rejected", { note: "too dark" })], "s", dir);
+      assert.equal(rejected.state, "rejected");
+      assert.equal(rejected.note, "too dark");
     });
 
-    it("invalidates the review when a reviewed artifact changes", async () => {
-      const file = path.join(dir, "artifacts", "qa-report.json");
-      await writeFile(file, '{"verdict":"pass"}');
-      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
-      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs })];
-
-      // The render was redone after approval; the report is no longer the one
-      // that was reviewed.
-      await writeFile(file, '{"verdict":"fail"}');
-
-      const state = await deriveGateState(events, "qa", dir);
-
+    it("still invalidates a grant whose artifact changed", async () => {
+      await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+      const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+      const data = buildGateReview({
+        stageId: "s", decision: "approved", origin: "agent", actor: "runtime",
+        binding: { planHash: "p".repeat(64), outputs },
+      });
+      await writeFile(path.join(dir, "artifacts", "x.md"), "v2");
+      const state = await deriveGateState([{ type: "approval-granted", data }], "s", dir);
       assert.equal(state.state, "invalidated");
-      assert.match(state.reason, /changed/);
+      assert.match(state.reason, /changed since it was approved/);
+    });
+
+    it("reads a pre-v2 record's top-level inputs/outputs, so existing journals still parse", async () => {
+      await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+      const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+      const legacy = {
+        type: "approval-granted", actor: "human",
+        data: { stageId: "s", decision: "approved", actor: "human", at: "t", inputs: [], outputs, checks: [] },
+      };
+      assert.equal((await deriveGateState([legacy], "s", dir)).state, "approved");
     });
 
     it("invalidates the review when a reviewed artifact is gone", async () => {
       const file = path.join(dir, "artifacts", "qa-report.json");
       await writeFile(file, '{"verdict":"pass"}');
       const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
-      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs })];
+      const events = [evt("approval-granted", buildGateReview({
+        stageId: "qa", decision: "approved", origin: "human", actor: "human",
+        binding: { planHash: "p".repeat(64), outputs },
+      }))];
 
       await rm(file);
 
@@ -187,24 +221,14 @@ describe("gate review records", () => {
       assert.equal(state.state, "invalidated");
     });
 
-    it("reads the latest decision, not the first", async () => {
-      const file = path.join(dir, "artifacts", "qa-report.json");
-      await writeFile(file, '{"verdict":"pass"}');
-      const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
-      const events = [
-        evt("approval-requested", { stageId: "qa", inputs: [], outputs: [] }, "gateway"),
-        evt("approval-granted", { stageId: "qa", inputs: [], outputs }),
-      ];
-
-      const state = await deriveGateState(events, "qa", dir);
-      assert.equal(state.state, "approved");
-    });
-
     it("ignores another stage's approval", async () => {
       const file = path.join(dir, "artifacts", "qa-report.json");
       await writeFile(file, '{"verdict":"pass"}');
       const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
-      const events = [evt("approval-granted", { stageId: "illustrations", inputs: [], outputs })];
+      const events = [evt("approval-granted", buildGateReview({
+        stageId: "illustrations", decision: "approved", origin: "human", actor: "human",
+        binding: { planHash: "p".repeat(64), outputs },
+      }))];
 
       const state = await deriveGateState(events, "qa", dir);
       assert.equal(state.state, "none");
@@ -213,7 +237,7 @@ describe("gate review records", () => {
     it("invalidates an approval that names nothing", async () => {
       // Belt and braces: buildGateReview refuses to make one, but a record
       // written by something else must not be trusted either.
-      const events = [evt("approval-granted", { stageId: "qa", inputs: [], outputs: [] })];
+      const events = [evt("approval-granted", { stageId: "qa", origin: "human", binding: { inputs: [], outputs: [] } })];
       const state = await deriveGateState(events, "qa", dir);
       assert.equal(state.state, "invalidated");
     });

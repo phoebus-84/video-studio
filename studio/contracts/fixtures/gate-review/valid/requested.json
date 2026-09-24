@@ -1,12 +1,15 @@
 {
   "stageId": "safety-review",
   "decision": "requested",
+  "origin": "policy",
   "actor": "gateway",
   "at": "2026-09-15T11:30:00Z",
-  "inputs": [
-    { "path": "artifacts/script.md", "sha256": "3b1f2c9d4e5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e" }
-  ],
-  "outputs": [],
+  "binding": {
+    "inputs": [
+      { "path": "artifacts/script.md", "sha256": "b3d89dc7017031e59d7d993b8e4cde20ac1280eab5a31d1a5a62aa0d97d861c2" }
+    ],
+    "outputs": []
+  },
   "checks": [],
   "note": "safety-review declares autopilot: false; a human must run this stage."
 }

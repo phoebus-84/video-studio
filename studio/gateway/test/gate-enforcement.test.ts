@@ -130,8 +130,9 @@ async function seedAccepted(dir: string, stageId: string, relatives: string[]) {
     data: buildGateReview({
       stageId,
       decision: "approved",
+      origin: "human",
       actor: "human",
-      outputs: await hashArtifacts(dir, relatives),
+      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, relatives) },
     }),
   });
 }
@@ -568,8 +569,9 @@ describe("dependency gates", () => {
     await record(dir, "approval-requested", buildGateReview({
       stageId: "narration",
       decision: "requested",
+      origin: "human",
       actor: "gateway",
-      outputs: await hashArtifacts(dir, [relative]),
+      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, [relative]) },
     }));
 
     const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
@@ -593,8 +595,9 @@ describe("dependency gates", () => {
     await record(dir, "approval-granted", buildGateReview({
       stageId: "narration",
       decision: "approved",
+      origin: "human",
       actor: "human",
-      outputs: await hashArtifacts(dir, [relative]),
+      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, [relative]) },
     }));
 
     const result = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });
@@ -613,8 +616,9 @@ describe("dependency gates", () => {
     await record(dir, "approval-granted", buildGateReview({
       stageId: "narration",
       decision: "approved",
+      origin: "human",
       actor: "human",
-      outputs: await hashArtifacts(dir, [relative]),
+      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, [relative]) },
     }));
 
     // Re-rendered after the approval. The approval described bytes that are
@@ -639,8 +643,9 @@ describe("dependency gates", () => {
     await record(dir, "approval-requested", buildGateReview({
       stageId: "narration",
       decision: "requested",
+      origin: "human",
       actor: "gateway",
-      outputs: await hashArtifacts(dir, [relative]),
+      binding: { planHash: "0".repeat(64), outputs: await hashArtifacts(dir, [relative]) },
     }));
 
     const first = await gatewayService(root).run(REF, "narrated-illustrated-video", { stage: "captions" });

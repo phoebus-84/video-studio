@@ -12,6 +12,7 @@ export type JournalEventType =
   | "attempt-recorded"
   | "approval-granted"
   | "approval-requested"
+  | "approval-rejected"
   | "comment-added"
   | "artifact-written"
   | "staleness-marked"

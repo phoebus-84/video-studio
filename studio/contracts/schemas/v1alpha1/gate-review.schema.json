@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://video.studio/schemas/v1alpha1/gate-review.schema.json",
   "title": "Gate review record",
-  "description": "The payload carried in the `detail` of an approval-requested or approval-granted journal event. A review that cannot name the artifacts it examined, by hash, is not a review.",
+  "description": "The payload carried in the `detail` of an approval-requested, approval-granted or approval-rejected journal event. A review that cannot name the artifacts it examined, by hash, is not a review.",
   "$defs": {
     "ArtifactHash": {
       "type": "object",
@@ -40,26 +40,78 @@
     "GateReview": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["stageId", "decision", "actor", "at", "inputs", "outputs", "checks"],
+      "required": ["stageId", "decision", "origin", "actor", "at", "binding", "checks"],
       "properties": {
         "stageId": { "type": "string", "minLength": 1 },
         "decision": {
-          "enum": ["requested", "approved"],
-          "description": "There is deliberately no 'rejected'. JOURNAL_EVENTS has no approval-rejected type, and encoding a rejection inside an approval-granted event would contradict itself on disk. See avg-qr4.3."
+          "enum": ["requested", "approved", "rejected"],
+          "description": "rejected rides in its own event type, approval-rejected (avg-qr4.3), so no event on disk contradicts itself."
+        },
+        "origin": {
+          "enum": ["human", "agent", "policy"],
+          "description": "Who decided, as distinct from `actor`, who wrote the line."
         },
         "actor": { "enum": ["pi", "gateway", "runtime", "human", "system"] },
         "at": { "type": "string", "format": "date-time" },
-        "inputs": { "type": "array", "items": { "$ref": "#/$defs/ArtifactHash" } },
-        "outputs": { "type": "array", "items": { "$ref": "#/$defs/ArtifactHash" } },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputs", "outputs"],
+          "properties": {
+            "planHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "Lowercase hex sha256 of the plan this decision was bound to. Present on approved and rejected decisions; absent on a bare request."
+            },
+            "inputs": { "type": "array", "items": { "$ref": "#/$defs/ArtifactHash" } },
+            "outputs": { "type": "array", "items": { "$ref": "#/$defs/ArtifactHash" } }
+          }
+        },
         "checks": { "type": "array", "items": { "$ref": "#/$defs/GateCheck" } },
-        "note": { "type": "string" }
+        "note": { "type": "string" },
+        "signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Present exactly when origin is human and the decision is approved or rejected. A request is never signed."
+        }
       },
       "allOf": [
         {
           "if": { "properties": { "decision": { "const": "approved" } }, "required": ["decision"] },
           "then": {
-            "properties": { "outputs": { "type": "array", "minItems": 1 } },
-            "description": "An approval must name at least one artifact. Approving nothing is the bug this issue exists to remove."
+            "properties": {
+              "binding": {
+                "type": "object",
+                "required": ["planHash"],
+                "properties": {
+                  "planHash": { "type": "string" },
+                  "outputs": { "type": "array", "minItems": 1 }
+                }
+              }
+            },
+            "description": "An approval must name at least one artifact and the plan it was bound to. Approving nothing is the bug this issue exists to remove."
+          }
+        },
+        {
+          "if": { "properties": { "decision": { "const": "rejected" } }, "required": ["decision"] },
+          "then": {
+            "required": ["note"],
+            "properties": { "note": { "type": "string" } },
+            "description": "A rejection nobody can act on is noise."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "origin": { "const": "human" },
+              "decision": { "enum": ["approved", "rejected"] }
+            },
+            "required": ["origin", "decision"]
+          },
+          "then": {
+            "required": ["signature"],
+            "properties": { "signature": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+            "description": "A human's decision is signed; an unsigned human decision is indistinguishable from a forged one."
           }
         }
       ]
