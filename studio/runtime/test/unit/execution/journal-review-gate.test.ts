@@ -161,7 +161,19 @@ describe("JournalReviewGate", () => {
     await appendJournalEvent(dir, { type: "approval-granted", actor: "runtime", episode: REF, data: approval } as never);
     const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
     expect(verdict.state).toBe("outstanding");
-    expect(verdict.reason).toMatch(/rejected: too dark/);
+    expect(verdict.reason).toMatch(/superseded by a later decision/);
+
+    // And the operator's next real decision governs again.
+    await record(dir, stage, { origin: "human", at: "2026-09-24T12:00:00.000Z" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+  });
+
+  it("does not let a far-future-dated unsigned line lock the stage away from its operator", async () => {
+    const dir = await episode();
+    const stage = stageAt("human");
+    await record(dir, stage, { origin: "agent", decision: "requested", at: "2099-01-01T00:00:00.000Z" });
+    await record(dir, stage, { origin: "human" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
   });
 
   it("lets a later approval supersede an earlier rejection", async () => {

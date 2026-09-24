@@ -335,11 +335,20 @@ describe("gate review records", () => {
         assert.equal(asked.state, "invalidated");
       });
 
-      it("a re-appended older approval cannot supersede a later rejection", async () => {
+      it("a re-appended older approval is superseded by the later rejection", async () => {
         const approve = await signedGrantAt("2026-09-24T10:00:00.000Z");
         const reject = await humanRejection("2026-09-24T11:00:00.000Z");
         const s = await deriveGateState([approve, reject, approve], "s", dir, { key: KEY, planHash: PLAN });
-        assert.equal(s.state, "rejected"); assert.equal(s.note, "too dark");
+        assert.equal(s.state, "invalidated");
+        assert.match(s.reason, /superseded by a later decision recorded at 2026-09-24T11:00:00.000Z/);
+      });
+
+      it("the operator's next real decision governs again after a replay", async () => {
+        const approve = await signedGrantAt("2026-09-24T10:00:00.000Z");
+        const reject = await humanRejection("2026-09-24T11:00:00.000Z");
+        const fresh = await signedGrantAt("2026-09-24T12:00:00.000Z");
+        const s = await deriveGateState([approve, reject, approve, fresh], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(s.state, "approved");
       });
 
       it("a later approval supersedes an earlier rejection", async () => {
@@ -349,10 +358,25 @@ describe("gate review records", () => {
         assert.equal(s.state, "approved");
       });
 
-      it("selects by the signed time, not by file order", async () => {
-        const approve = await signedGrantAt("2026-09-24T11:00:00.000Z");
-        const reject = await humanRejection("2026-09-24T10:00:00.000Z");
-        const s = await deriveGateState([approve, reject], "s", dir, { key: KEY, planHash: PLAN });
+      it("a far-future-dated unsigned line cannot lock the stage away from its operator", async () => {
+        // Anything that can append a line can date it 2099. Its `at` is not
+        // signed, so it orders by file position only: the operator's next
+        // genuine decision, appended after it, governs.
+        const forged = {
+          type: "approval-requested", actor: "runtime", at: "2099-01-01T00:00:00.000Z",
+          data: buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime",
+            binding: { planHash: PLAN }, at: "2099-01-01T00:00:00.000Z" }),
+        };
+        const approve = await signedGrantAt(new Date().toISOString());
+        const s = await deriveGateState([forged, approve], "s", dir, { key: KEY, planHash: PLAN });
+        assert.equal(s.state, "approved");
+      });
+
+      it("a far-future-dated unsigned human line does not supersede a signed one", async () => {
+        const approve = await signedGrantAt("2026-09-24T10:00:00.000Z");
+        const { signature: _s, ...unsigned } = (await humanRejection("2099-01-01T00:00:00.000Z")).data;
+        const forged = { type: "approval-rejected", actor: "runtime", at: unsigned.at, data: unsigned };
+        const s = await deriveGateState([forged, approve], "s", dir, { key: KEY, planHash: PLAN });
         assert.equal(s.state, "approved");
       });
 

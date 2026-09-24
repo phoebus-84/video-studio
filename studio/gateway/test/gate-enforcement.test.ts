@@ -729,7 +729,21 @@ describe("dependency gates", () => {
     }));
     // The approval line copied byte for byte to the end of the journal.
     await record(dir, "approval-granted", approval);
-    await expectRefusedAtScript(root, dir, /rejected: too long/);
+    await expectRefusedAtScript(root, dir, /superseded by a later decision/);
+  });
+
+  it("does not let a far-future-dated unsigned request lock the stage away from its operator", async () => {
+    // Anything that can append a line can date it 2099. The operator's next
+    // genuine approval, appended after it, must still let the dependent run.
+    const { root, dir, script } = await scripted();
+    await record(dir, "approval-requested", buildGateReview({
+      stageId: "script", decision: "requested", origin: "agent", actor: "runtime",
+      binding: { outputs: await hashArtifacts(dir, [script]) }, at: "2099-01-01T00:00:00.000Z",
+    }));
+    await record(dir, "approval-granted", await scriptDecision(root, dir, script));
+
+    const outcome = await runTiming(root);
+    expect(outcome.status).toBe("completed");
   });
 
   it("blocks when the dependency's approval no longer matches what is on disk", async () => {

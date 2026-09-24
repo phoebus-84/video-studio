@@ -146,20 +146,29 @@ function typeMismatch(event) {
     `(${event.data?.decision ?? "none"}), so the line was altered after it was written`;
 }
 
-/** Milliseconds since the epoch of a record's own `at`, or -Infinity. */
-function decidedAt(event) {
-  const ms = Date.parse(event.data?.at);
-  return Number.isNaN(ms) ? -Infinity : ms;
+/** The last review event for the stage in file order. */
+function lastReview(events, stageId) {
+  return [...events].reverse()
+    .find((event) => REVIEW_EVENTS.has(event.type) && event.data?.stageId === stageId);
 }
 
-/** The stage's governing review event: greatest `data.at`, later line on a tie. */
-function governingReview(events, stageId) {
-  let chosen;
+/** Milliseconds since the epoch of a record's own `at`, or NaN. */
+const decidedAt = (event) => Date.parse(event.data?.at);
+
+/**
+ * The latest signed `at` among the stage's VERIFIED human review events, as
+ * `{ ms, at }`, or null. Only a signature makes an `at` trustworthy; see
+ * deriveGateState.
+ */
+function latestVerifiedHumanDecision(events, stageId, key) {
+  let latest = null;
   for (const event of events) {
     if (!REVIEW_EVENTS.has(event.type) || event.data?.stageId !== stageId) continue;
-    if (!chosen || decidedAt(event) >= decidedAt(chosen)) chosen = event;
+    if (event.data?.origin !== "human" || !verifyReceipt(event.data, key)) continue;
+    const ms = decidedAt(event);
+    if (!Number.isNaN(ms) && (!latest || ms > latest.ms)) latest = { ms, at: event.data.at };
   }
-  return chosen;
+  return latest;
 }
 
 /**
@@ -171,12 +180,20 @@ function governingReview(events, stageId) {
  * was outrun by a re-render, copied from another episode, or simply forged
  * cannot survive being checked.
  *
- * Which event governs: the stage's review event with the greatest `data.at`,
- * file order breaking ties (the later line wins). Not simply the last line:
- * `data.at` is signed on a human decision and the line's position is not, so
- * re-appending an operator's superseded approval after their rejection must
- * not bring the approval back (avg-qr4.3). A record whose `at` does not parse
- * sorts before every one that does.
+ * Which event governs: the LAST review event for the stage in file order.
+ * Then, if it is a verified human decision, it must not be older than any
+ * other verified human decision for the stage: re-appending an operator's
+ * superseded approval after their rejection reads as `invalidated`
+ * ("superseded by a later decision"), and the operator's next real decision,
+ * appended later with the current clock, governs again (avg-qr4.3).
+ *
+ * Why only signed `at`s are compared: an unsigned line's `at` is whatever
+ * its writer typed. Ranking by it let anything that can append a line (Pi,
+ * with its file tools) write a request dated 2099 that outranked every
+ * approval the operator would ever sign — a stage locked closed with no
+ * recovery through the product. Unsigned events are ordered by file
+ * position only; a signed `at` is only ever used to refuse an older signed
+ * decision, never to promote one over a later line.
  *
  * The checks run in this order, and the first that fails decides (avg-qr4.3):
  *   1. no review event means `none`;
@@ -184,7 +201,9 @@ function governingReview(events, stageId) {
  *   3. a human decision (approved or rejected) must verify against
  *      `opts.key`: no key is `unverifiable`, no signature or a signature
  *      that does not verify is `invalidated`. A legacy `actor: "human"`
- *      record with no `origin` is read as human, so it lands here unsigned;
+ *      record with no `origin` is read as human, so it lands here unsigned.
+ *      A verified one older than the stage's latest verified human decision
+ *      is `invalidated` as superseded;
  *   4. the event `type` must imply the recorded `data.decision` — for every
  *      origin. The type is not signed and the decision is, so a rejection
  *      re-typed as `approval-granted` is `invalidated`, not an approval;
@@ -197,7 +216,7 @@ function governingReview(events, stageId) {
  * `events` is the parsed journal — see parseJournal in ./journal.mjs.
  */
 export async function deriveGateState(events, stageId, episodeDir, opts = {}) {
-  const latest = governingReview(events, stageId);
+  const latest = lastReview(events, stageId);
   if (!latest) return { state: "none" };
 
   const origin = latest.data?.origin ?? (latest.actor === "human" ? "human" : "agent");
@@ -219,6 +238,10 @@ export async function deriveGateState(events, stageId, episodeDir, opts = {}) {
     }
     if (!verifyReceipt(latest.data, opts.key)) {
       return { state: "invalidated", reason: "the human decision's signature does not verify" };
+    }
+    const newest = latestVerifiedHumanDecision(events, stageId, opts.key);
+    if (newest && !(decidedAt(latest) >= newest.ms)) {
+      return { state: "invalidated", reason: `superseded by a later decision recorded at ${newest.at}` };
     }
   }
   if (mismatch) return { state: "invalidated", reason: mismatch };
