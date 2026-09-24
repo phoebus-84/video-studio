@@ -32,11 +32,40 @@ library/
                     ├── attempts/
                     ├── reviews/
                     ├── journal/
-                    └── output/
+                    ├── output/
+                    └── production/             # scratch: never a declared output
 ```
 
 **A directory inside `series/` is a series. A directory inside `episodes/` is an
 episode.** Nothing else has to be inferred.
+
+## The episode manifest
+
+`episode.yaml` is the episode's one manifest. It is validated by `vpr doctor`
+against the `EpisodeManifest` contract in
+`studio/contracts/schemas/v1alpha1/workspace.schema.json`.
+
+Only `apiVersion`, `kind` and `slug` are required — the directory name already
+proves the slug, and every other fact may legitimately be unknown for an episode
+created before this contract existed. `channel` and `series` are recorded so a
+manifest that gets copied out of its tree still says where it came from; nothing
+resolves paths from them.
+
+Settings are the exception to "record what you know": an episode omits
+`settings` unless it genuinely overrides something, because settings resolve
+`system -> channel -> series -> episode` and restating an inherited value
+creates a second source of truth for it.
+
+`artifacts/episode.json` is a different document with a confusingly similar
+name. It is the scene spine, read by the gateway and the web app, and it is not
+the episode's manifest.
+
+## The scratch area
+
+`production/` is the episode's scratch area: experiments, alternate cuts, work
+in progress. **No stage may declare an output inside it, and no artifact
+resolver may treat its contents as an artifact.** Anything that is a real
+output of a real stage belongs in `artifacts/`.
 
 Layout 1 placed series directly inside the channel directory, mixed with the
 channel's own files, so nothing could tell a series from a support folder by
