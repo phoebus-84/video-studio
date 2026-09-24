@@ -185,8 +185,16 @@ export class EventStreamManager {
 
   /**
    * Register SSE and WebSocket endpoints on the Fastify app.
+   *
+   * `accepted` is every credential the `/ws` query-string token may equal
+   * (avg-qr4.3): the gateway token and the operator key. A WebSocket
+   * connection carries the token in the URL, not a header, so this is the
+   * one place authentication is a membership check rather than the
+   * constant-time comparison `createAuthMiddleware` does — but it accepts
+   * the same set that middleware does, so a WS client authenticates with
+   * either credential exactly like an HTTP one.
    */
-  register(fastify: FastifyInstance, token: string): void {
+  register(fastify: FastifyInstance, accepted: string[]): void {
     // ── SSE ──────────────────────────────────────────────────────────────
 
     fastify.get("/events", {
@@ -236,7 +244,7 @@ export class EventStreamManager {
       const url = new URL(req.url ?? "/", "http://localhost");
       const queryToken = url.searchParams.get("token");
 
-      if (queryToken !== token) {
+      if (!queryToken || !accepted.includes(queryToken)) {
         socket.send(
           JSON.stringify({
             type: "error",

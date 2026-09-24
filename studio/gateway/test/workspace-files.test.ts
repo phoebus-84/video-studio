@@ -31,6 +31,10 @@ describe("workspace file API", () => {
     config.port = 0;
     config.host = "127.0.0.1";
     config.token.file = join(TMP, "token");
+    // Alongside the token file, in the same throwaway directory: otherwise
+    // `createGateway` resolves the operator key at its default
+    // `.operator-key` and writes it into studio/gateway/ on every test run.
+    config.operatorKey.file = join(TMP, "operator-key");
     config.libraryRoots = [TMP];
 
     token = resolveToken(config.token);
@@ -275,6 +279,7 @@ describe("file revisions", () => {
     config.port = 0;
     config.host = "127.0.0.1";
     config.token.file = join(TMP2, "token");
+    config.operatorKey.file = join(TMP2, "operator-key");
     config.libraryRoots = [TMP2];
 
     token = resolveToken(config.token);

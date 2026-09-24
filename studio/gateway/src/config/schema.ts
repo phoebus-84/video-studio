@@ -46,6 +46,17 @@ export const tokenConfigSchema = z.object({
   allowDevToken: z.boolean().default(false),
 });
 
+// ── Operator key config ──────────────────────────────────────────────────────
+export const operatorKeyConfigSchema = z.object({
+  /**
+   * Path where the operator key is stored. Generated alongside the token and
+   * held to the same 0600 rule the CLI's reader enforces — the gateway and
+   * the CLI must not be able to disagree about what a valid key file is
+   * (avg-qr4.3).
+   */
+  file: z.string().default(".operator-key"),
+});
+
 // ── Library roots ────────────────────────────────────────────────────────────
 export const libraryRootsSchema = z
   .array(z.string())
@@ -91,6 +102,7 @@ export const configSchema = z.object({
     })
     .optional(),
   token: tokenConfigSchema.default({}),
+  operatorKey: operatorKeyConfigSchema.default({}),
   allowedOrigins: allowedOriginsSchema,
   libraryRoots: libraryRootsSchema,
   logging: loggingConfigSchema.default({}),
@@ -101,6 +113,7 @@ export const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>;
 export type TokenConfig = z.infer<typeof tokenConfigSchema>;
+export type OperatorKeyConfig = z.infer<typeof operatorKeyConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 export type GatewayRuntimeConfig = z.infer<typeof gatewayRuntimeSchema>;
 

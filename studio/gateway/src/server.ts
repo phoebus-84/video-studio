@@ -18,6 +18,7 @@ import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
 import { configureLogging, getRedactPaths } from "./logging/index.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
+import { resolveOperatorKey } from "./auth/token.js";
 import { createRuntimeClient, type RuntimeClient } from "./runtime/client.js";
 import type { WorkspaceService } from "./workspace/service.js";
 import { FixtureWorkspaceService } from "./workspace/fixture-service.js";
@@ -85,7 +86,20 @@ export async function createGateway(
   configureLogging(app, config.logging);
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  const authMiddleware = createAuthMiddleware(token, config.token.allowDevToken);
+  // Every request defaults to "agent" (avg-qr4.3): a route registered on a
+  // bare Fastify instance without this server's global hook — as several
+  // gateway tests do, calling `registerProductionRoutes` directly — still
+  // gets a decided value instead of `undefined`, and "no credential" must
+  // never read as "operator". Declared before the hook runs, so it is in
+  // place for every request the hook itself does not reach.
+  app.decorateRequest("principal", "agent");
+
+  // The operator's credential, resolved here like the token rather than
+  // accepted as a parameter: nothing legitimate assembles a gateway without
+  // also generating this file, and a parameter would let a caller omit it
+  // and get a gateway that can never sign a human decision.
+  const operatorKey = resolveOperatorKey(config.operatorKey.file);
+  const authMiddleware = createAuthMiddleware(token, operatorKey, config.token.allowDevToken);
 
   const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/ws"]);
   const PUBLIC_PREFIXES = ["/library/"];
@@ -108,7 +122,7 @@ export async function createGateway(
 
   // ── Event bus ───────────────────────────────────────────────────────────
   const events = new EventStreamManager();
-  events.register(app, token);
+  events.register(app, [token, operatorKey]);
 
   // ── Workspace watcher ────────────────────────────────────────────────────
   const watcher = new WorkspaceWatcher(events.bus, {
@@ -118,7 +132,7 @@ export async function createGateway(
 
   // ── Event publisher (poll-based stage transitions) ─────────────────────
   const { EventPublisher } = await import("./events/publisher.js");
-  const publisher = new EventPublisher({ bus: events.bus, libraryRoot });
+  const publisher = new EventPublisher({ bus: events.bus, libraryRoot, operatorKey });
 
   // ── Pi RPC health ─────────────────────────────────────────────────────
   const { PiRpcHealth } = await import("./rpc/health.js");
@@ -180,7 +194,7 @@ export async function createGateway(
     maxAge: 0,  // Disable browser caching — assets regenerate frequently
   });
 
-  registerRoutes(app, config, libraryRoot, ws, runtime, piHealth, adapterBridge, piManager);
+  registerRoutes(app, config, libraryRoot, operatorKey, ws, runtime, piHealth, adapterBridge, piManager);
   registerEditorRoutes(app, {
     root: libraryRoot,
     bus: events.bus,

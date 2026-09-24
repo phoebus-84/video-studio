@@ -59,6 +59,9 @@ describe("Gateway Integration", () => {
     config.port = 0; // ephemeral
     config.host = "127.0.0.1";
     config.token.file = tokenFile;
+    // Alongside the token file, or `createGateway` resolves the operator key
+    // at its default `.operator-key` and writes it into studio/gateway/.
+    config.operatorKey.file = resolve(TMP, "integration.operator-key");
     config.libraryRoots = [TMP];
 
     token = resolveToken(config.token);
@@ -303,6 +306,10 @@ describe("Gateway Integration", () => {
       const cfg = loadConfig();
       cfg.port = 0;
       cfg.token.file = tmpTokenFile;
+      // Alongside the token file, or `createGateway` resolves the operator
+      // key at its default `.operator-key` and writes it into
+      // studio/gateway/.
+      cfg.operatorKey.file = resolve(TMP, "lifecycle.operator-key");
       const t = resolveToken(cfg.token);
       const gw = await createGateway(cfg, t);
       const addr = await gw.start();

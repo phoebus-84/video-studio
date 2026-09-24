@@ -34,6 +34,13 @@ export function registerRoutes(
    * authoritative about the wrong tree.
    */
   libraryRoot: string,
+  /**
+   * The operator's credential (avg-qr4.3), resolved once by the server like
+   * `libraryRoot` and threaded to every registrar that composes an
+   * execution service: `/approve` and `/reject` sign with it, and the
+   * status-reading paths carry it for Task 6's gate to verify against.
+   */
+  operatorKey: string | null,
   workspace: WorkspaceService,
   runtime: RuntimeClient,
   piHealth?: PiRpcHealth,
@@ -115,10 +122,10 @@ export function registerRoutes(
   });
 
   // ── Workspace discovery ──────────────────────────────────────────────────
-  registerWorkspaceRoutes(app, workspace, libraryRoot);
+  registerWorkspaceRoutes(app, workspace, libraryRoot, operatorKey);
 
   // ── Production orchestration ─────────────────────────────────────────────
-  registerProductionRoutes(app, runtime, workspace, { libraryRoot });
+  registerProductionRoutes(app, runtime, workspace, { libraryRoot, operatorKey });
 
   // ── Pi agent lifecycle ───────────────────────────────────────────────────
   if (piHealth) {

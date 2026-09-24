@@ -53,6 +53,9 @@ describe("asset selection", () => {
     config.port = 0;
     config.host = "127.0.0.1";
     config.token.file = join(TMP, "token");
+    // Alongside the token file, or `createGateway` resolves the operator key
+    // at its default `.operator-key` and writes it into studio/gateway/.
+    config.operatorKey.file = join(TMP, "operator-key");
     config.libraryRoots = [TMP];
 
     token = resolveToken(config.token);

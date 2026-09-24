@@ -40,6 +40,18 @@ export function makeExecutionService(
    * record of what ran; there is one library, and the caller knows it.
    */
   libraryRoot: string,
+  /**
+   * The key a human decision is signed with (avg-qr4.3), or `null` for a
+   * caller with no operator credential to hand it — a headless caller can
+   * still request approval, it just cannot grant one.
+   *
+   * Required, same reasoning as `libraryRoot`: an optional parameter here is
+   * an invitation for one call site to keep quietly passing `undefined`
+   * while every other one threads the resolved key, so `review()` would sign
+   * for every caller but that one and nobody would notice until an operator
+   * tried it.
+   */
+  operatorKey: string | null,
 ): ExecutionService {
   return new ExecutionService({
     libraryRoot,
@@ -65,5 +77,6 @@ export function makeExecutionService(
     // the claim routes hand stages to Pi, which thinks for minutes.
     leaseTtlMs: Number(process.env.AVG_CLAIM_TTL_MS ?? 15 * 60 * 1000),
     log,
+    operatorKey,
   });
 }

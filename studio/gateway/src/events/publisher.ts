@@ -29,6 +29,14 @@ export interface EventPublisherOptions {
    * root came from `libraryRoots` rather than the environment.
    */
   libraryRoot: string;
+  /**
+   * The operator's credential (avg-qr4.3), threaded through to the execution
+   * service like `libraryRoot`. This poll only reads status — it never
+   * writes a review — but Task 6's gate needs it on hand to verify a
+   * signature it finds. Optional, defaulting to `null`: a poll with no
+   * signature to check still has to run.
+   */
+  operatorKey?: string | null;
 }
 
 /**
@@ -46,6 +54,7 @@ export class EventPublisher {
   private bus: EventBus;
   private pollMs: number;
   private libraryRoot: string;
+  private operatorKey: string | null;
   private knownStages = new Map<string, StageState[]>();
   private interval: ReturnType<typeof setInterval> | null = null;
 
@@ -53,6 +62,7 @@ export class EventPublisher {
     this.bus = options.bus;
     this.pollMs = options.pollMs ?? 10_000;
     this.libraryRoot = options.libraryRoot;
+    this.operatorKey = options.operatorKey ?? null;
   }
 
   /** Start polling and watch for events. */
@@ -89,7 +99,7 @@ export class EventPublisher {
     };
 
     try {
-      const service = makeExecutionService(() => {}, this.libraryRoot);
+      const service = makeExecutionService(() => {}, this.libraryRoot, this.operatorKey);
       const result = await service.status(target, pipeline ?? DEFAULT_PIPELINE);
       if (!result.ok) return;
 

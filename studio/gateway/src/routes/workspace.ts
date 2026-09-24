@@ -22,6 +22,12 @@ export function registerWorkspaceRoutes(
    * request to be told so.
    */
   libraryRoot?: string,
+  /**
+   * The operator's credential (avg-qr4.3), threaded through to the execution
+   * service like `libraryRoot`. This enrichment only reads status, but
+   * Task 6's gate needs the key on hand to verify a signature it finds.
+   */
+  operatorKey?: string | null,
 ): void {
   /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -110,7 +116,7 @@ export function registerWorkspaceRoutes(
       if (libraryRoot) {
         try {
           const pipelineName = ((epData as any).pipeline as string | undefined) || DEFAULT_PIPELINE;
-          const service = makeExecutionService((message) => request.log.info(message), libraryRoot);
+          const service = makeExecutionService((message) => request.log.info(message), libraryRoot, operatorKey ?? null);
           const status = await service.status({ channel, series, episode: epSlug }, pipelineName);
           if (status.ok) {
             (epData as any).pipeline = status.value.pipeline ?? (epData as any).pipeline;

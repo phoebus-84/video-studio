@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
 import { resolve } from "node:path";
+import { readOperatorKey } from "@studio/contracts/src/operator-key.mjs";
 
 const TOKEN_BYTES = 32;
 const TOKEN_ENCODING: BufferEncoding = "base64url";
@@ -49,6 +50,23 @@ export function resolveToken(opts: {
   // Double-check permissions on the created file
   chmodSync(tokenPath, RESTRICTED_PERMS);
   return token;
+}
+
+/**
+ * The operator key: generated like the token, then held to the same 0600
+ * rule by the reader the CLI uses, so the two cannot disagree about what a
+ * valid key file is (avg-qr4.3).
+ *
+ * `resolveToken` creates or reads the raw bytes; `readOperatorKey` then
+ * enforces the permission check `resolveToken` does not make on its own read
+ * path, so a key file that exists but is group- or world-readable is refused
+ * here rather than handed out.
+ */
+export function resolveOperatorKey(file: string): string {
+  resolveToken({ file });
+  const key = readOperatorKey(resolve(file));
+  if (!key) throw new TokenError(`Operator key "${file}" could not be created`);
+  return key;
 }
 
 /** Structured token error. */

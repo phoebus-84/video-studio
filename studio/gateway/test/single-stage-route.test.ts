@@ -483,6 +483,9 @@ describe("the gateway assembled by createGateway", () => {
     config.port = 0;
     config.host = "127.0.0.1";
     config.token.file = join(root, "gateway.token");
+    // Alongside the token file, or `createGateway` resolves the operator key
+    // at its default `.operator-key` and writes it into studio/gateway/.
+    config.operatorKey.file = join(root, "gateway.operator-key");
     config.libraryRoots = [root];
     const token = resolveToken(config.token);
 
@@ -530,6 +533,9 @@ describe("the gateway assembled by createGateway", () => {
     config.port = 0;
     config.host = "127.0.0.1";
     config.token.file = join(root, "gateway.token");
+    // Alongside the token file, or `createGateway` resolves the operator key
+    // at its default `.operator-key` and writes it into studio/gateway/.
+    config.operatorKey.file = join(root, "gateway.operator-key");
     config.libraryRoots = ["."];   // the default: the env is the only pointer
     const token = resolveToken(config.token);
 

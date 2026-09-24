@@ -5,9 +5,12 @@
 // Timeouts and error handling protect the gateway from hung processes.
 //
 // `run`, `status`, `rerun` and `validate` are gone: those are execution, and
-// execution goes through ExecutionService (see ../runtime/service.ts). What
-// remains here is workspace setup and approval, which the service does not
-// own.
+// execution goes through ExecutionService (see ../runtime/service.ts).
+// `approve` is gone too (avg-qr4.3): a review decision goes through
+// `ExecutionService.review` in process, the same call the CLI makes, so the
+// gateway's `/approve` and `/reject` stop shelling out to a subprocess for
+// an answer they can call directly. What remains here is workspace setup —
+// init and resolve — which the service does not own.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -127,13 +130,6 @@ export class RuntimeClient {
   async resolve(ref: EpisodeRef, pipeline?: string): Promise<RuntimeCommandResult> {
     const args = ["resolve", `${ref.channel}/${ref.series}/${ref.episode}`];
     if (pipeline) args.push("--pipeline", pipeline);
-    return this.exec(args);
-  }
-
-  /** vpr approve <channel>/<series>/<episode> <stage> */
-  async approve(ref: EpisodeRef, stageId: string, dryRun = false): Promise<RuntimeCommandResult> {
-    const args = ["approve", `${ref.channel}/${ref.series}/${ref.episode}`, stageId];
-    if (dryRun) args.push("--dry-run");
     return this.exec(args);
   }
 
