@@ -19,6 +19,7 @@ import { registerErrorHandler } from "./errors/middleware.js";
 import { configureLogging, getRedactPaths } from "./logging/index.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
 import { resolveOperatorKey } from "./auth/token.js";
+import { OPERATOR_KEY_ENV } from "@studio/contracts/src/operator-key.mjs";
 import { createRuntimeClient, type RuntimeClient } from "./runtime/client.js";
 import type { WorkspaceService } from "./workspace/service.js";
 import { FixtureWorkspaceService } from "./workspace/fixture-service.js";
@@ -98,7 +99,17 @@ export async function createGateway(
   // accepted as a parameter: nothing legitimate assembles a gateway without
   // also generating this file, and a parameter would let a caller omit it
   // and get a gateway that can never sign a human decision.
-  const operatorKey = resolveOperatorKey(config.operatorKey.file);
+  //
+  // AVG_OPERATOR_KEY_FILE wins over the config value (avg-qr4.3): the CLI's
+  // `resolveCliCredential` (studio/runtime/src/execution/principal.ts)
+  // already reads that variable first, falling back to
+  // studio/gateway/.operator-key. The gateway and the CLI must resolve to
+  // the same file when an operator has pointed one of them elsewhere, or an
+  // operator who moved their key for the CLI would silently stop being the
+  // operator to the gateway. The cwd-relative default itself is unchanged —
+  // it matches the `.gateway-token` convention — this only adds the same
+  // override the CLI already honours.
+  const operatorKey = resolveOperatorKey(process.env[OPERATOR_KEY_ENV] || config.operatorKey.file);
   const authMiddleware = createAuthMiddleware(token, operatorKey, config.token.allowDevToken);
 
   const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/ws"]);

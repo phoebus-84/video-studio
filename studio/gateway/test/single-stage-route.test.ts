@@ -565,6 +565,47 @@ describe("the gateway assembled by createGateway", () => {
 
     expect((await journal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
   });
+
+  it("prefers AVG_OPERATOR_KEY_FILE over config.operatorKey.file", async () => {
+    // The CLI's `resolveCliCredential` (studio/runtime/src/execution/
+    // principal.ts) reads this variable first, falling back to
+    // studio/gateway/.operator-key. The gateway has to honour the same
+    // override, or an operator who pointed the CLI at a different key file
+    // would silently stop being the operator to the gateway — the two
+    // processes would disagree about who holds the credential (avg-qr4.3).
+    const root = await mkdtemp(join(tmpdir(), "gw-operator-key-env-"));
+    roots.push(root);
+
+    const envKeyFile = join(root, "env-operator-key");
+    const configKeyFile = join(root, "config-operator-key");
+    await writeFile(envKeyFile, "env-provided-operator-key\n", { mode: 0o600 });
+    vi.stubEnv("AVG_OPERATOR_KEY_FILE", envKeyFile);
+
+    const config = loadConfig();
+    config.port = 0;
+    config.host = "127.0.0.1";
+    config.token.file = join(root, "gateway.token");
+    config.operatorKey.file = configKeyFile;
+    config.libraryRoots = [root];
+    const token = resolveToken(config.token);
+
+    const gateway = await createGateway(config, token);
+    try {
+      // The env-pointed file's content authenticates as the operator.
+      const withEnvKey = await gateway.app.inject({
+        method: "GET", url: "/api/channels",
+        headers: { authorization: "Bearer env-provided-operator-key" },
+      });
+      expect(withEnvKey.statusCode).toBe(200);
+    } finally {
+      await gateway.stop();
+    }
+
+    // The configured file was never even created: the environment variable
+    // won before `resolveOperatorKey` ever saw `config.operatorKey.file`,
+    // not merely before it was read.
+    await expect(stat(configKeyFile)).rejects.toThrow();
+  });
 });
 
 // ── POST /rerun-plan ────────────────────────────────────────────────────────
