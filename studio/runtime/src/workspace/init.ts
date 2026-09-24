@@ -25,7 +25,13 @@ import {
   EPISODES_CONTAINER,
   CHANNEL_KNOWLEDGE,
   SERIES_KNOWLEDGE,
+  EPISODE_DIRECTORIES,
+  EPISODE_SEED_FILES,
 } from "@studio/contracts/src/layout.mjs";
+import {
+  EPISODE_MANIFEST_FILE,
+  renderEpisodeManifest,
+} from "@studio/contracts/src/episode-manifest.mjs";
 import type { RuntimeError } from "../errors.js";
 // result helpers are used indirectly via returned Results
 import { validateSlug } from "./slugs.js";
@@ -444,56 +450,22 @@ async function createEpisodeSkeleton(
   now: string,
   opts: InitOptions,
 ): Promise<void> {
-  // episode.yaml
+  // The manifest. Rendered by contracts so the agent's creator writes the
+  // same document from the same code.
   await writeIfMissing(
-    opts, `${wsPath}/episode.yaml`,
-    `# Episode ${slug}\nslug: ${slug}\ncreatedAt: ${now}\n`,
+    opts, `${wsPath}/${EPISODE_MANIFEST_FILE}`,
+    renderEpisodeManifest({ slug, createdAt: now }),
   );
 
-  // Directories
-  const dirs = [
-    `${wsPath}/source`,
-    `${wsPath}/artifacts`,
-    `${wsPath}/prompts`,
-    `${wsPath}/assets/images`,
-    `${wsPath}/assets/graphics`,
-    `${wsPath}/assets/audio`,
-    `${wsPath}/attempts`,
-    `${wsPath}/reviews`,
-    `${wsPath}/journal`,
-    `${wsPath}/output`,
-  ];
-  for (const dir of dirs) {
-    await opts.fs.mkdir(dir, true).catch(() => { /* idempotent — directory may exist */ });
+  // Directories, from the one declared list.
+  await makeDirs(opts, wsPath, EPISODE_DIRECTORIES);
+
+  // Seeded files, with the bodies the contract declares. These used to be
+  // written out longhand here, in the agent's creator, and in the migration
+  // tool — three copies of the same four documents.
+  for (const [relative, content] of Object.entries(EPISODE_SEED_FILES)) {
+    await writeIfMissing(opts, `${wsPath}/${relative}`, content);
   }
-
-  // assets/manifest.json
-  const manifest = {
-    apiVersion: "v1alpha1",
-    kind: "AssetManifest",
-    assets: [] as unknown[],
-  };
-  await writeIfMissing(
-    opts, `${wsPath}/assets/manifest.json`,
-    JSON.stringify(manifest, null, 2) + "\n",
-  );
-
-  // reviews/threads.jsonl (empty)
-  await writeIfMissing(opts, `${wsPath}/reviews/threads.jsonl`, "");
-
-  // journal/events.jsonl (empty)
-  await writeIfMissing(opts, `${wsPath}/journal/events.jsonl`, "");
-
-  // output/current.json
-  const current = {
-    apiVersion: "v1alpha1",
-    kind: "CurrentDeliverable",
-    renderId: null,
-  };
-  await writeIfMissing(
-    opts, `${wsPath}/output/current.json`,
-    JSON.stringify(current, null, 2) + "\n",
-  );
 }
 
 /** Write a file only if it does not already exist (idempotent). */
