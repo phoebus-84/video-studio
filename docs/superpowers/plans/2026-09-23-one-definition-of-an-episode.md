@@ -124,7 +124,7 @@ In `studio/contracts/schemas/v1alpha1/workspace.schema.json`, inside `$defs`, im
     "series": { "$ref": "identity.schema.json#/$defs/Slug" },
     "title": { "type": "string", "minLength": 1, "maxLength": 160 },
     "description": { "type": "string", "maxLength": 2000 },
-    "createdAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "$ref": "identity.schema.json#/$defs/Timestamp" },
     "settings": {
       "$ref": "#/$defs/SettingsLayer",
       "description": "Episode-level overrides only. Settings resolve system -> channel -> series -> episode, so an episode that overrides nothing omits this key rather than restating what it inherits."
