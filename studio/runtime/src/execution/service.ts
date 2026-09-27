@@ -939,7 +939,6 @@ export class ExecutionService {
     // the thing this service exists to stop — reporting something other
     // than what the journal holds.
     if (!completed) return unrecorded("produced its outputs");
-    await sm.complete(instance);
 
     // Completion is what happened; acceptance is whether it counts. The
     // journal says completed because that is true; the outcome says
@@ -947,26 +946,53 @@ export class ExecutionService {
     const needsReview = stage.definition.gates.review !== "none";
 
     // avg-2n7 deleted the loop that used to write this, so nothing told an
-    // operator a stage was waiting for them (avg-qr4.3 notes, point 1). The
-    // completion is already durable, so a request that fails to land is
+    // operator a stage was waiting for them (avg-qr4.3 notes, point 1).
+    //
+    // Written HERE — after `stage-completed` lands, but BEFORE
+    // `sm.complete(instance)` below, which is the call that releases the
+    // `stage:${stageId}` file lock. `review()` takes that same lock, and the
+    // only thing it waits on besides the lock is `status === "completed"` —
+    // which replay already reports true the instant `stage-completed` is on
+    // disk, one line above. Releasing the lock first would open a window
+    // where a concurrent operator's `review()` acquires it, appends a signed
+    // `approval-granted`, releases it, and only then sees this request land
+    // on top: `deriveGateState` governs by the LAST review event in file
+    // order, so a genuine human approval would be silently buried under an
+    // unsigned, policy-authored request nobody asked for (fix round 1,
+    // Important finding). Holding the lock across this write is what keeps
+    // `review()` out until the request is on the journal (or given up on).
+    //
+    // The completion is already durable, so a request that fails to land is
     // reported, not treated as a failed stage: the gate then reads no record
     // and the manifest rule refuses dependents, which still fails closed.
+    // A lease found lapsed here (`!held()`) is read the same way one level
+    // up: something else may already hold `stage:${stageId}` — another
+    // attempt, or another `review()` — so appending now would reopen the
+    // very race this ordering exists to close. Skip the write rather than
+    // race for it; the stage is still `awaiting_review`, and whichever
+    // holder came next governs.
     let requestNote: string | undefined;
     if (needsReview) {
-      try {
-        const hashed = await hashArtifacts(episodeDir, relative);
-        const request = buildGateReview({
-          stageId, decision: "requested", origin: "policy", actor: "runtime",
-          binding: { planHash: planHashOf(stage.definition), outputs: hashed },
-        });
-        const asked = await appendJournalEvent(episodeDir, {
-          type: "approval-requested", actor: "runtime", episode: ref, data: { ...request },
-        });
-        if (!asked) requestNote = `the review request for "${stageId}" could not be written to the journal`;
-      } catch (e) {
-        requestNote = `the review request for "${stageId}" could not be written: ${e instanceof Error ? e.message : String(e)}`;
+      if (!held()) {
+        requestNote = `the review request for "${stageId}" was not attempted because its lease had already lapsed`;
+      } else {
+        try {
+          const hashed = await hashArtifacts(episodeDir, relative);
+          const request = buildGateReview({
+            stageId, decision: "requested", origin: "policy", actor: "runtime",
+            binding: { planHash: planHashOf(stage.definition), outputs: hashed },
+          });
+          const asked = await appendJournalEvent(episodeDir, {
+            type: "approval-requested", actor: "runtime", episode: ref, data: { ...request },
+          });
+          if (!asked) requestNote = `the review request for "${stageId}" could not be written to the journal`;
+        } catch (e) {
+          requestNote = `the review request for "${stageId}" could not be written: ${e instanceof Error ? e.message : String(e)}`;
+        }
       }
     }
+
+    await sm.complete(instance);
 
     const base = needsReview
       ? `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet`

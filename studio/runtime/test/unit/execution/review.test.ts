@@ -8,6 +8,7 @@ import { ok } from "../../../src/result.js";
 import { reviewChainPipeline } from "./helpers/review-chain.js";
 import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { verifyReceipt } from "@studio/contracts/src/receipt.mjs";
+import { FileLock } from "../../../src/ports/file-lock.js";
 
 const REF = { channel: "childrens", series: "fairy-tales", episode: "ep" };
 const KEY = "operator-key-for-tests";
@@ -22,6 +23,20 @@ const KEY = "operator-key-for-tests";
 const journalMockState = vi.hoisted(() => ({
   /** A review event type to drop, or null. */
   dropReviewEvent: null as null | "approval-granted" | "approval-rejected" | "approval-requested",
+  /**
+   * Fix round 1: when true, the mock probes `stage:<id>`'s file lock at the
+   * exact moment `complete()` appends `approval-requested`, before handing
+   * the write to the real `appendJournalEvent`. This is what pins the
+   * ordering fix — the request must be written while `complete()` still
+   * holds the lease, before `sm.complete()` releases it — without depending
+   * on timing: the probe's own `acquire` either finds the lockfile still
+   * there (conflict, the fix holds) or gets it (the ordering regressed).
+   */
+  probeLockOnRequest: false,
+  /** `false` = the probe's `acquire` conflicted (lock still held — correct).
+   * `true` = the probe acquired it (lock already released — the bug this
+   * pins). `undefined` = the probe never ran. */
+  probeAcquired: undefined as undefined | boolean,
 }));
 
 vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
@@ -29,6 +44,12 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
   return {
     ...actual,
     appendJournalEvent: async (episodeDir: string, input: any) => {
+      if (input.type === "approval-requested" && journalMockState.probeLockOnRequest) {
+        const probe = new FileLock(`${episodeDir}/.locks`);
+        const attempt = await probe.acquire(`stage:${input.data.stageId}`, 1000);
+        journalMockState.probeAcquired = attempt.ok;
+        if (attempt.ok) await probe.release(attempt.value);
+      }
       if (input.type === journalMockState.dropReviewEvent) {
         return null;
       }
@@ -39,6 +60,8 @@ vi.mock("@studio/contracts/src/journal.mjs", async (importOriginal) => {
 
 afterEach(() => {
   journalMockState.dropReviewEvent = null;
+  journalMockState.probeLockOnRequest = false;
+  journalMockState.probeAcquired = undefined;
 });
 
 const roots: string[] = [];
@@ -195,6 +218,28 @@ describe("ExecutionService.complete's review request", () => {
   it("writes no request for a stage that declares no review", async () => {
     const { dir } = await completed("upstream");
     expect((await journal(dir)).map((e) => e.type)).not.toContain("approval-requested");
+  });
+
+  // Fix round 1, Important finding: the request used to land AFTER
+  // `sm.complete(instance)`, which releases the `stage:${stageId}` file lock.
+  // `review()` takes that same lock and needs nothing more than
+  // `status === "completed"` — true the moment `stage-completed` is on disk —
+  // so a concurrent operator `review()` could acquire the lock in the gap,
+  // append a signed `approval-granted`, and have this policy-authored request
+  // land after it. `deriveGateState` governs by the LAST review event in
+  // file order, so that buried a real approval under an unsigned request
+  // nobody asked for. Pinned deterministically, not by timing: the mock
+  // probes the lockfile itself, synchronously, at the instant `complete()`
+  // asks to append `approval-requested` — if the probe can acquire the lock,
+  // `complete()` had already released it too early.
+  it("holds the stage lock while it writes the request, so a concurrent review cannot land first", async () => {
+    journalMockState.probeLockOnRequest = true;
+    const { dir } = await completed("gated");
+    journalMockState.probeLockOnRequest = false;
+
+    expect(journalMockState.probeAcquired).toBe(false);
+    const types = (await journal(dir)).map((e) => e.type);
+    expect(types.slice(-2)).toEqual(["stage-completed", "approval-requested"]);
   });
 
   it("a failed request write is reported in the reason, and the stage is still awaiting_review", async () => {
