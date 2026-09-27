@@ -245,6 +245,52 @@ existence) is what made the CLI's report disagree with everything else.
 There is no budget line in the output. There is no ledger behind one yet
 (avg-91o), and a zero is a number an operator would act on.
 
+**`vpr approve`** and **`vpr reject`** (which requires `--note <text>`)
+decide a stage that completed with `gates.review: human` — the same call the gateway's
+`/approve` and `/reject` routes and the browser studio make
+(avg-qr4.3). Whether either one actually grants anything depends on who is
+running it: see "The operator key" below.
+
+## The operator key
+
+A human decision only counts when it is signed, and only the **operator** can
+sign one. The operator is not a role anyone assigns — it is whoever can read
+the operator key file, so treat that file the way you would treat a password.
+
+- The gateway generates it the first time it starts, alongside the bearer
+  token: `studio/gateway/.operator-key`, mode `0600`. Both files are 0600 for
+  the same reason — either one readable by another user makes them the
+  operator, not you.
+- The browser studio (in dev) and `vpr` read it. **Pi is never given it and
+  cannot discover it through its own config** — Pi holds only the gateway
+  token, so `pva_request_approval` can ask for a review but never grant one
+  (avg-qr4.3, and the harness review's approval P0).
+- Without it, `vpr approve`/`vpr reject` still run: the decision is recorded
+  as a **request** rather than a grant, and the command exits non-zero — the
+  same downgrade an unauthenticated gateway caller gets.
+- **Rotation:** stop the gateway, delete the key file, start the gateway
+  again. This is not a maintenance no-op: every existing human approval on
+  every episode now reads `unsigned` or `does not verify` and must be
+  re-granted. That is intended — the whole point of signing is that deleting
+  the key is exactly as consequential as it looks.
+- **The limit this does not close:** the key is a file, not a hardware
+  secret. Anything running as your own user — a script, another agent, a
+  compromised dependency — can read it and sign as you (avg-qr4.8 tracks
+  hardening this further). It stops Pi from minting its own approvals; it
+  does not stop your own account from doing so.
+
+`AVG_OPERATOR_KEY_FILE` points the gateway, `vpr`, and the web dev server at
+**one** key file, which matters once any of them runs from somewhere other
+than its usual directory. Without it:
+
+- the gateway writes and reads `.operator-key` in **its own working
+  directory** (so start it from `studio/gateway/`, or set the variable);
+- `vpr` and the web dev server both default to `studio/gateway/.operator-key`.
+
+Those two defaults only agree when the gateway is started from
+`studio/gateway/`. If you start it elsewhere, set `AVG_OPERATOR_KEY_FILE` to
+the same absolute path for every process that needs to be the operator.
+
 ## Environment
 
 | Variable | Default | Effect |
@@ -253,6 +299,7 @@ There is no budget line in the output. There is no ledger behind one yet
 | `AVG_CLAIM_TTL_MS` | 900000 (15 min) | How long a `vpr run` claim holds its lease |
 | `AVG_GATEWAY_URL` | `http://127.0.0.1:5198` | Gateway to stream events to |
 | `AVG_GATEWAY_TOKEN` | `library/.gateway-token` | Gateway auth |
+| `AVG_OPERATOR_KEY_FILE` | gateway: `.operator-key` in its cwd; `vpr`/web: `studio/gateway/.operator-key` | Which file makes a caller the operator — see "The operator key" above |
 | `FAL_KEY` | — | Required for `image.generate` / `image.edit` |
 | `AVG_TTS_WORKER_URL` | local worker | Speech synthesis endpoint |
 

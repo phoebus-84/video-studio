@@ -16,6 +16,25 @@ Credentials are environment-only (ADR-0030) — never committed:
 | Variable | Needed for |
 |---|---|
 | `FAL_KEY` | `image.generate`, `image.edit` |
+| `AVG_OPERATOR_KEY_FILE` | Pointing the gateway, `vpr` and the web dev server at the same operator key |
+
+### The operator key
+
+A human decision on a stage that declares `gates.review: human` only counts
+when it is signed, and the gateway signs it only for whoever holds the
+**operator key** — a file it generates on first start (`0600`, next to the
+bearer token), not a role anyone assigns. The browser studio and `vpr` read
+it; Pi is given only the gateway token and cannot discover this file through
+its own config, so it can request a review but never grant one. A caller
+without the key is **headless**: `vpr approve`/`vpr reject` still run, but
+the decision is recorded as a request and the command exits non-zero, the
+same as an unauthenticated gateway caller.
+
+Rotating it (stop the gateway, delete the file, start it again) is
+deliberately destructive: every existing human approval then reads
+`unsigned` or `does not verify` and must be re-granted. See
+[Running the agent → The operator key](running.md#the-operator-key) for the
+full story, including `AVG_OPERATOR_KEY_FILE` and its default-path pitfall.
 
 ## The three commands
 

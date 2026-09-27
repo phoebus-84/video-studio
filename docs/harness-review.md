@@ -96,10 +96,11 @@ empty required outputs, expired leases and missing budget reservations fail clos
 blocks downstream work; two sessions cannot select conflicting outputs; restart
 recovers the same attempt; dry-run performs no production writes or paid calls.
 
-### P0 — “Human approval” needs an authenticated, revision-bound origin
+### P0 — “Human approval” needs an authenticated, revision-bound origin (addressed)
 
-**Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval"):** Pi
-*used to* have `pva_approve`; runtime `cmdApprove` wrote `actor: "human"`
+**Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval" — see
+the [design doc](superpowers/specs/2026-09-24-authenticated-revision-bound-approval-design.md)):**
+Pi *used to* have `pva_approve`; runtime `cmdApprove` wrote `actor: "human"`
 regardless of who invoked the command, and the decision was not bound to an
 output hash. Pi now has `pva_request_approval` instead: the gateway resolves
 Pi's token to the `agent` principal, and `ExecutionService.review` downgrades
