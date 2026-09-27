@@ -391,11 +391,15 @@ async function cmdValidate(ctx: CliContext, args: string[]): Promise<number> {
 // ── rerun ───────────────────────────────────────────────────────────────────
 
 /**
- * Modes `planRerun` can compute with no staleness report — which is every
- * mode but `rerun-affected-downstream`, since that is the only one that reads
- * one. See the comment on `planRerun` in `src/rerun/planner.ts`.
+ * Every `RerunMode` this CLI accepts.
+ *
+ * Used only to validate `--mode` and to list the choices in a usage error —
+ * `rerun-affected-downstream` was refused by name here until avg-qr4.3 task 9
+ * gave `ExecutionService.planRerun` a `StalenessReport` to compute for it
+ * (`propagate`, from `--stages`); the service itself now owns the one
+ * refusal that mode still has (no stages named to propagate from).
  */
-const JOURNAL_DERIVABLE_MODES = ["retry-current", "rerun-selected", "full-rebuild"] as const;
+const RERUN_MODES = ["retry-current", "rerun-selected", "rerun-affected-downstream", "full-rebuild"] as const;
 
 async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   const { pipeline: pipelineName, remaining } = extractPipeline(args);
@@ -413,20 +417,8 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   const modeIdx = remaining.indexOf("--mode");
   const mode = (modeIdx >= 0 ? remaining[modeIdx + 1] : "retry-current") as string;
 
-  // Refused here, before the service is asked, so the CLI's error names what
-  // owns this mode rather than the service's generic "not a known stage".
-  if (mode === "rerun-affected-downstream") {
-    emit(ctx, {
-      error: 'mode "rerun-affected-downstream" needs staleness propagation, ' +
-        "which is not implemented yet (avg-33r). Available: " + JOURNAL_DERIVABLE_MODES.join(", "),
-    });
-    return EX_USAGE;
-  }
-  if (!JOURNAL_DERIVABLE_MODES.includes(mode as typeof JOURNAL_DERIVABLE_MODES[number])) {
-    emit(ctx, {
-      error: `Unknown mode "${mode}". Available: ${JOURNAL_DERIVABLE_MODES.join(", ")}` +
-        ' (and "rerun-affected-downstream", once avg-33r lands)',
-    });
+  if (!RERUN_MODES.includes(mode as typeof RERUN_MODES[number])) {
+    emit(ctx, { error: `Unknown mode "${mode}". Available: ${RERUN_MODES.join(", ")}` });
     return EX_USAGE;
   }
 
@@ -443,14 +435,15 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
     ? remaining[stagesIdx + 1]!.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
 
-  // `--stages` only means anything to `rerun-selected` — the planner reads
-  // `selectedStages` for `rerun-affected-downstream` too, but that mode is
-  // refused above before this point is reached. Parsing it and then
+  // `--stages` means something to two modes: `rerun-selected` reads it
+  // directly, and `rerun-affected-downstream` reads it as what changed, to
+  // propagate staleness from (avg-qr4.3, task 9). Parsing it and then
   // discarding it for `retry-current`/`full-rebuild` would silently ignore
   // input the caller went out of their way to supply.
-  if (selected.length > 0 && mode !== "rerun-selected") {
+  if (selected.length > 0 && mode !== "rerun-selected" && mode !== "rerun-affected-downstream") {
     emit(ctx, {
-      error: `--stages is only used by "rerun-selected" mode; --mode "${mode}" does not accept it`,
+      error: `--stages is only used by "rerun-selected" and "rerun-affected-downstream" modes; ` +
+        `--mode "${mode}" does not accept it`,
     });
     return EX_USAGE;
   }
@@ -737,14 +730,12 @@ function claimTtlMs(): Result<number, string> {
  *
  * A stage the pipeline never declared is a mistyped argument, not a broken
  * system: `EX_USAGE`, so a script can tell "you asked for something that does
- * not exist" from "the journal could not be read". A `RerunMode` this build
- * does not implement is the same family of caller mistake — the request
- * named something real (a mode `RerunMode` declares) that this composition
- * cannot honor yet — so `MODE_UNSUPPORTED` earns `EX_USAGE` alongside it.
- * `cmdRerun` refuses `rerun-affected-downstream` before calling the service,
- * so no CLI path reaches this today; it is here for whichever caller does.
- * Everything else — unreadable journal, unresolvable pipeline, journal and
- * pipeline in disagreement — is `EX_RUNTIME`.
+ * not exist" from "the journal could not be read". The service's own
+ * `MODE_UNSUPPORTED` — `rerun-affected-downstream` asked with no `--stages`
+ * to propagate staleness from (avg-qr4.3, task 9) — is the same family of
+ * caller mistake, so it earns `EX_USAGE` alongside it. Everything else —
+ * unreadable journal, unresolvable pipeline, journal and pipeline in
+ * disagreement — is `EX_RUNTIME`.
  */
 function exitCodeFor(error: ExecutionError): number {
   return error.code === "STAGE_UNKNOWN" || error.code === "MODE_UNSUPPORTED" ? EX_USAGE : EX_RUNTIME;
@@ -1095,11 +1086,10 @@ const COMMANDS: Record<string, CliCommand> = {
   validate: { name: "validate", description: "Validate pipeline DAG or snapshot integrity", usage: "vpr validate <pipeline|snapshot> [path] [--json]", examples: ["vpr validate pipeline my-channel/my-series/ep001"], run: cmdValidate },
   run: { name: "run", description: "Claim the next runnable stage for a performer", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001", "vpr run my-channel/my-series/ep001 --dry-run"], run: cmdRun },
   complete: { name: "complete", description: "Close a claimed stage with the outputs it produced", usage: "vpr complete <channel>/<series>/<episode> <stage-id> [--lease <id>] --outputs <path>[,<path>] | --failed [--error <msg>]", examples: ["vpr complete my-channel/my-series/ep001 brief --lease l-7 --outputs artifacts/brief.md", "vpr complete my-channel/my-series/ep001 brief --failed --error 'the model refused'"], run: cmdComplete },
-  // The usage line lists every mode the command ACCEPTS, including the one
-  // it refuses by name: `rerun-affected-downstream` reaches a deliberate
-  // avg-33r explanation, and a help text that hides it turns a considered
-  // refusal into "unknown mode". The gateway schema and the agent's union
-  // both declare-and-refuse it; this was the one surface that did not.
+  // The usage line lists every mode the command accepts. `rerun-affected-downstream`
+  // used to reach a deliberate refusal here (avg-33r, before staleness
+  // propagation existed); avg-qr4.3 task 9 gave the service a `StalenessReport`
+  // to compute for it, so it plans like any other mode now — given `--stages`.
   rerun: { name: "rerun", description: "Plan targeted reruns: which stages re-run, which are preserved", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|rerun-affected-downstream|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },

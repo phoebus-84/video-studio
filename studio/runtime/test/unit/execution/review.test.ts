@@ -148,8 +148,11 @@ describe("ExecutionService.review", () => {
     const { svc, dir } = await completed("gated");
     const out = await svc.review(REF, "review-chain", "gated", { decision: "rejected", principal: "operator", note: "too dark" });
     expect(out.ok && out.value.status).toBe("rejected");
-    const rej = (await journal(dir)).at(-1)!;
-    expect(rej.type).toBe("approval-rejected");
+    // Not `.at(-1)`: "gated" has a real dependent in this pipeline
+    // ("downstream"), so the rejection is followed by a `staleness-marked`
+    // event (avg-qr4.3, task 9) — this asserts the rejection itself, not
+    // whichever event the journal happens to end on.
+    const rej = (await journal(dir)).filter((e) => e.type === "approval-rejected").at(-1)!;
     expect(verifyReceipt(rej.data as object, KEY)).toBe(true);
   });
 

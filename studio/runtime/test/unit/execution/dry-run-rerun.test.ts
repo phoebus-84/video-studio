@@ -241,13 +241,13 @@ describe("rerun", () => {
 
 // ── planRerun ────────────────────────────────────────────────────────────
 //
-// `cmdRerun` refuses `rerun-affected-downstream` by name before ever calling
-// the service, so no CLI-driven test can reach `ExecutionService.planRerun`'s
-// own refusal for that mode. This calls the service directly, the way a
-// non-CLI caller (Task 7's gateway route) will.
+// avg-qr4.3 task 9 gave `rerun-affected-downstream` its `StalenessReport` (via
+// `propagate`, computed here from `selectedStages`), so the one thing this
+// mode still refuses is being asked with nothing to propagate FROM — not the
+// mode itself, which `cmdRerun` no longer refuses by name either.
 
 describe("planRerun", () => {
-  it("reports MODE_UNSUPPORTED, not STAGE_UNKNOWN, for rerun-affected-downstream", async () => {
+  it("reports MODE_UNSUPPORTED, not STAGE_UNKNOWN, for rerun-affected-downstream with no stages named", async () => {
     const { root, dir } = await episode();
     const svc = new ExecutionService({
       libraryRoot: root, builtinPipelines: PIPELINES,
@@ -259,11 +259,34 @@ describe("planRerun", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     // Not STAGE_UNKNOWN: no stage is unknown here — no stage id was even
-    // named — a mode this build does not implement is a different fact,
+    // named — a caller that forgot a required argument is a different fact,
     // and the wrong code would send a caller looking for a typo in a
     // stage id that was never the problem.
     expect(result.error.code).toBe("MODE_UNSUPPORTED");
-    expect(result.error.message).toMatch(/staleness/i);
+    expect(result.error.message).toMatch(/needs the stages that changed/);
+  });
+
+  it("plans rerun-affected-downstream given the stages that changed", async () => {
+    // The inverse of the refusal above: once a caller names what changed,
+    // this build computes staleness for it rather than refusing the mode
+    // outright the way it used to.
+    const { root, dir } = await episode();
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: PIPELINES,
+      dispatcher: writingDispatcher(dir), budget: permissiveBudget,
+    });
+
+    const result = await svc.planRerun(
+      REF, "narrated-illustrated-video", "rerun-affected-downstream", ["brief"],
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.mode).toBe("rerun-affected-downstream");
+    // "brief" is the selection itself; propagate's own downstream set is on
+    // top of that, and the narrated-illustrated-video manifest's "script"
+    // stage consumes "brief"'s output, so it belongs in the plan too.
+    expect(result.value.rerunStageIds).toContain("brief");
   });
 
   it("plans full-rebuild without a dispatcher or budget guard configured", async () => {

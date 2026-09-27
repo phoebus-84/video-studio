@@ -871,10 +871,11 @@ describe("vpr run / vpr complete", () => {
 // `stages` array, unconditionally, for every mode and every episode — it never
 // planned anything. It now asks `ExecutionService.planRerun`, which replays
 // the journal into the same stage map `status` uses. `rerun-affected-downstream`
-// is refused by name rather than silently planning nothing, because it is the
-// one mode that needs a `StalenessReport` this build does not compute
-// (avg-33r); the CLI's old default, `rerun-affected`, matched no `RerunMode`
-// member and is refused too, pointing at the real name.
+// used to be refused by name (avg-33r, before staleness propagation existed);
+// avg-qr4.3 task 9 gave the service a `StalenessReport` to compute for it from
+// `--stages`, so it is refused only when no stages are named — nothing to
+// propagate staleness FROM. The CLI's old default, `rerun-affected`, still
+// matches no `RerunMode` member and is refused, pointing at the real name.
 
 describe("vpr rerun", () => {
   const roots: string[] = [];
@@ -927,7 +928,7 @@ describe("vpr rerun", () => {
     expect(result.json().stages).toEqual(["brief"]);
   });
 
-  it("refuses rerun-affected-downstream by name and says what owns it", async () => {
+  it("refuses rerun-affected-downstream with no stages named", async () => {
     const { root } = await episodeFixture();
 
     const result = vpr([
@@ -936,7 +937,25 @@ describe("vpr rerun", () => {
     ]);
 
     expect(result.status).toBe(1);
-    expect(result.json().error).toMatch(/staleness/i);
+    expect(result.json().error).toMatch(/needs the stages that changed/);
+  });
+
+  it("plans rerun-affected-downstream given the stages that changed", async () => {
+    const { root, dir } = await episodeFixture();
+    vpr(["run", "childrens/fairy-tales/ep", "--library", root, "--json"]);
+    await writeFile(path.join(dir, "artifacts/brief.md"), "a brief");
+    vpr([
+      "complete", "childrens/fairy-tales/ep", "brief",
+      "--outputs", "artifacts/brief.md", "--library", root, "--json",
+    ]);
+
+    const result = vpr([
+      "rerun", "childrens/fairy-tales/ep", "--mode", "rerun-affected-downstream",
+      "--stages", "brief", "--library", root, "--json", "--dry-run",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.json().stages).toContain("brief");
   });
 
   it("refuses the mode string that never matched a mode", async () => {

@@ -233,7 +233,15 @@ export interface CompleteInput {
  *   removes. The guard's presence is checked, its verdict is not asked for.
  */
 export type StageState =
-  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review";
+  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review"
+  /**
+   * A completed stage whose upstream was decided on again after it ran — a
+   * `staleness-marked` naming it is newer than both its last `stage-completed`
+   * and its last `approval-granted` (avg-qr4.3, absorbing avg-33r's third).
+   * The record explains WHY; the review gate's hash comparison still governs
+   * WHETHER an approval stands — this is reporting, not a second gate.
+   */
+  | "stale";
 
 /** One stage's place in the episode, as the journal records it. */
 export interface StageStatusReport {
@@ -307,13 +315,13 @@ export interface ExecutionError {
     | "REPLAY_INVALID"
     | "STAGE_UNKNOWN"
     /**
-     * The caller asked for something this build does not implement — a
-     * `RerunMode` the planner understands but cannot compute without
-     * machinery that does not exist yet (staleness propagation, avg-33r) —
-     * as distinct from `STAGE_UNKNOWN`, which is asking for something that
-     * does not exist at all. Conflating the two names the wrong fix: a
-     * caller told `STAGE_UNKNOWN` for an unimplemented mode would reasonably
-     * go looking for a typo in a stage id that was never the problem.
+     * The caller asked for something this build cannot compute as asked — a
+     * `rerun-affected-downstream` plan with no `selectedStages` to propagate
+     * staleness from (avg-qr4.3, task 9) — as distinct from `STAGE_UNKNOWN`,
+     * which is asking for something that does not exist at all. Conflating
+     * the two names the wrong fix: a caller told `STAGE_UNKNOWN` for an
+     * argument it forgot would reasonably go looking for a typo in a stage id
+     * that was never the problem.
      */
     | "MODE_UNSUPPORTED";
   message: string;

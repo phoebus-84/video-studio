@@ -32,6 +32,7 @@ import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from
 import { FileLock } from "../ports/file-lock.js";
 import { planRerun } from "../rerun/index.js";
 import type { RerunMode, RerunPlan } from "../rerun/index.js";
+import { propagate } from "../staleness/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
   StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput, Principal,
@@ -167,6 +168,28 @@ export class ExecutionService {
     // stage in the loop below. See `whyBlocked`.
     const verdicts = new Map<string, ReviewVerdict>();
 
+    // Index of the newest event of each kind per stage, for staleness. A
+    // reverse loop rather than `Array.prototype.findLastIndex`: that needs
+    // `lib: es2023`, which this tsconfig does not declare, and widening the
+    // lib for one call site is a bigger change than a ten-line loop.
+    const lastIndexOfType = (type: string, id: string): number => {
+      for (let i = events.value.length - 1; i >= 0; i--) {
+        const e = events.value[i]!;
+        if (e.type === type && (e.data as { stageId?: string })?.stageId === id) return i;
+      }
+      return -1;
+    };
+    const staleSince = (id: string): number => {
+      for (let i = events.value.length - 1; i >= 0; i--) {
+        const e = events.value[i]!;
+        if (e.type === "staleness-marked" &&
+          ((e.data as { affected?: { stageId: string }[] })?.affected ?? []).some((a) => a.stageId === id)) {
+          return i;
+        }
+      }
+      return -1;
+    };
+
     const reports: StageStatusReport[] = [];
     for (const stage of stages) {
       const instance = derived.get(stage.definition.id)!;
@@ -199,7 +222,17 @@ export class ExecutionService {
 
       let state: StageState;
       if (instance.status === "completed") {
-        if (stage.definition.gates.review === "none") {
+        // Staleness wraps the review question rather than replacing it: a
+        // stage a `staleness-marked` outruns since it both last ran AND last
+        // won an approval is stale regardless of what the review gate would
+        // say about it — the gate answers "did this get accepted", not
+        // "does that acceptance still describe what it depends on".
+        const marked = staleSince(stage.definition.id);
+        if (marked > lastIndexOfType("stage-completed", stage.definition.id) &&
+            marked > lastIndexOfType("approval-granted", stage.definition.id)) {
+          state = "stale";
+          stateReason = `"${stage.definition.id}" is stale: an upstream stage changed after it ran`;
+        } else if (stage.definition.gates.review === "none") {
           state = "completed";
         } else {
           // avg-qr4.3 defined what an approval is, so status no longer has to
@@ -992,6 +1025,21 @@ export class ExecutionService {
       }
     }
 
+    // A re-completion of a stage the journal already holds an approval for.
+    // `events` was read at the top of this call, before anything below wrote
+    // to it, so an `approval-granted` found there predates this attempt — the
+    // one thing that tells a first completion (nothing to be stale about yet)
+    // apart from a stage that ran again after being accepted (everything
+    // downstream of it now rests on artifacts nobody has looked at since).
+    // Best-effort and outside the lease: unlike the request above, nothing
+    // here governs whether THIS stage counts as accepted.
+    const hadApproval = events.value.some(
+      (e) => e.type === "approval-granted" && (e.data as { stageId?: string })?.stageId === stageId,
+    );
+    if (hadApproval) {
+      await this.markStale(episodeDir, ref, resolved.value, stageId);
+    }
+
     await sm.complete(instance);
 
     const base = needsReview
@@ -1005,6 +1053,29 @@ export class ExecutionService {
       durationMs: Date.now() - startedAt,
       ...(base ? { reason: [base, requestNote].filter(Boolean).join("; ") } : {}),
     });
+  }
+
+  /**
+   * Record which stages a change made stale (avg-33r's third, absorbed by
+   * avg-qr4.3). The event says WHY a stage went stale; hash comparison still
+   * decides WHETHER an approval stands. Neither replaces the other.
+   *
+   * Best-effort by design: a staleness record that fails to land loses an
+   * explanation, not a safety property — the gate still re-hashes on read.
+   */
+  private async markStale(
+    episodeDir: string, ref: EpisodeRef, pipeline: ResolvedPipeline, trigger: string,
+  ): Promise<void> {
+    const report = propagate(pipeline, [trigger], `${ref.channel}/${ref.series}/${ref.episode}`);
+    const affected = report.stages
+      .filter((s) => s.stale && s.stageId !== trigger)
+      .map((s) => ({ stageId: s.stageId, path: s.reasons[0]?.path ?? [trigger, s.stageId] }));
+    if (affected.length === 0) return;
+    const written = await appendJournalEvent(episodeDir, {
+      type: "staleness-marked", actor: "runtime", episode: ref,
+      data: { stageId: trigger, trigger, affected },
+    });
+    if (!written) this.options.log?.(`staleness for "${trigger}" could not be recorded`);
   }
 
   /**
@@ -1097,6 +1168,16 @@ export class ExecutionService {
       await lock.release(lease.value);
     }
     if (!written) return blocked(`the ${decision} decision for "${stageId}" could not be written to the journal`);
+
+    // After releasing the stage's own lock, not before: `markStale` writes a
+    // SEPARATE event about OTHER stages, so holding `stage:${stageId}` across
+    // it would block a concurrent run or review of this stage for no benefit
+    // — the write this decision itself needed to protect already landed above.
+    // A request (`decision === "requested"`) is never signed and never
+    // changes what a dependent accepted, so it triggers nothing here.
+    if (decision !== "requested") {
+      await this.markStale(episodeDir, ref, resolved.value, stageId);
+    }
 
     return ok({
       stageId,
@@ -1246,12 +1327,16 @@ export class ExecutionService {
    * is replay plus the planner — no new machinery, and no second notion of
    * what a rerun covers.
    *
-   * No `StalenessReport` is computed here (avg-33r owns that), so this always
-   * calls the planner with `report` absent — which is why the planner throws
-   * for `rerun-affected-downstream` rather than silently planning nothing.
-   * The episode slug is built from `ref` and passed through explicitly, so
-   * the plan names the episode it was actually computed for rather than
-   * falling back to the pipeline's name.
+   * A `StalenessReport` is computed here — via `propagate`, the same function
+   * `markStale` calls — only for `rerun-affected-downstream`, the one mode
+   * that reads one; the other three derive their rerun set from the stage map
+   * alone and would silently plan nothing against a report that named stages
+   * they never asked about. With no `selectedStages` there is nothing to
+   * propagate FROM, so that case is refused before the planner is even asked,
+   * with a message naming what is missing rather than the planner's generic
+   * "not computed yet". The episode slug is built from `ref` and passed
+   * through explicitly, so the plan names the episode it was actually
+   * computed for rather than falling back to the pipeline's name.
    */
   async planRerun(
     ref: EpisodeRef,
@@ -1299,20 +1384,29 @@ export class ExecutionService {
     );
 
     const episodeSlug = `${ref.channel}/${ref.series}/${ref.episode}`;
+
+    let report;
+    if (mode === "rerun-affected-downstream") {
+      if (selectedStages.length === 0) {
+        // Refused here, before the planner (and before `propagate`, which has
+        // nothing to compute FROM with no changed stages): a mode this build
+        // implements but a caller who forgot to name what changed. Not
+        // STAGE_UNKNOWN — nothing named here is unknown, a required argument
+        // is simply absent.
+        return err({
+          code: "MODE_UNSUPPORTED",
+          message: 'mode "rerun-affected-downstream" needs the stages that changed (--stages a,b)',
+        });
+      }
+      report = propagate(resolved.value, selectedStages, episodeSlug);
+    }
+
     try {
-      return ok(planRerun(undefined, resolved.value, engineInstances, mode, selectedStages, episodeSlug));
+      return ok(planRerun(report, resolved.value, engineInstances, mode, selectedStages, episodeSlug));
     } catch (e) {
-      // The only way the planner throws today is `rerun-affected-downstream`
-      // with no report — a mode this composition never computes staleness
-      // for. `MODE_UNSUPPORTED`, not `STAGE_UNKNOWN`: no stage is unknown
-      // here, a mode is unimplemented, and a caller told `STAGE_UNKNOWN`
-      // would reasonably go looking for a typo in a stage id that was never
-      // the problem — exactly the kind of code-says-something-other-than-
-      // what-it-holds bug this module exists to remove. `cmdRerun` refuses
-      // this mode by name before ever reaching the service, so this branch
-      // is unreachable from the CLI today; it exists for direct callers —
-      // Task 7's gateway route among them — that ask the service without
-      // going through the CLI's own guard.
+      // The planner still throws for a mode this switch does not otherwise
+      // reach with a report — kept as a catch-all rather than trusted to
+      // never fire twice for the same reason.
       return err({
         code: "MODE_UNSUPPORTED",
         message: e instanceof Error ? e.message : String(e),

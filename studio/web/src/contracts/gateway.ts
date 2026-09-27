@@ -102,7 +102,13 @@ export type StageStatus =
   | "awaiting_review"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /**
+   * A completed stage an upstream decision has outrun since it ran
+   * (avg-qr4.3, task 9). Type only here — the projection that ever produces
+   * it and the UI that renders it are Task 11's.
+   */
+  | "stale";
 
 /* ── episode detail ── */
 
