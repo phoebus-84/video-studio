@@ -278,9 +278,11 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     name: "pva_check_staleness",
     label: "Check Staleness",
     description:
-      "Not implemented yet: staleness propagation is unbuilt (avg-33r), and this returns an " +
-      "empty result rather than a computed one. Do not treat an empty result as evidence that " +
-      "nothing is stale.",
+      "Not implemented yet: this endpoint always returns an empty result rather than a computed " +
+      "one. Staleness propagation itself is no longer unbuilt (avg-33r's third landed with " +
+      "avg-qr4.3 — status() and pva_gather_context report state: \"stale\" per stage), but this " +
+      "route was never wired to it. Do not treat an empty result here as evidence that nothing " +
+      "is stale; check pva_gather_context instead.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -330,11 +332,15 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
           Type.Literal("full-rebuild"),
         ], {
           description:
-            "Rerun mode. rerun-affected-downstream needs staleness propagation (avg-33r), which " +
-            "is unbuilt: it is accepted here but the gateway refuses it with MODE_UNSUPPORTED.",
+            "Rerun mode. rerun-affected-downstream computes a staleness report from the stages " +
+            "named in stageIds (what changed) — pass stageIds with this mode, or the gateway " +
+            "refuses it with MODE_UNSUPPORTED (nothing to propagate from).",
         }),
       ),
-      stageIds: Type.Optional(Type.Array(Type.String(), { description: "Specific stages to rerun (rerun-selected mode)" })),
+      stageIds: Type.Optional(Type.Array(Type.String(), {
+        description: "Specific stages: which to rerun (rerun-selected mode), or which changed " +
+          "(rerun-affected-downstream mode, where it is required).",
+      })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
@@ -362,19 +368,25 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     },
   });
 
-  // --- Tool: pva_approve -------------------------------------------------
+  // --- Tool: pva_request_approval ------------------------------------------
+  // Pi may ask for a review; it cannot grant one (avg-qr4.3). The gateway
+  // resolves Pi's token to the agent principal, and the service turns an
+  // agent's approval of a human gate into a request — so even calling the
+  // approve route cannot mint a human approval. This tool says so up front
+  // rather than letting Pi believe it approved something.
 
   pi.registerTool({
-    name: "pva_approve",
-    label: "Approve Stage",
+    name: "pva_request_approval",
+    label: "Request Approval",
     description:
-      "Approve a manual gate for a stage that requires operator approval.",
+      "Ask the operator to review a completed stage. This does NOT approve it: a human gate " +
+      "is satisfied only by the operator. Stop and tell the user what is waiting for them.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
       episode: Type.String({ description: "Episode slug" }),
-      stageId: Type.String({ description: "Stage ID to approve" }),
-      justification: Type.Optional(Type.String({ description: "Approval justification" })),
+      stageId: Type.String({ description: "Stage ID to request review for" }),
+      note: Type.Optional(Type.String({ description: "Note to leave for the operator" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
@@ -384,7 +396,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ justification: params.justification ?? "Approved via Pi" }),
+            body: JSON.stringify(params.note !== undefined ? { note: params.note } : {}),
           },
         );
 
@@ -394,7 +406,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         return {
-          content: [{ type: "text", text: `Approval failed: ${err instanceof Error ? err.message : String(err)}` }],
+          content: [{ type: "text", text: `Approval request failed: ${err instanceof Error ? err.message : String(err)}` }],
           details: {},
           isError: true as unknown as boolean,
         };

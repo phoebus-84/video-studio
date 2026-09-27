@@ -77,7 +77,7 @@ pi list                       # confirm it is registered
 | `/vstatus` | Stage status for the current episode |
 | `/ctx` | Show resolved channel / series / episode context |
 | `/skills` | List discovered skills |
-| `/approve` | Approve a stage waiting at a gate |
+| `/request-approval` | Ask the operator to review a stage waiting at a gate |
 | `/resume` | Resume an interrupted run |
 | `/render` | Render the current timeline |
 | `/create` | Create a channel, series or episode |
@@ -88,7 +88,7 @@ pi list                       # confirm it is registered
 Workspace: `pva_channels`, `pva_series`, `pva_episodes`, `pva_episode_detail`,
 `pva_create_channel`, `pva_create_series`, `pva_create_episode`, `pva_journal`
 
-Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_approve`,
+Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_approval`,
 `pva_plan_rerun`, `pva_check_staleness`, `pva_budget_status`,
 `pva_capability_status`
 

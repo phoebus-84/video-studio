@@ -168,7 +168,7 @@ describe("Package release checks", () => {
       "pva_create_channel", "pva_create_series", "pva_create_episode",
       "pva_channels", "pva_series", "pva_episodes", "pva_episode_detail",
       "pva_snapshot", "pva_run_stage", "pva_run_pipeline",
-      "pva_check_staleness", "pva_plan_rerun", "pva_approve",
+      "pva_check_staleness", "pva_plan_rerun", "pva_request_approval",
       "pva_budget_status", "pva_journal",
       "pva_generate_image", "pva_synthesize_speech", "pva_synthesize_nonverbal_audio",
       "pva_render_graphics", "pva_render_terminal", "pva_render_vector_animation",

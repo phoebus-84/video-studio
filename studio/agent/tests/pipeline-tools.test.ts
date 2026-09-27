@@ -25,10 +25,15 @@ describe("pipeline tools", () => {
       "pva_run_pipeline",
       "pva_check_staleness",
       "pva_plan_rerun",
-      "pva_approve",
+      "pva_request_approval",
       "pva_budget_status",
       "pva_journal",
     ]);
+  });
+
+  it("there is no pva_approve tool", () => {
+    const byName = register();
+    expect([...byName.keys()]).not.toContain("pva_approve");
   });
 
   it("requires leaseId on pva_complete_stage — omitting it must not validate", () => {
@@ -168,5 +173,21 @@ describe("pipeline tools — wire calls", () => {
     expect(body.leaseId).toBe("lease-abc");
     expect(body.failed).toBe(true);
     expect(body.error).toBe("model timed out");
+  });
+
+  it("pva_request_approval posts to the approve route and reports a request, not a grant", async () => {
+    const fetchMock = stubFetch({
+      ok: true,
+      outcome: { stageId: "script", status: "requested", reason: "the operator must approve this stage" },
+    });
+    const tool = register().get("pva_request_approval");
+
+    const result = await tool.execute("call-1", { ...ref, stageId: "script" }, undefined, vi.fn(), undefined);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/stages\/script\/approve$/);
+    expect(init.method).toBe("POST");
+    expect(result.content[0].text).toMatch(/requested/);
   });
 });

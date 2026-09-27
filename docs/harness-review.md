@@ -98,15 +98,21 @@ recovers the same attempt; dry-run performs no production writes or paid calls.
 
 ### P0 — “Human approval” needs an authenticated, revision-bound origin
 
-**Evidence:** Pi has `pva_approve`; runtime `cmdApprove` writes `actor: "human"`
-regardless of who invoked the command. It is not bound to an output hash. The
-runtime/policy gate functions alone do not prevent direct capability calls.
+**Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval"):** Pi
+*used to* have `pva_approve`; runtime `cmdApprove` wrote `actor: "human"`
+regardless of who invoked the command, and the decision was not bound to an
+output hash. Pi now has `pva_request_approval` instead: the gateway resolves
+Pi's token to the `agent` principal, and `ExecutionService.review` downgrades
+an agent's decision on a `review: human` stage to a request rather than a
+grant. A receipt is signed only when the caller holds the operator key, and it
+binds the stage's plan hash and output hashes — a changed source, camera,
+timing or render setting invalidates it.
 
-**Change:** distinguish agent assessment, policy auto-acceptance and actual human
-approval. The browser/TUI supplies authenticated approval receipts bound to
-plan/attempt/artifact revisions. Pi may request an approval, not mint a human one.
-A changed source, camera, timing or final render settings invalidates the relevant
-receipt. Enforce authorization at the job boundary, not solely in a skill prompt.
+**Change (done):** distinguish agent assessment, policy auto-acceptance and
+actual human approval. The browser/TUI/CLI supply authenticated approval
+receipts bound to plan/attempt/artifact revisions. Pi may request an approval,
+not mint a human one. Authorization is enforced at `ExecutionService.review`,
+the one place that writes a review event, not solely in a skill prompt.
 
 **Acceptance:** an agent-only call cannot satisfy a human gate; a stale receipt
 cannot authorize a new expensive render; print/headless mode stops with an explicit

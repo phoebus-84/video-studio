@@ -503,11 +503,11 @@ export function registerProductionRoutes(
           // "rerun-affected-downstream". The studio sent the phantom on
           // every staleness rerun, and it reached a CLI that shrugged.
           //
-          // "rerun-affected-downstream" is declared here and refused by the
-          // service with MODE_UNSUPPORTED: computing it needs staleness
-          // propagation (avg-33r), which nothing wires up. Declared-and-
-          // refused is the honest pairing; dropping it from the schema would
-          // answer "no such mode" to a mode that exists and is planned.
+          // "rerun-affected-downstream" is declared here, and the service
+          // computes a staleness report for it (avg-33r's third, absorbed by
+          // avg-qr4.3) — but only when the caller names what changed via
+          // stageIds. Omit stageIds and the service refuses with
+          // MODE_UNSUPPORTED rather than propagating from nothing.
           mode: {
             type: "string",
             enum: ["retry-current", "rerun-selected", "rerun-affected-downstream", "full-rebuild"],
