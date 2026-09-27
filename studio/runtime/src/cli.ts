@@ -840,12 +840,25 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
-  const operatorKey = cliOperatorKey(ctx);
-  if (typeof operatorKey === "number") return operatorKey;
-  const service = makeService(args, ttl.value, operatorKey);
+  // Resolved once, from the filesystem: whether this caller can read the
+  // operator key decides both what `run` may claim — an operator may take a
+  // stage `autopilot: false` reserves for a person (avg-qr4.3) — and what a
+  // human decision is verified with. Two separate resolutions here risked the
+  // usual drift: one path learning "operator" while the other silently kept
+  // "agent".
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+
+  const service = makeService(args, ttl.value, credential.operatorKey);
   const claimed = await service.claim(parsed, pipelineName ?? DEFAULT_PIPELINE, {
     ...(stage ? { stage } : {}),
     dryRun: ctx.dryRun,
+    principal: credential.principal,
   });
 
   if (!claimed.ok) {

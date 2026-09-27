@@ -28,6 +28,12 @@ import { join } from "node:path";
  * approval satisfies. It is a sibling of `gated`, not downstream of it, so a
  * test exercising it does not also have to clear `gated`'s human review.
  *
+ * A fifth, `attended`, depends only on `upstream` and declares
+ * `autopilot: false` with `review: none` — avg-qr4.3's attendance gate on its
+ * own, undiluted by a review requirement. A sibling of `gated` and `skilled`,
+ * not downstream of either, for the same reason those two are siblings of
+ * each other.
+ *
  * `roots` is the caller's cleanup list; the directory is pushed onto it so
  * the caller's own `afterEach` removes it.
  *
@@ -103,6 +109,22 @@ export async function reviewChainPipeline(roots: string[], fanOut = 0): Promise<
       "      gates:",
       "        autopilot: true",
       "        review: skill",
+      "        retry_on_failure: 0",
+      "      depends_on:",
+      "        - upstream",
+      "",
+      "    - id: attended",
+      '      name: "Attended"',
+      "      type: editorial",
+      "      inputs:",
+      "        - contract: upstream.md",
+      '          version: "1.0.0"',
+      "      outputs:",
+      "        - contract: attended.md",
+      '          version: "1.0.0"',
+      "      gates:",
+      "        autopilot: false",
+      "        review: none",
       "        retry_on_failure: 0",
       "      depends_on:",
       "        - upstream",

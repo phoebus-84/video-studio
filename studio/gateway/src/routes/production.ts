@@ -219,7 +219,9 @@ export function registerProductionRoutes(
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
     const service = serviceFor(request);
-    const outcome = await service.run(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
+    const outcome = await service.run(ref, pipeline, {
+      stage: stageId, dryRun: dryRun ?? false, principal: request.principal ?? "agent",
+    });
 
     // `ok` means the service reached a verdict. A `blocked` outcome is
     // `ok: true` with a `blocked` status — the same convention /execute uses,
@@ -264,7 +266,9 @@ export function registerProductionRoutes(
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
     const service = serviceFor(request);
-    const outcome = await service.claim(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
+    const outcome = await service.claim(ref, pipeline, {
+      stage: stageId, dryRun: dryRun ?? false, principal: request.principal ?? "agent",
+    });
     return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
 
@@ -382,7 +386,7 @@ export function registerProductionRoutes(
     const service = serviceFor(request);
 
     if (dryRun) {
-      const outcome = await service.run(ref, pipeline, { dryRun: true });
+      const outcome = await service.run(ref, pipeline, { dryRun: true, principal: request.principal ?? "agent" });
       return outcome.ok
         ? { ok: true, dryRun: true, outcome: outcome.value }
         : { ok: false, dryRun: true, error: outcome.error };
@@ -398,7 +402,7 @@ export function registerProductionRoutes(
     // second. `i` is read after the loop for that reason alone.
     let i = 0;
     for (; i < maxStagesPerExecute; i++) {
-      const outcome = await service.run(ref, pipeline);
+      const outcome = await service.run(ref, pipeline, { principal: request.principal ?? "agent" });
       if (!outcome.ok) {
         return {
           ok: false,

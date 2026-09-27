@@ -34,7 +34,7 @@ import { planRerun } from "../rerun/index.js";
 import type { RerunMode, RerunPlan } from "../rerun/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
-  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput,
+  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput, Principal,
 } from "./types.js";
 
 /** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
@@ -345,6 +345,7 @@ export class ExecutionService {
     derived: Map<string, { status: string }>,
     episodeDir: string,
     verdicts?: Map<string, ReviewVerdict>,
+    principal: Principal = "agent",
   ): Promise<string | null> {
     const stageId = stage.definition.id;
 
@@ -374,9 +375,12 @@ export class ExecutionService {
     //
     // Below the unmet-dependency check, which names an earlier and more
     // useful problem, and above everything that leases, dispatches or spends.
-    if (!stage.definition.gates.autopilot) {
+    //
+    // avg-qr4.3 gave the service a way to know a person is at the controls:
+    // the operator principal, resolved from a credential Pi is never given.
+    if (!stage.definition.gates.autopilot && principal !== "operator") {
       return `"${stageId}" declares autopilot: false and may not run unattended; ` +
-        `a person has to run it`;
+        `sign in as the operator to take this stage`;
     }
 
     for (const depId of stage.definition.dependsOn ?? []) {
@@ -450,7 +454,7 @@ export class ExecutionService {
   private async claimInternal(
     ref: EpisodeRef,
     pipeline: string,
-    opts: { stage?: string; dryRun?: boolean } = {},
+    opts: { stage?: string; dryRun?: boolean; principal?: Principal } = {},
     precheck?: (stage: ResolvedStage) => string | null,
   ): Promise<Result<ClaimInternal, ExecutionError>> {
     const startedAt = Date.now();
@@ -506,7 +510,8 @@ export class ExecutionService {
     // ── Gate ──────────────────────────────────────────────────────────────
     // Dependencies, attendance and review, answered by the same code `status`
     // uses, so the two cannot report different things about one stage.
-    const refusal = await this.whyBlocked(stage, stages, derived, episodeDir);
+    const principal = opts.principal ?? "agent";
+    const refusal = await this.whyBlocked(stage, stages, derived, episodeDir, undefined, principal);
     if (refusal) return blocked(refusal);
 
     const ctx: DispatchContext = {
@@ -633,7 +638,14 @@ export class ExecutionService {
       const holder = this.options.holder ?? `runtime/pid-${process.pid}`;
       leased = await appendJournalEvent(episodeDir, {
         type: "stage-leased", actor: "runtime", episode: ref,
-        data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
+        data: {
+          stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder,
+          // Present only for an operator's own claim: `attended` is a
+          // positive assertion that a person is at the controls, so an
+          // agent's ordinary lease must not carry it, even as `false`
+          // (avg-qr4.3).
+          ...(principal === "operator" ? { attended: true as const } : {}),
+        },
       });
     } catch (e) {
       await sm.releaseAll();
@@ -689,7 +701,7 @@ export class ExecutionService {
   async claim(
     ref: EpisodeRef,
     pipeline: string,
-    opts: { stage?: string; dryRun?: boolean } = {},
+    opts: { stage?: string; dryRun?: boolean; principal?: Principal } = {},
   ): Promise<Result<StageOutcome, ExecutionError>> {
     const claimed = await this.claimInternal(ref, pipeline, opts);
     return claimed.ok ? ok(claimed.value.outcome) : claimed;
@@ -1055,7 +1067,7 @@ export class ExecutionService {
   async run(
     ref: EpisodeRef,
     pipeline: string,
-    opts: { stage?: string; dryRun?: boolean } = {},
+    opts: { stage?: string; dryRun?: boolean; principal?: Principal } = {},
   ): Promise<Result<StageOutcome, ExecutionError>> {
     const startedAt = Date.now();
 

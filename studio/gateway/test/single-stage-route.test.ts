@@ -62,12 +62,24 @@ async function episodeDir() {
  * `runtime` is a stub: nothing these routes still reach uses it. The three
  * that do — snapshot, approve, init — are Task 8's.
  */
-async function appWithEpisode() {
+async function appWithEpisode(opts: { withPrincipalHook?: boolean } = {}) {
+  const { withPrincipalHook = false } = opts;
   const { root, dir } = await episodeDir();
   const decoy = await mkdtemp(join(tmpdir(), "gw-decoy-env-"));
   roots.push(decoy);
   vi.stubEnv("AVG_LIBRARY_ROOT", decoy);
   const app = Fastify();
+  // Stands in for the auth middleware's `request.principal`, which
+  // `registerProductionRoutes` does not itself set — see
+  // review-routes.test.ts. Opt-in, not on by default: every other test in
+  // this file exercises the ordinary agent-default path, and always
+  // installing the hook would hide a route that forgot to read
+  // `request.principal` behind Fastify's own default instead.
+  if (withPrincipalHook) {
+    app.addHook("preHandler", async (req) => {
+      (req as any).principal = req.headers["x-test-principal"] === "operator" ? "operator" : "agent";
+    });
+  }
   const workspace = { getEpisode: async () => null } as unknown as WorkspaceService;
   // No operator key: nothing here records or reads a human decision, and
   // the routes take the key as a required option so no caller omits it.
@@ -172,6 +184,35 @@ describe("POST /stages/:stage/execute", () => {
     const body = res.json();
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe("STAGE_UNKNOWN");
+  });
+
+  it("lets an operator past the autopilot wall; an agent stops there (Task 7)", async () => {
+    // `script` declares `autopilot: false` and has no gateway handler. An
+    // agent is refused at the attendance gate, naming autopilot; the
+    // operator credential clears that gate and is refused one wall later,
+    // by the dispatcher — the refusal this test pins no longer mentions
+    // autopilot at all.
+    const { app, dir } = await appWithEpisode({ withPrincipalHook: true });
+    await seedUpTo(dir, "brief");
+
+    const asAgent = await app.inject({
+      method: "POST", url: `${BASE}/stages/script/execute`, payload: {},
+    });
+    const asOperator = await app.inject({
+      method: "POST", url: `${BASE}/stages/script/execute`,
+      headers: { "x-test-principal": "operator" }, payload: {},
+    });
+    await app.close();
+
+    const agentBody = asAgent.json();
+    expect(agentBody.ok).toBe(true);
+    expect(agentBody.outcome.status).toBe("blocked");
+    expect(agentBody.outcome.reason).toMatch(/autopilot: false/);
+
+    const operatorBody = asOperator.json();
+    expect(operatorBody.ok).toBe(true);
+    expect(operatorBody.outcome.status).toBe("blocked");
+    expect(operatorBody.outcome.reason).not.toMatch(/autopilot/);
   });
 
   it("reports a dry run without leasing or writing", async () => {
