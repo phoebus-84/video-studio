@@ -24,10 +24,34 @@ function devGatewayToken(): string {
   }
 }
 
+/**
+ * The operator key for local development (avg-qr4.3).
+ *
+ * Mirrors `devGatewayToken` above: reading the gateway's own operator-key
+ * file here makes `npm run dev` connect as the operator with no setup, and it
+ * honors `AVG_OPERATOR_KEY_FILE` so the dev server resolves to the same file
+ * the gateway does when an operator has pointed it elsewhere — the gateway
+ * reads that env var first (Task 5), and a dev server that ignored it would
+ * read a stale or nonexistent default while the gateway checked the real one.
+ * Dev-only, like the token: a production build must supply VITE_OPERATOR_KEY.
+ */
+function devOperatorKey(): string {
+  if (process.env.VITE_OPERATOR_KEY) return process.env.VITE_OPERATOR_KEY;
+  const file = process.env.AVG_OPERATOR_KEY_FILE || "../gateway/.operator-key";
+  try {
+    return readFileSync(path.resolve(file), "utf-8").trim();
+  } catch {
+    return "";
+  }
+}
+
 export default defineConfig(({ command }) => ({
   define: {
     __GATEWAY_TOKEN__: JSON.stringify(
       command === "serve" ? devGatewayToken() : (process.env.VITE_GATEWAY_TOKEN ?? ""),
+    ),
+    __OPERATOR_KEY__: JSON.stringify(
+      command === "serve" ? devOperatorKey() : (process.env.VITE_OPERATOR_KEY ?? ""),
     ),
   },
   plugins: [svelte()],

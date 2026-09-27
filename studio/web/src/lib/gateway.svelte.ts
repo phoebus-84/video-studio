@@ -13,10 +13,23 @@ let _wsCallbacks: Array<(event: Record<string, unknown>) => void> = [];
 let _wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let _wsUrl = "";
 
+/**
+ * Which credential the studio presents (avg-qr4.3). The operator key makes
+ * this browser the operator, so its approvals are signed human decisions.
+ * Without it the studio still works on the agent token, and an approval
+ * becomes a request, which fails closed.
+ */
+export function credentialFor(
+  storage: Pick<Storage, "getItem">, operatorKey: string, gatewayToken: string,
+): string {
+  return storage.getItem("vs-operator-key") || operatorKey
+    || storage.getItem("vs-gateway-token") || gatewayToken;
+}
+
 export function getGatewayClient(): GatewayClient {
   if (!_client) {
     const baseUrl = localStorage.getItem("vs-gateway-url") ?? "http://127.0.0.1:5198";
-    const token = localStorage.getItem("vs-gateway-token") ?? __GATEWAY_TOKEN__;
+    const token = credentialFor(localStorage, __OPERATOR_KEY__, __GATEWAY_TOKEN__);
     _client = new GatewayClient({
       baseUrl,
       tokenProvider: () => token,
