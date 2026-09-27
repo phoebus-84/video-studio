@@ -15,11 +15,11 @@
 // Three properties could not be carried across when the port was first
 // re-pointed, and were marked in place rather than quietly dropped: two as
 // `it.fails` and one inline, in "leaves a human-reviewed stage awaiting
-// review". Two of the three are back — the autopilot gate and the review
-// gate now exist, and both `it.fails` are ordinary tests again. ONE remains,
-// the inline one: nothing in this composition writes an `approval-requested`
-// record, so the original assertion that such a record names by hash what it
-// wants reviewed has no object to make. That belongs to avg-qr4.3. See
+// review". All three are back now: the autopilot gate and the review gate
+// exist, and avg-qr4.3's task 8 gave `complete()` the missing write — an
+// `approval-requested` record, appended the moment a reviewed stage
+// completes — so the original assertion that such a record names by hash
+// what it wants reviewed has an object to make again. See
 // .superpowers/sdd/2026-09-20-gateway-as-transport/task-4-report.md.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -337,12 +337,18 @@ describe("acceptance gates", () => {
     expect(result.value.outputs.length).toBeGreaterThan(0);
 
     // The original asserted that the approval-requested record named what it
-    // wanted reviewed, by hash. Nothing writes that record any more (F2). What
-    // survives is that the outcome names artifacts that are really there and
-    // really hashable — a weaker statement about a different object, kept so
-    // the outputs cannot become a list of names nobody can check.
+    // wanted reviewed, by hash. Task 8 restores the object of that assertion:
+    // `complete()` itself now appends the record, right after
+    // `stage-completed`, naming the same outputs by the same hash.
+    const request = (await journal(dir)).at(-1)!;
+    expect(request.type).toBe("approval-requested");
+    expect((request.data as { origin?: string }).origin).toBe("policy");
+    const named = (request.data as { binding: { outputs: { path: string; sha256: string }[] } }).binding.outputs;
+    expect(named.map((o) => o.path)).toEqual(result.value.outputs);
+
     const hashed = await hashArtifacts(dir, result.value.outputs);
     expect(hashed[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(named[0]!.sha256).toBe(hashed[0]!.sha256);
   });
 
   it("never emits an approval of its own", async () => {
@@ -787,25 +793,29 @@ describe("dependency gates", () => {
   // state a real halt leaves" — because that is the only version of the
   // property worth having.
   //
-  // It was `it.fails` until the review gate went tri-state. Nothing in this
-  // composition writes an `approval-requested` record, so `deriveGateState`
-  // answers `none` for a stage that completed while declaring `review: human`.
-  // While `isOutstanding` returned a boolean that came back as "not
-  // outstanding", the injected gate was authoritative, the manifest fallback
-  // was skipped, and the dependent was refused only for having no handler —
-  // the "coincidence of this stage, not a rule" ruled out below. `no-record`
-  // now falls through to the manifest, so the refusal is about the dependency.
-  it("keeps a halt at a review gate across the next execute, with no record written", async () => {
+  // It was `it.fails` until the review gate went tri-state, and for a while
+  // after that this composition wrote no `approval-requested` record of its
+  // own, so `deriveGateState` answered `none` for a stage that completed
+  // while declaring `review: human` and the refusal came from the manifest's
+  // own fallback rule ("no accepted review is recorded"). avg-qr4.3's task 8
+  // gave `complete()` that write: a reviewed stage now leaves a request
+  // behind the moment it finishes, so the gate has a record before the
+  // manifest fallback is ever asked, and the refusal is the gate's own
+  // ("is awaiting review") rather than the fallback's. Either way the
+  // dependent must be refused for its dependency, not for having no
+  // checker — the "coincidence of this stage, not a rule" ruled out below.
+  it("keeps a halt at a review gate across the next execute", async () => {
     const { root, dir } = await episode();
     await seedUpTo(dir, "brief", "script", "art-direction");
     await writeFile(join(dir, "assets", "images", "s1.png"), "bytes");
 
     // Run 1: the gateway itself halts illustrations. Nothing here is
-    // hand-authored — this is the state a real halt leaves.
+    // hand-authored — this is the state a real halt leaves, request and all.
     const first = await gatewayService(root).run(REF, "fairy-tale-adaptation", { stage: "illustrations" });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     expect(first.value.status).toBe("awaiting_review");
+    expect((await journal(dir)).at(-1)!.type).toBe("approval-requested");
 
     // Run 2: continuity-check depends on illustrations. Without the gate it
     // would be refused for having no checker — a coincidence of this stage,
@@ -815,7 +825,7 @@ describe("dependency gates", () => {
     if (!second.ok) return;
     expect(second.value.status).toBe("blocked");
     expect(second.value.reason).toMatch(/illustrations/);
-    expect(second.value.reason).toMatch(/no accepted review is recorded/);
+    expect(second.value.reason).toMatch(/is awaiting review/);
     // Refused for the dependency, not for the missing checker.
     expect(second.value.reason).not.toMatch(/does not handle/);
   });

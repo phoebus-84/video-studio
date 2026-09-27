@@ -945,14 +945,39 @@ export class ExecutionService {
     // journal says completed because that is true; the outcome says
     // awaiting_review because that is what the caller needs.
     const needsReview = stage.definition.gates.review !== "none";
+
+    // avg-2n7 deleted the loop that used to write this, so nothing told an
+    // operator a stage was waiting for them (avg-qr4.3 notes, point 1). The
+    // completion is already durable, so a request that fails to land is
+    // reported, not treated as a failed stage: the gate then reads no record
+    // and the manifest rule refuses dependents, which still fails closed.
+    let requestNote: string | undefined;
+    if (needsReview) {
+      try {
+        const hashed = await hashArtifacts(episodeDir, relative);
+        const request = buildGateReview({
+          stageId, decision: "requested", origin: "policy", actor: "runtime",
+          binding: { planHash: planHashOf(stage.definition), outputs: hashed },
+        });
+        const asked = await appendJournalEvent(episodeDir, {
+          type: "approval-requested", actor: "runtime", episode: ref, data: { ...request },
+        });
+        if (!asked) requestNote = `the review request for "${stageId}" could not be written to the journal`;
+      } catch (e) {
+        requestNote = `the review request for "${stageId}" could not be written: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+
+    const base = needsReview
+      ? `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet`
+      : undefined;
+
     return ok({
       stageId,
       status: needsReview ? "awaiting_review" : "completed",
       outputs: relative, attemptNumber, leaseId,
       durationMs: Date.now() - startedAt,
-      ...(needsReview
-        ? { reason: `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet` }
-        : {}),
+      ...(base ? { reason: [base, requestNote].filter(Boolean).join("; ") } : {}),
     });
   }
 

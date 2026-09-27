@@ -71,19 +71,26 @@ async function journal(dir: string) {
   return parseJournal(await readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8"), { strict: true });
 }
 
-describe("ExecutionService.review", () => {
-  async function completed(stage: string, operatorKey: string | null = KEY) {
-    const { root, dir } = await episode();
-    const pipelines = await reviewChainPipeline(roots);
-    const svc = new ExecutionService({
-      libraryRoot: root, builtinPipelines: pipelines,
-      dispatcher: writer(dir), budget, review: permissive, operatorKey,
-    });
-    await svc.run(REF, "review-chain", { stage: "upstream" });
-    await svc.run(REF, "review-chain", { stage });
-    return { svc, dir };
-  }
+/**
+ * `upstream` (no review), then the named stage, both run for real.
+ *
+ * Module-scoped rather than nested in one describe: task 8's own describe
+ * block below needs the exact same setup — a reviewed stage that really
+ * completed through `complete()` — to see what it appends to the journal.
+ */
+async function completed(stage: string, operatorKey: string | null = KEY) {
+  const { root, dir } = await episode();
+  const pipelines = await reviewChainPipeline(roots);
+  const svc = new ExecutionService({
+    libraryRoot: root, builtinPipelines: pipelines,
+    dispatcher: writer(dir), budget, review: permissive, operatorKey,
+  });
+  await svc.run(REF, "review-chain", { stage: "upstream" });
+  await svc.run(REF, "review-chain", { stage });
+  return { svc, dir };
+}
 
+describe("ExecutionService.review", () => {
   it("writes a signed human grant for the operator", async () => {
     const { svc, dir } = await completed("gated");
     const out = await svc.review(REF, "review-chain", "gated", { decision: "approved", principal: "operator" });
@@ -160,5 +167,56 @@ describe("ExecutionService.review", () => {
     const out = await svc.review(REF, "review-chain", "gated", { decision: "approved", principal: "operator" });
     expect(out.ok && out.value.status).toBe("blocked");
     expect(out.ok && out.value.reason).toMatch(/could not be written/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// avg-qr4.3, task 8: a completed reviewed stage asks for its review.
+//
+// avg-2n7 deleted the loop that used to write this record, so a stage that
+// finished a `review: human` or `review: skill` gate left nothing in the
+// journal saying anyone was waiting on it — the gate read `no-record` and
+// fell back to the manifest rule, which names the RIGHT problem ("no accepted
+// review") but never told anyone a review was actually pending. `complete()`
+// now appends `approval-requested` itself, right after `stage-completed`,
+// with `origin: "policy"` (the runtime decided this needs a person, nobody
+// asked it to) and unsigned (a request is never signed).
+// ---------------------------------------------------------------------------
+describe("ExecutionService.complete's review request", () => {
+  it("writes approval-requested right after a reviewed stage completes", async () => {
+    const { dir } = await completed("gated");
+    const tail = (await journal(dir)).slice(-2).map((e) => e.type);
+    expect(tail).toEqual(["stage-completed", "approval-requested"]);
+    const req = (await journal(dir)).at(-1)!;
+    expect((req.data as any).origin).toBe("policy");
+    expect((req.data as any).binding.outputs[0].path).toBe("artifacts/gated.md");
+  });
+
+  it("writes no request for a stage that declares no review", async () => {
+    const { dir } = await completed("upstream");
+    expect((await journal(dir)).map((e) => e.type)).not.toContain("approval-requested");
+  });
+
+  it("a failed request write is reported in the reason, and the stage is still awaiting_review", async () => {
+    const { root, dir } = await episode();
+    const pipelines = await reviewChainPipeline(roots);
+    const svc = new ExecutionService({
+      libraryRoot: root, builtinPipelines: pipelines,
+      dispatcher: writer(dir), budget, review: permissive, operatorKey: KEY,
+    });
+    await svc.run(REF, "review-chain", { stage: "upstream" });
+
+    journalMockState.dropReviewEvent = "approval-requested";
+    const result = await svc.run(REF, "review-chain", { stage: "gated" });
+    journalMockState.dropReviewEvent = null;
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("awaiting_review");
+    expect(result.value.reason).toMatch(/request .* could not be written/);
+
+    const types = (await journal(dir)).map((e: any) => e.type);
+    expect(types).not.toContain("approval-requested");
+    expect(types.at(-1)).toBe("stage-completed");
   });
 });
