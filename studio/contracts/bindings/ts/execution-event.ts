@@ -12,6 +12,8 @@ export interface StageLeased {
   expiresAt: string;
   /** Who took the lease, so an expired one reports as held by X until T rather than as an anonymous block. */
   holder: string;
+  /** Present when an operator took the stage (avg-qr4.3). */
+  attended?: true;
 }
 
 export interface StageStarted {

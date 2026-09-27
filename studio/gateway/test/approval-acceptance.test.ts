@@ -53,6 +53,20 @@ describe("the approval acceptance line", () => {
     const libraryRoot = await mkdtemp(join(tmpdir(), "gw-accept-library-"));
     roots.push(configDir, libraryRoot);
 
+    // `createGateway` resolves its library as
+    // `process.env.AVG_LIBRARY_ROOT ?? config.libraryRoots[0] ?? "./library"`
+    // (server.ts) — env wins over config, by design, unlike the routes other
+    // gateway tests drive directly with an explicit `libraryRoot` argument.
+    // A decoy value here (the pattern `single-stage-route.test.ts` uses to
+    // prove a route does NOT fall back to the environment) would therefore
+    // make this composition's real library the decoy, not the temp dir this
+    // test writes into and asserts against. Stubbed to the SAME value as
+    // `config.libraryRoots[0]` instead: if the repository's own root `.env`
+    // has `AVG_LIBRARY_ROOT` set to the real production library (it does),
+    // this is what stops the claim/complete calls below from leasing and
+    // journaling into it.
+    vi.stubEnv("AVG_LIBRARY_ROOT", libraryRoot);
+
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
