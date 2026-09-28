@@ -373,7 +373,8 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
   // resolves Pi's token to the agent principal, and the service turns an
   // agent's approval of a human gate into a request — so even calling the
   // approve route cannot mint a human approval. This tool says so up front
-  // rather than letting Pi believe it approved something.
+  // rather than letting Pi believe it approved something, and sends
+  // `request: true` so it asks on every review level, `skill` included.
 
   pi.registerTool({
     name: "pva_request_approval",
@@ -396,7 +397,11 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params.note !== undefined ? { note: params.note } : {}),
+            // `request: true`, not a bare POST (avg-qr4.3 final review, M1):
+            // the route reads a bare POST as "approve", which on a
+            // `review: skill` stage an agent is allowed to grant — so asking
+            // used to approve. A request is written whatever the level.
+            body: JSON.stringify({ request: true, ...(params.note !== undefined ? { note: params.note } : {}) }),
           },
         );
 

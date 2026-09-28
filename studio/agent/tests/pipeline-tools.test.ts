@@ -190,4 +190,18 @@ describe("pipeline tools — wire calls", () => {
     expect(init.method).toBe("POST");
     expect(result.content[0].text).toMatch(/requested/);
   });
+
+  // avg-qr4.3 final review, M1: the tool posted `{ note }` to /approve, which
+  // the service read as `approved` — on a `review: skill` stage, Pi's
+  // "request" was a grant. It now says what it means.
+  it("pva_request_approval sends request: true, with or without a note", async () => {
+    const fetchMock = stubFetch({ ok: true, outcome: { stageId: "qa", status: "requested" } });
+    const tool = register().get("pva_request_approval");
+
+    await tool.execute("call-1", { ...ref, stageId: "qa", note: "scene 3 looks off" }, undefined, vi.fn(), undefined);
+    await tool.execute("call-2", { ...ref, stageId: "qa" }, undefined, vi.fn(), undefined);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ request: true, note: "scene 3 looks off" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ request: true });
+  });
 });

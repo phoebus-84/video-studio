@@ -173,6 +173,43 @@ describe("POST /stages/:stage/approve", () => {
   });
 });
 
+// avg-qr4.3 final review, M1: the body schema declared only an unused
+// `justification`, so Fastify stripped a `note`, and `pva_request_approval`
+// had no way to ask without the route treating it as an approval.
+describe("POST /stages/:stage/approve body", () => {
+  it("passes the note through to the grant", async () => {
+    const { app, dir } = await appWithEpisode();
+    await toAwaitingReview(app, dir);
+
+    const res = await app.inject({
+      method: "POST", url: `${BASE}/stages/${STAGE}/approve`,
+      headers: { "x-test-principal": "operator" }, payload: { note: "the palette works" },
+    });
+    await app.close();
+
+    expect(res.json().outcome.status).toBe("approved");
+    const grant = (await journal(dir)).find((e) => e.type === "approval-granted");
+    expect((grant!.data as { note?: string }).note).toBe("the palette works");
+  });
+
+  it("request: true writes a request with its note, even for the operator", async () => {
+    const { app, dir } = await appWithEpisode();
+    await toAwaitingReview(app, dir);
+    const before = (await journal(dir)).length;
+
+    const res = await app.inject({
+      method: "POST", url: `${BASE}/stages/${STAGE}/approve`,
+      headers: { "x-test-principal": "operator" }, payload: { request: true, note: "please check scene 3" },
+    });
+    await app.close();
+
+    expect(res.json().outcome.status).toBe("requested");
+    const added = (await journal(dir)).slice(before);
+    expect(added.map((e) => e.type)).toEqual(["approval-requested"]);
+    expect((added[0]!.data as { note?: string }).note).toBe("please check scene 3");
+  });
+});
+
 describe("POST /stages/:stage/reject", () => {
   it("reject requires a note", async () => {
     const { app, dir } = await appWithEpisode();

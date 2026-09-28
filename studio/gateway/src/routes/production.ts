@@ -548,19 +548,31 @@ export function registerProductionRoutes(
           stage: { type: "string" },
         },
       },
+      // avg-qr4.3 final review, M1: this declared only `justification`,
+      // which nothing read, and Fastify strips undeclared properties — so a
+      // note never arrived, and `pva_request_approval` could not ask without
+      // the route treating the call as an approval (a grant, on a
+      // `review: skill` stage). `justification` is gone: nothing sent it.
       body: {
         type: "object",
         properties: {
-          justification: { type: "string" },
+          note: { type: "string" },
+          request: {
+            type: "boolean",
+            description: "Ask an operator to decide, rather than approve. Always writes a request, whoever the caller is.",
+          },
         },
       },
     },
   }, async (request) => {
     const ref = parseEpisode(request.params as Record<string, string>);
     const stageId = (request.params as Record<string, string>).stage!;
+    const { note, request: asking } = (request.body ?? {}) as { note?: string; request?: boolean };
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
     const outcome = await serviceFor(request).review(ref, pipeline, stageId, {
-      decision: "approved", principal: request.principal ?? "agent",
+      decision: asking ? "requested" : "approved",
+      principal: request.principal ?? "agent",
+      ...(note !== undefined ? { note } : {}),
     });
     return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
