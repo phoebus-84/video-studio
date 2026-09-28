@@ -4,6 +4,7 @@
   "origin": "human",
   "actor": "human",
   "at": "2026-09-15T12:05:00Z",
+  "episode": "cozy-tales/wolf-and-friends/ep01",
   "binding": {
     "planHash": "16b85a87c85489ace255fde8b857d356d943c7e022e5c1ac99173baa9081c6f5",
     "inputs": [

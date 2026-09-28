@@ -45,6 +45,7 @@ for (const fixturePath of [
 
 for (const fixturePath of [
   "fixtures/gate-review/invalid/approved-without-outputs.json",
+  "fixtures/gate-review/invalid/approved-without-episode.json",
   "fixtures/gate-review/invalid/bad-hash.json",
   "fixtures/gate-review/invalid/human-approved-unsigned.json",
   "fixtures/gate-review/invalid/rejected-without-note.json",

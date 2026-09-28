@@ -42,6 +42,8 @@ export interface GateReview {
   binding: GateReviewBinding;
   checks: GateCheck[];
   note?: string;
+  /** The "channel/series/episode" slug. Required on approved and rejected; signed. */
+  episode?: string;
   /** Present exactly when `origin: "human"` and the decision is approved or rejected. */
   signature?: string;
 }
@@ -61,6 +63,8 @@ export interface BuildGateReviewInput {
   checks?: GateCheck[];
   note?: string;
   at?: string;
+  /** The "channel/series/episode" slug the decision is about. Required unless requested. */
+  episode?: string;
 }
 
 /**
@@ -98,5 +102,5 @@ export declare function deriveGateState(
   events: unknown[],
   stageId: string,
   episodeDir: string,
-  opts?: { key?: string | null; planHash?: string },
+  opts?: { key?: string | null; planHash?: string; episode?: string },
 ): Promise<GateState>;

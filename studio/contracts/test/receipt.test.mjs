@@ -11,6 +11,8 @@ const review = () => ({
   actor: "runtime",
   at: "2026-09-24T10:00:00.000Z",
   binding: { planHash: "a".repeat(64), inputs: [], outputs: [{ path: "artifacts/script.md", sha256: "b".repeat(64) }] },
+  episode: "chan/series/ep1",
+  note: "looks right",
   checks: [],
 });
 
@@ -41,7 +43,7 @@ describe("signReceipt / verifyReceipt", () => {
     assert.equal(verifyReceipt(signReceipt(review(), KEY), KEY), true);
   });
   it("signs exactly the decision-bearing fields", () => {
-    assert.deepEqual(SIGNED_FIELDS, ["stageId", "decision", "origin", "binding", "at"]);
+    assert.deepEqual(SIGNED_FIELDS, ["stageId", "decision", "origin", "binding", "at", "episode", "note"]);
   });
   it("fails for every signed field that is tampered with", () => {
     const signed = signReceipt(review(), KEY);
@@ -52,6 +54,11 @@ describe("signReceipt / verifyReceipt", () => {
       { ...signed, at: "2026-09-25T10:00:00.000Z" },
       { ...signed, binding: { ...signed.binding, planHash: "c".repeat(64) } },
       { ...signed, binding: { ...signed.binding, outputs: [] } },
+      // avg-qr4.3 final review: the episode and the note were outside the
+      // signature, so a receipt could be moved to another episode and a
+      // rejection's reason rewritten without breaking it.
+      { ...signed, episode: "chan/series/ep2" },
+      { ...signed, note: "rewritten" },
     ];
     for (const t of tampered) assert.equal(verifyReceipt(t, KEY), false, JSON.stringify(t));
   });

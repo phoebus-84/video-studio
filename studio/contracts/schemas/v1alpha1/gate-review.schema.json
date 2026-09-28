@@ -68,7 +68,12 @@
           }
         },
         "checks": { "type": "array", "items": { "$ref": "#/$defs/GateCheck" } },
-        "note": { "type": "string" },
+        "note": { "type": "string", "description": "Signed with the decision, so a rejection's reason cannot be rewritten under a valid signature." },
+        "episode": {
+          "type": "string",
+          "pattern": "^[^/]+/[^/]+/[^/]+$",
+          "description": "The channel/series/episode slug the decision is about. Signed, so a receipt copied into another episode does not read as made there (avg-qr4.3). Required on approved and rejected."
+        },
         "signature": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
@@ -90,6 +95,14 @@
               }
             },
             "description": "An approval must name at least one artifact and the plan it was bound to. Approving nothing is the bug this issue exists to remove."
+          }
+        },
+        {
+          "if": { "properties": { "decision": { "enum": ["approved", "rejected"] } }, "required": ["decision"] },
+          "then": {
+            "required": ["episode"],
+            "properties": { "episode": { "type": "string" } },
+            "description": "A decision names the episode it was made for, or it could be copied into another one."
           }
         },
         {

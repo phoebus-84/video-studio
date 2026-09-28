@@ -13,7 +13,7 @@ import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journ
 import { deriveGateState } from "@studio/contracts/src/gate-review.mjs";
 import { planHashOf } from "@studio/contracts/src/receipt.mjs";
 import type { ResolvedStage } from "../pipeline/types.js";
-import type { ReviewGate, ReviewVerdict } from "./types.js";
+import type { ReviewContext, ReviewGate, ReviewVerdict } from "./types.js";
 
 /**
  * Which origins satisfy a manifest's `gates.review`.
@@ -36,11 +36,19 @@ export class JournalReviewGate implements ReviewGate {
    */
   constructor(private readonly key: string | null) {}
 
-  async isOutstanding(stageId: string, episodeDir: string, stage?: ResolvedStage): Promise<ReviewVerdict> {
+  async isOutstanding(
+    stageId: string, episodeDir: string, stage?: ResolvedStage, ctx?: ReviewContext,
+  ): Promise<ReviewVerdict> {
     if (!stage) {
       // A receipt is bound to a plan hash; without the definition there is
       // nothing to compare it with, and "approved" would be a guess.
       return { state: "outstanding", reason: "cannot be judged without its definition, which a receipt is bound to" };
+    }
+    if (!ctx?.episode) {
+      // Same reasoning, for the episode a human receipt signs (avg-qr4.3
+      // final review): without it a receipt copied from a sibling episode
+      // cannot be told apart from one made here.
+      return { state: "outstanding", reason: "cannot be judged without knowing its episode, which a receipt is bound to" };
     }
 
     let events;
@@ -64,6 +72,7 @@ export class JournalReviewGate implements ReviewGate {
     const state = await deriveGateState(events, stageId, episodeDir, {
       key: this.key,
       planHash: planHashOf(stage.definition),
+      episode: ctx.episode,
     });
     switch (state.state) {
       case "none":

@@ -35,7 +35,7 @@ import type { RerunMode, RerunPlan } from "../rerun/index.js";
 import { propagate } from "../staleness/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
-  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput, Principal,
+  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput, Principal, ReviewContext,
 } from "./types.js";
 
 /** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
@@ -167,6 +167,8 @@ export class ExecutionService {
     // One review verdict per dependency per `status()` call, shared by every
     // stage in the loop below. See `whyBlocked`.
     const verdicts = new Map<string, ReviewVerdict>();
+    // Which episode a human receipt must be signed for (avg-qr4.3 final review).
+    const reviewCtx: ReviewContext = { episode: episodeSlug(ref) };
 
     // Index of the newest event of each kind per stage, for staleness. A
     // reverse loop rather than `Array.prototype.findLastIndex`: that needs
@@ -200,7 +202,7 @@ export class ExecutionService {
       let stateReason: string | null = null;
       if (instance.status === "pending") {
         try {
-          stateReason = await this.whyBlocked(stage, stages, derived, episodeDir, verdicts);
+          stateReason = await this.whyBlocked(stage, stages, derived, episodeDir, reviewCtx, verdicts);
         } catch (e) {
           // An injected gate that throws instead of returning a verdict used
           // to escape `status` as an unhandled rejection. Every other failure
@@ -241,7 +243,7 @@ export class ExecutionService {
           let verdict = verdicts.get(stage.definition.id);
           if (!verdict && this.options.review) {
             try {
-              verdict = await this.options.review.isOutstanding(stage.definition.id, episodeDir, stage);
+              verdict = await this.options.review.isOutstanding(stage.definition.id, episodeDir, stage, reviewCtx);
               verdicts.set(stage.definition.id, verdict);
             } catch (e) {
               // Same reasoning as the `whyBlocked` catch above: a gate that
@@ -377,6 +379,7 @@ export class ExecutionService {
     stages: ResolvedStage[],
     derived: Map<string, { status: string }>,
     episodeDir: string,
+    reviewCtx: ReviewContext,
     verdicts?: Map<string, ReviewVerdict>,
     principal: Principal = "agent",
   ): Promise<string | null> {
@@ -431,7 +434,7 @@ export class ExecutionService {
           // The dependency's definition travels with the question: a receipt
           // is bound to its plan hash (avg-qr4.3), and a gate asked without
           // it refuses rather than guessing.
-          verdict = await this.options.review.isOutstanding(depId, episodeDir, depStage);
+          verdict = await this.options.review.isOutstanding(depId, episodeDir, depStage, reviewCtx);
           verdicts?.set(depId, verdict);
         }
         if (verdict.state === "approved") {
@@ -544,7 +547,7 @@ export class ExecutionService {
     // Dependencies, attendance and review, answered by the same code `status`
     // uses, so the two cannot report different things about one stage.
     const principal = opts.principal ?? "agent";
-    const refusal = await this.whyBlocked(stage, stages, derived, episodeDir, undefined, principal);
+    const refusal = await this.whyBlocked(stage, stages, derived, episodeDir, { episode: episodeSlug(ref) }, undefined, principal);
     if (refusal) return blocked(refusal);
 
     const ctx: DispatchContext = {
@@ -1012,7 +1015,7 @@ export class ExecutionService {
         try {
           const hashed = await hashArtifacts(episodeDir, relative);
           const request = buildGateReview({
-            stageId, decision: "requested", origin: "policy", actor: "runtime",
+            stageId, decision: "requested", origin: "policy", actor: "runtime", episode: episodeSlug(ref),
             binding: { planHash: planHashOf(stage.definition), outputs: hashed },
           });
           const asked = await appendJournalEvent(episodeDir, {
@@ -1066,7 +1069,7 @@ export class ExecutionService {
   private async markStale(
     episodeDir: string, ref: EpisodeRef, pipeline: ResolvedPipeline, trigger: string,
   ): Promise<void> {
-    const report = propagate(pipeline, [trigger], `${ref.channel}/${ref.series}/${ref.episode}`);
+    const report = propagate(pipeline, [trigger], episodeSlug(ref));
     const affected = report.stages
       .filter((s) => s.stale && s.stageId !== trigger)
       .map((s) => ({ stageId: s.stageId, path: s.reasons[0]?.path ?? [trigger, s.stageId] }));
@@ -1087,6 +1090,11 @@ export class ExecutionService {
    * `agent`. An agent asking to approve or reject a `review: human` stage is
    * not refused — it is downgraded to a request, so a headless caller stops
    * with an explicit ask instead of assuming yes (harness review, P0).
+   *
+   * `decision: "requested"` always writes a request, whatever the principal
+   * and level (M1). An agent's request — explicit or downgraded — writes
+   * nothing when the gate already reads the stage approved (I5), so asking
+   * can never cancel a current approval.
    */
   async review(
     ref: EpisodeRef,
@@ -1131,10 +1139,10 @@ export class ExecutionService {
       return blocked(`"${stageId}" cannot be reviewed: ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    const asAgentOnHumanGate = input.principal !== "operator" && level === "human";
+    const asAgentOnHumanGate = input.principal !== "operator" && level === "human" && input.decision !== "requested";
     const decision = asAgentOnHumanGate ? "requested" : input.decision;
     const origin = input.principal === "operator" ? "human" : "agent";
-    if (origin === "human" && !this.options.operatorKey) {
+    if (origin === "human" && decision !== "requested" && !this.options.operatorKey) {
       return blocked(`no operator key is configured to sign with, so a human decision about "${stageId}" cannot be recorded`);
     }
 
@@ -1142,9 +1150,12 @@ export class ExecutionService {
     try {
       record = buildGateReview({
         stageId, decision,
-        origin: decision === "requested" ? "agent" : origin,
+        origin,
         actor: "runtime",
         binding: { planHash: planHashOf(stage.definition), outputs },
+        // Signed with the decision (avg-qr4.3 final review), so the receipt
+        // cannot be carried into a sibling episode that shares its plan.
+        episode: episodeSlug(ref),
         ...(input.note !== undefined ? { note: input.note } : {}),
       });
     } catch (e) {
@@ -1161,6 +1172,29 @@ export class ExecutionService {
     if (!lease.ok) return blocked(`"${stageId}" is held by a run; try again when it finishes`);
     let written;
     try {
+      // avg-qr4.3 final review, I5: an agent's request used to land after
+      // the operator's signed grant, and the gate governs by the LAST review
+      // event — so Pi asking for a review cancelled a current human approval.
+      // Asked under the stage lock, so no grant can land between this read
+      // and the write it guards.
+      if (decision === "requested" && origin === "agent" && this.options.review) {
+        let verdict;
+        try {
+          verdict = await this.options.review.isOutstanding(stageId, episodeDir, stage, { episode: episodeSlug(ref) });
+        } catch {
+          // A gate that cannot answer is not evidence of an approval; the
+          // request is written, which can only make the stage wait.
+          verdict = undefined;
+        }
+        if (verdict?.state === "approved") {
+          return ok({
+            stageId, status: "approved", outputs: instance.outputArtifacts, durationMs: Date.now() - startedAt,
+            reason: level === "human"
+              ? `"${stageId}" is already approved by the operator; nothing was requested`
+              : `"${stageId}" is already approved; nothing was requested`,
+          });
+        }
+      }
       written = await appendJournalEvent(episodeDir, {
         type: REVIEW_EVENT_FOR[decision], actor: "runtime", episode: ref, data: { ...record },
       });
@@ -1383,7 +1417,7 @@ export class ExecutionService {
       ]),
     );
 
-    const episodeSlug = `${ref.channel}/${ref.series}/${ref.episode}`;
+    const slug = episodeSlug(ref);
 
     let report;
     if (mode === "rerun-affected-downstream") {
@@ -1398,11 +1432,11 @@ export class ExecutionService {
           message: 'mode "rerun-affected-downstream" needs the stages that changed (--stages a,b)',
         });
       }
-      report = propagate(resolved.value, selectedStages, episodeSlug);
+      report = propagate(resolved.value, selectedStages, slug);
     }
 
     try {
-      return ok(planRerun(report, resolved.value, engineInstances, mode, selectedStages, episodeSlug));
+      return ok(planRerun(report, resolved.value, engineInstances, mode, selectedStages, slug));
     } catch (e) {
       // The planner still throws for a mode this switch does not otherwise
       // reach with a report — kept as a catch-all rather than trusted to
@@ -1423,4 +1457,12 @@ export function dependenciesMet(
   return (stage.definition.dependsOn ?? []).every(
     (id) => derived.get(id)?.status === "completed",
   );
+}
+
+/**
+ * The "channel/series/episode" slug a human receipt signs and the review gate
+ * compares against (avg-qr4.3 final review), and staleness reports name.
+ */
+export function episodeSlug(ref: EpisodeRef): string {
+  return `${ref.channel}/${ref.series}/${ref.episode}`;
 }

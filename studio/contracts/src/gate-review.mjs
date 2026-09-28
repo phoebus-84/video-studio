@@ -87,7 +87,7 @@ export async function hashArtifacts(episodeDir, relativePaths) {
  * Separated from the append the same way buildJournalEvent is, so the shape is
  * testable without a filesystem.
  */
-export function buildGateReview({ stageId, decision, origin, actor, binding, checks = [], note, at }) {
+export function buildGateReview({ stageId, decision, origin, actor, binding, checks = [], note, at, episode }) {
   if (!stageId) throw new Error("A gate review must name its stage");
   if (!GATE_DECISIONS.includes(decision)) {
     throw new Error(`Unknown gate review decision: ${decision} (expected ${GATE_DECISIONS.join(", ")})`);
@@ -111,6 +111,12 @@ export function buildGateReview({ stageId, decision, origin, actor, binding, che
       `an approval of nothing cannot be invalidated by anything`,
     );
   }
+  if (decision !== "requested" && !episode) {
+    throw new Error(
+      `Stage "${stageId}" cannot be ${decision} without naming its episode: ` +
+      `a decision that names no episode could be copied into another one and still read as made there`,
+    );
+  }
   if (decision === "rejected" && !note) {
     throw new Error(`Stage "${stageId}" cannot be rejected without a note: a rejection nobody can act on is noise`);
   }
@@ -122,6 +128,7 @@ export function buildGateReview({ stageId, decision, origin, actor, binding, che
     checks,
   };
   if (review.binding.planHash === undefined) delete review.binding.planHash;
+  if (episode !== undefined) review.episode = episode;
   if (note !== undefined) review.note = note;
   return review;
 }
@@ -160,11 +167,14 @@ const decidedAt = (event) => Date.parse(event.data?.at);
  * `{ ms, at }`, or null. Only a signature makes an `at` trustworthy; see
  * deriveGateState.
  */
-function latestVerifiedHumanDecision(events, stageId, key) {
+function latestVerifiedHumanDecision(events, stageId, key, episode) {
   let latest = null;
   for (const event of events) {
     if (!REVIEW_EVENTS.has(event.type) || event.data?.stageId !== stageId) continue;
     if (event.data?.origin !== "human" || !verifyReceipt(event.data, key)) continue;
+    // A decision signed for another episode says nothing about this one, so
+    // a copied, later-dated receipt must not supersede this episode's own.
+    if (episode !== undefined && event.data?.episode !== episode) continue;
     const ms = decidedAt(event);
     if (!Number.isNaN(ms) && (!latest || ms > latest.ms)) latest = { ms, at: event.data.at };
   }
@@ -202,6 +212,8 @@ function latestVerifiedHumanDecision(events, stageId, key) {
  *      `opts.key`: no key is `unverifiable`, no signature or a signature
  *      that does not verify is `invalidated`. A legacy `actor: "human"`
  *      record with no `origin` is read as human, so it lands here unsigned.
+ *      When the caller supplies `opts.episode`, the signed `episode` must
+ *      equal it, or the receipt was made for (or copied from) another one.
  *      A verified one older than the stage's latest verified human decision
  *      is `invalidated` as superseded;
  *   4. the event `type` must imply the recorded `data.decision` — for every
@@ -239,7 +251,19 @@ export async function deriveGateState(events, stageId, episodeDir, opts = {}) {
     if (!verifyReceipt(latest.data, opts.key)) {
       return { state: "invalidated", reason: "the human decision's signature does not verify" };
     }
-    const newest = latestVerifiedHumanDecision(events, stageId, opts.key);
+    // The episode is signed (avg-qr4.3 final review). Two episodes of a
+    // series share stage definitions, and re-used assets hash identically,
+    // so without this a receipt copied from ep1's journal approved ep2.
+    if (opts.episode !== undefined && latest.data?.episode !== opts.episode) {
+      const named = latest.data?.episode;
+      return {
+        state: "invalidated",
+        reason: named
+          ? `the human decision was made for episode "${named}", not "${opts.episode}"`
+          : `the human decision names no episode, so nothing shows it was made for "${opts.episode}"`,
+      };
+    }
+    const newest = latestVerifiedHumanDecision(events, stageId, opts.key, opts.episode);
     if (newest && !(decidedAt(latest) >= newest.ms)) {
       return { state: "invalidated", reason: `superseded by a later decision recorded at ${newest.at}` };
     }

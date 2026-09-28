@@ -36,7 +36,10 @@ export interface GateReview {
     outputs: ArtifactHash[];
   };
   checks: GateCheck[];
+  /** Signed with the decision, so a rejection's reason cannot be rewritten under a valid signature. */
   note?: string;
+  /** The channel/series/episode slug the decision is about. Signed, so a receipt copied into another episode does not read as made there (avg-qr4.3). Required on approved and rejected. */
+  episode?: string;
   /** Present exactly when origin is human and the decision is approved or rejected. A request is never signed. */
   signature?: string;
 }

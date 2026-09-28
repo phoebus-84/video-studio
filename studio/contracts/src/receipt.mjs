@@ -13,8 +13,14 @@
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
-/** The fields a signature covers: everything that says what was decided about what. */
-export const SIGNED_FIELDS = Object.freeze(["stageId", "decision", "origin", "binding", "at"]);
+/**
+ * The fields a signature covers: everything that says what was decided about
+ * what, where, and why. `episode` and `note` joined after the final review of
+ * avg-qr4.3: without the episode, a receipt copied into a sibling episode with
+ * the same plan and identical bytes still verified; without the note, a
+ * rejection's reason could be rewritten under a valid signature.
+ */
+export const SIGNED_FIELDS = Object.freeze(["stageId", "decision", "origin", "binding", "at", "episode", "note"]);
 
 /** JSON with object keys sorted at every depth, so equal values hash equally. */
 export function canonicalJson(value) {

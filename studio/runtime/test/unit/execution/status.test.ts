@@ -21,6 +21,8 @@ afterEach(async () => {
 });
 
 const REF = { channel: "childrens", series: "fairy-tales", episode: "ep" };
+/** The episode a human receipt is signed for (avg-qr4.3 final review). */
+const SLUG = `${REF.channel}/${REF.series}/${REF.episode}`;
 
 async function episode() {
   const root = await mkdtemp(join(tmpdir(), "exec-status-"));
@@ -374,7 +376,7 @@ describe("status agrees with what run will do", () => {
       const { root, dir, pipelineDir, svc } = await gatedCompleted();
       const definition = await gatedDefinition(root, pipelineDir);
       const data = signReceipt(buildGateReview({
-        stageId: "gated", decision: "approved", origin: "human", actor: "runtime",
+        stageId: "gated", decision: "approved", origin: "human", actor: "runtime", episode: SLUG,
         binding: { planHash: planHashOf(definition), outputs: await hashArtifacts(dir, ["artifacts/gated.md"]) },
       }), KEY);
       await journalLine(dir, "approval-granted", data as unknown as Record<string, unknown>);
@@ -388,7 +390,7 @@ describe("status agrees with what run will do", () => {
       const { root, dir, pipelineDir, svc } = await gatedCompleted();
       const definition = await gatedDefinition(root, pipelineDir);
       await journalLine(dir, "approval-granted", buildGateReview({
-        stageId: "gated", decision: "approved", origin: "human", actor: "runtime",
+        stageId: "gated", decision: "approved", origin: "human", actor: "runtime", episode: SLUG,
         binding: { planHash: planHashOf(definition), outputs: await hashArtifacts(dir, ["artifacts/gated.md"]) },
       }) as unknown as Record<string, unknown>);
 
@@ -404,7 +406,7 @@ describe("status agrees with what run will do", () => {
       const { root, dir, pipelineDir, svc } = await gatedCompleted();
       const definition = await gatedDefinition(root, pipelineDir);
       await journalLine(dir, "approval-granted", buildGateReview({
-        stageId: "gated", decision: "approved", origin: "agent", actor: "runtime",
+        stageId: "gated", decision: "approved", origin: "agent", actor: "runtime", episode: SLUG,
         binding: { planHash: planHashOf(definition), outputs: await hashArtifacts(dir, ["artifacts/gated.md"]) },
       }) as unknown as Record<string, unknown>);
 

@@ -288,7 +288,7 @@ export type {
 // Execution (one meaning for run/status/rerun)
 export { ExecutionService, dependenciesMet, JournalReviewGate, REVIEW_SATISFIED_BY } from "./execution/index.js";
 export type {
-  DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict,
+  DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict, ReviewContext,
   OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
   ExecutionError, ExecutionServiceOptions, Principal, ReviewInput,
 } from "./execution/index.js";

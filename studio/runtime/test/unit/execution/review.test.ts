@@ -9,6 +9,10 @@ import { reviewChainPipeline } from "./helpers/review-chain.js";
 import { parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { verifyReceipt } from "@studio/contracts/src/receipt.mjs";
 import { FileLock } from "../../../src/ports/file-lock.js";
+import { JournalReviewGate } from "../../../src/execution/journal-review-gate.js";
+import { createDefaultLoader } from "../../../src/pipeline/fs-loader.js";
+import { resolvePipeline } from "../../../src/pipeline/resolver.js";
+import type { ResolvedStage } from "../../../src/pipeline/types.js";
 
 const REF = { channel: "childrens", series: "fairy-tales", episode: "ep" };
 const KEY = "operator-key-for-tests";
@@ -90,6 +94,12 @@ function writer(dir: string): StageDispatcher {
 const budget = { maySpend: async () => ok({ reserveId: "r", estimatedCost: 0 }) };
 const permissive = { isOutstanding: async () => ({ state: "approved" as const }) };
 
+/** The resolved stage the service itself would hand the gate. */
+async function svcStage(root: string, pipelines: string, id: string): Promise<ResolvedStage | undefined> {
+  const resolved = await resolvePipeline(createDefaultLoader(root, pipelines), "review-chain");
+  return resolved.stages.find((s) => s.definition.id === id);
+}
+
 async function journal(dir: string) {
   return parseJournal(await readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8"), { strict: true });
 }
@@ -104,13 +114,17 @@ async function journal(dir: string) {
 async function completed(stage: string, operatorKey: string | null = KEY) {
   const { root, dir } = await episode();
   const pipelines = await reviewChainPipeline(roots);
+  // The real journal gate, not a permissive fake: review() consults the
+  // configured gate before writing an agent's request (avg-qr4.3 final
+  // review, I5), and a gate that always says "approved" would swallow every
+  // request this suite asserts.
   const svc = new ExecutionService({
     libraryRoot: root, builtinPipelines: pipelines,
-    dispatcher: writer(dir), budget, review: permissive, operatorKey,
+    dispatcher: writer(dir), budget, review: new JournalReviewGate(operatorKey), operatorKey,
   });
   await svc.run(REF, "review-chain", { stage: "upstream" });
   await svc.run(REF, "review-chain", { stage });
-  return { svc, dir };
+  return { svc, dir, root, pipelines };
 }
 
 describe("ExecutionService.review", () => {
@@ -154,6 +168,49 @@ describe("ExecutionService.review", () => {
     // whichever event the journal happens to end on.
     const rej = (await journal(dir)).filter((e) => e.type === "approval-rejected").at(-1)!;
     expect(verifyReceipt(rej.data as object, KEY)).toBe(true);
+  });
+
+  it("signs the episode into the operator's receipt", async () => {
+    const { svc, dir } = await completed("gated");
+    await svc.review(REF, "review-chain", "gated", { decision: "approved", principal: "operator" });
+    const grant = (await journal(dir)).filter((e) => e.type === "approval-granted").at(-1)!;
+    expect(grant.data).toMatchObject({ episode: "childrens/fairy-tales/ep" });
+    expect(verifyReceipt(grant.data as object, KEY)).toBe(true);
+  });
+
+  // avg-qr4.3 final review, I5: Pi's request, downgraded or explicit, landed
+  // after the operator's signed grant, and the gate governs by the LAST
+  // review event — so an agent asking cancelled a current human approval.
+  describe("an agent's request does not bury a current approval", () => {
+    for (const decision of ["approved", "requested"] as const) {
+      it(`an agent ${decision} after the operator approved writes nothing and reports approved`, async () => {
+        const { svc, dir, root, pipelines } = await completed("gated");
+        await svc.review(REF, "review-chain", "gated", { decision: "approved", principal: "operator" });
+        const before = (await journal(dir)).length;
+
+        const out = await svc.review(REF, "review-chain", "gated", { decision, principal: "agent" });
+
+        expect(out.ok && out.value.status).toBe("approved");
+        expect(out.ok && out.value.reason).toMatch(/"gated" is already approved by the operator; nothing was requested/);
+        expect((await journal(dir)).length).toBe(before);
+        const verdict = await new JournalReviewGate(KEY).isOutstanding(
+          "gated", dir, await svcStage(root, pipelines, "gated"), { episode: "childrens/fairy-tales/ep" });
+        expect(verdict.state).toBe("approved");
+      });
+    }
+  });
+
+  // avg-qr4.3 final review, M1: pva_request_approval sent `approved`, so on a
+  // `review: skill` stage the agent's "request" was a grant.
+  it("an agent's explicit request on a skill stage writes a request, not a grant", async () => {
+    const { svc, dir } = await completed("skilled");
+    const out = await svc.review(REF, "review-chain", "skilled", { decision: "requested", principal: "agent", note: "please look" });
+    expect(out.ok && out.value.status).toBe("requested");
+    const reviews = (await journal(dir)).filter((e) => e.type.startsWith("approval-"));
+    expect(reviews.map((e) => e.type)).not.toContain("approval-granted");
+    const last = reviews.at(-1)!;
+    expect(last.type).toBe("approval-requested");
+    expect(last.data).toMatchObject({ note: "please look", origin: "agent" });
   });
 
   it("refuses an operator review when no key is configured to sign with", async () => {

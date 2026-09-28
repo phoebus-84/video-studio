@@ -20,6 +20,9 @@ import type { ResolvedStage } from "../../../src/pipeline/types.js";
 
 const KEY = "test-operator-key";
 const REF = { channel: "childrens", series: "fairy-tales", episode: "ep" };
+/** The episode a receipt is signed for, and the context the service passes the gate. */
+const SLUG = `${REF.channel}/${REF.series}/${REF.episode}`;
+const CTX = { episode: SLUG };
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -53,13 +56,13 @@ type Origin = "human" | "agent" | "policy";
 async function record(
   dir: string,
   stage: ResolvedStage,
-  { decision = "approved", origin, sign = origin === "human", note, at, type }:
+  { decision = "approved", origin, sign = origin === "human", note, at, type, episode = SLUG }:
     { decision?: "requested" | "approved" | "rejected"; origin: Origin; sign?: boolean; note?: string;
-      at?: string; type?: string },
+      at?: string; type?: string; episode?: string },
 ) {
   const outputs = await hashArtifacts(dir, ["artifacts/s.md"]);
   let data: Record<string, unknown> = buildGateReview({
-    stageId: "s", decision, origin, actor: "runtime",
+    stageId: "s", decision, origin, actor: "runtime", episode,
     binding: { planHash: planHashOf(stage.definition), outputs },
     ...(note !== undefined ? { note } : {}),
     ...(at !== undefined ? { at } : {}),
@@ -73,18 +76,39 @@ async function record(
 }
 
 describe("JournalReviewGate", () => {
+  // avg-qr4.3 final review: the episode joined the signature, and the gate
+  // is told which episode it is judging. Without that, an operator's receipt
+  // copied from a sibling episode (same plan, identical bytes) read approved.
+  it("refuses without the episode context, as it refuses without the stage", async () => {
+    const dir = await episode();
+    const stage = stageAt("human");
+    await record(dir, stage, { origin: "human" });
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    expect(verdict.state).toBe("outstanding");
+    expect(verdict.reason).toMatch(/episode/);
+  });
+
+  it("does not accept an operator's receipt signed for another episode", async () => {
+    const dir = await episode();
+    const stage = stageAt("human");
+    await record(dir, stage, { origin: "human", episode: "childrens/fairy-tales/other-ep" });
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
+    expect(verdict.state).toBe("outstanding");
+    expect(verdict.reason).toMatch(/other-ep/);
+  });
+
   it("approves a signed human grant on a human gate", async () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "human" });
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX)).toEqual({ state: "approved" });
   });
 
   it("does not let an agent's grant satisfy a human gate", async () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "agent" });
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/requires human review/);
   });
@@ -93,21 +117,21 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     const stage = stageAt("skill");
     await record(dir, stage, { origin: "agent" });
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX)).toEqual({ state: "approved" });
   });
 
   it("lets an agent's grant satisfy a human-or-skill gate", async () => {
     const dir = await episode();
     const stage = stageAt("human-or-skill");
     await record(dir, stage, { origin: "agent" });
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX)).toEqual({ state: "approved" });
   });
 
   it("does not let a policy grant satisfy a human gate", async () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "policy" });
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/requires human review/);
   });
@@ -119,7 +143,7 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     const stage = stageAt("auto");
     await record(dir, stage, { origin: "agent" });
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/requires auto review/);
   });
@@ -130,14 +154,14 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     const stage = stageAt("none");
     await record(dir, stage, { origin: "agent" });
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX)).toEqual({ state: "approved" });
   });
 
   it("reads an unsigned human grant as outstanding: unsigned", async () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "human", sign: false });
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/unsigned/);
   });
@@ -147,7 +171,7 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "human", decision: "rejected", note: "too dark", type: "approval-granted" });
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/disagrees with the recorded decision/);
   });
@@ -159,13 +183,13 @@ describe("JournalReviewGate", () => {
     await record(dir, stage, { origin: "human", decision: "rejected", note: "too dark", at: "2026-09-24T11:00:00.000Z" });
     // The approval line copied byte for byte to the end of the journal.
     await appendJournalEvent(dir, { type: "approval-granted", actor: "runtime", episode: REF, data: approval } as never);
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/superseded by a later decision/);
 
     // And the operator's next real decision governs again.
     await record(dir, stage, { origin: "human", at: "2026-09-24T12:00:00.000Z" });
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX)).toEqual({ state: "approved" });
   });
 
   it("does not let a far-future-dated unsigned line lock the stage away from its operator", async () => {
@@ -173,7 +197,7 @@ describe("JournalReviewGate", () => {
     const stage = stageAt("human");
     await record(dir, stage, { origin: "agent", decision: "requested", at: "2099-01-01T00:00:00.000Z" });
     await record(dir, stage, { origin: "human" });
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX)).toEqual({ state: "approved" });
   });
 
   it("lets a later approval supersede an earlier rejection", async () => {
@@ -181,14 +205,14 @@ describe("JournalReviewGate", () => {
     const stage = stageAt("human");
     await record(dir, stage, { origin: "human", decision: "rejected", note: "too dark", at: "2026-09-24T10:00:00.000Z" });
     await record(dir, stage, { origin: "human", at: "2026-09-24T11:00:00.000Z" });
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage)).toEqual({ state: "approved" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX)).toEqual({ state: "approved" });
   });
 
   it("reads a signed rejection as outstanding, with its note", async () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "human", decision: "rejected", note: "too dark" });
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/rejected: too dark/);
   });
@@ -197,14 +221,14 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "agent", decision: "requested" });
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/awaiting review/);
   });
 
   it("reports an episode with no journal at all as no-record", async () => {
     const dir = await episode();
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"))).toEqual({ state: "no-record" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"), CTX)).toEqual({ state: "no-record" });
   });
 
   it("reports a journal holding no review of the stage as no-record, not as accepted", async () => {
@@ -214,15 +238,15 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     const outputs = await hashArtifacts(dir, ["artifacts/s.md"]);
     await appendJournalEvent(dir, { type: "approval-granted", actor: "runtime", episode: REF,
-      data: buildGateReview({ stageId: "another", decision: "approved", origin: "agent", actor: "runtime",
+      data: buildGateReview({ stageId: "another", decision: "approved", origin: "agent", actor: "runtime", episode: SLUG,
         binding: { planHash: "0".repeat(64), outputs } }) } as never);
-    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"))).toEqual({ state: "no-record" });
+    expect(await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"), CTX)).toEqual({ state: "no-record" });
   });
 
   it("treats an unreadable journal as outstanding rather than guessing", async () => {
     const dir = await episode();
     await appendFile(join(dir, "journal", "events.jsonl"), "{ truncated mid-wri\n", "utf-8");
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"));
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"), CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/cannot be read/);
   });
@@ -231,7 +255,7 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     const stage = stageAt("human");
     await record(dir, stage, { origin: "human" });
-    const verdict = await new JournalReviewGate(null).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(null).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/cannot be verified/);
   });
@@ -249,7 +273,7 @@ describe("JournalReviewGate", () => {
     const dir = await episode();
     await record(dir, stageAt("skill"), { origin: "human" });
     // Same stage id, the review level tightened since: a different plan.
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"));
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stageAt("human"), CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/stage definition changed/);
   });
@@ -259,7 +283,7 @@ describe("JournalReviewGate", () => {
     const stage = stageAt("human");
     await record(dir, stage, { origin: "human" });
     await writeFile(join(dir, "artifacts", "s.md"), "re-rendered bytes");
-    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage);
+    const verdict = await new JournalReviewGate(KEY).isOutstanding("s", dir, stage, CTX);
     expect(verdict.state).toBe("outstanding");
     expect(verdict.reason).toMatch(/changed since it was approved/);
   });

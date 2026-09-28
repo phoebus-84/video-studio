@@ -81,11 +81,22 @@ export interface ReviewVerdict {
  */
 export interface ReviewGate {
   /**
-   * `stage` is the definition the receipt is bound to (avg-qr4.3). Optional
-   * so test fakes that ignore it still satisfy the port; a real gate refuses
-   * without it.
+   * `stage` is the definition the receipt is bound to (avg-qr4.3). `ctx`
+   * names the episode being judged, as the "channel/series/episode" slug a
+   * human receipt signs (avg-qr4.3 final review): without it, a receipt
+   * copied from a sibling episode with the same plan and bytes read approved.
+   * Both are optional so test fakes that ignore them still satisfy the port;
+   * a real gate refuses without either.
    */
-  isOutstanding(stageId: string, episodeDir: string, stage?: ResolvedStage): Promise<ReviewVerdict>;
+  isOutstanding(
+    stageId: string, episodeDir: string, stage?: ResolvedStage, ctx?: ReviewContext,
+  ): Promise<ReviewVerdict>;
+}
+
+/** What the service tells a review gate about the episode it is judging. */
+export interface ReviewContext {
+  /** The "channel/series/episode" slug built from the service's `EpisodeRef`. */
+  episode: string;
 }
 
 /** A budget reservation, opaque to the service. */
@@ -114,7 +125,12 @@ export interface BudgetGuard {
 export type Principal = "operator" | "agent";
 
 export interface ReviewInput {
-  decision: "approved" | "rejected";
+  /**
+   * `requested` always writes a request, for any principal and any review
+   * level (avg-qr4.3 final review, M1): `pva_request_approval` sent
+   * `approved`, so on a `review: skill` stage an agent "asking" granted.
+   */
+  decision: "approved" | "rejected" | "requested";
   principal: Principal;
   /** Required for a rejection. */
   note?: string;

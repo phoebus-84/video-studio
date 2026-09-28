@@ -81,7 +81,7 @@ describe("gate review records", () => {
     const binding = { planHash: "p".repeat(64), outputs: [{ path: "artifacts/x.md", sha256: hash }] };
 
     it("carries origin and binding, with inputs defaulted", () => {
-      const r = buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", binding });
+      const r = buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", episode: "c/s/e", binding });
       assert.equal(r.origin, "agent");
       assert.deepEqual(r.binding.inputs, []);
       assert.equal(r.binding.planHash, "p".repeat(64));
@@ -89,7 +89,7 @@ describe("gate review records", () => {
 
     it("refuses an unknown origin", () => {
       assert.throws(
-        () => buildGateReview({ stageId: "s", decision: "approved", origin: "robot", actor: "runtime", binding }),
+        () => buildGateReview({ stageId: "s", decision: "approved", origin: "robot", actor: "runtime", episode: "c/s/e", binding }),
         /origin/,
       );
     });
@@ -97,7 +97,7 @@ describe("gate review records", () => {
     it("refuses an approval with no planHash: it could not be invalidated by a changed plan", () => {
       assert.throws(
         () => buildGateReview({
-          stageId: "s", decision: "approved", origin: "agent", actor: "runtime",
+          stageId: "s", decision: "approved", origin: "agent", actor: "runtime", episode: "c/s/e",
           binding: { outputs: binding.outputs },
         }),
         /planHash/,
@@ -107,7 +107,7 @@ describe("gate review records", () => {
     it("refuses an approval that names no outputs", () => {
       assert.throws(
         () => buildGateReview({
-          stageId: "s", decision: "approved", origin: "agent", actor: "runtime",
+          stageId: "s", decision: "approved", origin: "agent", actor: "runtime", episode: "c/s/e",
           binding: { planHash: "p".repeat(64), outputs: [] },
         }),
         /at least one output/,
@@ -116,13 +116,28 @@ describe("gate review records", () => {
 
     it("accepts a rejection, and requires it to say why", () => {
       assert.throws(
-        () => buildGateReview({ stageId: "s", decision: "rejected", origin: "agent", actor: "runtime", binding }),
+        () => buildGateReview({ stageId: "s", decision: "rejected", origin: "agent", actor: "runtime", episode: "c/s/e", binding }),
         /note/,
       );
       const r = buildGateReview({
-        stageId: "s", decision: "rejected", origin: "agent", actor: "runtime", binding, note: "too dark",
+        stageId: "s", decision: "rejected", origin: "agent", actor: "runtime", episode: "c/s/e", binding, note: "too dark",
       });
       assert.equal(r.decision, "rejected");
+    });
+
+    it("requires an episode on approvals and rejections, so the signature can bind one", () => {
+      assert.throws(
+        () => buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", binding }),
+        /episode/,
+      );
+      assert.throws(
+        () => buildGateReview({ stageId: "s", decision: "rejected", origin: "human", actor: "runtime", binding, note: "x" }),
+        /episode/,
+      );
+      const asked = buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime", binding: {} });
+      assert.equal(asked.episode, undefined);
+      const carried = buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime", binding: {}, episode: "c/s/e" });
+      assert.equal(carried.episode, "c/s/e");
     });
 
     it("lists three decisions", () => {
@@ -173,7 +188,7 @@ describe("gate review records", () => {
       const binding = { planHash: "p".repeat(64), outputs };
       const ev = (type, decision, extra = {}) => ({
         type, at: "2026-09-24T00:00:00Z", actor: "runtime",
-        data: buildGateReview({ stageId: "s", decision, origin: "agent", actor: "runtime", binding, ...extra }),
+        data: buildGateReview({ stageId: "s", decision, origin: "agent", actor: "runtime", episode: "c/s/e", binding, ...extra }),
       });
 
       assert.equal((await deriveGateState([ev("approval-requested", "requested")], "s", dir)).state, "requested");
@@ -188,7 +203,7 @@ describe("gate review records", () => {
       await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
       const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
       const data = buildGateReview({
-        stageId: "s", decision: "approved", origin: "agent", actor: "runtime",
+        stageId: "s", decision: "approved", origin: "agent", actor: "runtime", episode: "c/s/e",
         binding: { planHash: "p".repeat(64), outputs },
       });
       await writeFile(path.join(dir, "artifacts", "x.md"), "v2");
@@ -202,7 +217,7 @@ describe("gate review records", () => {
       await writeFile(file, '{"verdict":"pass"}');
       const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
       const events = [evt("approval-granted", buildGateReview({
-        stageId: "qa", decision: "approved", origin: "agent", actor: "runtime",
+        stageId: "qa", decision: "approved", origin: "agent", actor: "runtime", episode: "c/s/e",
         binding: { planHash: "p".repeat(64), outputs },
       }), "runtime")];
 
@@ -217,7 +232,7 @@ describe("gate review records", () => {
       await writeFile(file, '{"verdict":"pass"}');
       const outputs = await hashArtifacts(dir, ["artifacts/qa-report.json"]);
       const events = [evt("approval-granted", buildGateReview({
-        stageId: "illustrations", decision: "approved", origin: "human", actor: "human",
+        stageId: "illustrations", decision: "approved", origin: "human", actor: "human", episode: "c/s/e",
         binding: { planHash: "p".repeat(64), outputs },
       }))];
 
@@ -246,7 +261,7 @@ describe("gate review records", () => {
       async function humanGrant(sign = true, planHash = PLAN) {
         await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
         const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
-        const data = buildGateReview({ stageId: "s", decision: "approved", origin: "human", actor: "runtime", binding: { planHash, outputs } });
+        const data = buildGateReview({ stageId: "s", decision: "approved", origin: "human", actor: "runtime", episode: "c/s/e", binding: { planHash, outputs } });
         return { type: "approval-granted", actor: "runtime", at: data.at, data: sign ? signReceipt(data, KEY) : data };
       }
 
@@ -286,13 +301,13 @@ describe("gate review records", () => {
       });
 
       it("an unsigned human rejection is invalidated too — one rule both ways", async () => {
-        const data = buildGateReview({ stageId: "s", decision: "rejected", origin: "human", actor: "runtime", binding: { planHash: PLAN }, note: "too dark" });
+        const data = buildGateReview({ stageId: "s", decision: "rejected", origin: "human", actor: "runtime", episode: "c/s/e", binding: { planHash: PLAN }, note: "too dark" });
         const s = await deriveGateState([{ type: "approval-rejected", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
         assert.equal(s.state, "invalidated"); assert.match(s.reason, /unsigned/);
       });
 
       it("a signed human rejection reads as rejected", async () => {
-        const data = signReceipt(buildGateReview({ stageId: "s", decision: "rejected", origin: "human", actor: "runtime", binding: { planHash: PLAN }, note: "too dark" }), KEY);
+        const data = signReceipt(buildGateReview({ stageId: "s", decision: "rejected", origin: "human", actor: "runtime", episode: "c/s/e", binding: { planHash: PLAN }, note: "too dark" }), KEY);
         const s = await deriveGateState([{ type: "approval-rejected", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
         assert.equal(s.state, "rejected"); assert.equal(s.note, "too dark"); assert.equal(s.origin, "human");
       });
@@ -302,7 +317,7 @@ describe("gate review records", () => {
         await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
         const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
         const data = signReceipt(buildGateReview({
-          stageId: "s", decision: "rejected", origin: "human", actor: "runtime",
+          stageId: "s", decision: "rejected", origin: "human", actor: "runtime", episode: "c/s/e",
           binding: { planHash: PLAN, outputs }, note: "too dark", ...(at ? { at } : {}),
         }), KEY);
         return { type: "approval-rejected", actor: "runtime", at: data.at, data };
@@ -312,7 +327,7 @@ describe("gate review records", () => {
         await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
         const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
         const data = signReceipt(buildGateReview({
-          stageId: "s", decision: "approved", origin: "human", actor: "runtime", binding: { planHash: PLAN, outputs }, at,
+          stageId: "s", decision: "approved", origin: "human", actor: "runtime", episode: "c/s/e", binding: { planHash: PLAN, outputs }, at,
         }), KEY);
         return { type: "approval-granted", actor: "runtime", at, data };
       }
@@ -328,7 +343,7 @@ describe("gate review records", () => {
       it("applies the type/decision rule to agent records too", async () => {
         await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
         const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
-        const data = buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime", binding: { planHash: PLAN, outputs } });
+        const data = buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime", episode: "c/s/e", binding: { planHash: PLAN, outputs } });
         const s = await deriveGateState([{ type: "approval-granted", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
         assert.equal(s.state, "invalidated"); assert.match(s.reason, /disagrees/);
         const asked = await deriveGateState([{ type: "approval-rejected", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
@@ -364,7 +379,7 @@ describe("gate review records", () => {
         // genuine decision, appended after it, governs.
         const forged = {
           type: "approval-requested", actor: "runtime", at: "2099-01-01T00:00:00.000Z",
-          data: buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime",
+          data: buildGateReview({ stageId: "s", decision: "requested", origin: "agent", actor: "runtime", episode: "c/s/e",
             binding: { planHash: PLAN }, at: "2099-01-01T00:00:00.000Z" }),
         };
         const approve = await signedGrantAt(new Date().toISOString());
@@ -380,10 +395,77 @@ describe("gate review records", () => {
         assert.equal(s.state, "approved");
       });
 
+      describe("the episode and the note are signed (avg-qr4.3 final review)", () => {
+        const EP = "chan/series/ep1";
+
+        it("a receipt copied into another episode, same bytes and plan, reads invalidated", async () => {
+          // Two episodes of one series share the stage definition, and a
+          // re-used asset can hash identically. Without the episode in the
+          // signature, the operator's approval of ep1 approved ep2 as well.
+          await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+          const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+          const data = signReceipt(buildGateReview({
+            stageId: "s", decision: "approved", origin: "human", actor: "runtime", episode: EP,
+            binding: { planHash: PLAN, outputs },
+          }), KEY);
+          const event = { type: "approval-granted", actor: "runtime", at: data.at, data };
+
+          const home = await deriveGateState([event], "s", dir, { key: KEY, planHash: PLAN, episode: EP });
+          assert.equal(home.state, "approved");
+
+          const copied = await deriveGateState([event], "s", dir, { key: KEY, planHash: PLAN, episode: "chan/series/ep2" });
+          assert.equal(copied.state, "invalidated");
+          assert.match(copied.reason, /chan\/series\/ep1.*chan\/series\/ep2|another episode/);
+        });
+
+        it("a human decision that names no episode reads invalidated when the reader knows its episode", async () => {
+          await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+          const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+          const { episode: _e, ...noEpisode } = buildGateReview({
+            stageId: "s", decision: "approved", origin: "human", actor: "runtime", episode: EP,
+            binding: { planHash: PLAN, outputs },
+          });
+          const data = signReceipt(noEpisode, KEY);
+          const s = await deriveGateState([{ type: "approval-granted", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN, episode: EP });
+          assert.equal(s.state, "invalidated");
+          assert.match(s.reason, /episode/);
+        });
+
+        it("a signed rejection whose note was rewritten fails verification", async () => {
+          const data = signReceipt(buildGateReview({
+            stageId: "s", decision: "rejected", origin: "human", actor: "runtime", episode: EP,
+            binding: { planHash: PLAN }, note: "too dark",
+          }), KEY);
+          const rewritten = { ...data, note: "approved really, ship it" };
+          const s = await deriveGateState([{ type: "approval-rejected", actor: "runtime", at: data.at, data: rewritten }], "s", dir, { key: KEY, planHash: PLAN, episode: EP });
+          assert.equal(s.state, "invalidated");
+          assert.match(s.reason, /does not verify/);
+        });
+
+        it("a copied later receipt from another episode does not supersede this episode's decision", async () => {
+          await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
+          const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
+          const mine = signReceipt(buildGateReview({
+            stageId: "s", decision: "approved", origin: "human", actor: "runtime", episode: EP,
+            binding: { planHash: PLAN, outputs }, at: "2026-09-24T10:00:00.000Z",
+          }), KEY);
+          const theirs = signReceipt(buildGateReview({
+            stageId: "s", decision: "rejected", origin: "human", actor: "runtime", episode: "chan/series/ep2",
+            binding: { planHash: PLAN, outputs }, note: "no", at: "2026-09-24T11:00:00.000Z",
+          }), KEY);
+          const events = [
+            { type: "approval-rejected", actor: "runtime", at: theirs.at, data: theirs },
+            { type: "approval-granted", actor: "runtime", at: mine.at, data: mine },
+          ];
+          const s = await deriveGateState(events, "s", dir, { key: KEY, planHash: PLAN, episode: EP });
+          assert.equal(s.state, "approved");
+        });
+      });
+
       it("an agent grant needs no signature", async () => {
         await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
         const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
-        const data = buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", binding: { planHash: PLAN, outputs } });
+        const data = buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", episode: "c/s/e", binding: { planHash: PLAN, outputs } });
         const s = await deriveGateState([{ type: "approval-granted", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
         assert.equal(s.state, "approved"); assert.equal(s.origin, "agent");
       });
@@ -391,7 +473,7 @@ describe("gate review records", () => {
       it("an agent grant for another plan is invalidated too", async () => {
         await writeFile(path.join(dir, "artifacts", "x.md"), "v1");
         const outputs = await hashArtifacts(dir, ["artifacts/x.md"]);
-        const data = buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", binding: { planHash: planHashOf({ id: "s", old: true }), outputs } });
+        const data = buildGateReview({ stageId: "s", decision: "approved", origin: "agent", actor: "runtime", episode: "c/s/e", binding: { planHash: planHashOf({ id: "s", old: true }), outputs } });
         const s = await deriveGateState([{ type: "approval-granted", actor: "runtime", at: data.at, data }], "s", dir, { key: KEY, planHash: PLAN });
         assert.equal(s.state, "invalidated"); assert.match(s.reason, /stage definition changed/);
       });
