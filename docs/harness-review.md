@@ -96,7 +96,7 @@ empty required outputs, expired leases and missing budget reservations fail clos
 blocks downstream work; two sessions cannot select conflicting outputs; restart
 recovers the same attempt; dry-run performs no production writes or paid calls.
 
-### P0 — “Human approval” needs an authenticated, revision-bound origin (addressed)
+### P0 — “Human approval” needs an authenticated, revision-bound origin (addressed for the API and Pi's shell by accident; deliberate same-user access remains with avg-qr4.8)
 
 **Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval" — see
 the [design doc](superpowers/specs/2026-09-24-authenticated-revision-bound-approval-design.md)):**
@@ -106,8 +106,18 @@ output hash. Pi now has `pva_request_approval` instead: the gateway resolves
 Pi's token to the `agent` principal, and `ExecutionService.review` downgrades
 an agent's decision on a `review: human` stage to a request rather than a
 grant. A receipt is signed only when the caller holds the operator key, and it
-binds the stage's plan hash and output hashes — a changed source, camera,
-timing or render setting invalidates it.
+binds the stage's plan hash, output hashes, episode and note — a changed
+source, camera, timing or render setting invalidates it, and so does copying
+it into another episode.
+
+**What is addressed, and what is not.** Addressed: the API path (Pi's token
+can only request, on every review level), journal tampering (an unsigned or
+altered human line does not verify), and Pi's shell resolving as the operator
+*by accident* (the gateway spawns Pi with `AVG_HEADLESS=1`, and `vpr` then
+never reads the key). Not addressed: a same-user process that deliberately
+reads the operator key file, or unsets `AVG_HEADLESS` first, can still sign
+as the operator. The key file is the boundary, and isolating Pi from it is
+avg-qr4.8's OS-isolation work.
 
 **Change (done):** distinguish agent assessment, policy auto-acceptance and
 actual human approval. The browser/TUI/CLI supply authenticated approval
