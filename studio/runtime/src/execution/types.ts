@@ -76,10 +76,27 @@ export interface ReviewVerdict {
  *
  * Injected rather than owned, because what an approval IS belongs to
  * avg-qr4.3, and the service deciding it first is the mistake this epic exists
- * to close. The gateway supplies one backed by gate-review records.
+ * to close. `JournalReviewGate` (journal-review-gate.ts) is the one both the
+ * CLI and the gateway compose, backed by signed gate-review records.
  */
 export interface ReviewGate {
-  isOutstanding(stageId: string, episodeDir: string): Promise<ReviewVerdict>;
+  /**
+   * `stage` is the definition the receipt is bound to (avg-qr4.3). `ctx`
+   * names the episode being judged, as the "channel/series/episode" slug a
+   * human receipt signs (avg-qr4.3 final review): without it, a receipt
+   * copied from a sibling episode with the same plan and bytes read approved.
+   * Both are optional so test fakes that ignore them still satisfy the port;
+   * a real gate refuses without either.
+   */
+  isOutstanding(
+    stageId: string, episodeDir: string, stage?: ResolvedStage, ctx?: ReviewContext,
+  ): Promise<ReviewVerdict>;
+}
+
+/** What the service tells a review gate about the episode it is judging. */
+export interface ReviewContext {
+  /** The "channel/series/episode" slug built from the service's `EpisodeRef`. */
+  episode: string;
 }
 
 /** A budget reservation, opaque to the service. */
@@ -99,10 +116,36 @@ export interface BudgetGuard {
   maySpend(stage: ResolvedStage, ctx: DispatchContext): Promise<Result<Reservation, { code: string; message: string }>>;
 }
 
+/**
+ * Who is asking. Resolved by the caller from a credential — the gateway from
+ * which token a request carried, the CLI from whether it can read the
+ * operator key — and never from anything the caller merely says about itself.
+ * Omitted means `agent`: omission never grants.
+ */
+export type Principal = "operator" | "agent";
+
+export interface ReviewInput {
+  /**
+   * `requested` always writes a request, for any principal and any review
+   * level (avg-qr4.3 final review, M1): `pva_request_approval` sent
+   * `approved`, so on a `review: skill` stage an agent "asking" granted.
+   */
+  decision: "approved" | "rejected" | "requested";
+  principal: Principal;
+  /** Required for a rejection. */
+  note?: string;
+}
+
 /** Why a call ended the way it did. */
 export type OutcomeStatus =
   /** The stage ran and its declared outputs hold up. */
   | "completed"
+  /** A human decision was asked for but not given; see `ReviewInput`. */
+  | "requested"
+  /** `review()` recorded an approval. */
+  | "approved"
+  /** `review()` recorded a rejection. */
+  | "rejected"
   /**
    * A dry run: every gate passed and the stage would have been dispatched,
    * but nothing was leased, dispatched or written.
@@ -206,7 +249,15 @@ export interface CompleteInput {
  *   removes. The guard's presence is checked, its verdict is not asked for.
  */
 export type StageState =
-  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review";
+  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review"
+  /**
+   * A completed stage whose upstream was decided on again after it ran — a
+   * `staleness-marked` naming it is newer than both its last `stage-completed`
+   * and its last `approval-granted` (avg-qr4.3, absorbing avg-33r's third).
+   * The record explains WHY; the review gate's hash comparison still governs
+   * WHETHER an approval stands — this is reporting, not a second gate.
+   */
+  | "stale";
 
 /** One stage's place in the episode, as the journal records it. */
 export interface StageStatusReport {
@@ -280,13 +331,13 @@ export interface ExecutionError {
     | "REPLAY_INVALID"
     | "STAGE_UNKNOWN"
     /**
-     * The caller asked for something this build does not implement — a
-     * `RerunMode` the planner understands but cannot compute without
-     * machinery that does not exist yet (staleness propagation, avg-33r) —
-     * as distinct from `STAGE_UNKNOWN`, which is asking for something that
-     * does not exist at all. Conflating the two names the wrong fix: a
-     * caller told `STAGE_UNKNOWN` for an unimplemented mode would reasonably
-     * go looking for a typo in a stage id that was never the problem.
+     * The caller asked for something this build cannot compute as asked — a
+     * `rerun-affected-downstream` plan with no `selectedStages` to propagate
+     * staleness from (avg-qr4.3, task 9) — as distinct from `STAGE_UNKNOWN`,
+     * which is asking for something that does not exist at all. Conflating
+     * the two names the wrong fix: a caller told `STAGE_UNKNOWN` for an
+     * argument it forgot would reasonably go looking for a typo in a stage id
+     * that was never the problem.
      */
     | "MODE_UNSUPPORTED";
   message: string;
@@ -316,6 +367,12 @@ export interface ExecutionServiceOptions {
   review?: ReviewGate;
   /** Recorded on every lease, so an expired one names who held it. */
   holder?: string;
+  /**
+   * The key human receipts are signed with (avg-qr4.3). Null or absent means
+   * this composition cannot sign, so an operator review is refused rather than
+   * written unsigned.
+   */
+  operatorKey?: string | null;
   /** How long a lease lasts. Defaults to the engine's default. */
   leaseTtlMs?: number;
   /** Injected so tests can control time. */

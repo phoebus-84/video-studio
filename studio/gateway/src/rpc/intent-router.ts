@@ -129,20 +129,16 @@ export async function handleIntent(
       }
 
       case "approve": {
-        // Approve a manual gate
-        const result = await session.request("pva_approve", {
-          channel: ctx.episodeSlug.split("/")[0],
-          series: ctx.episodeSlug.split("/")[1],
-          episode: ctx.episodeSlug.split("/")[2],
-          stageId: ctx.stageId!,
-          justification: ctx.payload.justification as string ?? "Approved via GUI",
-        });
+        // Not forwarded to Pi: Pi cannot approve (avg-qr4.3), and this router
+        // holds no execution service to record a decision itself. The studio
+        // calls the stage approve route directly with the operator credential.
+        const [channel, series, episode] = ctx.episodeSlug.split("/");
         return {
-          success: true,
+          success: false,
           correlationId: ctx.correlationId,
-          action: "approved",
-          data: result as Record<string, unknown>,
-          status: "accepted",
+          action: "use-approve-route",
+          data: { route: `/api/channels/${channel}/series/${series}/episodes/${episode}/stages/${ctx.stageId}/approve` },
+          status: "rejected",
         };
       }
 

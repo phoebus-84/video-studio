@@ -23,12 +23,23 @@ export interface GateCheck {
 
 export interface GateReview {
   stageId: string;
-  /** There is deliberately no 'rejected'. JOURNAL_EVENTS has no approval-rejected type, and encoding a rejection inside an approval-granted event would contradict itself on disk. See avg-qr4.3. */
-  decision: "requested" | "approved";
+  /** rejected rides in its own event type, approval-rejected (avg-qr4.3), so no event on disk contradicts itself. */
+  decision: "requested" | "approved" | "rejected";
+  /** Who decided, as distinct from `actor`, who wrote the line. */
+  origin: "human" | "agent" | "policy";
   actor: "pi" | "gateway" | "runtime" | "human" | "system";
   at: string;
-  inputs: ArtifactHash[];
-  outputs: ArtifactHash[];
+  binding: {
+    /** Lowercase hex sha256 of the plan this decision was bound to. Present on approved and rejected decisions; absent on a bare request. */
+    planHash?: string;
+    inputs: ArtifactHash[];
+    outputs: ArtifactHash[];
+  };
   checks: GateCheck[];
+  /** Signed with the decision, so a rejection's reason cannot be rewritten under a valid signature. */
   note?: string;
+  /** The channel/series/episode slug the decision is about. Signed, so a receipt copied into another episode does not read as made there (avg-qr4.3). Required on approved and rejected. */
+  episode?: string;
+  /** Present exactly when origin is human and the decision is approved or rejected. A request is never signed. */
+  signature?: string;
 }

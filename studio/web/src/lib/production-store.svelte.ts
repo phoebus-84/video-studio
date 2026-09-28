@@ -19,9 +19,14 @@ import { getGatewayClient } from "./gateway.svelte.ts";
  * beside `awaiting_review` and `complete` beside `completed` — two spellings
  * for one state each, from two vocabularies, of which the runtime emitted
  * neither pair consistently.
+ *
+ * `stale` joined afterward (avg-qr4.3, task 11): a completed stage an
+ * upstream decision has outrun since it ran. Type only, like the rest of
+ * this set — the projection that produces it is the execution service's.
  */
 export type StageState =
-  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review";
+  | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review"
+  | "stale";
 
 // This mirrors `StageState` in studio/runtime/src/execution/types.ts. The
 // studio cannot import from the runtime package, so the two are separate
@@ -103,8 +108,20 @@ interface StageOutcomeView {
  * delivered inside an `ok: true` envelope because the service reached it
  * deliberately. A status added to `OutcomeStatus` and not here reports as a
  * refusal, which is the safe direction to be wrong in.
+ *
+ * `approved` and `rejected` joined it in avg-qr4.3, task 11: `/approve` and
+ * `/reject` answer `{ ok: true, outcome }` like every other single-stage
+ * route, and a recorded review decision is the gate reached deliberately,
+ * not a stage that failed to run. `requested` joins them for a different
+ * reason — nothing was approved, the caller held only the agent token — but
+ * its `reason` is exactly what that caller needs to read, and only members
+ * of this set reach `lastMessage` rather than `error`. Leaving it out
+ * rendered the studio's own expected, safe-failure outcome as if the request
+ * itself had gone wrong.
  */
-const ADVANCED = new Set(["completed", "awaiting_review", "would-run", "claimed"]);
+const ADVANCED = new Set([
+  "completed", "awaiting_review", "would-run", "claimed", "approved", "rejected", "requested",
+]);
 
 /** What happened, for an outcome that carries no reason of its own. */
 function describeOutcome(outcome: StageOutcomeView): string {
@@ -117,6 +134,8 @@ function describeOutcome(outcome: StageOutcomeView): string {
   if (outcome.status === "awaiting_review") return `${who} completed and is awaiting review`;
   if (outcome.status === "would-run") return `${who} would run — nothing was written`;
   if (outcome.status === "claimed") return `${who} is claimed — perform it, then complete it`;
+  if (outcome.status === "approved") return `${who} approved`;
+  if (outcome.status === "rejected") return `${who} rejected`;
   return `${who}: ${outcome.status}`;
 }
 
@@ -127,16 +146,23 @@ function describeOutcome(outcome: StageOutcomeView): string {
  * than no button: the Run Stage button used to report success for a request
  * that printed advice to a log and executed nothing.
  */
-export function actionsFor(state: string): Array<"run" | "approve"> {
+export function actionsFor(state: string): Array<"run" | "approve" | "reject"> {
   switch (state) {
     // Runnable now; completed and failed are reruns, which the service
-    // supports for an explicitly named stage.
+    // supports for an explicitly named stage. `stale` (avg-qr4.3, task 11)
+    // is a completed stage an upstream decision has outrun — re-running it
+    // is the same action as any other rerun.
     case "runnable":
     case "completed":
     case "failed":
+    case "stale":
       return ["run"];
+    // `reject` (task 11) is the other half of a manual gate: a note
+    // recorded instead of an approval. A button the service refuses is
+    // worse than none, and /reject requires the same stage state /approve
+    // does.
     case "awaiting_review":
-      return ["approve"];
+      return ["approve", "reject"];
     // pending, blocked, running — and anything this build does not know.
     default:
       return [];
@@ -286,6 +312,11 @@ class ProductionStore {
   /** Approve a stage waiting at a gate. */
   approveStage(stageId: string): Promise<void> {
     return this.#act(stageId, `/stages/${encodeURIComponent(stageId)}/approve`);
+  }
+
+  /** Reject a stage's output. The note is what the next attempt has to fix. */
+  rejectStage(stageId: string, note: string): Promise<void> {
+    return this.#act(stageId, `/stages/${encodeURIComponent(stageId)}/reject`, { note });
   }
 
   /**

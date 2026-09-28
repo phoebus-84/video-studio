@@ -153,3 +153,40 @@ describe("Logging – Redaction", () => {
     });
   });
 });
+
+// avg-qr4.3 final review, I2: the studio opens `/ws?token=<operator key>`
+// (a browser WebSocket cannot send a header), and Fastify logs `req.url` at
+// info level on every request. The redact paths cover headers and bodies,
+// never the URL, so the signing key landed in the gateway's log.
+describe("Logging – request URLs", () => {
+  it("does not log the value of a token query parameter", async () => {
+    const { default: Fastify } = await import("fastify");
+    const { Writable } = await import("node:stream");
+    const { gatewayLoggerOptions } = await import("../src/logging/index.js");
+
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk, _enc, done) { lines.push(String(chunk)); done(); },
+    });
+    const app = Fastify({
+      logger: { ...gatewayLoggerOptions({ level: "info", pretty: false, redactSecrets: true }), stream },
+    });
+    app.get("/ws", async () => "ok");
+    await app.ready();
+
+    await app.inject({ method: "GET", url: "/ws?token=SECRET-OPERATOR-KEY&after=1" });
+    await app.close();
+
+    const logged = lines.join("");
+    expect(logged).toContain("/ws?token=");
+    expect(logged).toContain("after=1");
+    expect(logged).not.toContain("SECRET-OPERATOR-KEY");
+  });
+
+  it("redactUrl replaces only the value of a token parameter", async () => {
+    const { redactUrl } = await import("../src/logging/index.js");
+    expect(redactUrl("/ws?token=abc")).toBe("/ws?token=[REDACTED]");
+    expect(redactUrl("/events?x=1&TOKEN=abc#f")).toBe("/events?x=1&TOKEN=[REDACTED]#f");
+    expect(redactUrl("/library/a.png")).toBe("/library/a.png");
+  });
+});

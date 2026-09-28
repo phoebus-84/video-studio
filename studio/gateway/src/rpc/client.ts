@@ -8,6 +8,7 @@
 
 import { ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { OPERATOR_KEY_ENV, HEADLESS_ENV } from "@studio/contracts/src/operator-key.mjs";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,24 @@ export interface RpcClientOptions {
 export type RpcState =
   | "disconnected" | "starting" | "connected"
   | "degraded" | "reconnecting" | "shutdown";
+
+/**
+ * The environment Pi is spawned with: everything this process has, minus
+ * the operator key's location (avg-qr4.3). Pi must never be given, pointed
+ * at, or able to discover through its config the operator key file — an
+ * operator who exported `AVG_OPERATOR_KEY_FILE` for the gateway or the CLI
+ * would otherwise hand that same pointer to every Pi session, and Pi holds
+ * only the agent token.
+ */
+export function piSpawnEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const { [OPERATOR_KEY_ENV]: _operatorKeyFile, ...rest } = env;
+  // Headless (avg-qr4.3 final review, I4): Pi's bash tool runs `vpr` as the
+  // operator's own user, and the CLI's default key path made that shell the
+  // operator by accident. With this set, `resolveCliCredential` answers
+  // "agent" without reading the key. It stops accidents, not a process that
+  // unsets it and reads the file itself — that boundary is avg-qr4.8.
+  return { ...rest, [HEADLESS_ENV]: "1" };
+}
 
 // ── Errors ──────────────────────────────────────────────────────────────────
 
@@ -159,7 +178,8 @@ export class PiRpcClient extends EventEmitter {
       const p = spawn(this.piCmd, this.piArgs, {
         cwd: this.cwd,
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env },
+        // Not a bare `{ ...process.env }` (avg-qr4.3): see `piSpawnEnv`.
+        env: piSpawnEnv(),
       });
 
       p.on("error", (err) => {

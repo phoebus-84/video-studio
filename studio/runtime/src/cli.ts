@@ -3,13 +3,11 @@
 // video-pipeline-runtime CLI
 //
 // Operator CLI: init, resolve, validate, run, complete, status, rerun, approve,
-// doctor.
+// reject, doctor.
 // Defaults to human-readable output; --json for machine-readable.
 // --dry-run for destructive/paid operations.
 // ---------------------------------------------------------------------------
 
-import { readFile } from "node:fs/promises";
-import * as nodePath from "node:path";
 import { ConsoleLogger } from "./logging.js";
 import { VERSION } from "./index.js";
 import { resolveSettings } from "./settings/index.js";
@@ -25,13 +23,10 @@ import { NodeFileSystem } from "./ports/filesystem.js";
 import { SystemClock } from "./ports/clock.js";
 import { FileSystemSnapshotStore } from "./pipeline/fs-snapshot-store.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
-import {
-  appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH,
-} from "@studio/contracts/src/journal.mjs";
-import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-review.mjs";
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
-import { ExecutionService } from "./execution/index.js";
+import { ExecutionService, JournalReviewGate } from "./execution/index.js";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
+import { resolveCliCredential } from "./execution/principal.js";
 import type { RerunMode } from "./rerun/index.js";
 import { err, ok } from "./result.js";
 import type { Result } from "./result.js";
@@ -135,6 +130,12 @@ function extractPipeline(args: string[]): { pipeline?: string; remaining: string
     return { pipeline, remaining };
   }
   return { remaining: args };
+}
+
+/** One value-taking flag's value, or undefined when it is absent. Used by `cmdReview` for `--note`. */
+function flagValue(args: string[], name: string): string | undefined {
+  const idx = args.indexOf(name);
+  return idx >= 0 ? args[idx + 1] : undefined;
 }
 
 // ── doctor ──────────────────────────────────────────────────────────────────
@@ -326,7 +327,9 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
-  const service = makeService(args, ttl.value);
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const service = makeService(args, ttl.value, operatorKey);
   const status = await service.status(parsed, pipelineName ?? DEFAULT_PIPELINE);
   if (!status.ok) {
     emit(ctx, { error: `${status.error.code}: ${status.error.message}` });
@@ -388,11 +391,15 @@ async function cmdValidate(ctx: CliContext, args: string[]): Promise<number> {
 // ── rerun ───────────────────────────────────────────────────────────────────
 
 /**
- * Modes `planRerun` can compute with no staleness report — which is every
- * mode but `rerun-affected-downstream`, since that is the only one that reads
- * one. See the comment on `planRerun` in `src/rerun/planner.ts`.
+ * Every `RerunMode` this CLI accepts.
+ *
+ * Used only to validate `--mode` and to list the choices in a usage error —
+ * `rerun-affected-downstream` was refused by name here until avg-qr4.3 task 9
+ * gave `ExecutionService.planRerun` a `StalenessReport` to compute for it
+ * (`propagate`, from `--stages`); the service itself now owns the one
+ * refusal that mode still has (no stages named to propagate from).
  */
-const JOURNAL_DERIVABLE_MODES = ["retry-current", "rerun-selected", "full-rebuild"] as const;
+const RERUN_MODES = ["retry-current", "rerun-selected", "rerun-affected-downstream", "full-rebuild"] as const;
 
 async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   const { pipeline: pipelineName, remaining } = extractPipeline(args);
@@ -410,20 +417,8 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   const modeIdx = remaining.indexOf("--mode");
   const mode = (modeIdx >= 0 ? remaining[modeIdx + 1] : "retry-current") as string;
 
-  // Refused here, before the service is asked, so the CLI's error names what
-  // owns this mode rather than the service's generic "not a known stage".
-  if (mode === "rerun-affected-downstream") {
-    emit(ctx, {
-      error: 'mode "rerun-affected-downstream" needs staleness propagation, ' +
-        "which is not implemented yet (avg-33r). Available: " + JOURNAL_DERIVABLE_MODES.join(", "),
-    });
-    return EX_USAGE;
-  }
-  if (!JOURNAL_DERIVABLE_MODES.includes(mode as typeof JOURNAL_DERIVABLE_MODES[number])) {
-    emit(ctx, {
-      error: `Unknown mode "${mode}". Available: ${JOURNAL_DERIVABLE_MODES.join(", ")}` +
-        ' (and "rerun-affected-downstream", once avg-33r lands)',
-    });
+  if (!RERUN_MODES.includes(mode as typeof RERUN_MODES[number])) {
+    emit(ctx, { error: `Unknown mode "${mode}". Available: ${RERUN_MODES.join(", ")}` });
     return EX_USAGE;
   }
 
@@ -440,14 +435,15 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
     ? remaining[stagesIdx + 1]!.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
 
-  // `--stages` only means anything to `rerun-selected` — the planner reads
-  // `selectedStages` for `rerun-affected-downstream` too, but that mode is
-  // refused above before this point is reached. Parsing it and then
+  // `--stages` means something to two modes: `rerun-selected` reads it
+  // directly, and `rerun-affected-downstream` reads it as what changed, to
+  // propagate staleness from (avg-qr4.3, task 9). Parsing it and then
   // discarding it for `retry-current`/`full-rebuild` would silently ignore
   // input the caller went out of their way to supply.
-  if (selected.length > 0 && mode !== "rerun-selected") {
+  if (selected.length > 0 && mode !== "rerun-selected" && mode !== "rerun-affected-downstream") {
     emit(ctx, {
-      error: `--stages is only used by "rerun-selected" mode; --mode "${mode}" does not accept it`,
+      error: `--stages is only used by "rerun-selected" and "rerun-affected-downstream" modes; ` +
+        `--mode "${mode}" does not accept it`,
     });
     return EX_USAGE;
   }
@@ -458,7 +454,9 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
-  const service = makeService(args, ttl.value);
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const service = makeService(args, ttl.value, operatorKey);
   const pipeline = pipelineName ?? DEFAULT_PIPELINE;
 
   const plan = await service.planRerun(parsed, pipeline, mode as RerunMode, selected);
@@ -502,115 +500,102 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   return EX_OK;
 }
 
-// ── approve ─────────────────────────────────────────────────────────────────
+// ── approve / reject ────────────────────────────────────────────────────────
 
-async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
+/**
+ * `vpr approve` and `vpr reject` share everything but the decision: both
+ * parse the same arguments, resolve the same credential and go through the
+ * same `ExecutionService.review` call, which is the only code that writes a
+ * review event (avg-qr4.3). Splitting them risked the two drifting apart —
+ * `approve` checking something `reject` forgot, or the reverse.
+ *
+ * Who is deciding is resolved from the filesystem, not asked for: a caller
+ * that can read the operator key is the operator, and its decision is
+ * signed; one that cannot is an agent, and asking a `review: human` stage to
+ * approve downgrades to a request rather than assuming yes.
+ */
+async function cmdReview(ctx: CliContext, args: string[], decision: "approved" | "rejected"): Promise<number> {
+  const verb = decision === "approved" ? "approve" : "reject";
   if (args.length < 2) {
-    emit(ctx, { error: "Usage: vpr approve <channel>/<series>/<episode> <stage-id>" });
+    emit(ctx, { error: `Usage: vpr ${verb} <channel>/<series>/<episode> <stage-id>${decision === "rejected" ? " --note <text>" : ""}` });
     return EX_USAGE;
   }
   const pathArg = args[0]!;
   const stageId = args[1]!;
-  if (ctx.dryRun) {
-    emit(ctx, { message: `[DRY RUN] Would approve stage "${stageId}" for ${pathArg}`, dryRun: true });
-    return EX_OK;
+  const note = flagValue(args, "--note");
+  if (decision === "rejected" && !note) {
+    emit(ctx, { error: "vpr reject needs --note: a rejection nobody can act on is noise" });
+    return EX_USAGE;
   }
-
   const parsed = parsePath(pathArg);
   if (!parsed) {
     emit(ctx, { error: `Invalid path "${pathArg}" (expected <channel>/<series>/<episode>)` });
     return EX_USAGE;
   }
-  const libraryRoot = libraryFrom(args);
-  if (!libraryRoot) {
-    emit(ctx, { error: "No library root: pass --library <path> or set AVG_LIBRARY_ROOT" });
+  if (ctx.dryRun) {
+    emit(ctx, { message: `[DRY RUN] Would ${verb} stage "${stageId}" for ${pathArg}`, dryRun: true });
+    return EX_OK;
+  }
+
+  // Resolved from the filesystem, never from a flag: nothing on the command
+  // line can make this process the operator. A key other users can read
+  // refuses outright, the same rule the gateway applies to its own token.
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
     return EX_USAGE;
   }
-  const episodeDir = episodePath(libraryRoot, parsed.channel, parsed.series, parsed.episode);
 
-  // An approval is the one moment a person takes responsibility for an
-  // episode, and it has to be a record that can still be checked afterwards.
-  //
-  // Writing `{ stageId }` and nothing else — which is what this did — is worse
-  // than writing nothing: `deriveGateState` reads an approval that names no
-  // artifacts as `invalidated`, the review gate turns `invalidated` into an
-  // outstanding review, and the journal is append-only. So approving a stage
-  // used to block every dependent of it forever, with no way to undo it.
-  //
-  // What makes the record checkable is the hash binding: the artifacts the
-  // stage actually produced, hashed as they are at this moment, so that
-  // re-rendering one of them invalidates the approval rather than silently
-  // inheriting it.
-  let events;
-  try {
-    events = parseJournal(
-      await readFile(nodePath.join(episodeDir, JOURNAL_RELATIVE_PATH), "utf-8"),
-      { strict: true },
-    );
-  } catch (e) {
-    const why = (e as NodeJS.ErrnoException)?.code === "ENOENT"
-      ? "it has no journal, so no stage has been recorded as completed"
-      : `its journal could not be read: ${e instanceof Error ? e.message : String(e)}`;
-    emit(ctx, { error: `Cannot approve "${stageId}" for ${pathArg}: ${why}. Nothing was recorded.` });
+  const service = makeService(args, ttl.value, credential.operatorKey);
+  const { pipeline: pipelineName } = extractPipeline(args);
+  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
+  const out = await service.review(parsed, pipeline, stageId, { decision, principal: credential.principal, note });
+  if (!out.ok) {
+    emit(ctx, { error: out.error.message, code: out.error.code });
     return EX_RUNTIME;
   }
+  const o = out.value;
+  emit(ctx, { message: o.reason ?? `Stage "${stageId}" ${o.status} for ${pathArg}`, path: pathArg, stageId, status: o.status });
+  return o.status === decision ? EX_OK : EX_RUNTIME;
+}
 
-  // The journal's own account of what the stage produced, not the manifest's
-  // account of what it was supposed to produce. Only the former can be hashed.
-  const completion = [...events]
-    .reverse()
-    .find((e) => e.type === "stage-completed" && (e.data as { stageId?: string })?.stageId === stageId);
-  if (!completion) {
-    emit(ctx, {
-      error: `Cannot approve "${stageId}" for ${pathArg}: the journal records no completed ` +
-        `attempt for it, so there are no artifacts to approve. Nothing was recorded.`,
-    });
-    return EX_RUNTIME;
-  }
+async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
+  return cmdReview(ctx, args, "approved");
+}
 
-  const produced = ((completion.data as { outputs?: string[] })?.outputs ?? []);
-  if (produced.length === 0) {
-    emit(ctx, {
-      error: `Cannot approve "${stageId}" for ${pathArg}: its completion recorded no outputs, ` +
-        `and an approval of nothing cannot be invalidated by anything. Nothing was recorded.`,
-    });
-    return EX_RUNTIME;
-  }
-
-  let outputs;
-  try {
-    outputs = await hashArtifacts(episodeDir, produced);
-  } catch (e) {
-    emit(ctx, {
-      error: `Cannot approve "${stageId}" for ${pathArg}: ` +
-        `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.`,
-    });
-    return EX_RUNTIME;
-  }
-
-  const review = buildGateReview({ stageId, decision: "approved", actor: "human", outputs });
-  const written = await appendJournalEvent(episodeDir, {
-    type: "approval-granted",
-    actor: "human",
-    episode: parsed,
-    data: { ...review },
-  });
-  if (!written) {
-    emit(ctx, { error: `Approval of "${stageId}" for ${pathArg} could not be written to the journal` });
-    return EX_RUNTIME;
-  }
-
-  emit(ctx, {
-    message: `Stage "${stageId}" approved for ${pathArg} (${outputs.length} artifact(s) recorded by hash)`,
-    path: pathArg,
-    stageId,
-    recorded: true,
-    artifacts: outputs.map((o) => o.path),
-  });
-  return EX_OK;
+async function cmdReject(ctx: CliContext, args: string[]): Promise<number> {
+  return cmdReview(ctx, args, "rejected");
 }
 
 // ── run / complete ──────────────────────────────────────────────────────────
+
+/**
+ * The operator key for a command that does not itself decide a review, or
+ * the exit code to return when the key file refuses.
+ *
+ * `status`, `run`, `complete` and `rerun` consult the review gate, and a
+ * gate with no key reads every human approval as unverifiable (avg-qr4.3) —
+ * so a CLI that resolved the key only for `approve`/`reject` would report a
+ * stage its own operator approved as still awaiting review. Same resolution
+ * and same refusal as `cmdReview`: a key other users can read is an error,
+ * never quietly treated as absent; an absent key is `null`.
+ */
+function cliOperatorKey(ctx: CliContext): string | null | number {
+  try {
+    return resolveCliCredential().operatorKey;
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+}
 
 /**
  * The execution service, composed for the CLI.
@@ -621,7 +606,7 @@ async function cmdApprove(ctx: CliContext, args: string[]): Promise<number> {
  * terminal cannot run `illustrations`, and pretending otherwise would be a
  * lie about where work happens.
  */
-function makeService(args: string[], leaseTtlMs: number): ExecutionService {
+function makeService(args: string[], leaseTtlMs: number, operatorKey: string | null): ExecutionService {
   return new ExecutionService({
     libraryRoot: libraryFrom(args) || ".",
     // `|| undefined`, not a bare read, for the reason documented in the
@@ -637,6 +622,14 @@ function makeService(args: string[], leaseTtlMs: number): ExecutionService {
     holder: `cli/pid-${process.pid}`,
     // Stated, not inherited; see `claimTtlMs`.
     leaseTtlMs,
+    // The key a human decision is signed with, and verified with (avg-qr4.3).
+    // Every caller passes what `resolveCliCredential` resolved from the
+    // filesystem — `cmdReview` to sign, the rest so the gate below can verify.
+    operatorKey,
+    // The same gate the gateway composes. Without one, a CLI fell back to the
+    // manifest rule forever and no approval — signed or not — ever let a
+    // dependent run from the terminal.
+    review: new JournalReviewGate(operatorKey),
   });
 }
 
@@ -737,14 +730,12 @@ function claimTtlMs(): Result<number, string> {
  *
  * A stage the pipeline never declared is a mistyped argument, not a broken
  * system: `EX_USAGE`, so a script can tell "you asked for something that does
- * not exist" from "the journal could not be read". A `RerunMode` this build
- * does not implement is the same family of caller mistake — the request
- * named something real (a mode `RerunMode` declares) that this composition
- * cannot honor yet — so `MODE_UNSUPPORTED` earns `EX_USAGE` alongside it.
- * `cmdRerun` refuses `rerun-affected-downstream` before calling the service,
- * so no CLI path reaches this today; it is here for whichever caller does.
- * Everything else — unreadable journal, unresolvable pipeline, journal and
- * pipeline in disagreement — is `EX_RUNTIME`.
+ * not exist" from "the journal could not be read". The service's own
+ * `MODE_UNSUPPORTED` — `rerun-affected-downstream` asked with no `--stages`
+ * to propagate staleness from (avg-qr4.3, task 9) — is the same family of
+ * caller mistake, so it earns `EX_USAGE` alongside it. Everything else —
+ * unreadable journal, unresolvable pipeline, journal and pipeline in
+ * disagreement — is `EX_RUNTIME`.
  */
 function exitCodeFor(error: ExecutionError): number {
   return error.code === "STAGE_UNKNOWN" || error.code === "MODE_UNSUPPORTED" ? EX_USAGE : EX_RUNTIME;
@@ -840,10 +831,25 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
 
-  const service = makeService(args, ttl.value);
+  // Resolved once, from the filesystem: whether this caller can read the
+  // operator key decides both what `run` may claim — an operator may take a
+  // stage `autopilot: false` reserves for a person (avg-qr4.3) — and what a
+  // human decision is verified with. Two separate resolutions here risked the
+  // usual drift: one path learning "operator" while the other silently kept
+  // "agent".
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+
+  const service = makeService(args, ttl.value, credential.operatorKey);
   const claimed = await service.claim(parsed, pipelineName ?? DEFAULT_PIPELINE, {
     ...(stage ? { stage } : {}),
     dryRun: ctx.dryRun,
+    principal: credential.principal,
   });
 
   if (!claimed.ok) {
@@ -952,7 +958,9 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: ttl.error });
     return EX_USAGE;
   }
-  const service = makeService(args, ttl.value);
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const service = makeService(args, ttl.value, operatorKey);
 
   if (ctx.dryRun) {
     return completeDryRun(ctx, service, args, parsed, pipeline, stageId, failed, outputs);
@@ -1078,13 +1086,13 @@ const COMMANDS: Record<string, CliCommand> = {
   validate: { name: "validate", description: "Validate pipeline DAG or snapshot integrity", usage: "vpr validate <pipeline|snapshot> [path] [--json]", examples: ["vpr validate pipeline my-channel/my-series/ep001"], run: cmdValidate },
   run: { name: "run", description: "Claim the next runnable stage for a performer", usage: "vpr run <channel>/<series>/<episode> [--stage <id>] [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr run my-channel/my-series/ep001", "vpr run my-channel/my-series/ep001 --dry-run"], run: cmdRun },
   complete: { name: "complete", description: "Close a claimed stage with the outputs it produced", usage: "vpr complete <channel>/<series>/<episode> <stage-id> [--lease <id>] --outputs <path>[,<path>] | --failed [--error <msg>]", examples: ["vpr complete my-channel/my-series/ep001 brief --lease l-7 --outputs artifacts/brief.md", "vpr complete my-channel/my-series/ep001 brief --failed --error 'the model refused'"], run: cmdComplete },
-  // The usage line lists every mode the command ACCEPTS, including the one
-  // it refuses by name: `rerun-affected-downstream` reaches a deliberate
-  // avg-33r explanation, and a help text that hides it turns a considered
-  // refusal into "unknown mode". The gateway schema and the agent's union
-  // both declare-and-refuse it; this was the one surface that did not.
+  // The usage line lists every mode the command accepts. `rerun-affected-downstream`
+  // used to reach a deliberate refusal here (avg-33r, before staleness
+  // propagation existed); avg-qr4.3 task 9 gave the service a `StalenessReport`
+  // to compute for it, so it plans like any other mode now — given `--stages`.
   rerun: { name: "rerun", description: "Plan targeted reruns: which stages re-run, which are preserved", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|rerun-affected-downstream|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
+  reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },
 };
 

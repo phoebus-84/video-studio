@@ -68,6 +68,7 @@ export const JOURNAL_EVENTS = Object.freeze([
   "attempt-recorded",
   "approval-granted",
   "approval-requested",
+  "approval-rejected",
   "comment-added",
   "artifact-written",
   "staleness-marked",

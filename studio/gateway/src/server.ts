@@ -14,10 +14,13 @@ import { registerWorkspaceFileRoutes } from "./routes/workspace-files.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerBudgetRoutes } from "./routes/budget.js";
 import * as path from "node:path";
+import { realpathSync } from "node:fs";
 import { registerOpenApiRoute } from "./contract/index.js";
 import { registerErrorHandler } from "./errors/middleware.js";
-import { configureLogging, getRedactPaths } from "./logging/index.js";
+import { configureLogging, gatewayLoggerOptions } from "./logging/index.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
+import { resolveOperatorKey } from "./auth/token.js";
+import { OPERATOR_KEY_ENV } from "@studio/contracts/src/operator-key.mjs";
 import { createRuntimeClient, type RuntimeClient } from "./runtime/client.js";
 import type { WorkspaceService } from "./workspace/service.js";
 import { FixtureWorkspaceService } from "./workspace/fixture-service.js";
@@ -63,13 +66,9 @@ export async function createGateway(
   const libraryRoot = path.resolve(configuredLibrary);
 
   const app = Fastify({
-    logger: {
-      level: config.logging.level,
-      ...(config.logging.redactSecrets ? { redact: getRedactPaths() } : {}),
-      transport: config.logging.pretty
-        ? { target: "pino-pretty", options: { colorize: true } }
-        : undefined,
-    },
+    // Built in logging/index.ts, which also keeps a `?token=` value out of
+    // every logged URL (avg-qr4.3 final review, I2).
+    logger: gatewayLoggerOptions(config.logging),
     // Trust only loopback proxies by default
     trustProxy: config.host === "127.0.0.1" || config.host === "::1" || config.host === "localhost",
   });
@@ -85,7 +84,40 @@ export async function createGateway(
   configureLogging(app, config.logging);
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  const authMiddleware = createAuthMiddleware(token, config.token.allowDevToken);
+  // Every request defaults to "agent" (avg-qr4.3): a route registered on a
+  // bare Fastify instance without this server's global hook — as several
+  // gateway tests do, calling `registerProductionRoutes` directly — still
+  // gets a decided value instead of `undefined`, and "no credential" must
+  // never read as "operator". Declared before the hook runs, so it is in
+  // place for every request the hook itself does not reach.
+  app.decorateRequest("principal", "agent");
+
+  // The operator's credential, resolved here like the token rather than
+  // accepted as a parameter: nothing legitimate assembles a gateway without
+  // also generating this file, and a parameter would let a caller omit it
+  // and get a gateway that can never sign a human decision.
+  //
+  // AVG_OPERATOR_KEY_FILE wins over the config value (avg-qr4.3): the CLI's
+  // `resolveCliCredential` (studio/runtime/src/execution/principal.ts)
+  // already reads that variable first, falling back to
+  // studio/gateway/.operator-key. The gateway and the CLI must resolve to
+  // the same file when an operator has pointed one of them elsewhere, or an
+  // operator who moved their key for the CLI would silently stop being the
+  // operator to the gateway. The cwd-relative default itself is unchanged —
+  // it matches the `.gateway-token` convention — this only adds the same
+  // override the CLI already honours.
+  const operatorKeyFile = process.env[OPERATOR_KEY_ENV] || config.operatorKey.file;
+  // /library/ is served without authentication (avg-qr4.3 final review, M6):
+  // a credential file inside it is one unauthenticated GET from anyone who
+  // can reach the port — and from Pi, which is pointed at the library. The
+  // mount also denies dotfiles, but a key named `operator-key` is not one.
+  // Checked BEFORE resolving the operator key, which would create the file.
+  refuseInsideLibrary(libraryRoot, [
+    ...(config.token.preShared ? [] : [{ what: "token file", file: config.token.file }]),
+    { what: "operator key file", file: operatorKeyFile },
+  ]);
+  const operatorKey = resolveOperatorKey(operatorKeyFile);
+  const authMiddleware = createAuthMiddleware(token, operatorKey, config.token.allowDevToken);
 
   const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/ws"]);
   const PUBLIC_PREFIXES = ["/library/"];
@@ -108,7 +140,7 @@ export async function createGateway(
 
   // ── Event bus ───────────────────────────────────────────────────────────
   const events = new EventStreamManager();
-  events.register(app, token);
+  events.register(app, [token, operatorKey]);
 
   // ── Workspace watcher ────────────────────────────────────────────────────
   const watcher = new WorkspaceWatcher(events.bus, {
@@ -118,7 +150,7 @@ export async function createGateway(
 
   // ── Event publisher (poll-based stage transitions) ─────────────────────
   const { EventPublisher } = await import("./events/publisher.js");
-  const publisher = new EventPublisher({ bus: events.bus, libraryRoot });
+  const publisher = new EventPublisher({ bus: events.bus, libraryRoot, operatorKey });
 
   // ── Pi RPC health ─────────────────────────────────────────────────────
   const { PiRpcHealth } = await import("./rpc/health.js");
@@ -178,9 +210,16 @@ export async function createGateway(
     prefix: "/library/",
     decorateReply: false,
     maxAge: 0,  // Disable browser caching — assets regenerate frequently
+    // This mount is public. A dotfile — `.gateway-token`, `.operator-key`,
+    // `.env` — is never media the studio shows, and serving one handed a
+    // credential to anything that could reach the port (avg-qr4.3 final
+    // review, M6). `ignore` answers 404 — covering dot directories too —
+    // rather than `deny`'s 403, which confirms the file exists and logs an
+    // unhandled error for every probe.
+    dotfiles: "ignore",
   });
 
-  registerRoutes(app, config, libraryRoot, ws, runtime, piHealth, adapterBridge, piManager);
+  registerRoutes(app, config, libraryRoot, operatorKey, ws, runtime, piHealth, adapterBridge, piManager);
   registerEditorRoutes(app, {
     root: libraryRoot,
     bus: events.bus,
@@ -238,4 +277,34 @@ export async function createGateway(
       await app.close();
     },
   };
+}
+
+/**
+ * The real path of `file`, or of its nearest existing ancestor joined with
+ * the rest: a key file that does not exist yet still has to be judged where
+ * it WILL be, and a symlinked library must not hide what it contains.
+ */
+function realish(file: string): string {
+  const absolute = path.resolve(file);
+  try {
+    return realpathSync(absolute);
+  } catch {
+    const parent = path.dirname(absolute);
+    if (parent === absolute) return absolute;
+    return path.join(realish(parent), path.basename(absolute));
+  }
+}
+
+/** Throws, naming the file, when any credential file lies inside the served library root. */
+function refuseInsideLibrary(libraryRoot: string, files: { what: string; file: string }[]): void {
+  const root = realish(libraryRoot);
+  for (const { what, file } of files) {
+    const relative = path.relative(root, realish(file));
+    if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+      throw new Error(
+        `Refusing to start: the ${what} "${path.resolve(file)}" is inside the library root "${libraryRoot}", ` +
+        `which /library/ serves without authentication. Move it outside the library.`,
+      );
+    }
+  }
 }

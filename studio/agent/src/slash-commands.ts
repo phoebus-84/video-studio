@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Slash commands
 // ---------------------------------------------------------------------------
-// /video, /render, /approve, /vstatus, /skills, /ctx
+// /video, /render, /request-approval, /vstatus, /skills, /ctx
 //
 // These commands delegate to the pipeline tools for real execution.
 // ---------------------------------------------------------------------------
@@ -86,31 +86,34 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
     },
   });
 
-  // ── /approve ──────────────────────────────────────────────────────────────
+  // ── /request-approval ────────────────────────────────────────────────────
+  // Renamed from /approve (avg-qr4.3): Pi cannot approve a human gate, only
+  // ask the operator to review it. Even the tool it drives, pva_request_approval,
+  // can only produce a request — the gateway downgrades an agent's approval of
+  // a review: human stage to one.
 
-  pi.registerCommand?.("approve", {
-    description: "Approve a manual gate for a stage",
+  pi.registerCommand?.("request-approval", {
+    description: "Ask the operator to review a manual gate for a stage",
     async handler(args: string, ctx: ExtensionCommandContext) {
       const parts = args.trim().split(/\s+/);
       const path = parts[0];
       const stageId = parts[1];
 
       if (!path || !stageId) {
-        ctx.ui.notify("Usage: /approve <channel>/<series>/<episode> <stage-id>", "error");
+        ctx.ui.notify("Usage: /request-approval <channel>/<series>/<episode> <stage-id>", "error");
         return;
       }
 
       const [channel, series, episode] = path.split("/");
       if (!channel || !series || !episode) {
-        ctx.ui.notify("Usage: /approve <channel>/<series>/<episode> <stage-id>", "error");
+        ctx.ui.notify("Usage: /request-approval <channel>/<series>/<episode> <stage-id>", "error");
         return;
       }
 
-      ctx.ui.notify(`Approved stage "${stageId}" for ${path}`, "info");
+      ctx.ui.notify(`Requesting operator review of stage "${stageId}" for ${path}`, "info");
       pi.sendUserMessage(
-        `Approve stage "${stageId}" for episode ${path}. ` +
-        `Use the pva_approve tool with justification "Approved by operator". ` +
-        `Then continue the pipeline with pva_run_pipeline.`
+        `Request operator review of stage "${stageId}" for episode ${path} with pva_request_approval, ` +
+        `then stop and tell the user it is waiting for them. You cannot approve it yourself.`,
       );
     },
   });

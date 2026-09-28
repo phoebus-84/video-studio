@@ -1,6 +1,7 @@
 export { ExecutionService, dependenciesMet } from "./service.js";
+export { JournalReviewGate, REVIEW_SATISFIED_BY } from "./journal-review-gate.js";
 export type {
-  EpisodeRef, DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict,
+  EpisodeRef, DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict, ReviewContext,
   OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
-  ExecutionError, ExecutionServiceOptions,
+  ExecutionError, ExecutionServiceOptions, Principal, ReviewInput,
 } from "./types.js";

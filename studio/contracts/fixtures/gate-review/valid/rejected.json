@@ -1,0 +1,20 @@
+{
+  "stageId": "qa",
+  "decision": "rejected",
+  "origin": "human",
+  "actor": "human",
+  "at": "2026-09-15T12:05:00Z",
+  "episode": "cozy-tales/wolf-and-friends/ep01",
+  "binding": {
+    "planHash": "16b85a87c85489ace255fde8b857d356d943c7e022e5c1ac99173baa9081c6f5",
+    "inputs": [
+      { "path": "output/final.mp4", "sha256": "3ede38f89735ae493025084a229bbd628c5151d0b20f65c8bd19c347b94644a7" }
+    ],
+    "outputs": [
+      { "path": "artifacts/qa-report.json", "sha256": "acf6ff41a08effce545df3cac3f58562aeb2147a1bcf6b7d072bbb9c459d39ab" }
+    ]
+  },
+  "checks": [],
+  "note": "too dark",
+  "signature": "7fc1756bbb9b28edaf25913dbf04babbd15e692fb4457d48c82cb671c0eac59a"
+}

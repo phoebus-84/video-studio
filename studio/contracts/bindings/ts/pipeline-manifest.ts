@@ -18,7 +18,7 @@ export interface SkillRef {
 
 export interface StageGates {
   autopilot?: boolean;
-  review?: "none" | "human" | "auto";
+  review?: "none" | "human" | "auto" | "skill" | "human-or-skill";
   retry_on_failure?: number;
 }
 

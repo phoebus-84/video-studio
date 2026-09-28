@@ -62,14 +62,28 @@ async function episodeDir() {
  * `runtime` is a stub: nothing these routes still reach uses it. The three
  * that do — snapshot, approve, init — are Task 8's.
  */
-async function appWithEpisode() {
+async function appWithEpisode(opts: { withPrincipalHook?: boolean } = {}) {
+  const { withPrincipalHook = false } = opts;
   const { root, dir } = await episodeDir();
   const decoy = await mkdtemp(join(tmpdir(), "gw-decoy-env-"));
   roots.push(decoy);
   vi.stubEnv("AVG_LIBRARY_ROOT", decoy);
   const app = Fastify();
+  // Stands in for the auth middleware's `request.principal`, which
+  // `registerProductionRoutes` does not itself set — see
+  // review-routes.test.ts. Opt-in, not on by default: every other test in
+  // this file exercises the ordinary agent-default path, and always
+  // installing the hook would hide a route that forgot to read
+  // `request.principal` behind Fastify's own default instead.
+  if (withPrincipalHook) {
+    app.addHook("preHandler", async (req) => {
+      (req as any).principal = req.headers["x-test-principal"] === "operator" ? "operator" : "agent";
+    });
+  }
   const workspace = { getEpisode: async () => null } as unknown as WorkspaceService;
-  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { libraryRoot: root });
+  // No operator key: nothing here records or reads a human decision, and
+  // the routes take the key as a required option so no caller omits it.
+  registerProductionRoutes(app, {} as unknown as RuntimeClient, workspace, { libraryRoot: root, operatorKey: null });
   await app.ready();
   return { app, root, dir, decoy };
 }
@@ -170,6 +184,35 @@ describe("POST /stages/:stage/execute", () => {
     const body = res.json();
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe("STAGE_UNKNOWN");
+  });
+
+  it("lets an operator past the autopilot wall; an agent stops there (Task 7)", async () => {
+    // `script` declares `autopilot: false` and has no gateway handler. An
+    // agent is refused at the attendance gate, naming autopilot; the
+    // operator credential clears that gate and is refused one wall later,
+    // by the dispatcher — the refusal this test pins no longer mentions
+    // autopilot at all.
+    const { app, dir } = await appWithEpisode({ withPrincipalHook: true });
+    await seedUpTo(dir, "brief");
+
+    const asAgent = await app.inject({
+      method: "POST", url: `${BASE}/stages/script/execute`, payload: {},
+    });
+    const asOperator = await app.inject({
+      method: "POST", url: `${BASE}/stages/script/execute`,
+      headers: { "x-test-principal": "operator" }, payload: {},
+    });
+    await app.close();
+
+    const agentBody = asAgent.json();
+    expect(agentBody.ok).toBe(true);
+    expect(agentBody.outcome.status).toBe("blocked");
+    expect(agentBody.outcome.reason).toMatch(/autopilot: false/);
+
+    const operatorBody = asOperator.json();
+    expect(operatorBody.ok).toBe(true);
+    expect(operatorBody.outcome.status).toBe("blocked");
+    expect(operatorBody.outcome.reason).not.toMatch(/autopilot/);
   });
 
   it("reports a dry run without leasing or writing", async () => {
@@ -476,13 +519,20 @@ describe("the gateway assembled by createGateway", () => {
 
     const root = await mkdtemp(join(tmpdir(), "gw-composition-root-"));
     roots.push(root);
+    // Credentials outside the library: /library/ is served without
+    // authentication, and createGateway refuses them inside it (avg-qr4.3, M6).
+    const keys = await mkdtemp(join(tmpdir(), "gw-keys-"));
+    roots.push(keys);
     const dir = join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
     await mkdir(join(dir, "artifacts"), { recursive: true });
 
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
-    config.token.file = join(root, "gateway.token");
+    config.token.file = join(keys, "gateway.token");
+    // Alongside the token file, or `createGateway` resolves the operator key
+    // at its default `.operator-key` and writes it into studio/gateway/.
+    config.operatorKey.file = join(keys, "gateway.operator-key");
     config.libraryRoots = [root];
     const token = resolveToken(config.token);
 
@@ -522,6 +572,10 @@ describe("the gateway assembled by createGateway", () => {
     // already cost this project an episode once.
     const root = await mkdtemp(join(tmpdir(), "gw-workspace-root-"));
     roots.push(root);
+    // Credentials outside the library: /library/ is served without
+    // authentication, and createGateway refuses them inside it (avg-qr4.3, M6).
+    const keys = await mkdtemp(join(tmpdir(), "gw-keys-"));
+    roots.push(keys);
     const dir = join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
     await mkdir(join(dir, "artifacts"), { recursive: true });
     vi.stubEnv("AVG_LIBRARY_ROOT", root);
@@ -529,7 +583,10 @@ describe("the gateway assembled by createGateway", () => {
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
-    config.token.file = join(root, "gateway.token");
+    config.token.file = join(keys, "gateway.token");
+    // Alongside the token file, or `createGateway` resolves the operator key
+    // at its default `.operator-key` and writes it into studio/gateway/.
+    config.operatorKey.file = join(keys, "gateway.operator-key");
     config.libraryRoots = ["."];   // the default: the env is the only pointer
     const token = resolveToken(config.token);
 
@@ -558,6 +615,51 @@ describe("the gateway assembled by createGateway", () => {
     }
 
     expect((await journal(dir)).map((e) => e.type)).toEqual(["stage-leased", "stage-started"]);
+  });
+
+  it("prefers AVG_OPERATOR_KEY_FILE over config.operatorKey.file", async () => {
+    // The CLI's `resolveCliCredential` (studio/runtime/src/execution/
+    // principal.ts) reads this variable first, falling back to
+    // studio/gateway/.operator-key. The gateway has to honour the same
+    // override, or an operator who pointed the CLI at a different key file
+    // would silently stop being the operator to the gateway — the two
+    // processes would disagree about who holds the credential (avg-qr4.3).
+    const root = await mkdtemp(join(tmpdir(), "gw-operator-key-env-"));
+    roots.push(root);
+    // Credentials outside the library: /library/ is served without
+    // authentication, and createGateway refuses them inside it (avg-qr4.3, M6).
+    const keys = await mkdtemp(join(tmpdir(), "gw-keys-"));
+    roots.push(keys);
+
+    const envKeyFile = join(keys, "env-operator-key");
+    const configKeyFile = join(keys, "config-operator-key");
+    await writeFile(envKeyFile, "env-provided-operator-key\n", { mode: 0o600 });
+    vi.stubEnv("AVG_OPERATOR_KEY_FILE", envKeyFile);
+
+    const config = loadConfig();
+    config.port = 0;
+    config.host = "127.0.0.1";
+    config.token.file = join(keys, "gateway.token");
+    config.operatorKey.file = configKeyFile;
+    config.libraryRoots = [root];
+    const token = resolveToken(config.token);
+
+    const gateway = await createGateway(config, token);
+    try {
+      // The env-pointed file's content authenticates as the operator.
+      const withEnvKey = await gateway.app.inject({
+        method: "GET", url: "/api/channels",
+        headers: { authorization: "Bearer env-provided-operator-key" },
+      });
+      expect(withEnvKey.statusCode).toBe(200);
+    } finally {
+      await gateway.stop();
+    }
+
+    // The configured file was never even created: the environment variable
+    // won before `resolveOperatorKey` ever saw `config.operatorKey.file`,
+    // not merely before it was read.
+    await expect(stat(configKeyFile)).rejects.toThrow();
   });
 });
 
@@ -642,7 +744,7 @@ describe("the episode detail's pipeline enrichment", () => {
       listEpisodes: async () => [],
       findEvents: async () => [],
     } as unknown as WorkspaceService;
-    registerWorkspaceRoutes(app, workspace, root);
+    registerWorkspaceRoutes(app, workspace, root, null);
     await app.ready();
     return app;
   }
@@ -737,7 +839,7 @@ describe("the event publisher's stage transitions", () => {
     const { root, dir } = await episodeDir();
     vi.stubEnv("AVG_LIBRARY_ROOT", root);
     const { bus, seen } = capture();
-    const publisher = new EventPublisher({ bus, libraryRoot: root });
+    const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null });
 
     // First poll establishes the baseline: nothing is published for it.
     await publisher.pollForEpisode(REF);
@@ -765,7 +867,7 @@ describe("the event publisher's stage transitions", () => {
     vi.stubEnv("AVG_LIBRARY_ROOT", root);
     await seedCompleted(dir, "brief");
     const { bus, seen } = capture();
-    const publisher = new EventPublisher({ bus, libraryRoot: root });
+    const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null });
 
     await publisher.pollForEpisode(REF);
     await publisher.pollForEpisode(REF);
@@ -777,7 +879,7 @@ describe("the event publisher's stage transitions", () => {
     // deletes that method; the publisher no longer asks for the client.
     const { root } = await episodeDir();
     const { bus } = capture();
-    const publisher = new EventPublisher({ bus, libraryRoot: root, pollMs: 60_000 });
+    const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null, pollMs: 60_000 });
     publisher.start({} as unknown as WorkspaceWatcher);
     publisher.stop();
     // `start` fires one poll immediately and does not hand back its promise.

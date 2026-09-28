@@ -15,6 +15,11 @@ export const DEFAULTS: Partial<Config> & { host: string } = {
     // ADR-0030: real authentication by default.
     allowDevToken: false,
   },
+  // The operator's credential (avg-qr4.3), generated next to the token.
+  // Whoever can read this file is the operator; Pi is never given it.
+  operatorKey: {
+    file: ".operator-key",
+  },
   allowedOrigins: ["http://localhost:5199"],
   libraryRoots: ["."],
   logging: {

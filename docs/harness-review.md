@@ -96,17 +96,34 @@ empty required outputs, expired leases and missing budget reservations fail clos
 blocks downstream work; two sessions cannot select conflicting outputs; restart
 recovers the same attempt; dry-run performs no production writes or paid calls.
 
-### P0 — “Human approval” needs an authenticated, revision-bound origin
+### P0 — “Human approval” needs an authenticated, revision-bound origin (addressed for the API and Pi's shell by accident; deliberate same-user access remains with avg-qr4.8)
 
-**Evidence:** Pi has `pva_approve`; runtime `cmdApprove` writes `actor: "human"`
-regardless of who invoked the command. It is not bound to an output hash. The
-runtime/policy gate functions alone do not prevent direct capability calls.
+**Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval" — see
+the [design doc](superpowers/specs/2026-09-24-authenticated-revision-bound-approval-design.md)):**
+Pi *used to* have `pva_approve`; runtime `cmdApprove` wrote `actor: "human"`
+regardless of who invoked the command, and the decision was not bound to an
+output hash. Pi now has `pva_request_approval` instead: the gateway resolves
+Pi's token to the `agent` principal, and `ExecutionService.review` downgrades
+an agent's decision on a `review: human` stage to a request rather than a
+grant. A receipt is signed only when the caller holds the operator key, and it
+binds the stage's plan hash, output hashes, episode and note — a changed
+source, camera, timing or render setting invalidates it, and so does copying
+it into another episode.
 
-**Change:** distinguish agent assessment, policy auto-acceptance and actual human
-approval. The browser/TUI supplies authenticated approval receipts bound to
-plan/attempt/artifact revisions. Pi may request an approval, not mint a human one.
-A changed source, camera, timing or final render settings invalidates the relevant
-receipt. Enforce authorization at the job boundary, not solely in a skill prompt.
+**What is addressed, and what is not.** Addressed: the API path (Pi's token
+can only request, on every review level), journal tampering (an unsigned or
+altered human line does not verify), and Pi's shell resolving as the operator
+*by accident* (the gateway spawns Pi with `AVG_HEADLESS=1`, and `vpr` then
+never reads the key). Not addressed: a same-user process that deliberately
+reads the operator key file, or unsets `AVG_HEADLESS` first, can still sign
+as the operator. The key file is the boundary, and isolating Pi from it is
+avg-qr4.8's OS-isolation work.
+
+**Change (done):** distinguish agent assessment, policy auto-acceptance and
+actual human approval. The browser/TUI/CLI supply authenticated approval
+receipts bound to plan/attempt/artifact revisions. Pi may request an approval,
+not mint a human one. Authorization is enforced at `ExecutionService.review`,
+the one place that writes a review event, not solely in a skill prompt.
 
 **Acceptance:** an agent-only call cannot satisfy a human gate; a stale receipt
 cannot authorize a new expensive render; print/headless mode stops with an explicit

@@ -132,7 +132,6 @@ describe("extensions/index.ts — tool registration", () => {
     expect(mockPi.tools.length).toBe(42);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
-      "pva_approve",
       "pva_blender_create_scene",
       "pva_blender_probe",
       "pva_blender_render",
@@ -164,6 +163,7 @@ describe("extensions/index.ts — tool registration", () => {
       "pva_render_graphics",
       "pva_render_terminal",
       "pva_render_vector_animation",
+      "pva_request_approval",
       "pva_rpc_health",
       "pva_run_pipeline",
       "pva_run_stage",

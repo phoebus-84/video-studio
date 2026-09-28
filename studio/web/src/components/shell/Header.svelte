@@ -5,6 +5,7 @@
    */
   import Breadcrumbs from "./Breadcrumbs.svelte";
   import SpendMeter from "./SpendMeter.svelte";
+  import OperatorKeyControl from "./OperatorKeyControl.svelte";
   import { studio } from "$lib/studio-store.svelte.ts";
   import type { EpisodeWorkspace } from "$lib/episode-types";
 
@@ -45,6 +46,8 @@
 
   <div class="header-right">
     <SpendMeter spent={episode?.budgetSpent ?? null} limit={episode?.budgetLimit ?? null} />
+
+    <OperatorKeyControl />
 
     <span
       class="connection-indicator"

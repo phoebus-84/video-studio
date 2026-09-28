@@ -101,22 +101,20 @@ describe("handleIntent", () => {
     );
   });
 
-  it("routes approve intent", async () => {
+  it("the approve intent does not reach Pi, and names the route that decides", async () => {
     const session = fakeSession();
     const mgr = fakeProcessMgr(session);
 
     const result = await handleIntent(
-      { intent: "approve", episodeSlug: "ch/series/ep", stageId: "render-outro", payload: {} },
+      { intent: "approve", episodeSlug: "c/s/e", stageId: "script", payload: {} },
       mgr,
       bus,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.action).toBe("approved");
-    expect(session.request).toHaveBeenCalledWith(
-      "pva_approve",
-      expect.objectContaining({ stageId: "render-outro" }),
-    );
+    expect(result.status).toBe("rejected");
+    expect(result.action).toBe("use-approve-route");
+    expect(result.data.route).toBe("/api/channels/c/series/s/episodes/e/stages/script/approve");
+    expect(session.request).not.toHaveBeenCalled();
   });
 
   it("routes rerun intent", async () => {

@@ -5,3 +5,4 @@
  * state rather than sending a token it knows the gateway will reject.
  */
 declare const __GATEWAY_TOKEN__: string;
+

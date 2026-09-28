@@ -41,8 +41,15 @@ describe("what the studio offers for each state", () => {
     expect(actionsFor("failed")).toEqual(["run"]);
   });
 
-  it("offers approve for a stage waiting on acceptance", () => {
-    expect(actionsFor("awaiting_review")).toEqual(["approve"]);
+  it("offers run for a stale stage", () => {
+    // A completed stage an upstream decision has outrun (avg-qr4.3, task 9)
+    // still only needs re-running — the same action as any other stage whose
+    // output is no longer current.
+    expect(actionsFor("stale")).toEqual(["run"]);
+  });
+
+  it("offers approve and reject for a stage awaiting review", () => {
+    expect(actionsFor("awaiting_review")).toEqual(["approve", "reject"]);
   });
 
   it("offers nothing for a stage that cannot act", () => {
@@ -242,5 +249,52 @@ describe("what an action reports back", () => {
     await production.resolveSnapshot();
     expect(production.error).toBeNull();
     expect(production.lastMessage).toBe("Snapshot created");
+  });
+
+  it("rejectStage posts the note to the reject route", async () => {
+    fetchJSON
+      .mockResolvedValueOnce({
+        ok: true,
+        outcome: { stageId: "script", status: "rejected", outputs: [], durationMs: 1 },
+      })
+      .mockResolvedValueOnce(statusOf("failed"));
+
+    await production.rejectStage("script", "the voiceover mispronounces the character's name");
+
+    expect(fetchJSON).toHaveBeenCalledWith(
+      expect.stringContaining("/stages/script/reject"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ note: "the voiceover mispronounces the character's name" }),
+      }),
+    );
+    // A recorded rejection is a decision the gate reached deliberately, not a
+    // stage that failed to run — it belongs on `lastMessage`, not `error`.
+    expect(production.error).toBeNull();
+  });
+
+  it("shows why an approval was only requested, for a browser on the agent token", async () => {
+    // The operator key makes this browser the operator; without it an
+    // /approve call still succeeds at the HTTP layer but the service answers
+    // `requested` rather than `approved`. That reason is the only thing
+    // telling the person nothing actually happened.
+    fetchJSON
+      .mockResolvedValueOnce({
+        ok: true,
+        outcome: {
+          stageId: "script",
+          status: "requested",
+          reason: '"script" declares human review; approval requested — an operator must approve it',
+          outputs: [],
+          durationMs: 1,
+        },
+      })
+      .mockResolvedValueOnce(statusOf("awaiting_review"));
+
+    await production.approveStage("script");
+
+    expect(production.lastMessage).toBe(
+      '"script" declares human review; approval requested — an operator must approve it',
+    );
   });
 });

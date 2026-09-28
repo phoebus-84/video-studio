@@ -29,6 +29,35 @@
   });
 
   const busy = $derived(production.busyStage !== null);
+
+  /**
+   * The stage whose reject note field is open, and what has been typed into
+   * it (avg-qr4.3, task 11).
+   *
+   * No browser `prompt()`: a note that explains what the next attempt has to
+   * fix is worth more room and more care than a single-line native dialog
+   * gives it, and a dialog cannot be styled to match a disabled Submit.
+   */
+  let rejectingStage = $state<string | null>(null);
+  let rejectNote = $state("");
+
+  function openReject(stageId: string): void {
+    rejectingStage = stageId;
+    rejectNote = "";
+  }
+
+  function cancelReject(): void {
+    rejectingStage = null;
+    rejectNote = "";
+  }
+
+  async function submitReject(stageId: string): Promise<void> {
+    const note = rejectNote.trim();
+    if (!note) return;
+    rejectingStage = null;
+    rejectNote = "";
+    await production.rejectStage(stageId, note);
+  }
 </script>
 
 <section class="production" aria-label="Production">
@@ -87,20 +116,47 @@
             <span class="acts">
               {#each actions as action}
                 <button
-                  onclick={() =>
-                    action === "run"
-                      ? production.runStage(stage.stageId)
-                      : production.approveStage(stage.stageId)}
+                  onclick={() => {
+                    if (action === "run") production.runStage(stage.stageId);
+                    else if (action === "approve") production.approveStage(stage.stageId);
+                    else openReject(stage.stageId);
+                  }}
                   disabled={busy}
                   title={action === "run"
                     ? `Run ${stage.stageId}`
-                    : `Approve ${stage.stageId} and let the pipeline continue`}
+                    : action === "approve"
+                      ? `Approve ${stage.stageId} and let the pipeline continue`
+                      : `Reject ${stage.stageId} with a note explaining why`}
                 >
                   {production.busyStage === stage.stageId ? "…" : action}
                 </button>
               {/each}
             </span>
           </div>
+
+          <!-- Inline, not a browser prompt(): a rejection note is what the
+               next attempt has to fix, and Submit stays disabled while it is
+               empty — there is no such thing as a reason-free rejection. -->
+          {#if rejectingStage === stage.stageId}
+            <div class="reject-form">
+              <textarea
+                class="reject-note"
+                placeholder="What has to change before this is accepted?"
+                bind:value={rejectNote}
+                disabled={busy}
+              ></textarea>
+              <span class="reject-buttons">
+                <button
+                  class="primary"
+                  onclick={() => submitReject(stage.stageId)}
+                  disabled={busy || rejectNote.trim().length === 0}
+                >
+                  Submit
+                </button>
+                <button onclick={cancelReject} disabled={busy}>Cancel</button>
+              </span>
+            </div>
+          {/if}
 
           <!-- A pending or blocked stage now offers no buttons at all, so the
                service's own sentence about why is the only thing it has to
@@ -233,6 +289,7 @@
   .s-completed { background: #eaf5ec; color: #2e7d4f; }
   .s-awaiting_review { background: #fdf3e2; color: #8a5a0b; }
   .s-blocked, .s-failed { background: #fdeceb; color: #c0392b; }
+  .s-stale { background: #f3ecfa; color: #6a3fa0; }
 
   .acts {
     display: flex;
@@ -280,5 +337,27 @@
 
   .why {
     color: var(--vs-text-secondary, #777);
+  }
+
+  .reject-form {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 4px 0 0 70px;
+  }
+
+  .reject-note {
+    font: inherit;
+    font-size: 11px;
+    padding: 4px 6px;
+    border: 1px solid var(--vs-border-subtle, #d4d4d4);
+    border-radius: 4px;
+    resize: vertical;
+    min-height: 40px;
+  }
+
+  .reject-buttons {
+    display: flex;
+    gap: 4px;
   }
 </style>

@@ -21,6 +21,8 @@ import { parseJournal, JOURNAL_RELATIVE_PATH, appendJournalEvent } from "@studio
 import type { JournalEvent } from "@studio/contracts/src/journal.mjs";
 import { deriveExecutionState, leaseState } from "@studio/contracts/src/execution-state.mjs";
 import type { StageAttempt } from "@studio/contracts/src/execution-state.mjs";
+import { buildGateReview, hashArtifacts, REVIEW_EVENT_FOR } from "@studio/contracts/src/gate-review.mjs";
+import { signReceipt, planHashOf } from "@studio/contracts/src/receipt.mjs";
 import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
@@ -30,9 +32,10 @@ import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from
 import { FileLock } from "../ports/file-lock.js";
 import { planRerun } from "../rerun/index.js";
 import type { RerunMode, RerunPlan } from "../rerun/index.js";
+import { propagate } from "../staleness/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
-  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict,
+  StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput, Principal, ReviewContext,
 } from "./types.js";
 
 /** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
@@ -164,6 +167,30 @@ export class ExecutionService {
     // One review verdict per dependency per `status()` call, shared by every
     // stage in the loop below. See `whyBlocked`.
     const verdicts = new Map<string, ReviewVerdict>();
+    // Which episode a human receipt must be signed for (avg-qr4.3 final review).
+    const reviewCtx: ReviewContext = { episode: episodeSlug(ref) };
+
+    // Index of the newest event of each kind per stage, for staleness. A
+    // reverse loop rather than `Array.prototype.findLastIndex`: that needs
+    // `lib: es2023`, which this tsconfig does not declare, and widening the
+    // lib for one call site is a bigger change than a ten-line loop.
+    const lastIndexOfType = (type: string, id: string): number => {
+      for (let i = events.value.length - 1; i >= 0; i--) {
+        const e = events.value[i]!;
+        if (e.type === type && (e.data as { stageId?: string })?.stageId === id) return i;
+      }
+      return -1;
+    };
+    const staleSince = (id: string): number => {
+      for (let i = events.value.length - 1; i >= 0; i--) {
+        const e = events.value[i]!;
+        if (e.type === "staleness-marked" &&
+          ((e.data as { affected?: { stageId: string }[] })?.affected ?? []).some((a) => a.stageId === id)) {
+          return i;
+        }
+      }
+      return -1;
+    };
 
     const reports: StageStatusReport[] = [];
     for (const stage of stages) {
@@ -175,7 +202,7 @@ export class ExecutionService {
       let stateReason: string | null = null;
       if (instance.status === "pending") {
         try {
-          stateReason = await this.whyBlocked(stage, stages, derived, episodeDir, verdicts);
+          stateReason = await this.whyBlocked(stage, stages, derived, episodeDir, reviewCtx, verdicts);
         } catch (e) {
           // An injected gate that throws instead of returning a verdict used
           // to escape `status` as an unhandled rejection. Every other failure
@@ -197,12 +224,41 @@ export class ExecutionService {
 
       let state: StageState;
       if (instance.status === "completed") {
-        // A completed stage that declares a review reports `awaiting_review`
-        // even where a ReviewGate would say `approved`. That is a known
-        // simplification: reconciling it needs avg-qr4.3's definition of what
-        // an approval is, and the studio's action for `awaiting_review` is
-        // "approve", which is harmless to offer twice.
-        state = stage.definition.gates.review !== "none" ? "awaiting_review" : "completed";
+        // Staleness wraps the review question rather than replacing it: a
+        // stage a `staleness-marked` outruns since it both last ran AND last
+        // won an approval is stale regardless of what the review gate would
+        // say about it — the gate answers "did this get accepted", not
+        // "does that acceptance still describe what it depends on".
+        const marked = staleSince(stage.definition.id);
+        if (marked > lastIndexOfType("stage-completed", stage.definition.id) &&
+            marked > lastIndexOfType("approval-granted", stage.definition.id)) {
+          state = "stale";
+          stateReason = `"${stage.definition.id}" is stale: an upstream stage changed after it ran`;
+        } else if (stage.definition.gates.review === "none") {
+          state = "completed";
+        } else {
+          // avg-qr4.3 defined what an approval is, so status no longer has to
+          // guess: ask the gate, as a dependent would — through the same memo,
+          // so a dependent judged below reuses this answer.
+          let verdict = verdicts.get(stage.definition.id);
+          if (!verdict && this.options.review) {
+            try {
+              verdict = await this.options.review.isOutstanding(stage.definition.id, episodeDir, stage, reviewCtx);
+              verdicts.set(stage.definition.id, verdict);
+            } catch (e) {
+              // Same reasoning as the `whyBlocked` catch above: a gate that
+              // throws is a stage nobody can call accepted, not a crash in
+              // the poller.
+              stateReason =
+                `"${stage.definition.id}" cannot be judged: its review gate failed: ` +
+                `${e instanceof Error ? e.message : String(e)}`;
+            }
+          }
+          state = verdict?.state === "approved" ? "completed" : "awaiting_review";
+          if (verdict?.state === "outstanding" && verdict.reason) {
+            stateReason = `"${stage.definition.id}" ${verdict.reason}`;
+          }
+        }
       } else if (instance.status === "running") {
         state = "running";
       } else if (instance.status === "failed") {
@@ -311,7 +367,7 @@ export class ExecutionService {
    * `verdicts` memoises the review gate for the length of one caller's
    * question. `status` asks this of every stage, and a fan-in of eight behind
    * one reviewed stage asked `isOutstanding` about that stage eight times for
-   * a single poll — and `GatewayReviewGate.isOutstanding` re-reads the whole
+   * a single poll — and `JournalReviewGate.isOutstanding` re-reads the whole
    * journal and sha256s every artifact the review covered, which for the
    * shipped pipeline includes the narration wav and the final mp4. Sharing
    * one map across the loop also stops a report contradicting itself when an
@@ -323,7 +379,9 @@ export class ExecutionService {
     stages: ResolvedStage[],
     derived: Map<string, { status: string }>,
     episodeDir: string,
+    reviewCtx: ReviewContext,
     verdicts?: Map<string, ReviewVerdict>,
+    principal: Principal = "agent",
   ): Promise<string | null> {
     const stageId = stage.definition.id;
 
@@ -353,12 +411,16 @@ export class ExecutionService {
     //
     // Below the unmet-dependency check, which names an earlier and more
     // useful problem, and above everything that leases, dispatches or spends.
-    if (!stage.definition.gates.autopilot) {
+    //
+    // avg-qr4.3 gave the service a way to know a person is at the controls:
+    // the operator principal, resolved from a credential Pi is never given.
+    if (!stage.definition.gates.autopilot && principal !== "operator") {
       return `"${stageId}" declares autopilot: false and may not run unattended; ` +
-        `a person has to run it`;
+        `sign in as the operator to take this stage`;
     }
 
     for (const depId of stage.definition.dependsOn ?? []) {
+      const depStage = stages.find((s) => s.definition.id === depId);
       if (this.options.review) {
         // An injected gate is authoritative only where it actually knows
         // something. It used to be authoritative for everything, including
@@ -369,7 +431,10 @@ export class ExecutionService {
         // gateway — the only composition that ships — that got the weak path.
         let verdict = verdicts?.get(depId);
         if (!verdict) {
-          verdict = await this.options.review.isOutstanding(depId, episodeDir);
+          // The dependency's definition travels with the question: a receipt
+          // is bound to its plan hash (avg-qr4.3), and a gate asked without
+          // it refuses rather than guessing.
+          verdict = await this.options.review.isOutstanding(depId, episodeDir, depStage, reviewCtx);
           verdicts?.set(depId, verdict);
         }
         if (verdict.state === "approved") {
@@ -389,7 +454,6 @@ export class ExecutionService {
       // whether a required review happened, so it does not guess. Absence is
       // refusal exactly where something is protected — a dependency the
       // manifest never asked to be reviewed proceeds untouched.
-      const depStage = stages.find((s) => s.definition.id === depId);
       const depNeedsReview = depStage?.definition.gates.review !== "none";
       if (depNeedsReview) {
         return `"${stageId}" cannot run: "${depId}" declares ${depStage!.definition.gates.review} ` +
@@ -426,7 +490,7 @@ export class ExecutionService {
   private async claimInternal(
     ref: EpisodeRef,
     pipeline: string,
-    opts: { stage?: string; dryRun?: boolean } = {},
+    opts: { stage?: string; dryRun?: boolean; principal?: Principal } = {},
     precheck?: (stage: ResolvedStage) => string | null,
   ): Promise<Result<ClaimInternal, ExecutionError>> {
     const startedAt = Date.now();
@@ -482,7 +546,8 @@ export class ExecutionService {
     // ── Gate ──────────────────────────────────────────────────────────────
     // Dependencies, attendance and review, answered by the same code `status`
     // uses, so the two cannot report different things about one stage.
-    const refusal = await this.whyBlocked(stage, stages, derived, episodeDir);
+    const principal = opts.principal ?? "agent";
+    const refusal = await this.whyBlocked(stage, stages, derived, episodeDir, { episode: episodeSlug(ref) }, undefined, principal);
     if (refusal) return blocked(refusal);
 
     const ctx: DispatchContext = {
@@ -609,7 +674,14 @@ export class ExecutionService {
       const holder = this.options.holder ?? `runtime/pid-${process.pid}`;
       leased = await appendJournalEvent(episodeDir, {
         type: "stage-leased", actor: "runtime", episode: ref,
-        data: { stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder },
+        data: {
+          stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder,
+          // Present only for an operator's own claim: `attended` is a
+          // positive assertion that a person is at the controls, so an
+          // agent's ordinary lease must not carry it, even as `false`
+          // (avg-qr4.3).
+          ...(principal === "operator" ? { attended: true as const } : {}),
+        },
       });
     } catch (e) {
       await sm.releaseAll();
@@ -665,7 +737,7 @@ export class ExecutionService {
   async claim(
     ref: EpisodeRef,
     pipeline: string,
-    opts: { stage?: string; dryRun?: boolean } = {},
+    opts: { stage?: string; dryRun?: boolean; principal?: Principal } = {},
   ): Promise<Result<StageOutcome, ExecutionError>> {
     const claimed = await this.claimInternal(ref, pipeline, opts);
     return claimed.ok ? ok(claimed.value.outcome) : claimed;
@@ -903,19 +975,251 @@ export class ExecutionService {
     // the thing this service exists to stop — reporting something other
     // than what the journal holds.
     if (!completed) return unrecorded("produced its outputs");
-    await sm.complete(instance);
 
     // Completion is what happened; acceptance is whether it counts. The
     // journal says completed because that is true; the outcome says
     // awaiting_review because that is what the caller needs.
     const needsReview = stage.definition.gates.review !== "none";
+
+    // avg-2n7 deleted the loop that used to write this, so nothing told an
+    // operator a stage was waiting for them (avg-qr4.3 notes, point 1).
+    //
+    // Written HERE — after `stage-completed` lands, but BEFORE
+    // `sm.complete(instance)` below, which is the call that releases the
+    // `stage:${stageId}` file lock. `review()` takes that same lock, and the
+    // only thing it waits on besides the lock is `status === "completed"` —
+    // which replay already reports true the instant `stage-completed` is on
+    // disk, one line above. Releasing the lock first would open a window
+    // where a concurrent operator's `review()` acquires it, appends a signed
+    // `approval-granted`, releases it, and only then sees this request land
+    // on top: `deriveGateState` governs by the LAST review event in file
+    // order, so a genuine human approval would be silently buried under an
+    // unsigned, policy-authored request nobody asked for (fix round 1,
+    // Important finding). Holding the lock across this write is what keeps
+    // `review()` out until the request is on the journal (or given up on).
+    //
+    // The completion is already durable, so a request that fails to land is
+    // reported, not treated as a failed stage: the gate then reads no record
+    // and the manifest rule refuses dependents, which still fails closed.
+    // A lease found lapsed here (`!held()`) is read the same way one level
+    // up: something else may already hold `stage:${stageId}` — another
+    // attempt, or another `review()` — so appending now would reopen the
+    // very race this ordering exists to close. Skip the write rather than
+    // race for it; the stage is still `awaiting_review`, and whichever
+    // holder came next governs.
+    let requestNote: string | undefined;
+    if (needsReview) {
+      if (!held()) {
+        requestNote = `the review request for "${stageId}" was not attempted because its lease had already lapsed`;
+      } else {
+        try {
+          const hashed = await hashArtifacts(episodeDir, relative);
+          const request = buildGateReview({
+            stageId, decision: "requested", origin: "policy", actor: "runtime", episode: episodeSlug(ref),
+            binding: { planHash: planHashOf(stage.definition), outputs: hashed },
+          });
+          const asked = await appendJournalEvent(episodeDir, {
+            type: "approval-requested", actor: "runtime", episode: ref, data: { ...request },
+          });
+          if (!asked) requestNote = `the review request for "${stageId}" could not be written to the journal`;
+        } catch (e) {
+          requestNote = `the review request for "${stageId}" could not be written: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
+    }
+
+    // A re-completion of a stage the journal already holds an approval for.
+    // `events` was read at the top of this call, before anything below wrote
+    // to it, so an `approval-granted` found there predates this attempt — the
+    // one thing that tells a first completion (nothing to be stale about yet)
+    // apart from a stage that ran again after being accepted (everything
+    // downstream of it now rests on artifacts nobody has looked at since).
+    // Best-effort and outside the lease: unlike the request above, nothing
+    // here governs whether THIS stage counts as accepted.
+    const hadApproval = events.value.some(
+      (e) => e.type === "approval-granted" && (e.data as { stageId?: string })?.stageId === stageId,
+    );
+    if (hadApproval) {
+      await this.markStale(episodeDir, ref, resolved.value, stageId);
+    }
+
+    await sm.complete(instance);
+
+    const base = needsReview
+      ? `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet`
+      : undefined;
+
     return ok({
       stageId,
       status: needsReview ? "awaiting_review" : "completed",
       outputs: relative, attemptNumber, leaseId,
       durationMs: Date.now() - startedAt,
-      ...(needsReview
-        ? { reason: `"${stageId}" declares ${stage.definition.gates.review} review and is not accepted yet` }
+      ...(base ? { reason: [base, requestNote].filter(Boolean).join("; ") } : {}),
+    });
+  }
+
+  /**
+   * Record which stages a change made stale (avg-33r's third, absorbed by
+   * avg-qr4.3). The event says WHY a stage went stale; hash comparison still
+   * decides WHETHER an approval stands. Neither replaces the other.
+   *
+   * Best-effort by design: a staleness record that fails to land loses an
+   * explanation, not a safety property — the gate still re-hashes on read.
+   */
+  private async markStale(
+    episodeDir: string, ref: EpisodeRef, pipeline: ResolvedPipeline, trigger: string,
+  ): Promise<void> {
+    const report = propagate(pipeline, [trigger], episodeSlug(ref));
+    const affected = report.stages
+      .filter((s) => s.stale && s.stageId !== trigger)
+      .map((s) => ({ stageId: s.stageId, path: s.reasons[0]?.path ?? [trigger, s.stageId] }));
+    if (affected.length === 0) return;
+    const written = await appendJournalEvent(episodeDir, {
+      type: "staleness-marked", actor: "runtime", episode: ref,
+      data: { stageId: trigger, trigger, affected },
+    });
+    if (!written) this.options.log?.(`staleness for "${trigger}" could not be recorded`);
+  }
+
+  /**
+   * Record a decision about a completed stage. The only code that writes a
+   * review event, so every caller's approval means the same thing.
+   *
+   * Origin comes from the principal, never from the request: an `operator`
+   * decides as `human` and the receipt is signed; an `agent` decides as
+   * `agent`. An agent asking to approve or reject a `review: human` stage is
+   * not refused — it is downgraded to a request, so a headless caller stops
+   * with an explicit ask instead of assuming yes (harness review, P0).
+   *
+   * `decision: "requested"` always writes a request, whatever the principal
+   * and level (M1). An agent's request — explicit or downgraded — writes
+   * nothing when the gate already reads the stage approved (I5), so asking
+   * can never cancel a current approval.
+   */
+  async review(
+    ref: EpisodeRef,
+    pipeline: string,
+    stageId: string,
+    input: ReviewInput,
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    const stage = resolved.value.stages.find((s) => s.definition.id === stageId);
+    if (!stage) {
+      return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+    }
+    const blocked = (reason: string): Result<StageOutcome, ExecutionError> =>
+      ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt });
+
+    const level = stage.definition.gates.review;
+    if (level === "none") return blocked(`"${stageId}" declares no review, so there is nothing to decide`);
+
+    const episodeDir = this.episodeDir(ref);
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+    let derived;
+    try {
+      derived = deriveExecutionState(events.value, resolved.value.stages.map((s) => s.definition.id), this.now());
+    } catch (e) {
+      return err({ code: "REPLAY_INVALID", message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}` });
+    }
+    const instance = derived.get(stageId)!;
+    if (instance.status !== "completed") {
+      return blocked(`"${stageId}" has not completed, so there is nothing to review`);
+    }
+    if (instance.outputArtifacts.length === 0) {
+      return blocked(`"${stageId}" recorded no outputs, and a decision about nothing cannot be invalidated by anything`);
+    }
+
+    let outputs;
+    try {
+      outputs = await hashArtifacts(episodeDir, instance.outputArtifacts);
+    } catch (e) {
+      return blocked(`"${stageId}" cannot be reviewed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    const asAgentOnHumanGate = input.principal !== "operator" && level === "human" && input.decision !== "requested";
+    const decision = asAgentOnHumanGate ? "requested" : input.decision;
+    const origin = input.principal === "operator" ? "human" : "agent";
+    if (origin === "human" && decision !== "requested" && !this.options.operatorKey) {
+      return blocked(`no operator key is configured to sign with, so a human decision about "${stageId}" cannot be recorded`);
+    }
+
+    let record;
+    try {
+      record = buildGateReview({
+        stageId, decision,
+        origin,
+        actor: "runtime",
+        binding: { planHash: planHashOf(stage.definition), outputs },
+        // Signed with the decision (avg-qr4.3 final review), so the receipt
+        // cannot be carried into a sibling episode that shares its plan.
+        episode: episodeSlug(ref),
+        ...(input.note !== undefined ? { note: input.note } : {}),
+      });
+    } catch (e) {
+      return blocked(e instanceof Error ? e.message : String(e));
+    }
+    if (decision !== "requested" && origin === "human") record = signReceipt(record, this.options.operatorKey!);
+
+    // Under the stage's own lock, so a decision cannot interleave with a
+    // re-run of the stage it is about. A live lease means the stage is
+    // running, and `instance.status` above has already refused that; the lock
+    // closes the window between that read and this write.
+    const lock = this.lock(episodeDir);
+    const lease = await lock.acquire(`stage:${stageId}`, 30_000);
+    if (!lease.ok) return blocked(`"${stageId}" is held by a run; try again when it finishes`);
+    let written;
+    try {
+      // avg-qr4.3 final review, I5: an agent's request used to land after
+      // the operator's signed grant, and the gate governs by the LAST review
+      // event — so Pi asking for a review cancelled a current human approval.
+      // Asked under the stage lock, so no grant can land between this read
+      // and the write it guards.
+      if (decision === "requested" && origin === "agent" && this.options.review) {
+        let verdict;
+        try {
+          verdict = await this.options.review.isOutstanding(stageId, episodeDir, stage, { episode: episodeSlug(ref) });
+        } catch {
+          // A gate that cannot answer is not evidence of an approval; the
+          // request is written, which can only make the stage wait.
+          verdict = undefined;
+        }
+        if (verdict?.state === "approved") {
+          return ok({
+            stageId, status: "approved", outputs: instance.outputArtifacts, durationMs: Date.now() - startedAt,
+            reason: level === "human"
+              ? `"${stageId}" is already approved by the operator; nothing was requested`
+              : `"${stageId}" is already approved; nothing was requested`,
+          });
+        }
+      }
+      written = await appendJournalEvent(episodeDir, {
+        type: REVIEW_EVENT_FOR[decision], actor: "runtime", episode: ref, data: { ...record },
+      });
+    } finally {
+      await lock.release(lease.value);
+    }
+    if (!written) return blocked(`the ${decision} decision for "${stageId}" could not be written to the journal`);
+
+    // After releasing the stage's own lock, not before: `markStale` writes a
+    // SEPARATE event about OTHER stages, so holding `stage:${stageId}` across
+    // it would block a concurrent run or review of this stage for no benefit
+    // — the write this decision itself needed to protect already landed above.
+    // A request (`decision === "requested"`) is never signed and never
+    // changes what a dependent accepted, so it triggers nothing here.
+    if (decision !== "requested") {
+      await this.markStale(episodeDir, ref, resolved.value, stageId);
+    }
+
+    return ok({
+      stageId,
+      status: decision,
+      outputs: instance.outputArtifacts,
+      durationMs: Date.now() - startedAt,
+      ...(asAgentOnHumanGate
+        ? { reason: `"${stageId}" declares human review; approval requested — an operator must approve it` }
         : {}),
     });
   }
@@ -929,7 +1233,7 @@ export class ExecutionService {
   async run(
     ref: EpisodeRef,
     pipeline: string,
-    opts: { stage?: string; dryRun?: boolean } = {},
+    opts: { stage?: string; dryRun?: boolean; principal?: Principal } = {},
   ): Promise<Result<StageOutcome, ExecutionError>> {
     const startedAt = Date.now();
 
@@ -1057,12 +1361,16 @@ export class ExecutionService {
    * is replay plus the planner — no new machinery, and no second notion of
    * what a rerun covers.
    *
-   * No `StalenessReport` is computed here (avg-33r owns that), so this always
-   * calls the planner with `report` absent — which is why the planner throws
-   * for `rerun-affected-downstream` rather than silently planning nothing.
-   * The episode slug is built from `ref` and passed through explicitly, so
-   * the plan names the episode it was actually computed for rather than
-   * falling back to the pipeline's name.
+   * A `StalenessReport` is computed here — via `propagate`, the same function
+   * `markStale` calls — only for `rerun-affected-downstream`, the one mode
+   * that reads one; the other three derive their rerun set from the stage map
+   * alone and would silently plan nothing against a report that named stages
+   * they never asked about. With no `selectedStages` there is nothing to
+   * propagate FROM, so that case is refused before the planner is even asked,
+   * with a message naming what is missing rather than the planner's generic
+   * "not computed yet". The episode slug is built from `ref` and passed
+   * through explicitly, so the plan names the episode it was actually
+   * computed for rather than falling back to the pipeline's name.
    */
   async planRerun(
     ref: EpisodeRef,
@@ -1109,21 +1417,30 @@ export class ExecutionService {
       ]),
     );
 
-    const episodeSlug = `${ref.channel}/${ref.series}/${ref.episode}`;
+    const slug = episodeSlug(ref);
+
+    let report;
+    if (mode === "rerun-affected-downstream") {
+      if (selectedStages.length === 0) {
+        // Refused here, before the planner (and before `propagate`, which has
+        // nothing to compute FROM with no changed stages): a mode this build
+        // implements but a caller who forgot to name what changed. Not
+        // STAGE_UNKNOWN — nothing named here is unknown, a required argument
+        // is simply absent.
+        return err({
+          code: "MODE_UNSUPPORTED",
+          message: 'mode "rerun-affected-downstream" needs the stages that changed (--stages a,b)',
+        });
+      }
+      report = propagate(resolved.value, selectedStages, slug);
+    }
+
     try {
-      return ok(planRerun(undefined, resolved.value, engineInstances, mode, selectedStages, episodeSlug));
+      return ok(planRerun(report, resolved.value, engineInstances, mode, selectedStages, slug));
     } catch (e) {
-      // The only way the planner throws today is `rerun-affected-downstream`
-      // with no report — a mode this composition never computes staleness
-      // for. `MODE_UNSUPPORTED`, not `STAGE_UNKNOWN`: no stage is unknown
-      // here, a mode is unimplemented, and a caller told `STAGE_UNKNOWN`
-      // would reasonably go looking for a typo in a stage id that was never
-      // the problem — exactly the kind of code-says-something-other-than-
-      // what-it-holds bug this module exists to remove. `cmdRerun` refuses
-      // this mode by name before ever reaching the service, so this branch
-      // is unreachable from the CLI today; it exists for direct callers —
-      // Task 7's gateway route among them — that ask the service without
-      // going through the CLI's own guard.
+      // The planner still throws for a mode this switch does not otherwise
+      // reach with a report — kept as a catch-all rather than trusted to
+      // never fire twice for the same reason.
       return err({
         code: "MODE_UNSUPPORTED",
         message: e instanceof Error ? e.message : String(e),
@@ -1140,4 +1457,12 @@ export function dependenciesMet(
   return (stage.definition.dependsOn ?? []).every(
     (id) => derived.get(id)?.status === "completed",
   );
+}
+
+/**
+ * The "channel/series/episode" slug a human receipt signs and the review gate
+ * compares against (avg-qr4.3 final review), and staleness reports name.
+ */
+export function episodeSlug(ref: EpisodeRef): string {
+  return `${ref.channel}/${ref.series}/${ref.episode}`;
 }

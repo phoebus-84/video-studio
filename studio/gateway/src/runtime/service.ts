@@ -10,9 +10,8 @@
 // test that supplied its own manifests.
 // ---------------------------------------------------------------------------
 
-import { ExecutionService } from "@studio/runtime";
+import { ExecutionService, JournalReviewGate } from "@studio/runtime";
 import { GatewayDispatcher } from "./dispatcher.js";
-import { GatewayReviewGate } from "./review-gate.js";
 import { builtinPipelinesPath } from "./client.js";
 
 /**
@@ -40,6 +39,18 @@ export function makeExecutionService(
    * record of what ran; there is one library, and the caller knows it.
    */
   libraryRoot: string,
+  /**
+   * The key a human decision is signed and verified with (avg-qr4.3), or
+   * `null` for a caller with no operator credential to hand it — a headless
+   * caller can still request approval, it just cannot grant one.
+   *
+   * Required, same reasoning as `libraryRoot`: an optional parameter here is
+   * an invitation for one call site to keep quietly passing `undefined`
+   * while every other one threads the resolved key, so `review()` would sign
+   * for every caller but that one and nobody would notice until an operator
+   * tried it.
+   */
+  operatorKey: string | null,
 ): ExecutionService {
   return new ExecutionService({
     libraryRoot,
@@ -52,7 +63,10 @@ export function makeExecutionService(
     // loadGates carried.
     builtinPipelines: builtinPipelinesPath() || undefined,
     dispatcher: new GatewayDispatcher(),
-    review: new GatewayReviewGate(),
+    // The same gate the CLI composes (avg-qr4.3). It needs the key to
+    // verify a human receipt: composed with `null`, every human approval
+    // reads as unverifiable and its dependents stay blocked.
+    review: new JournalReviewGate(operatorKey),
     // No budget subsystem is wired anywhere yet (avg-91o). An explicit
     // pass-through keeps the gap visible rather than blocking every stage
     // for a reason nobody can act on.
@@ -65,5 +79,6 @@ export function makeExecutionService(
     // the claim routes hand stages to Pi, which thinks for minutes.
     leaseTtlMs: Number(process.env.AVG_CLAIM_TTL_MS ?? 15 * 60 * 1000),
     log,
+    operatorKey,
   });
 }

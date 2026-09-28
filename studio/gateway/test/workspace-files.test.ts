@@ -25,12 +25,19 @@ describe("workspace file API", () => {
 
   beforeAll(async () => {
     await fs.rm(TMP, { recursive: true, force: true });
+    await fs.mkdir(`${TMP}.keys`, { recursive: true });
     await fs.mkdir(TMP, { recursive: true });
 
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
-    config.token.file = join(TMP, "token");
+    // Outside the library: /library/ is served without authentication, and
+    // createGateway refuses a credential file inside it (avg-qr4.3, M6).
+    config.token.file = join(`${TMP}.keys`, "token");
+    // Alongside the token file, in the same throwaway directory: otherwise
+    // `createGateway` resolves the operator key at its default
+    // `.operator-key` and writes it into studio/gateway/ on every test run.
+    config.operatorKey.file = join(`${TMP}.keys`, "operator-key");
     config.libraryRoots = [TMP];
 
     token = resolveToken(config.token);
@@ -41,6 +48,7 @@ describe("workspace file API", () => {
   afterAll(async () => {
     await gateway.stop();
     await fs.rm(TMP, { recursive: true, force: true });
+    await fs.rm(`${TMP}.keys`, { recursive: true, force: true });
   });
 
   beforeEach(async () => {
@@ -269,12 +277,16 @@ describe("file revisions", () => {
 
   beforeAll(async () => {
     await fs.rm(TMP2, { recursive: true, force: true });
+    await fs.mkdir(`${TMP2}.keys`, { recursive: true });
     await fs.mkdir(join(TMP2, "acme"), { recursive: true });
 
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
-    config.token.file = join(TMP2, "token");
+    // Outside the library: /library/ is served without authentication, and
+    // createGateway refuses a credential file inside it (avg-qr4.3, M6).
+    config.token.file = join(`${TMP2}.keys`, "token");
+    config.operatorKey.file = join(`${TMP2}.keys`, "operator-key");
     config.libraryRoots = [TMP2];
 
     token = resolveToken(config.token);
@@ -285,6 +297,7 @@ describe("file revisions", () => {
   afterAll(async () => {
     await gateway.stop();
     await fs.rm(TMP2, { recursive: true, force: true });
+    await fs.rm(`${TMP2}.keys`, { recursive: true, force: true });
   });
 
   it("keeps a version each time a file changes", async () => {

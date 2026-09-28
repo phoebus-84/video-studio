@@ -128,6 +128,21 @@ export function registerProductionRoutes(
      * guesses its own root does to the journal.
      */
     libraryRoot: string;
+    /**
+     * The operator's credential (avg-qr4.3): what a human decision on
+     * `/approve` or `/reject` is signed with. `null` for a gateway with no
+     * key configured, or a test that supplies none — such a caller can
+     * still record a request, it just cannot grant or refuse one on a human
+     * gate. It is also what the review gate verifies a human receipt with.
+     *
+     * Required, not optional, for the reason `makeExecutionService` gives: an
+     * optional key is an invitation for one caller to keep quietly passing
+     * `undefined` while every other one threads the resolved key. The review
+     * gate verifies human receipts with it, so the caller that forgot would
+     * report every operator approval as unverifiable — awaiting review
+     * forever — and nobody would notice until an operator asked why.
+     */
+    operatorKey: string | null;
   },
 ): void {
   const maxStagesPerExecute = options.maxStagesPerExecute ?? MAX_STAGES_PER_EXECUTE;
@@ -135,12 +150,12 @@ export function registerProductionRoutes(
   /**
    * The gateway's composition, pointed at the library the server serves.
    *
-   * Six handlers below need it. Routed through one function for the same
+   * Seven handlers below need it. Routed through one function for the same
    * reason `makeExecutionService` exists at all: the site that forgets an
    * argument is the one that writes the journal somewhere nobody is looking.
    */
   const serviceFor = (request: { log: { info: (message: string) => void } }) =>
-    makeExecutionService((message) => request.log.info(message), options.libraryRoot);
+    makeExecutionService((message) => request.log.info(message), options.libraryRoot, options.operatorKey);
   // ── Snapshot ──────────────────────────────────────────────────────────────
   app.post("/api/channels/:channel/series/:series/episodes/:episode/snapshot", {
     schema: {
@@ -204,7 +219,9 @@ export function registerProductionRoutes(
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
     const service = serviceFor(request);
-    const outcome = await service.run(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
+    const outcome = await service.run(ref, pipeline, {
+      stage: stageId, dryRun: dryRun ?? false, principal: request.principal ?? "agent",
+    });
 
     // `ok` means the service reached a verdict. A `blocked` outcome is
     // `ok: true` with a `blocked` status — the same convention /execute uses,
@@ -249,7 +266,9 @@ export function registerProductionRoutes(
     const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
 
     const service = serviceFor(request);
-    const outcome = await service.claim(ref, pipeline, { stage: stageId, dryRun: dryRun ?? false });
+    const outcome = await service.claim(ref, pipeline, {
+      stage: stageId, dryRun: dryRun ?? false, principal: request.principal ?? "agent",
+    });
     return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
 
@@ -367,7 +386,7 @@ export function registerProductionRoutes(
     const service = serviceFor(request);
 
     if (dryRun) {
-      const outcome = await service.run(ref, pipeline, { dryRun: true });
+      const outcome = await service.run(ref, pipeline, { dryRun: true, principal: request.principal ?? "agent" });
       return outcome.ok
         ? { ok: true, dryRun: true, outcome: outcome.value }
         : { ok: false, dryRun: true, error: outcome.error };
@@ -383,7 +402,7 @@ export function registerProductionRoutes(
     // second. `i` is read after the loop for that reason alone.
     let i = 0;
     for (; i < maxStagesPerExecute; i++) {
-      const outcome = await service.run(ref, pipeline);
+      const outcome = await service.run(ref, pipeline, { principal: request.principal ?? "agent" });
       if (!outcome.ok) {
         return {
           ok: false,
@@ -484,11 +503,11 @@ export function registerProductionRoutes(
           // "rerun-affected-downstream". The studio sent the phantom on
           // every staleness rerun, and it reached a CLI that shrugged.
           //
-          // "rerun-affected-downstream" is declared here and refused by the
-          // service with MODE_UNSUPPORTED: computing it needs staleness
-          // propagation (avg-33r), which nothing wires up. Declared-and-
-          // refused is the honest pairing; dropping it from the schema would
-          // answer "no such mode" to a mode that exists and is planned.
+          // "rerun-affected-downstream" is declared here, and the service
+          // computes a staleness report for it (avg-33r's third, absorbed by
+          // avg-qr4.3) — but only when the caller names what changed via
+          // stageIds. Omit stageIds and the service refuses with
+          // MODE_UNSUPPORTED rather than propagating from nothing.
           mode: {
             type: "string",
             enum: ["retry-current", "rerun-selected", "rerun-affected-downstream", "full-rebuild"],
@@ -508,9 +527,65 @@ export function registerProductionRoutes(
   });
 
   // ── Approve stage ─────────────────────────────────────────────────────────
+  // Used to shell out to `vpr approve` and hand back the subprocess's own
+  // `{ ok, data, error }`. It now goes through `ExecutionService.review` in
+  // process (avg-qr4.3) — the same call the CLI makes — and its verdict
+  // depends on `request.principal`, which the auth middleware set from
+  // which credential authenticated the request: the operator key signs a
+  // grant, anything else (including no credential — see the decorated
+  // default in server.ts) only requests one.
   app.post("/api/channels/:channel/series/:series/episodes/:episode/stages/:stage/approve", {
     schema: {
-      description: "Approve a manual gate for a stage.",
+      description: "Approve a manual gate for a stage. Signed when the caller holds the operator key; otherwise recorded as a request for an operator to decide.",
+      tags: ["production"],
+      params: {
+        type: "object",
+        required: ["channel", "series", "episode", "stage"],
+        properties: {
+          channel: { type: "string" },
+          series: { type: "string" },
+          episode: { type: "string" },
+          stage: { type: "string" },
+        },
+      },
+      // avg-qr4.3 final review, M1: this declared only `justification`,
+      // which nothing read, and Fastify strips undeclared properties — so a
+      // note never arrived, and `pva_request_approval` could not ask without
+      // the route treating the call as an approval (a grant, on a
+      // `review: skill` stage). `justification` is gone: nothing sent it.
+      body: {
+        type: "object",
+        properties: {
+          note: { type: "string" },
+          request: {
+            type: "boolean",
+            description: "Ask an operator to decide, rather than approve. Always writes a request, whoever the caller is.",
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const ref = parseEpisode(request.params as Record<string, string>);
+    const stageId = (request.params as Record<string, string>).stage!;
+    const { note, request: asking } = (request.body ?? {}) as { note?: string; request?: boolean };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+    const outcome = await serviceFor(request).review(ref, pipeline, stageId, {
+      decision: asking ? "requested" : "approved",
+      principal: request.principal ?? "agent",
+      ...(note !== undefined ? { note } : {}),
+    });
+    return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
+  });
+
+  // ── Reject stage ──────────────────────────────────────────────────────────
+  // New alongside the approve rewrite: the same `review()` call the CLI's
+  // `vpr reject` makes, with `decision: "rejected"`. A rejection without a
+  // note is refused before it reaches the service — noise nobody can act on
+  // — by `body.required`, so Fastify answers 400 rather than the service
+  // having to reject its own refusal.
+  app.post("/api/channels/:channel/series/:series/episodes/:episode/stages/:stage/reject", {
+    schema: {
+      description: "Reject a manual gate for a stage, with a note explaining why.",
       tags: ["production"],
       params: {
         type: "object",
@@ -524,16 +599,21 @@ export function registerProductionRoutes(
       },
       body: {
         type: "object",
+        required: ["note"],
         properties: {
-          justification: { type: "string" },
+          note: { type: "string", minLength: 1 },
         },
       },
     },
   }, async (request) => {
     const ref = parseEpisode(request.params as Record<string, string>);
     const stageId = (request.params as Record<string, string>).stage!;
-    const result = await runtime.approve(ref, stageId);
-    return { ok: result.ok, data: result.data, error: result.error };
+    const { note } = request.body as { note: string };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+    const outcome = await serviceFor(request).review(ref, pipeline, stageId, {
+      decision: "rejected", principal: request.principal ?? "agent", note,
+    });
+    return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
 
   // ── Journal ───────────────────────────────────────────────────────────────

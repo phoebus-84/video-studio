@@ -29,6 +29,20 @@ export interface EventPublisherOptions {
    * root came from `libraryRoots` rather than the environment.
    */
   libraryRoot: string;
+  /**
+   * The operator's credential (avg-qr4.3), threaded through to the execution
+   * service like `libraryRoot`. This poll only reads status — it never
+   * writes a review — but the review gate needs the key to verify a human
+   * receipt it finds. `null` for a caller with none.
+   *
+   * Required, not optional, for the reason `makeExecutionService` gives: an
+   * optional key is an invitation for one caller to keep quietly passing
+   * `undefined` while every other one threads the resolved key. The review
+   * gate verifies human receipts with it, so the caller that forgot would
+   * report every operator approval as unverifiable — awaiting review
+   * forever — and nobody would notice until an operator asked why.
+   */
+  operatorKey: string | null;
 }
 
 /**
@@ -46,6 +60,7 @@ export class EventPublisher {
   private bus: EventBus;
   private pollMs: number;
   private libraryRoot: string;
+  private operatorKey: string | null;
   private knownStages = new Map<string, StageState[]>();
   private interval: ReturnType<typeof setInterval> | null = null;
 
@@ -53,6 +68,7 @@ export class EventPublisher {
     this.bus = options.bus;
     this.pollMs = options.pollMs ?? 10_000;
     this.libraryRoot = options.libraryRoot;
+    this.operatorKey = options.operatorKey;
   }
 
   /** Start polling and watch for events. */
@@ -89,7 +105,7 @@ export class EventPublisher {
     };
 
     try {
-      const service = makeExecutionService(() => {}, this.libraryRoot);
+      const service = makeExecutionService(() => {}, this.libraryRoot, this.operatorKey);
       const result = await service.status(target, pipeline ?? DEFAULT_PIPELINE);
       if (!result.ok) return;
 

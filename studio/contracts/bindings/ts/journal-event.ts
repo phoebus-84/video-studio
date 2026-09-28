@@ -12,7 +12,7 @@ export interface EpisodeRef {
 
 export type Actor = "pi" | "gateway" | "runtime" | "human" | "system";
 
-export type EventType = "stage-leased" | "stage-started" | "stage-completed" | "stage-failed" | "attempt-recorded" | "approval-granted" | "approval-requested" | "comment-added" | "artifact-written" | "staleness-marked" | "supersession-recorded" | "deliverable-current-changed" | "episode.created" | "episode.status_changed" | "stage.started" | "stage.completed" | "stage.failed" | "artifact.created" | "artifact.updated" | "budget.updated" | "review.created" | "review.resolved" | "settings.changed" | "snapshot.created";
+export type EventType = "stage-leased" | "stage-started" | "stage-completed" | "stage-failed" | "attempt-recorded" | "approval-granted" | "approval-requested" | "approval-rejected" | "comment-added" | "artifact-written" | "staleness-marked" | "supersession-recorded" | "deliverable-current-changed" | "episode.created" | "episode.status_changed" | "stage.started" | "stage.completed" | "stage.failed" | "artifact.created" | "artifact.updated" | "budget.updated" | "review.created" | "review.resolved" | "settings.changed" | "snapshot.created";
 
 export type EventData = Record<string, unknown>;
 

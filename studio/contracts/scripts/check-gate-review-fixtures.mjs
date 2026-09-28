@@ -29,6 +29,7 @@ let failures = 0;
 for (const fixturePath of [
   "fixtures/gate-review/valid/requested.json",
   "fixtures/gate-review/valid/approved.json",
+  "fixtures/gate-review/valid/rejected.json",
 ]) {
   const fixture = JSON.parse(readFileSync(resolve(root, fixturePath), "utf-8"));
   if (!validate(fixture)) {
@@ -44,7 +45,10 @@ for (const fixturePath of [
 
 for (const fixturePath of [
   "fixtures/gate-review/invalid/approved-without-outputs.json",
+  "fixtures/gate-review/invalid/approved-without-episode.json",
   "fixtures/gate-review/invalid/bad-hash.json",
+  "fixtures/gate-review/invalid/human-approved-unsigned.json",
+  "fixtures/gate-review/invalid/rejected-without-note.json",
 ]) {
   const fixture = JSON.parse(readFileSync(resolve(root, fixturePath), "utf-8"));
   if (validate(fixture)) {

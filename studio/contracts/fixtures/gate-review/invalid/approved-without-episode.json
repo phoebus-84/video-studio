@@ -1,0 +1,27 @@
+{
+  "stageId": "qa",
+  "decision": "approved",
+  "origin": "human",
+  "actor": "human",
+  "at": "2026-09-15T12:00:00Z",
+  "binding": {
+    "planHash": "16b85a87c85489ace255fde8b857d356d943c7e022e5c1ac99173baa9081c6f5",
+    "inputs": [
+      { "path": "output/final.mp4", "sha256": "3ede38f89735ae493025084a229bbd628c5151d0b20f65c8bd19c347b94644a7" }
+    ],
+    "outputs": [
+      { "path": "artifacts/qa-report.json", "sha256": "acf6ff41a08effce545df3cac3f58562aeb2147a1bcf6b7d072bbb9c459d39ab" }
+    ]
+  },
+  "checks": [
+    {
+      "id": "duration",
+      "name": "Render duration",
+      "status": "pass",
+      "expected": "30-480s",
+      "actual": "89.833s",
+      "evidence": "ffprobe -show_entries format=duration output/final.mp4"
+    }
+  ],
+  "signature": "5ef7a2d53bd06e37f2c605a71dbcf4d0315bdeefe7a328e7bb4724e34329a2f4"
+}

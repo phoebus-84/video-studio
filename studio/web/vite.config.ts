@@ -24,6 +24,12 @@ function devGatewayToken(): string {
   }
 }
 
+// There is deliberately no operator-key counterpart to `devGatewayToken`
+// (avg-qr4.3 final review, I1). A `define` inlines its value into every
+// module the dev server serves, over unauthenticated HTTP, and into every
+// production bundle: the signing key was one `curl` away. The person enters
+// it once in the studio instead (Header → operator key).
+
 export default defineConfig(({ command }) => ({
   define: {
     __GATEWAY_TOKEN__: JSON.stringify(
