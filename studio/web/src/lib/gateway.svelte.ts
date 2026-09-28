@@ -13,23 +13,44 @@ let _wsCallbacks: Array<(event: Record<string, unknown>) => void> = [];
 let _wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let _wsUrl = "";
 
+/** Where the operator key the person entered is kept, beside the gateway token. */
+export const OPERATOR_KEY_STORAGE = "vs-operator-key";
+
 /**
  * Which credential the studio presents (avg-qr4.3). The operator key makes
  * this browser the operator, so its approvals are signed human decisions.
  * Without it the studio still works on the agent token, and an approval
  * becomes a request, which fails closed.
+ *
+ * The key is only ever one the person entered (avg-qr4.3 final review, I1):
+ * a build-time key was inlined into modules the dev server serves without
+ * authentication, and into production bundles.
  */
-export function credentialFor(
-  storage: Pick<Storage, "getItem">, operatorKey: string, gatewayToken: string,
-): string {
-  return storage.getItem("vs-operator-key") || operatorKey
+export function credentialFor(storage: Pick<Storage, "getItem">, gatewayToken: string): string {
+  return storage.getItem(OPERATOR_KEY_STORAGE)
     || storage.getItem("vs-gateway-token") || gatewayToken;
+}
+
+/**
+ * Keep the operator key the person pasted, trimmed; an empty entry forgets
+ * it. The caller reloads: the client and its socket are built once, with the
+ * credential they started with.
+ */
+export function saveOperatorKey(storage: Pick<Storage, "setItem" | "removeItem">, key: string): void {
+  const trimmed = key.trim();
+  if (trimmed) storage.setItem(OPERATOR_KEY_STORAGE, trimmed);
+  else storage.removeItem(OPERATOR_KEY_STORAGE);
+}
+
+/** Whether this browser holds an operator key. Never returns the key itself. */
+export function hasOperatorKey(storage: Pick<Storage, "getItem"> = localStorage): boolean {
+  return Boolean(storage.getItem(OPERATOR_KEY_STORAGE));
 }
 
 export function getGatewayClient(): GatewayClient {
   if (!_client) {
     const baseUrl = localStorage.getItem("vs-gateway-url") ?? "http://127.0.0.1:5198";
-    const token = credentialFor(localStorage, __OPERATOR_KEY__, __GATEWAY_TOKEN__);
+    const token = credentialFor(localStorage, __GATEWAY_TOKEN__);
     _client = new GatewayClient({
       baseUrl,
       tokenProvider: () => token,
