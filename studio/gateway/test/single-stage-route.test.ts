@@ -519,16 +519,20 @@ describe("the gateway assembled by createGateway", () => {
 
     const root = await mkdtemp(join(tmpdir(), "gw-composition-root-"));
     roots.push(root);
+    // Credentials outside the library: /library/ is served without
+    // authentication, and createGateway refuses them inside it (avg-qr4.3, M6).
+    const keys = await mkdtemp(join(tmpdir(), "gw-keys-"));
+    roots.push(keys);
     const dir = join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
     await mkdir(join(dir, "artifacts"), { recursive: true });
 
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
-    config.token.file = join(root, "gateway.token");
+    config.token.file = join(keys, "gateway.token");
     // Alongside the token file, or `createGateway` resolves the operator key
     // at its default `.operator-key` and writes it into studio/gateway/.
-    config.operatorKey.file = join(root, "gateway.operator-key");
+    config.operatorKey.file = join(keys, "gateway.operator-key");
     config.libraryRoots = [root];
     const token = resolveToken(config.token);
 
@@ -568,6 +572,10 @@ describe("the gateway assembled by createGateway", () => {
     // already cost this project an episode once.
     const root = await mkdtemp(join(tmpdir(), "gw-workspace-root-"));
     roots.push(root);
+    // Credentials outside the library: /library/ is served without
+    // authentication, and createGateway refuses them inside it (avg-qr4.3, M6).
+    const keys = await mkdtemp(join(tmpdir(), "gw-keys-"));
+    roots.push(keys);
     const dir = join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
     await mkdir(join(dir, "artifacts"), { recursive: true });
     vi.stubEnv("AVG_LIBRARY_ROOT", root);
@@ -575,10 +583,10 @@ describe("the gateway assembled by createGateway", () => {
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
-    config.token.file = join(root, "gateway.token");
+    config.token.file = join(keys, "gateway.token");
     // Alongside the token file, or `createGateway` resolves the operator key
     // at its default `.operator-key` and writes it into studio/gateway/.
-    config.operatorKey.file = join(root, "gateway.operator-key");
+    config.operatorKey.file = join(keys, "gateway.operator-key");
     config.libraryRoots = ["."];   // the default: the env is the only pointer
     const token = resolveToken(config.token);
 
@@ -618,16 +626,20 @@ describe("the gateway assembled by createGateway", () => {
     // processes would disagree about who holds the credential (avg-qr4.3).
     const root = await mkdtemp(join(tmpdir(), "gw-operator-key-env-"));
     roots.push(root);
+    // Credentials outside the library: /library/ is served without
+    // authentication, and createGateway refuses them inside it (avg-qr4.3, M6).
+    const keys = await mkdtemp(join(tmpdir(), "gw-keys-"));
+    roots.push(keys);
 
-    const envKeyFile = join(root, "env-operator-key");
-    const configKeyFile = join(root, "config-operator-key");
+    const envKeyFile = join(keys, "env-operator-key");
+    const configKeyFile = join(keys, "config-operator-key");
     await writeFile(envKeyFile, "env-provided-operator-key\n", { mode: 0o600 });
     vi.stubEnv("AVG_OPERATOR_KEY_FILE", envKeyFile);
 
     const config = loadConfig();
     config.port = 0;
     config.host = "127.0.0.1";
-    config.token.file = join(root, "gateway.token");
+    config.token.file = join(keys, "gateway.token");
     config.operatorKey.file = configKeyFile;
     config.libraryRoots = [root];
     const token = resolveToken(config.token);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { loadConfig } from "../src/config/index.js";
 import { resolveToken, generateToken } from "../src/auth/index.js";
 import { createGateway, type GatewayInstance } from "../src/server.js";
@@ -32,6 +33,7 @@ function connectWs(
 }
 
 const TMP = resolve(".test-tmp");
+const KEYS = resolve(tmpdir(), "vs-gateway-integration-keys");
 
 /**
  * Integration tests for the gateway server.
@@ -50,7 +52,10 @@ describe("Gateway Integration", () => {
     // Ensure temp directory
     fs.mkdirSync(TMP, { recursive: true });
 
-    const tokenFile = resolve(TMP, "integration.token");
+    // Outside the library (TMP): /library/ is served without authentication,
+    // and createGateway refuses a credential file inside it (avg-qr4.3, M6).
+    fs.mkdirSync(KEYS, { recursive: true });
+    const tokenFile = resolve(KEYS, "integration.token");
     // Clean up any previous token
     try { fs.unlinkSync(tokenFile); } catch {}
 
@@ -61,7 +66,7 @@ describe("Gateway Integration", () => {
     config.token.file = tokenFile;
     // Alongside the token file, or `createGateway` resolves the operator key
     // at its default `.operator-key` and writes it into studio/gateway/.
-    config.operatorKey.file = resolve(TMP, "integration.operator-key");
+    config.operatorKey.file = resolve(KEYS, "integration.operator-key");
     config.libraryRoots = [TMP];
 
     token = resolveToken(config.token);
@@ -74,6 +79,7 @@ describe("Gateway Integration", () => {
 
   afterAll(async () => {
     await gateway.stop();
+    fs.rmSync(KEYS, { recursive: true, force: true });
   });
 
   // ── Health endpoint (unauthenticated) ─────────────────────────────────────
@@ -301,7 +307,8 @@ describe("Gateway Integration", () => {
   describe("lifecycle", () => {
     it("can be stopped and health is no longer reachable", async () => {
       // Create a temporary gateway just for this test
-      const tmpTokenFile = resolve(TMP, "lifecycle.token");
+      fs.mkdirSync(KEYS, { recursive: true });
+      const tmpTokenFile = resolve(KEYS, "lifecycle.token");
       try { fs.unlinkSync(tmpTokenFile); } catch {}
       const cfg = loadConfig();
       cfg.port = 0;
@@ -309,7 +316,10 @@ describe("Gateway Integration", () => {
       // Alongside the token file, or `createGateway` resolves the operator
       // key at its default `.operator-key` and writes it into
       // studio/gateway/.
-      cfg.operatorKey.file = resolve(TMP, "lifecycle.operator-key");
+      cfg.operatorKey.file = resolve(KEYS, "lifecycle.operator-key");
+      // The default library root is ".", this package's directory, which
+      // is not where the keys are, but name the library explicitly anyway.
+      cfg.libraryRoots = [TMP];
       const t = resolveToken(cfg.token);
       const gw = await createGateway(cfg, t);
       const addr = await gw.start();
