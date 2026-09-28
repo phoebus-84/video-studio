@@ -100,6 +100,13 @@ describe("PiRpcClient", () => {
       expect(env.PATH).toBe("/usr/bin");
     });
 
+    // avg-qr4.3 final review, I4: Pi's bash tool runs `vpr` as the
+    // operator's user, and the CLI's default key path made it the operator.
+    it("piSpawnEnv marks Pi headless, overriding whatever the gateway had", () => {
+      expect(piSpawnEnv({ PATH: "/usr/bin" }).AVG_HEADLESS).toBe("1");
+      expect(piSpawnEnv({ AVG_HEADLESS: "0" }).AVG_HEADLESS).toBe("1");
+    });
+
     it("connect() spawns Pi without AVG_OPERATOR_KEY_FILE, even when the gateway process has it set", async () => {
       vi.stubEnv("AVG_OPERATOR_KEY_FILE", "/Users/operator/studio-video/studio/gateway/.operator-key");
       const c = new PiRpcClient();

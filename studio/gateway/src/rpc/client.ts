@@ -8,7 +8,7 @@
 
 import { ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { OPERATOR_KEY_ENV } from "@studio/contracts/src/operator-key.mjs";
+import { OPERATOR_KEY_ENV, HEADLESS_ENV } from "@studio/contracts/src/operator-key.mjs";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -61,7 +61,12 @@ export type RpcState =
  */
 export function piSpawnEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const { [OPERATOR_KEY_ENV]: _operatorKeyFile, ...rest } = env;
-  return rest;
+  // Headless (avg-qr4.3 final review, I4): Pi's bash tool runs `vpr` as the
+  // operator's own user, and the CLI's default key path made that shell the
+  // operator by accident. With this set, `resolveCliCredential` answers
+  // "agent" without reading the key. It stops accidents, not a process that
+  // unsets it and reads the file itself — that boundary is avg-qr4.8.
+  return { ...rest, [HEADLESS_ENV]: "1" };
 }
 
 // ── Errors ──────────────────────────────────────────────────────────────────

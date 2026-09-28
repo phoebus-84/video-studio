@@ -12,6 +12,14 @@ import { readFileSync, statSync } from "node:fs";
 
 export const OPERATOR_KEY_ENV = "AVG_OPERATOR_KEY_FILE";
 
+/**
+ * Set by the gateway in Pi's environment; the CLI then resolves as an agent
+ * without reading the key (avg-qr4.3 final review). A guard against Pi's
+ * shell becoming the operator by accident, not against a process that
+ * unsets it — that boundary is avg-qr4.8.
+ */
+export const HEADLESS_ENV = "AVG_HEADLESS";
+
 export function readOperatorKey(file) {
   let info;
   try {

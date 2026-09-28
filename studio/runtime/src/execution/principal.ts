@@ -8,7 +8,7 @@
 
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
-import { readOperatorKey, OPERATOR_KEY_ENV } from "@studio/contracts/src/operator-key.mjs";
+import { readOperatorKey, OPERATOR_KEY_ENV, HEADLESS_ENV } from "@studio/contracts/src/operator-key.mjs";
 import type { Principal } from "./types.js";
 
 /** Where the gateway writes the key: studio/gateway/.operator-key. */
@@ -24,6 +24,17 @@ export function defaultOperatorKeyPath(): string {
 export function resolveCliCredential(
   env: NodeJS.ProcessEnv = process.env,
 ): { principal: Principal; operatorKey: string | null } {
+  // avg-qr4.3 final review, I4: Pi's shell runs `vpr` as the operator's own
+  // user, and the default key path below made it the operator by accident —
+  // `vpr approve` from Pi's bash tool signed a human grant. A headless caller
+  // is an agent and the key is not even read. The gateway sets HEADLESS_ENV
+  // in Pi's environment (`piSpawnEnv`); any non-empty value but "0" counts.
+  //
+  // This guards against accidents, not against a process that unsets the
+  // variable or reads the key file itself: that boundary is avg-qr4.8's OS
+  // isolation.
+  const headless = env[HEADLESS_ENV];
+  if (headless && headless !== "0") return { principal: "agent", operatorKey: null };
   const operatorKey = readOperatorKey(env[OPERATOR_KEY_ENV] || defaultOperatorKeyPath());
   return operatorKey ? { principal: "operator", operatorKey } : { principal: "agent", operatorKey: null };
 }
