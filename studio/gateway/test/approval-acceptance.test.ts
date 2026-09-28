@@ -29,6 +29,8 @@ import { appendJournalEvent } from "@studio/contracts/src/journal.mjs";
 import { buildGateReview, hashArtifacts } from "@studio/contracts/src/gate-review.mjs";
 
 const REF = { channel: "childrens", series: "fairy-tales", episode: "the-acceptance-line" };
+/** The slug a human receipt signs (avg-qr4.3 final review). */
+const EPISODE = `${REF.channel}/${REF.series}/${REF.episode}`;
 const BASE = `/api/channels/${REF.channel}/series/${REF.series}/episodes/${REF.episode}`;
 
 const roots: string[] = [];
@@ -166,7 +168,7 @@ describe("the approval acceptance line", () => {
     await appendJournalEvent(dir, {
       type: "approval-granted", actor: "runtime", episode: REF,
       data: buildGateReview({
-        stageId: "script", decision: "approved", origin: "human", actor: "runtime",
+        stageId: "script", decision: "approved", origin: "human", actor: "runtime", episode: EPISODE,
         binding: { planHash: "0".repeat(64), outputs },
       }),
     });

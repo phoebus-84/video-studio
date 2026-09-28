@@ -66,6 +66,8 @@ afterEach(async () => {
 });
 
 const REF = { channel: "childrens", series: "fairy-tales", episode: "the-run-up" };
+/** The slug a human receipt signs (avg-qr4.3 final review). */
+const EPISODE = `${REF.channel}/${REF.series}/${REF.episode}`;
 
 async function episode() {
   const root = await mkdtemp(join(tmpdir(), "gw-gates-"));
@@ -152,7 +154,7 @@ async function seedAccepted(root: string, dir: string, pipeline: string, stageId
       stageId,
       decision: "approved",
       origin: "human",
-      actor: "runtime",
+      actor: "runtime", episode: EPISODE,
       binding: { planHash: await planOf(root, pipeline, stageId), outputs: await hashArtifacts(dir, relatives) },
     }), KEY),
   });
@@ -640,7 +642,7 @@ describe("dependency gates", () => {
       stageId: "script",
       decision: over.decision ?? "approved",
       origin: "human",
-      actor: "runtime",
+      actor: "runtime", episode: EPISODE,
       binding: {
         planHash: await planOf(root, "narrated-illustrated-video", "script"),
         outputs: await hashArtifacts(dir, [script]),
@@ -743,7 +745,7 @@ describe("dependency gates", () => {
     // genuine approval, appended after it, must still let the dependent run.
     const { root, dir, script } = await scripted();
     await record(dir, "approval-requested", buildGateReview({
-      stageId: "script", decision: "requested", origin: "agent", actor: "runtime",
+      stageId: "script", decision: "requested", origin: "agent", actor: "runtime", episode: EPISODE,
       binding: { outputs: await hashArtifacts(dir, [script]) }, at: "2099-01-01T00:00:00.000Z",
     }));
     await record(dir, "approval-granted", await scriptDecision(root, dir, script));
