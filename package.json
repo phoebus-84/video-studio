@@ -19,6 +19,7 @@
     "studio/contracts",
     "studio/runtime",
     "studio/pipelines",
+    "studio/adapters",
     "studio/agent",
     "studio/gateway",
     "studio/web"

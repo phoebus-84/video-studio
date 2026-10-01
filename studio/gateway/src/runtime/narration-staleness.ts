@@ -1,4 +1,4 @@
-import type { NarrationTimingEntry } from "./narration-manifest.js";
+import type { NarrationTimingEntry } from "@studio/adapters";
 
 export interface NarrationRerunImpact {
   segmentId: string;

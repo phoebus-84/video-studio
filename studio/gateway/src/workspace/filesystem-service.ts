@@ -12,7 +12,7 @@ import type { WorkspaceService } from "./service.js";
 // These live in the contracts module; service.ts imports them without
 // re-exporting, so take them from the source rather than through it.
 import type { ChannelSummary, SeriesSummary, EpisodeSummary, EpisodeDetail, EpisodeStatus } from "../contracts/types.js";
-import { loadNarrationManifest } from "../runtime/narration-manifest.js";
+import { loadNarrationManifest } from "@studio/adapters";
 import {
   SERIES_CONTAINER,
   EPISODES_CONTAINER,

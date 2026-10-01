@@ -43,8 +43,9 @@ is sandboxed, or that a render survives an agent-process crash.
 
 ### P0 — Reviews can be fabricated by the implementation
 
-**Evidence:** `studio/gateway/src/runtime/executor.ts`, `handleSafetyReview` and
-`handleContinuityCheck`, construct literal findings about a wolf, eight scenes,
+**Evidence (the handlers were deleted by avg-qr4.1, and the file that held them
+by avg-qr4.4):** `studio/gateway/src/runtime/executor.ts`, `handleSafetyReview` and
+`handleContinuityCheck`, *used to* construct literal findings about a wolf, eight scenes,
 and passing character/color/lighting checks. They do not inspect the episode.
 The dispatcher labels successful handler returns `completed`, even when a handler
 returns an empty output list. A report file is not proof a review happened.
@@ -70,14 +71,18 @@ now claims a stage through the service, takes a real lease, and prints the
 it now plans through the same service, and refuses `rerun-affected-downstream`
 by name rather than planning nothing (avg-33r).
 
-`studio/gateway/src/runtime/executor.ts` produces artifacts directly using a
-hard-coded stage-name registry, contrary to ADR-0027 — still true, and not
-addressed by the work above. `studio/agent/src/pipeline-tools.ts` *used to*
+`studio/gateway/src/runtime/executor.ts` *used to* produce artifacts directly
+using a hard-coded stage-name registry, contrary to ADR-0027. Since avg-qr4.4 it
+is gone: the four stages it performed are `@studio/adapters` descriptors,
+matched to stages by capability and output contract rather than by stage id,
+and the gateway composes the execution service with that dispatcher and writes
+no artifact itself. `studio/agent/src/pipeline-tools.ts` *used to*
 describe tools as executing/waiting while the runtime run command chiefly
 returned stage instructions; its `pva_run_stage`, `pva_claim_stage` and
 `pva_complete_stage` now go to the gateway's claim/complete routes, which are
 the same execution service the CLI uses. There is one reading of “run” on
-those paths; the legacy executor is the remaining one.
+those paths. The CLI still claims rather than performs, because the adapters
+depend on the runtime and not the reverse.
 
 **Change:** one execution service shared by agent and browser:
 
@@ -134,7 +139,12 @@ approval request rather than assuming yes.
 **Evidence:** vocabulary schema + mirror + generated TypeScript; composition
 manifest + profiles; package exports/dependencies; agent registration; skills;
 pipeline declarations; diagnostics and tests. `studio/agent/src/agent.ts` also
-contains a static `CAPABILITIES` list. Before the Blender change, the agent/gateway
+contains a static `CAPABILITIES` list. (Partly addressed, avg-qr4.4:
+`studio/adapters` holds declarative descriptors for the stages the execution
+service performs itself, and a conformance test cross-checks them against the
+vocabulary and the built-in pipelines. Readiness, estimates, jobs, tools,
+skills and bindings are not in the descriptor yet, and Pi's capability tools
+are not adapters.) Before the Blender change, the agent/gateway
 TypeScript paths did not consume `composed.json`, despite documentation saying
 they did. Tool availability and installed capability readiness could disagree.
 The old contributing guide also prohibited multiple providers, while compose

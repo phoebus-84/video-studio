@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { ExecutionService, JournalReviewGate } from "@studio/runtime";
-import { GatewayDispatcher } from "./dispatcher.js";
+import { createStudioDispatcher } from "@studio/adapters";
 import { builtinPipelinesPath } from "./client.js";
 
 /**
@@ -62,7 +62,9 @@ export function makeExecutionService(
     // built-in pipeline resolves to nothing: the same reasoning the deleted
     // loadGates carried.
     builtinPipelines: builtinPipelinesPath() || undefined,
-    dispatcher: new GatewayDispatcher(),
+    // The studio's adapters perform the stages that run here; the gateway
+    // only carries the request to them (ADR-0027, avg-qr4.4).
+    dispatcher: createStudioDispatcher(),
     // The same gate the CLI composes (avg-qr4.3). It needs the key to
     // verify a human receipt: composed with `null`, every human approval
     // reads as unverifiable and its dependents stay blocked.

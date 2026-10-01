@@ -50,6 +50,10 @@ Use this end-to-end checklist (Blender is the scene-provider example):
    documented integration into an existing workflow. Describe native-source
    handoffs, preview/final settings, and how an accepted result reaches the edit.
    Do **not** add production handlers to the gateway.
+   A stage the execution service should perform on its own — rather than Pi
+   performing it through a tool — gets a descriptor in `studio/adapters`
+   (see its README); its conformance test checks the match against the
+   built-in pipelines.
 7. Test fake success/failure, missing outputs/binaries, cancellation, contention,
    trust/path boundaries and source preservation; add an opt-in live smoke test.
    Test actual skill/tool discovery and pipeline validation as well as the package.
@@ -58,9 +62,11 @@ Use this end-to-end checklist (Blender is the scene-provider example):
    external requirements and unverified live behavior; do not equate “wired” with
    “ready” or “authorized.”
 
-This is still too many manual integration points. The proposed studio adapter
-registry and execution/approval work are described in the
-[harness review](harness-review.md); they are not yet a plugin API.
+This is still too many manual integration points. `studio/adapters` is the
+thin first step of the adapter registry the [harness review](harness-review.md)
+proposes: it pairs stages with the code that performs them by declaration, but
+readiness, estimates, jobs and per-episode bindings are not in it yet, and it is
+not a plugin API.
 
 ## Adding a skill
 

@@ -404,8 +404,8 @@ export class ExecutionService {
     // This was enforced by nothing at all — "autopilot" appeared nowhere in
     // this file. It merely looked enforced, because every `autopilot: false`
     // stage in the shipped manifests (script, compose, safety-review) also
-    // happens to have no gateway handler and so stopped at `canDispatch`.
-    // Give one a handler — or ship a manifest that gates an ordinary stage —
+    // happens to have no adapter and so stopped at `canDispatch`.
+    // Give one an adapter — or ship a manifest that gates an ordinary stage —
     // and it ran unattended, which is the one thing the flag exists to
     // prevent.
     //

@@ -22,7 +22,7 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { loadNarrationManifest, naturalSceneOrder } from "../runtime/narration-manifest.js";
+import { loadNarrationManifest, naturalSceneOrder } from "@studio/adapters";
 
 /** A scene as the studio consumes it, before narration/asset enrichment. */
 export interface SpineScene {

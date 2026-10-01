@@ -1,0 +1,42 @@
+{
+  "name": "@studio/adapters",
+  "version": "0.1.0",
+  "description": "The studio's stage adapters: declarative descriptors that bind a pipeline stage's contracts to the code that performs it",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist/",
+    "pretest": "npm run build"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@av/video-composer": "workspace:*",
+    "@studio/contracts": "workspace:*",
+    "@studio/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@studio/pipelines": "workspace:*",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
