@@ -39,6 +39,7 @@ narrate episodes is the studio's business, not the tool's.
 | `studio/runtime` | Snapshots, leases, staleness, journal, policy |
 | `studio/pipelines` | Built-in pipeline manifests |
 | `studio/agent` | The Pi executive-producer package |
+| `studio/adapters` | Stage adapters: the code that performs a stage, matched by contract |
 | `studio/gateway` | Pi RPC ownership and event streaming |
 | `studio/web` | Browser studio |
 

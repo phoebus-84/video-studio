@@ -92,9 +92,10 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     name: "pva_run_stage",
     label: "Run Stage",
     description:
-      "Run a single pipeline stage using the gateway's own handler for it — illustrations, " +
-      "captions, timing, qa. Returns when the stage has finished. Stages with no handler come " +
-      "back blocked rather than running: claim those with pva_claim_stage and perform them yourself.",
+      "Run a single pipeline stage through the studio's stage adapter for it — today the " +
+      "illustrations, captions, timing and qa stages of the narrated pipelines. Returns when the " +
+      "stage has finished. Stages no adapter performs come back blocked rather than running: " +
+      "claim those with pva_claim_stage and perform them yourself.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -238,7 +239,7 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     label: "Run Pipeline",
     description:
       "Run pending stages in dependency order, stopping at the first stage that is blocked, " +
-      "fails, or is awaiting review. Stops at any stage the gateway has no handler for — " +
+      "fails, or is awaiting review. Stops at any stage no adapter performs — " +
       "claim that stage and perform it, then call this again to continue.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),

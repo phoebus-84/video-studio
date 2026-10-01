@@ -600,11 +600,11 @@ function cliOperatorKey(ctx: CliContext): string | null | number {
 /**
  * The execution service, composed for the CLI.
  *
- * The CLI injects no dispatcher: the four handlers that perform stages
- * automatically live in @studio/gateway, which depends on this package and
- * not the reverse. That is why `vpr run` claims rather than performs — a
- * terminal cannot run `illustrations`, and pretending otherwise would be a
- * lie about where work happens.
+ * The CLI injects no dispatcher: the adapters that perform stages
+ * automatically live in @studio/adapters, which depends on this package and
+ * not the reverse. That is why `vpr run` claims rather than performs — this
+ * process has no adapter to hand the stage to, and pretending otherwise would
+ * be a lie about where work happens.
  */
 function makeService(args: string[], leaseTtlMs: number, operatorKey: string | null): ExecutionService {
   return new ExecutionService({

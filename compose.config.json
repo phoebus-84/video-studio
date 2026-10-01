@@ -139,6 +139,15 @@
       "requires": {},
       "docs": "docs/studio/pipelines.md"
     },
+    "adapters": {
+      "path": "studio/adapters",
+      "kind": "node",
+      "standalone": false,
+      "summary": "Stage adapters: declarative descriptors pairing a pipeline stage's contracts and capability with the code that performs it. What the gateway dispatches to.",
+      "capabilities": [],
+      "requires": {},
+      "docs": "docs/studio/adapters.md"
+    },
     "agent": {
       "path": "studio/agent",
       "kind": "node",
@@ -193,6 +202,7 @@
         "runtime",
         "pipelines",
         "agent",
+        "adapters",
         "gateway",
         "web"
       ],
@@ -220,6 +230,7 @@
         "runtime",
         "pipelines",
         "agent",
+        "adapters",
         "gateway",
         "web"
       ],
@@ -256,7 +267,7 @@
     },
     "blender": {
       "summary": "Local 3D production with the agent and browser; no cloud image or MLX voice requirement.",
-      "components": ["blender", "video-composer", "contracts", "runtime", "pipelines", "agent", "gateway", "web"],
+      "components": ["blender", "video-composer", "contracts", "runtime", "pipelines", "agent", "adapters", "gateway", "web"],
       "skills": ["shared", "studio"]
     },
     "voice": {

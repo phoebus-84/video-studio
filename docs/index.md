@@ -44,6 +44,7 @@ The product. Depends on `packages/`. All studio-specific integration lives here.
 | [runtime](./studio/runtime) | Snapshots, leases, staleness, journal, policy |
 | [pipelines](./studio/pipelines) | Built-in pipeline manifests |
 | [agent](./studio/agent) | The Pi executive-producer package |
+| [adapters](./studio/adapters) | Stage adapters: the code that performs a stage, matched by contract |
 | [gateway](./studio/gateway) | Pi RPC ownership and event streaming |
 | [web](./studio/web) | Browser studio |
 

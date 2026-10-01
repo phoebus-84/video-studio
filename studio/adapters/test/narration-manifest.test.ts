@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { loadNarrationManifest, naturalSceneOrder } from "../src/runtime/narration-manifest.js";
+import { loadNarrationManifest, naturalSceneOrder } from "../src/narration-manifest.js";
 
 async function episode(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-narration-"));

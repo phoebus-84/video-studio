@@ -30,7 +30,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExecutionService, JournalReviewGate, resolvePipeline, createDefaultLoader } from "@studio/runtime";
 import type { StageDispatcher } from "@studio/runtime";
-import { GatewayDispatcher } from "../src/runtime/dispatcher.js";
+import { createStudioDispatcher } from "@studio/adapters";
 import { registerProductionRoutes } from "../src/routes/production.js";
 import type { RuntimeClient } from "../src/runtime/client.js";
 import type { WorkspaceService } from "../src/workspace/service.js";
@@ -86,7 +86,7 @@ function gatewayService(
   return new ExecutionService({
     libraryRoot: root,
     builtinPipelines: PIPELINES,
-    dispatcher: new GatewayDispatcher(),
+    dispatcher: createStudioDispatcher(),
     review: new JournalReviewGate(KEY),
     operatorKey: KEY,
     budget: { maySpend: async () => ({ ok: true as const, value: { reserveId: "t", estimatedCost: 0 } }) },
@@ -235,7 +235,7 @@ describe("execution gates", () => {
     // a report about a wolf.
     //
     // The reason is pinned, not just the status: for a while this stage was
-    // blocked at `canDispatch` — it has no handler — which is a coincidence of
+    // blocked at `canDispatch` — no adapter performs it — which is a coincidence of
     // this stage rather than the rule the test claims. The service reads
     // `gates.autopilot` now, so the refusal is the one the title names.
     const result = await gatewayService(root).run(REF, "fairy-tale-adaptation", { stage: "safety-review" });
@@ -252,12 +252,13 @@ describe("execution gates", () => {
   // while ExecutionService never read `stage.definition.gates.autopilot`: the
   // manifest's "may not run unattended" was enforced by nothing, and only
   // looked enforced because every autopilot: false stage in the shipped
-  // manifests (script, compose, safety-review) also has no gateway handler.
-  // The synthetic pipeline removes that mask by giving a handler — the real
-  // `captions` one — to a stage that declares autopilot: false.
+  // manifests (script, compose, safety-review) also has no adapter.
+  // The synthetic pipeline removes that mask by declaring a stage a real
+  // adapter performs — `illustrations-from-assets`, matched by its capability
+  // and output contract — with autopilot: false.
   it("honours autopilot: false for a stage it CAN dispatch", async () => {
     const { root, dir } = await episode();
-    await writeWav(join(dir, "artifacts", "narration", "s1.wav"), 0.2);
+    await writeFile(join(dir, "assets", "images", "s1.png"), "image bytes");
 
     const pipelines = await emptyPipelineDir();
     await writeFile(join(pipelines, "unattended.yaml"), [
@@ -265,11 +266,12 @@ describe("execution gates", () => {
       "  id: unattended",
       '  version: "1.0.0"',
       "  stages:",
-      "    - id: captions",
-      '      name: "Captions"',
-      "      type: editorial",
+      "    - id: illustrations",
+      '      name: "Illustrations"',
+      "      type: capability",
+      "      capability: image.generate",
       "      outputs:",
-      "        - contract: captions.srt",
+      "        - contract: illustrations/",
       '          version: "1.0.0"',
       "      gates:",
       "        autopilot: false",
@@ -280,15 +282,15 @@ describe("execution gates", () => {
     ].join("\n"));
 
     const result = await gatewayService(root, { builtinPipelines: pipelines })
-      .run(REF, "unattended", { stage: "captions" });
+      .run(REF, "unattended", { stage: "illustrations" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("blocked");
     expect(result.value.reason).toMatch(/autopilot: false/);
-    // Refused for the flag, not for a missing handler: this dispatcher has one.
+    // Refused for the flag, not for a missing adapter: this dispatcher has one.
     expect(result.value.reason).not.toMatch(/does not handle/);
-    await expect(readFile(join(dir, "artifacts", "captions.srt"), "utf-8")).rejects.toThrow();
+    await expect(readdir(join(dir, "artifacts", "frames"))).rejects.toThrow();
   });
 
   it("never writes a safety report for an episode it did not read", async () => {
@@ -310,7 +312,7 @@ describe("execution gates", () => {
 
     // continuity-check declares autopilot: true but review: human, and nothing
     // actually checks continuity. Blocked, not a fabricated pass. This is the
-    // test `GatewayDispatcher.canDispatch` exists for: without it the service
+    // test `AdapterDispatcher.canDispatch` exists for: without it the service
     // would dispatch, the dispatcher would throw, and the outcome would be
     // `failed` — an attempt that broke — rather than a refusal to clear.
     const result = await gatewayService(root).run(REF, "fairy-tale-adaptation", { stage: "continuity-check" });
@@ -419,8 +421,8 @@ describe("gates that cannot be read", () => {
     // regression shadow the two checks that actually distinguish "blocked
     // before the handler" from "blocked after it ran".
     //
-    // handleIllustrations copies assets/images into artifacts/frames. If it had
-    // run, that directory would exist and hold s1.png.
+    // illustrations-from-assets copies assets/images into artifacts/frames. If
+    // it had run, that directory would exist and hold s1.png.
     await expect(readdir(join(dir, "artifacts", "frames"))).rejects.toThrow();
     await expect(readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8")).rejects.toThrow();
     expect(result.ok).toBe(false);
@@ -621,7 +623,7 @@ describe("dependency gates", () => {
   // `narration` declares `review: none`, so a test of what counts as a human
   // approval must not use it: the manifest would let `captions` through with
   // no record at all. `script` declares `review: human`, and `timing` depends
-  // on it (and on `narration`) and has a gateway handler, so a refusal here
+  // on it (and on `narration`) and has an adapter, so a refusal here
   // is the human gate's and a pass is the approval's doing.
 
   /** `script` and `narration` completed; `timing` waits only on script's review. */

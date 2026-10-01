@@ -328,6 +328,14 @@ untracked `.env`, never in a committed file.
 
 ## If something is wrong
 
+**The studio says `Failed to fetch`, and the gateway exits with
+`ERR_MODULE_NOT_FOUND … @studio/…`** — usually right after switching branches.
+The branch added or changed a workspace, and `node_modules` has neither its link
+nor its `dist/`. Run `bun install` at the repository root: it links every
+workspace and its postinstall builds the ones imported from `dist/`. Then
+restart the gateway. The studio's error is only the symptom; the gateway's own
+output names the missing package.
+
 **`No packages installed` from `pi list`** — expected unless you ran
 `pi install ./studio/agent`. The `-e` flag works without installing.
 
