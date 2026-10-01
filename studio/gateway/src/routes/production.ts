@@ -616,6 +616,72 @@ export function registerProductionRoutes(
     return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
   });
 
+  // ── Takes (avg-qr4.6) ─────────────────────────────────────────────────────
+  // Every completed attempt is kept as a candidate; these list them and pick
+  // which one a stage stands on. The principal comes from the token, as for
+  // approve: an operator's selection is signed and locks the take against
+  // automatic replacement, an agent's is not and cannot displace one.
+  app.get("/api/channels/:channel/series/:series/episodes/:episode/takes", {
+    schema: {
+      description: "List each stage's kept candidates, its selected take, and any drift between that take's record and the files on disk.",
+      tags: ["production"],
+      params: {
+        type: "object",
+        required: ["channel", "series", "episode"],
+        properties: {
+          channel: { type: "string" },
+          series: { type: "string" },
+          episode: { type: "string" },
+        },
+      },
+    },
+  }, async (request) => {
+    const ref = parseEpisode(request.params as Record<string, string>);
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+    const takes = await serviceFor(request).takes(ref, pipeline);
+    return takes.ok ? { ok: true, ...takes.value } : { ok: false, error: takes.error };
+  });
+
+  app.post("/api/channels/:channel/series/:series/episodes/:episode/stages/:stage/select", {
+    schema: {
+      description: "Make a kept candidate the stage's take. With `expected`, refused when the selected take changed since the caller read it.",
+      tags: ["production"],
+      params: {
+        type: "object",
+        required: ["channel", "series", "episode", "stage"],
+        properties: {
+          channel: { type: "string" },
+          series: { type: "string" },
+          episode: { type: "string" },
+          stage: { type: "string" },
+        },
+      },
+      body: {
+        type: "object",
+        required: ["attempt"],
+        properties: {
+          attempt: { type: "integer", minimum: 1 },
+          expected: {
+            type: ["integer", "null"],
+            minimum: 1,
+            description: "The attempt the caller saw selected, or null for none.",
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const ref = parseEpisode(request.params as Record<string, string>);
+    const stageId = (request.params as Record<string, string>).stage!;
+    const body = request.body as { attempt: number; expected?: number | null };
+    const pipeline = await inheritedPipeline(workspace, ref) ?? DEFAULT_PIPELINE;
+    const outcome = await serviceFor(request).select(ref, pipeline, stageId, {
+      attemptNumber: body.attempt,
+      principal: request.principal ?? "agent",
+      ...(body.expected !== undefined ? { expected: body.expected } : {}),
+    });
+    return outcome.ok ? { ok: true, outcome: outcome.value } : { ok: false, error: outcome.error };
+  });
+
   // ── Journal ───────────────────────────────────────────────────────────────
   app.get("/api/channels/:channel/series/:series/episodes/:episode/journal", {
     schema: {

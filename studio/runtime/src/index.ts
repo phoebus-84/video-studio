@@ -291,6 +291,7 @@ export type {
   DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict, ReviewContext,
   OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
   ExecutionError, ExecutionServiceOptions, Principal, ReviewInput,
+  TakeSummary, SelectInput, CandidateReport, StageTakesReport, EpisodeTakes,
 } from "./execution/index.js";
 
 // Package version (kept in sync with package.json by convention)

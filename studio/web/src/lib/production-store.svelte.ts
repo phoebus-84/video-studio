@@ -95,6 +95,7 @@ interface StageOutcomeView {
   status: string;
   reason?: string;
   outputs?: string[];
+  attemptNumber?: number;
 }
 
 /**
@@ -118,9 +119,13 @@ interface StageOutcomeView {
  * of this set reach `lastMessage` rather than `error`. Leaving it out
  * rendered the studio's own expected, safe-failure outcome as if the request
  * itself had gone wrong.
+ *
+ * `selected` (avg-qr4.6) is `/select` putting a kept candidate in place: the
+ * stage now stands on the take the caller chose. Nothing in the studio calls
+ * it yet; it is here for the same reason `claimed` is.
  */
 const ADVANCED = new Set([
-  "completed", "awaiting_review", "would-run", "claimed", "approved", "rejected", "requested",
+  "completed", "awaiting_review", "would-run", "claimed", "approved", "rejected", "requested", "selected",
 ]);
 
 /** What happened, for an outcome that carries no reason of its own. */
@@ -136,6 +141,11 @@ function describeOutcome(outcome: StageOutcomeView): string {
   if (outcome.status === "claimed") return `${who} is claimed — perform it, then complete it`;
   if (outcome.status === "approved") return `${who} approved`;
   if (outcome.status === "rejected") return `${who} rejected`;
+  if (outcome.status === "selected") {
+    return outcome.attemptNumber !== undefined
+      ? `${who} now stands on attempt ${outcome.attemptNumber}`
+      : `${who} take selected`;
+  }
   return `${who}: ${outcome.status}`;
 }
 

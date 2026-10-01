@@ -72,6 +72,7 @@ export const JOURNAL_EVENTS = Object.freeze([
   "comment-added",
   "artifact-written",
   "staleness-marked",
+  "take-selected",
   "supersession-recorded",
   "deliverable-current-changed",
 ]);
@@ -104,6 +105,10 @@ const REQUIRED_EXECUTION_FIELDS = Object.freeze({
   "stage-completed": ["stageId", "leaseId", "attemptNumber", "outputs"],
   "stage-failed": ["stageId", "leaseId", "attemptNumber", "error"],
   "attempt-recorded": ["stageId", "leaseId", "attemptNumber", "outcome"],
+  // Not replayed by execution state, but a selection that names no attempt
+  // or no hashes cannot be checked against the candidate it claims to pick
+  // (avg-qr4.6) — the same reason the five above must name their lease.
+  "take-selected": ["stageId", "decision", "origin", "binding"],
 });
 
 /** Where an episode's journal lives, relative to the episode directory. */

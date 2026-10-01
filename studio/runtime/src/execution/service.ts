@@ -23,6 +23,9 @@ import { deriveExecutionState, leaseState } from "@studio/contracts/src/executio
 import type { StageAttempt } from "@studio/contracts/src/execution-state.mjs";
 import { buildGateReview, hashArtifacts, REVIEW_EVENT_FOR } from "@studio/contracts/src/gate-review.mjs";
 import { signReceipt, planHashOf } from "@studio/contracts/src/receipt.mjs";
+import { deriveTakes, buildTakeSelection } from "@studio/contracts/src/takes.mjs";
+import type { ArtifactHash } from "@studio/contracts/src/gate-review.mjs";
+import { expandOutputs, preserveCandidate, verifyCandidate, materialize, removeDisplaced, driftOf } from "./takes.js";
 import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
@@ -36,6 +39,7 @@ import { propagate } from "../staleness/index.js";
 import type {
   EpisodeRef, EpisodeStatus, ExecutionError, ExecutionServiceOptions, StageStatusReport,
   StageState, CompleteInput, DispatchContext, StageOutcome, ReviewVerdict, ReviewInput, Principal, ReviewContext,
+  OutcomeStatus, SelectInput, EpisodeTakes, StageTakesReport,
 } from "./types.js";
 
 /** What `claimInternal` hands back: the outcome, plus what a caller needs to perform the stage. */
@@ -60,6 +64,9 @@ interface ClaimInternal {
 function noBudgetGuardRefusal(stageId: string): string {
   return `no budget guard is configured, so "${stageId}" may not spend`;
 }
+
+/** How long `select()` holds a stage's lock: enough to verify and copy a large take. */
+const SELECT_LOCK_TTL_MS = 10 * 60_000;
 
 export class ExecutionService {
   constructor(private readonly options: ExecutionServiceOptions) {}
@@ -192,6 +199,11 @@ export class ExecutionService {
       return -1;
     };
 
+    // Which take each stage stands on (avg-qr4.6). No hashing: this is polled.
+    const takes = deriveTakes(events.value, stageIds, {
+      key: this.options.operatorKey ?? null, episode: episodeSlug(ref),
+    });
+
     const reports: StageStatusReport[] = [];
     for (const stage of stages) {
       const instance = derived.get(stage.definition.id)!;
@@ -273,6 +285,7 @@ export class ExecutionService {
         state = stateReason ? "blocked" : "runnable";
       }
 
+      const take = takes.get(stage.definition.id)!.selected;
       const gaps = instance.attempts
         .filter((a) => a.startRecorded === false)
         .map((a) => `attempt ${a.number} has no recorded start`);
@@ -294,6 +307,7 @@ export class ExecutionService {
         produces: (stage.definition.produces ?? []).map((artifact) => artifact.label),
         ...(gaps.length > 0 ? { gaps } : {}),
         ...(stateReason ? { stateReason } : {}),
+        ...(take ? { take: { attemptNumber: take.attemptNumber, origin: take.origin, locked: take.locked } } : {}),
       });
     }
 
@@ -961,13 +975,40 @@ export class ExecutionService {
 
     const relative = outputs.map((o) => path.isAbsolute(o) ? path.relative(episodeDir, o) : o);
 
+    // ── Keep the candidate (avg-qr4.6) ────────────────────────────────────
+    // Before anything is recorded: a completion whose bytes were not kept
+    // would claim a take nothing can restore. Failing the attempt is the
+    // honest outcome — the work may be fine, but it cannot be held to.
+    let digests: ArtifactHash[];
+    try {
+      digests = await preserveCandidate(episodeDir, stageId, attemptNumber, await expandOutputs(episodeDir, relative));
+    } catch (e) {
+      const reason = `the outputs could not be kept as a candidate: ${e instanceof Error ? e.message : String(e)}`;
+      if (!held()) return lapsed(open);
+      const recorded = await this.recordFailure(episodeDir, ref, sm, instance, stageId, leaseId, attemptNumber, reason);
+      if (!recorded) return unrecorded(`failed ("${reason}")`);
+      return ok({
+        stageId, status: "failed", reason, outputs: [],
+        attemptNumber, leaseId, durationMs: Date.now() - startedAt,
+      });
+    }
+
+    // Whether this candidate becomes the take. Read from the events loaded at
+    // the top of this call: this attempt holds `stage:${stageId}` for its
+    // whole lease, and `select()` takes the same lock, so no selection can
+    // have landed since.
+    const current = deriveTakes(events.value, resolved.value.stages.map((s) => s.definition.id), {
+      key: this.options.operatorKey ?? null, episode: episodeSlug(ref),
+    }).get(stageId)!.selected;
+    const lockedTake = current?.locked && current.outputs ? current : null;
+
     // The journal is written before the lease is released. If this process
     // dies in between, the record says what happened and the lease expires on
     // its own; releasing first would leave a completed stage looking unstarted.
     if (!held()) return lapsed(open);
     const completed = await appendJournalEvent(episodeDir, {
       type: "stage-completed", actor: "runtime", episode: ref,
-      data: { stageId, leaseId, attemptNumber, outputs: relative },
+      data: { stageId, leaseId, attemptNumber, outputs: relative, digests, ...(lockedTake ? { selected: false } : {}) },
     });
     // The `stage-leased` append is checked and rolled back; this one is
     // checked and surfaced. Both are dropped writes; only the first can be
@@ -980,6 +1021,26 @@ export class ExecutionService {
     // journal says completed because that is true; the outcome says
     // awaiting_review because that is what the caller needs.
     const needsReview = stage.definition.gates.review !== "none";
+
+    if (lockedTake) {
+      return ok(await this.keepBesideLockedTake(
+        episodeDir, ref, stage, sm, instance, lockedTake, digests,
+        { stageId, outputs: relative, attemptNumber, leaseId, startedAt },
+      ));
+    }
+
+    // The candidate is the take now. Files only the displaced take had are
+    // removed, so a directory output does not keep frames nobody selected;
+    // that take's own copy under `attempts/` keeps them. Best-effort: the
+    // completion is already recorded, and a leftover file is reported by
+    // nothing worse than its presence.
+    if (current?.outputs) {
+      try {
+        await removeDisplaced(episodeDir, digests.map((d) => d.path), current.paths);
+      } catch (e) {
+        this.options.log?.(`files of the displaced take of "${stageId}" could not be removed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
 
     // avg-2n7 deleted the loop that used to write this, so nothing told an
     // operator a stage was waiting for them (avg-qr4.3 notes, point 1).
@@ -1013,10 +1074,12 @@ export class ExecutionService {
         requestNote = `the review request for "${stageId}" was not attempted because its lease had already lapsed`;
       } else {
         try {
-          const hashed = await hashArtifacts(episodeDir, relative);
+          // The candidate's digests rather than a fresh hash of `relative`:
+          // they are the files, a directory output expanded, and the bytes
+          // that were kept.
           const request = buildGateReview({
             stageId, decision: "requested", origin: "policy", actor: "runtime", episode: episodeSlug(ref),
-            binding: { planHash: planHashOf(stage.definition), outputs: hashed },
+            binding: { planHash: planHashOf(stage.definition), outputs: digests },
           });
           const asked = await appendJournalEvent(episodeDir, {
             type: "approval-requested", actor: "runtime", episode: ref, data: { ...request },
@@ -1132,9 +1195,18 @@ export class ExecutionService {
       return blocked(`"${stageId}" recorded no outputs, and a decision about nothing cannot be invalidated by anything`);
     }
 
+    // The selected take's files, not whatever the latest attempt reported:
+    // an attempt kept beside an operator's locked take is not what the stage
+    // stands on (avg-qr4.6). A completion from before candidates were kept
+    // has only the paths it reported.
+    const selected = deriveTakes(events.value, resolved.value.stages.map((s) => s.definition.id), {
+      key: this.options.operatorKey ?? null, episode: episodeSlug(ref),
+    }).get(stageId)!.selected;
+    const reviewed = selected?.outputs ? selected.paths : instance.outputArtifacts;
+
     let outputs;
     try {
-      outputs = await hashArtifacts(episodeDir, instance.outputArtifacts);
+      outputs = await hashArtifacts(episodeDir, reviewed);
     } catch (e) {
       return blocked(`"${stageId}" cannot be reviewed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1222,6 +1294,269 @@ export class ExecutionService {
         ? { reason: `"${stageId}" declares human review; approval requested — an operator must approve it` }
         : {}),
     });
+  }
+
+  /**
+   * Finish a completion whose candidate does not become the take, because the
+   * operator selected one (avg-qr4.6).
+   *
+   * The performer has just written the canonical paths, so the locked take's
+   * files are put back over them — still under this attempt's lease, so
+   * nothing can read the canonical paths in between and nothing can select
+   * in between. No review request is written: the take did not change, and a
+   * request would bury the decision that stands on it.
+   */
+  private async keepBesideLockedTake(
+    episodeDir: string, ref: EpisodeRef, stage: ResolvedStage, sm: StageStateMachine,
+    instance: EngineStageInstance, lockedTake: { attemptNumber: number; outputs: ArtifactHash[] | null },
+    digests: ArtifactHash[],
+    done: { stageId: string; outputs: string[]; attemptNumber: number; leaseId: string; startedAt: number },
+  ): Promise<StageOutcome> {
+    const { stageId } = done;
+    const notes = [
+      `"${stageId}" attempt ${done.attemptNumber} was kept as a candidate; ` +
+      `the operator's take, attempt ${lockedTake.attemptNumber}, stays selected`,
+    ];
+    try {
+      const bad = await verifyCandidate(episodeDir, stageId, lockedTake.attemptNumber, lockedTake.outputs!);
+      if (bad) {
+        notes.push(`its files could not be put back: ${bad}`);
+      } else {
+        await materialize(episodeDir, stageId, lockedTake.attemptNumber, lockedTake.outputs!, digests.map((d) => d.path));
+      }
+    } catch (e) {
+      notes.push(`its files could not be put back: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    await sm.complete(instance);
+
+    // The stage stands on the locked take, so it is accepted exactly when
+    // that take is.
+    let status: OutcomeStatus = "completed";
+    if (stage.definition.gates.review !== "none") {
+      let verdict: ReviewVerdict | undefined;
+      try {
+        verdict = await this.options.review?.isOutstanding(stageId, episodeDir, stage, { episode: episodeSlug(ref) });
+      } catch {
+        verdict = undefined;
+      }
+      if (verdict?.state !== "approved") status = "awaiting_review";
+    }
+    return {
+      stageId, status, outputs: done.outputs, attemptNumber: done.attemptNumber, leaseId: done.leaseId,
+      durationMs: Date.now() - done.startedAt, reason: notes.join("; "),
+    };
+  }
+
+  /**
+   * Make an earlier candidate a stage's take (avg-qr4.6).
+   *
+   * Under the stage's own lock — the one a running attempt holds for its
+   * lease and `review()` takes — with the journal re-read inside it, so the
+   * compare-and-swap on `expected` compares against the record as it is, not
+   * as it was before the lock was won. The candidate's kept files are
+   * verified before anything is touched, put in place, and only then
+   * recorded: the append is the commit point, and a crash before it leaves
+   * drift that `takes()` reports and selecting again repairs.
+   */
+  async select(
+    ref: EpisodeRef,
+    pipeline: string,
+    stageId: string,
+    input: SelectInput,
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    const stage = resolved.value.stages.find((s) => s.definition.id === stageId);
+    if (!stage) {
+      return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+    }
+    const blocked = (reason: string): Result<StageOutcome, ExecutionError> =>
+      ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt });
+
+    const origin = input.principal === "operator" ? "human" : "agent";
+    if (origin === "human" && !this.options.operatorKey) {
+      return blocked(`no operator key is configured to sign with, so an operator's selection for "${stageId}" cannot be recorded`);
+    }
+
+    const episodeDir = this.episodeDir(ref);
+    const lock = this.lock(episodeDir);
+    // Longer than `review()`'s thirty seconds: a selection hashes and copies
+    // a take, which can be a rendered video, and a lock that lapsed halfway
+    // would let a run start on files still being replaced.
+    const lease = await lock.acquire(`stage:${stageId}`, SELECT_LOCK_TTL_MS);
+    if (!lease.ok) return blocked(`"${stageId}" is held by a run; try again when it finishes`);
+
+    let changed = false;
+    let outcome: Result<StageOutcome, ExecutionError>;
+    try {
+      outcome = await (async (): Promise<Result<StageOutcome, ExecutionError>> => {
+        const events = await this.readJournal(episodeDir);
+        if (!events.ok) return events;
+        const stageIds = resolved.value.stages.map((s) => s.definition.id);
+        let derived;
+        try {
+          derived = deriveExecutionState(events.value, stageIds, this.now());
+        } catch (e) {
+          return err({ code: "REPLAY_INVALID", message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}` });
+        }
+        // The lock should make this unreachable; a lockfile lost under a
+        // live lease must not let a selection land in the middle of an attempt.
+        if (derived.get(stageId)!.status === "running") {
+          return blocked(`"${stageId}" is running; select a take when it finishes`);
+        }
+
+        const takes = deriveTakes(events.value, stageIds, {
+          key: this.options.operatorKey ?? null, episode: episodeSlug(ref),
+        }).get(stageId)!;
+        const current = takes.selected;
+        const currentNumber = current?.attemptNumber ?? null;
+        const describe = (n: number | null) => (n === null ? "none" : `attempt ${n}`);
+
+        if (input.expected !== undefined && input.expected !== currentNumber) {
+          return blocked(
+            `the selected take of "${stageId}" is ${describe(currentNumber)}, not ${describe(input.expected)}: ` +
+            `it changed since it was read, so nothing was selected`,
+          );
+        }
+        const candidate = takes.candidates.find((c) => c.attemptNumber === input.attemptNumber);
+        if (!candidate) {
+          return blocked(
+            `"${stageId}" has no candidate from attempt ${input.attemptNumber}: it never completed, ` +
+            `or it completed before candidates were kept`,
+          );
+        }
+        const same = currentNumber === candidate.attemptNumber;
+        if (current?.locked && origin !== "human" && !same) {
+          return blocked(`the operator selected attempt ${currentNumber} of "${stageId}"; only the operator can change it`);
+        }
+
+        const bad = await verifyCandidate(episodeDir, stageId, candidate.attemptNumber, candidate.outputs);
+        if (bad) return blocked(`attempt ${candidate.attemptNumber} of "${stageId}" cannot be selected: ${bad}`);
+
+        const displaced = !same && current?.outputs ? current.paths : [];
+        try {
+          await materialize(episodeDir, stageId, candidate.attemptNumber, candidate.outputs, displaced);
+        } catch (e) {
+          return blocked(
+            `attempt ${candidate.attemptNumber} of "${stageId}" could not be put in place: ` +
+            `${e instanceof Error ? e.message : String(e)}; select it again to finish`,
+          );
+        }
+        const paths = candidate.outputs.map((o) => o.path);
+
+        // Already the take: its files are back in place, and there is
+        // nothing new to record — unless the operator is locking a take that
+        // policy or an agent selected.
+        if (same && !(origin === "human" && !current!.locked)) {
+          return ok({
+            stageId, status: "selected", outputs: paths, attemptNumber: candidate.attemptNumber,
+            durationMs: Date.now() - startedAt,
+            reason: `attempt ${candidate.attemptNumber} of "${stageId}" was already selected; its files are in place`,
+          });
+        }
+
+        let record = buildTakeSelection({
+          stageId, origin, actor: "runtime", attemptNumber: candidate.attemptNumber,
+          leaseId: candidate.leaseId, outputs: candidate.outputs, episode: episodeSlug(ref), previous: currentNumber,
+        });
+        if (origin === "human") record = signReceipt(record, this.options.operatorKey!);
+        const written = await appendJournalEvent(episodeDir, {
+          type: "take-selected", actor: "runtime", episode: ref, data: { ...record },
+        });
+        if (!written) {
+          // Put the files back, so they keep agreeing with the record.
+          let note = "";
+          if (!same) {
+            if (current?.outputs && !(await verifyCandidate(episodeDir, stageId, current.attemptNumber, current.outputs))) {
+              await materialize(episodeDir, stageId, current.attemptNumber, current.outputs, paths)
+                .catch(() => { note = "; the previous take's files could not be put back"; });
+            } else {
+              note = "; the previous take has no kept copy to put back, so the files now differ from the record";
+            }
+          }
+          return blocked(`the selection of attempt ${candidate.attemptNumber} for "${stageId}" could not be written to the journal${note}`);
+        }
+        changed = !same;
+
+        // A new take is something nobody has reviewed. Written under the lock,
+        // as `complete()` writes its request, so it cannot bury a grant that
+        // lands after it; skipped when the gate already accepts these bytes.
+        let requestNote: string | undefined;
+        if (changed && stage.definition.gates.review !== "none") {
+          let verdict: ReviewVerdict | undefined;
+          try {
+            verdict = await this.options.review?.isOutstanding(stageId, episodeDir, stage, { episode: episodeSlug(ref) });
+          } catch {
+            verdict = undefined;
+          }
+          if (verdict?.state !== "approved") {
+            const request = buildGateReview({
+              stageId, decision: "requested", origin: "policy", actor: "runtime", episode: episodeSlug(ref),
+              binding: { planHash: planHashOf(stage.definition), outputs: candidate.outputs },
+            });
+            const asked = await appendJournalEvent(episodeDir, {
+              type: "approval-requested", actor: "runtime", episode: ref, data: { ...request },
+            });
+            requestNote = asked
+              ? `"${stageId}" declares ${stage.definition.gates.review} review and the selected take is not accepted yet`
+              : `the review request for "${stageId}" could not be written to the journal`;
+          }
+        }
+
+        return ok({
+          stageId, status: "selected", outputs: paths, attemptNumber: candidate.attemptNumber,
+          durationMs: Date.now() - startedAt,
+          ...(requestNote ? { reason: requestNote } : {}),
+        });
+      })();
+    } finally {
+      await lock.release(lease.value);
+    }
+
+    // Outside the stage's lock, as in `review()`: staleness is a separate
+    // record about OTHER stages.
+    if (changed) await this.markStale(episodeDir, ref, resolved.value, stageId);
+    return outcome;
+  }
+
+  /**
+   * Every stage's candidates and selected take, and whether the selected
+   * take's files on disk still match its record (avg-qr4.6).
+   *
+   * This hashes; `status()`, which is polled, does not.
+   */
+  async takes(ref: EpisodeRef, pipeline: string): Promise<Result<EpisodeTakes, ExecutionError>> {
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    const episodeDir = this.episodeDir(ref);
+    const events = await this.readJournal(episodeDir);
+    if (!events.ok) return events;
+
+    const takes = deriveTakes(events.value, resolved.value.stages.map((s) => s.definition.id), {
+      key: this.options.operatorKey ?? null, episode: episodeSlug(ref),
+    });
+    const stages: StageTakesReport[] = [];
+    for (const stage of resolved.value.stages) {
+      const entry = takes.get(stage.definition.id)!;
+      const selected = entry.selected;
+      stages.push({
+        stageId: entry.stageId,
+        selected: selected
+          ? {
+            attemptNumber: selected.attemptNumber, origin: selected.origin, locked: selected.locked,
+            at: selected.at, paths: selected.paths, verified: selected.verified, legacy: selected.outputs === null,
+          }
+          : null,
+        candidates: entry.candidates.map((c) => ({
+          attemptNumber: c.attemptNumber, at: c.at, outputs: c.outputs,
+          selected: selected?.attemptNumber === c.attemptNumber,
+        })),
+        drifted: selected?.outputs ? await driftOf(episodeDir, selected.outputs) : [],
+      });
+    }
+    return ok({ ref, pipeline, stages });
   }
 
   /**

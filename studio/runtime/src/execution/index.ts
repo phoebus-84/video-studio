@@ -4,4 +4,5 @@ export type {
   EpisodeRef, DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict, ReviewContext,
   OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
   ExecutionError, ExecutionServiceOptions, Principal, ReviewInput,
+  TakeSummary, SelectInput, CandidateReport, StageTakesReport, EpisodeTakes,
 } from "./types.js";

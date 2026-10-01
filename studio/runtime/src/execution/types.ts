@@ -175,7 +175,9 @@ export type OutcomeStatus =
    *
    * A caller looping until nothing advances must treat this as a halt.
    */
-  | "claimed";
+  | "claimed"
+  /** `select()` put a take in place, or found it already there (avg-qr4.6). */
+  | "selected";
 
 export interface StageOutcome {
   /** Null when nothing was selected. */
@@ -309,6 +311,67 @@ export interface StageStatusReport {
    * but something else may have been lost at the same time.
    */
   gaps?: string[];
+  /**
+   * Which attempt's outputs this stage currently stands on (avg-qr4.6).
+   * Absent when nothing has completed. Hashes are not compared here — this
+   * is polled; `takes()` reports drift.
+   */
+  take?: TakeSummary;
+}
+
+/** A stage's selected take, as `status()` reports it. */
+export interface TakeSummary {
+  attemptNumber: number;
+  /** `policy` for a completion that selected itself; `human` or `agent` for an explicit selection. */
+  origin: "human" | "agent" | "policy";
+  /** The operator selected it: a later attempt is kept as a candidate instead of replacing it. */
+  locked: boolean;
+}
+
+/** What `select()` is asked to do. */
+export interface SelectInput {
+  /** The attempt whose candidate becomes the stage's take. */
+  attemptNumber: number;
+  /**
+   * The attempt the caller believes is selected now, or null for none. When
+   * given and wrong, the selection is refused rather than silently winning —
+   * this is what keeps two sessions from selecting conflicting takes.
+   */
+  expected?: number | null;
+  principal: Principal;
+}
+
+/** One kept attempt of a stage. */
+export interface CandidateReport {
+  attemptNumber: number;
+  at: string;
+  outputs: { path: string; sha256: string }[];
+  selected: boolean;
+}
+
+/** A stage's candidates and selected take, as `takes()` reports them. */
+export interface StageTakesReport {
+  stageId: string;
+  selected: (TakeSummary & {
+    at: string;
+    paths: string[];
+    /** False when an operator selection's signature did not verify; null when nothing was checked. */
+    verified: boolean | null;
+    /** True for a completion from before candidates were kept: it cannot be restored. */
+    legacy: boolean;
+  }) | null;
+  candidates: CandidateReport[];
+  /**
+   * Files of the selected take whose bytes on disk differ from its record,
+   * or are missing. Selecting the same attempt again restores them.
+   */
+  drifted: string[];
+}
+
+export interface EpisodeTakes {
+  ref: EpisodeRef;
+  pipeline: string;
+  stages: StageTakesReport[];
 }
 
 export interface EpisodeStatus {

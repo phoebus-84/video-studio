@@ -251,6 +251,42 @@ decide a stage that completed with `gates.review: human` — the same call the g
 (avg-qr4.3). Whether either one actually grants anything depends on who is
 running it: see "The operator key" below.
 
+### Takes
+
+A stage that runs again does not destroy the result it replaces (avg-qr4.6).
+Every completed attempt is kept read-only, as a **candidate**, under
+`attempts/<stage>/<attempt>/` in the episode. The journal records which
+candidate the stage currently stands on, called its **take**. By default each
+new completion becomes the take, which is how it always worked.
+
+**`vpr takes`** lists the candidates of each stage, or of one stage. For each it
+shows which one is selected, who selected it, and whether the files on disk
+still match it. The last of these is reported as `drifted`.
+
+**`vpr select`** puts an earlier candidate back in place. The gateway offers
+the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`
+lists the candidates.
+
+```bash
+node studio/runtime/dist/src/cli.js takes my-channel/my-series/ep001 illustrations \
+  --library "$PWD/library" --json
+node studio/runtime/dist/src/cli.js select my-channel/my-series/ep001 illustrations 2 \
+  --expect 3 --library "$PWD/library"
+```
+
+- **`--expect`** names the attempt you saw selected, or `none`. If someone else
+  selected a different take in between, the command refuses instead of
+  silently overwriting their choice.
+- **The operator's selection is a lock.** It is signed with the operator key.
+  From then on, a stage that runs again keeps its new result as a candidate and
+  puts the operator's take back: neither an automatic run nor Pi replaces it.
+  Only the operator can change it, by selecting another take.
+- **A different take means downstream stages are out of date.** Selecting one
+  marks the stages that depend on it stale. On a stage with a review gate it
+  also records a new review request, because nobody has approved those bytes.
+- **Candidates are never pruned.** An episode that runs a stage many times
+  keeps every result.
+
 ## The operator key
 
 A human decision only counts when it is signed, and only the **operator** can

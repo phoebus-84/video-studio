@@ -29,7 +29,7 @@ library/
                     ├── artifacts/
                     ├── prompts/
                     ├── assets/
-                    ├── attempts/
+                    ├── attempts/               # kept candidates, one per completed attempt (avg-qr4.6)
                     ├── reviews/
                     ├── journal/
                     └── output/

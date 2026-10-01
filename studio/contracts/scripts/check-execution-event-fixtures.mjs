@@ -28,6 +28,8 @@ let failures = 0;
 const validFixtures = [
   { path: "fixtures/execution-event/valid/stage-leased.json", def: "StageLeased" },
   { path: "fixtures/execution-event/valid/stage-completed.json", def: "StageCompleted" },
+  { path: "fixtures/execution-event/valid/stage-completed-candidate.json", def: "StageCompleted" },
+  { path: "fixtures/execution-event/valid/take-selected.json", def: "TakeSelected" },
 ];
 
 for (const { path, def } of validFixtures) {
@@ -50,6 +52,7 @@ for (const { path, def } of validFixtures) {
 const invalidFixtures = [
   { path: "fixtures/execution-event/invalid/leased-without-lease.json", def: "StageLeased" },
   { path: "fixtures/execution-event/invalid/negative-attempt.json", def: "StageStarted" },
+  { path: "fixtures/execution-event/invalid/take-selected-without-hashes.json", def: "TakeSelected" },
 ];
 
 for (const { path, def } of invalidFixtures) {
