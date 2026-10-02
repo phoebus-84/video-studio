@@ -1115,3 +1115,85 @@ describe("vpr rerun", () => {
     expect(out.executed).toEqual(["brief"]);
   });
 });
+
+describe("vpr takes / vpr select (avg-qr4.6)", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map(async (r) => {
+      // Kept candidates are read-only files in writable directories, which
+      // `rm` removes; nothing to loosen first.
+      await rm(r, { recursive: true, force: true });
+    }));
+  });
+
+  const PIPELINES = path.resolve(__dirname, "../../../pipelines/pipelines");
+  const KEY = "operator-key-for-tests";
+  const EP = "childrens/fairy-tales/ep";
+
+  function vpr(args: string[], env: Record<string, string> = {}) {
+    const result = spawnSync("node", [cliPath, ...args], {
+      encoding: "utf-8",
+      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES,
+             AVG_OPERATOR_KEY_FILE: path.join(tmpdir(), "vpr-cli-no-operator-key"), ...env },
+    });
+    return {
+      status: result.status ?? 1,
+      json: () => JSON.parse(result.stdout?.toString() ?? "{}"),
+    };
+  }
+
+  /** `brief` completed twice through the CLI, with different bytes each time. */
+  async function twoTakes() {
+    const root = await mkdtemp(path.join(tmpdir(), "vpr-takes-"));
+    roots.push(root);
+    const dir = path.join(root, "childrens", "series", "fairy-tales", "episodes", "ep");
+    await mkdir(path.join(dir, "artifacts"), { recursive: true });
+    for (const text of ["first brief", "second brief"]) {
+      vpr(["run", EP, "--stage", "brief", "--library", root, "--json"]);
+      await writeFile(path.join(dir, "artifacts/brief.md"), text);
+      const done = vpr(["complete", EP, "brief", "--outputs", "artifacts/brief.md", "--library", root, "--json"]);
+      expect(done.json().status).toBe("completed");
+    }
+    const keyFile = path.join(root, ".operator-key");
+    await writeFile(keyFile, KEY, { mode: 0o600 });
+    return { root, dir, operator: { AVG_OPERATOR_KEY_FILE: keyFile } };
+  }
+
+  it("lists a stage's candidates and which one is selected", async () => {
+    const { root } = await twoTakes();
+    const out = vpr(["takes", EP, "brief", "--library", root, "--json"]);
+    expect(out.status).toBe(0);
+    const [brief] = out.json().stages;
+    expect(brief.stageId).toBe("brief");
+    expect(brief.selected).toMatchObject({ attemptNumber: 2, origin: "policy", locked: false });
+    expect(brief.candidates.map((c: { attemptNumber: number }) => c.attemptNumber)).toEqual([1, 2]);
+  });
+
+  it("puts an earlier take back as the operator, signed and locked", async () => {
+    const { root, dir, operator } = await twoTakes();
+    const out = vpr(["select", EP, "brief", "1", "--expect", "2", "--library", root, "--json"], operator);
+    expect(out.status).toBe(0);
+    expect(out.json().status).toBe("selected");
+    expect(await readFile(path.join(dir, "artifacts/brief.md"), "utf-8")).toBe("first brief");
+
+    const events = parseJournal(await readFile(path.join(dir, JOURNAL_RELATIVE_PATH), "utf-8"));
+    const selected = events.filter((e) => e.type === "take-selected").at(-1)!;
+    expect(verifyReceipt(selected.data as object, KEY)).toBe(true);
+
+    const takes = vpr(["takes", EP, "brief", "--library", root, "--json"], operator).json();
+    expect(takes.stages[0].selected).toMatchObject({ attemptNumber: 1, origin: "human", locked: true });
+  });
+
+  it("refuses, and exits non-zero, when --expect no longer names the selected take", async () => {
+    const { root, dir } = await twoTakes();
+    const out = vpr(["select", EP, "brief", "1", "--expect", "1", "--library", root, "--json"]);
+    expect(out.status).toBe(2);
+    expect(out.json().status).toBe("blocked");
+    expect(await readFile(path.join(dir, "artifacts/brief.md"), "utf-8")).toBe("second brief");
+  });
+
+  it("refuses an attempt number that is not one", () => {
+    expect(vpr(["select", EP, "brief", "first"]).status).toBe(1);
+    expect(vpr(["select", EP, "brief", "1", "--expect", "latest"]).status).toBe(1);
+  });
+});

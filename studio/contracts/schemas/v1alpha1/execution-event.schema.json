@@ -44,7 +44,55 @@
         "leaseId": { "type": "string", "minLength": 1 },
         "attemptNumber": { "type": "integer", "minimum": 1 },
         "outputs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "digests": {
+          "type": "array",
+          "description": "Every file the outputs name, hashed, with a read-only copy kept under attempts/<stageId>/<attemptNumber>/ (avg-qr4.6). Present makes this completion a candidate; absent is a completion from before candidates were kept.",
+          "items": { "$ref": "#/$defs/FileDigest" }
+        },
+        "selected": {
+          "type": "boolean",
+          "description": "False when the candidate was kept but did not become the stage's take, because the operator's selected take is locked. Absent means selected."
+        },
         "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "FileDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "description": "Relative to the episode directory." },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "TakeSelected": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Which candidate is a stage's take (avg-qr4.6). Shaped like a gate review so an operator's selection is signed by the same receipt and a retyped line reads as tampered.",
+      "required": ["stageId", "decision", "origin", "actor", "at", "binding", "episode"],
+      "properties": {
+        "stageId": { "type": "string", "minLength": 1 },
+        "decision": { "const": "selected" },
+        "origin": { "enum": ["human", "agent", "policy"] },
+        "actor": { "enum": ["pi", "gateway", "runtime", "human", "system"] },
+        "at": { "type": "string", "format": "date-time" },
+        "episode": { "type": "string", "minLength": 1 },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["attemptNumber", "leaseId", "outputs"],
+          "properties": {
+            "attemptNumber": { "type": "integer", "minimum": 1 },
+            "leaseId": { "type": "string", "minLength": 1 },
+            "outputs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/FileDigest" } }
+          }
+        },
+        "previous": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "The attempt that was selected when this was decided, or null for none. Informational: the compare-and-swap happened under the stage lock."
+        },
+        "signature": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "StageFailed": {

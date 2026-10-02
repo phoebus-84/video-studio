@@ -101,6 +101,17 @@ empty required outputs, expired leases and missing budget reservations fail clos
 blocks downstream work; two sessions cannot select conflicting outputs; restart
 recovers the same attempt; dry-run performs no production writes or paid calls.
 
+**Candidates and selection (avg-qr4.6, see the
+[design doc](superpowers/specs/2026-10-01-candidates-and-take-selection-design.md)):**
+the "record candidate" and "atomically select" steps now exist at stage
+granularity.
+- `complete()` keeps a read-only copy of every accepted attempt under
+  `attempts/<stage>/<attempt>/` and records its hashes.
+- The selected take is a journal record. `select()` writes it under the stage
+  lock, with a compare-and-swap on the take the caller saw, so a second session
+  is refused rather than silently winning.
+- Selecting a different take marks the stages that depend on it stale.
+
 ### P0 — “Human approval” needs an authenticated, revision-bound origin (addressed for the API and Pi's shell by accident; deliberate same-user access remains with avg-qr4.8)
 
 **Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval" — see
@@ -227,6 +238,14 @@ Allow a mostly automatic production with one heavily art-directed sequence.
 **Acceptance:** a person can change the camera in Blender and resume without the
 agent overwriting it; controls show which take/settings are approved; changed
 upstream inputs invalidate only affected decisions; switching modes preserves work.
+
+**Partly addressed (avg-qr4.6):**
+- **Done.** The selected take is durable data. An operator's selection is
+  signed and locks it: a later attempt is kept as a candidate, and the
+  operator's take is put back rather than overwritten. `status` names the take
+  each stage stands on.
+- **Not done.** Per-shot takes, previews and comparison, and a selection UI
+  remain step 4.
 
 ### P1 — Long jobs need workers, not blocking tool calls
 

@@ -575,6 +575,100 @@ async function cmdReject(ctx: CliContext, args: string[]): Promise<number> {
   return cmdReview(ctx, args, "rejected");
 }
 
+// ── takes / select (avg-qr4.6) ──────────────────────────────────────────────
+
+async function cmdTakes(ctx: CliContext, args: string[]): Promise<number> {
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  const parsed = remaining[0] ? parsePath(remaining[0]) : null;
+  if (!parsed) {
+    emit(ctx, { error: "Usage: vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>]" });
+    return EX_USAGE;
+  }
+  const only = remaining[1] && !remaining[1].startsWith("--") ? remaining[1] : undefined;
+
+  const operatorKey = cliOperatorKey(ctx);
+  if (typeof operatorKey === "number") return operatorKey;
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
+    return EX_USAGE;
+  }
+  const service = makeService(args, ttl.value, operatorKey);
+  const takes = await service.takes(parsed, pipelineName ?? DEFAULT_PIPELINE);
+  if (!takes.ok) {
+    emit(ctx, { error: `${takes.error.code}: ${takes.error.message}` });
+    return exitCodeFor(takes.error);
+  }
+  const stages = only ? takes.value.stages.filter((s) => s.stageId === only) : takes.value.stages;
+  if (only && stages.length === 0) {
+    emit(ctx, { error: `Pipeline "${takes.value.pipeline}" declares no stage "${only}"` });
+    return EX_INVALID;
+  }
+  emit(ctx, {
+    message: `Takes for ${remaining[0]}`,
+    episode: parsed,
+    pipeline: takes.value.pipeline,
+    stages,
+  });
+  return EX_OK;
+}
+
+async function cmdSelect(ctx: CliContext, args: string[]): Promise<number> {
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  const usage = "Usage: vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>]";
+  const parsed = remaining[0] ? parsePath(remaining[0]) : null;
+  const stageId = remaining[1];
+  const attemptNumber = Number(remaining[2]);
+  if (!parsed || !stageId || !Number.isInteger(attemptNumber) || attemptNumber < 1) {
+    emit(ctx, { error: usage });
+    return EX_USAGE;
+  }
+  // The compare-and-swap: name the take you looked at, and a selection made
+  // by someone else in between refuses this one instead of being replaced.
+  const expectFlag = flagValue(args, "--expect");
+  let expected: number | null | undefined;
+  if (expectFlag !== undefined) {
+    expected = expectFlag === "none" ? null : Number(expectFlag);
+    if (expected !== null && (!Number.isInteger(expected) || expected < 1)) {
+      emit(ctx, { error: `--expect takes an attempt number or "none", not "${expectFlag}"` });
+      return EX_USAGE;
+    }
+  }
+  if (ctx.dryRun) {
+    emit(ctx, { message: `[DRY RUN] Would select attempt ${attemptNumber} of "${stageId}" for ${remaining[0]}`, dryRun: true });
+    return EX_OK;
+  }
+
+  // Who is selecting comes from the filesystem, as for `approve`: an
+  // operator's selection is signed and locks the take.
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
+    return EX_USAGE;
+  }
+  const service = makeService(args, ttl.value, credential.operatorKey);
+  const out = await service.select(parsed, pipelineName ?? DEFAULT_PIPELINE, stageId, {
+    attemptNumber, principal: credential.principal, ...(expected !== undefined ? { expected } : {}),
+  });
+  if (!out.ok) {
+    emit(ctx, { error: out.error.message, code: out.error.code });
+    return exitCodeFor(out.error);
+  }
+  const o = out.value;
+  emit(ctx, {
+    message: o.reason ?? `Attempt ${attemptNumber} of "${stageId}" is selected for ${remaining[0]}`,
+    path: remaining[0], stageId, status: o.status, attemptNumber, outputs: o.outputs,
+  });
+  return o.status === "selected" ? EX_OK : EX_RUNTIME;
+}
+
 // ── run / complete ──────────────────────────────────────────────────────────
 
 /**
@@ -1093,6 +1187,8 @@ const COMMANDS: Record<string, CliCommand> = {
   rerun: { name: "rerun", description: "Plan targeted reruns: which stages re-run, which are preserved", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|rerun-affected-downstream|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },
+  takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
+  select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },
 };
 

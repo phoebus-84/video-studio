@@ -16,6 +16,7 @@ export type JournalEventType =
   | "comment-added"
   | "artifact-written"
   | "staleness-marked"
+  | "take-selected"
   | "supersession-recorded"
   | "deliverable-current-changed";
 
