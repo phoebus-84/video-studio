@@ -8,6 +8,9 @@
    * confirmation dialog after it.
    */
   import { episode } from "$lib/episode-store.svelte.ts";
+  import { production, actionsFor } from "$lib/production-store.svelte.ts";
+  import { hasOperatorKey } from "$lib/gateway.svelte.ts";
+  import { untrack } from "svelte";
   import { rerunConsequence, upstreamOf, downstreamOf } from "$lib/stage-graph";
   import { stageDisplayState, STAGE_LABELS } from "$lib/episode-types";
   import type { ResolvedStage } from "$lib/episode-types";
@@ -20,7 +23,44 @@
   let { stages, stageId }: Props = $props();
 
   const stage = $derived(stages.find((s) => s.id === stageId) ?? null);
-  const state = $derived(stage ? stageDisplayState(stage) : null);
+  const episodeKey = $derived(episode.state.phase === "ready"
+    ? `${episode.state.episode.channel}/${episode.state.episode.series}/${episode.state.episode.slug}`
+    : null);
+  const statusIsCurrent = $derived(episodeKey !== null && production.ref !== null &&
+    `${production.ref.channel}/${production.ref.series}/${production.ref.episode}` === episodeKey);
+  const liveStage = $derived(statusIsCurrent
+    ? production.stages.find((s) => s.stageId === stageId) : undefined);
+  const state = $derived(liveStage?.state ?? (stage ? stageDisplayState(stage) : null));
+  const actions = $derived(liveStage ? actionsFor(liveStage.state) : []);
+  const primaryAction = $derived(actions.includes("approve") ? "approve"
+    : actions.includes("run") ? "run" : null);
+  const busy = $derived(production.busyStage !== null || production.loading);
+  const signedIn = hasOperatorKey();
+
+  // This canvas must work without the optional inspector ProductionPanel.
+  // Track only episode identity, not the state load() itself writes.
+  $effect(() => {
+    const key = episodeKey;
+    if (!key) return;
+    const [channel, series, ep] = key.split("/");
+    untrack(() => production.load({ channel: channel!, series: series!, episode: ep! }));
+  });
+
+  async function act(): Promise<void> {
+    if (!stage || !primaryAction || busy || !statusIsCurrent) return;
+    const key = episodeKey;
+    if (primaryAction === "approve") await production.approveStage(stage.id);
+    else await production.runStage(stage.id);
+
+    // Refresh the rail from the actual verdict, not an optimistic approval.
+    // Do not patch a different episode if the person navigated mid-request.
+    if (episodeKey !== key || !statusIsCurrent || episode.state.phase !== "ready") return;
+    episode.patch({ stages: episode.state.episode.stages.map((s) => {
+      const live = production.stages.find((item) => item.stageId === s.id);
+      return live ? { ...s, status: live.state, blocked: live.state === "blocked",
+        stale: live.state === "stale" } : s;
+    }) });
+  }
 
   const reads = $derived(stage ? upstreamOf(stages, stage.id) : []);
   const feeds = $derived(stage ? downstreamOf(stages, stage.id) : []);
@@ -40,18 +80,33 @@
           <span class="sd-state" data-state={state}>{state ? STAGE_LABELS[state] : ""}</span>
         </div>
         <div class="sd-actions">
-          <button onclick={() => episode.selectStage(stage.id)}>Rerun from here</button>
-          <button class="sd-primary">
-            {state === "blocked"
-              ? "Fix and retry"
-              : state === "awaiting_review"
-                ? "Approve stage"
-                : state === "stale"
-                  ? "Stale — re-run"
-                  : "Run stage"}
-          </button>
+          {#if primaryAction}
+            <button class="sd-primary" onclick={act} disabled={busy}>
+              {busy ? "Working…" : primaryAction === "approve" ? "Approve stage"
+                : state === "completed" || state === "stale" || state === "failed"
+                  ? "Rerun stage" : "Run stage"}
+            </button>
+          {/if}
         </div>
       </header>
+
+      {#if statusIsCurrent && production.error}
+        <p class="sd-feedback sd-error" role="alert">{production.error}</p>
+      {/if}
+      {#if statusIsCurrent && production.lastMessage}
+        <p class="sd-feedback" role="status">{production.lastMessage}</p>
+      {/if}
+      {#if production.loading}
+        <p class="sd-feedback" role="status">Reading stage status…</p>
+      {:else if liveStage?.stateReason}
+        <p class="sd-feedback">{liveStage.stateReason}</p>
+      {/if}
+      {#if state === "awaiting_review" && !signedIn}
+        <p class="sd-feedback">
+          Sign in as operator in the header to approve. Without an operator key,
+          this button only requests approval; it does not unlock the stage.
+        </p>
+      {/if}
 
       <div class="sd-grid">
         <div>
@@ -218,7 +273,19 @@
     cursor: pointer;
   }
 
-  .sd-actions button:hover {
+  .sd-feedback {
+    margin: 0;
+    padding: var(--vs-space-2) var(--vs-space-4);
+    color: var(--vs-text-secondary);
+    font-size: var(--vs-text-sm);
+    white-space: pre-wrap;
+  }
+
+  .sd-error { color: var(--vs-state-blocked); }
+
+  .sd-actions button:disabled { opacity: 0.5; cursor: default; }
+
+  .sd-actions button:hover:not(:disabled) {
     background: var(--vs-bg-hover);
     color: var(--vs-text-primary);
   }
