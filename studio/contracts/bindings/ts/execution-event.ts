@@ -57,6 +57,34 @@ export interface TakeSelected {
   signature?: string;
 }
 
+export interface Money {
+  currency: string;
+  micros: number;
+}
+
+export interface SpendReserved {
+  reserveId: string;
+  capability: string;
+  provider: string;
+  profile?: string;
+  purpose?: string;
+  estimate: Money;
+  /** Present only when no price is known for the model, so the estimate is a placeholder 0. */
+  priced?: false;
+}
+
+export interface SpendSettled {
+  reserveId: string;
+  cost: Money;
+  basis: "provider" | "estimate";
+  providerRequestId?: string;
+}
+
+export interface SpendReleased {
+  reserveId: string;
+  reason: string;
+}
+
 export interface StageFailed {
   stageId: string;
   leaseId: string;

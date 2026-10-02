@@ -425,13 +425,14 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_budget_status",
     label: "Budget Status",
-    // No "reserved": BudgetReport (studio/gateway/src/routes/budget.ts)
-    // carries limitMicros, consumedMicros and remainingMicros and nothing
-    // else. Reservations are taken and never released (avg-91o), so there is
-    // no reserved figure to report and a tool that promises one invites Pi
-    // to read a field that does not exist.
+    // BudgetReport (studio/gateway/src/routes/budget.ts) is the journal's
+    // spend ledger since avg-91o: paid tools reserve before they call a
+    // provider and settle after, so "reserved" is a real figure now — the
+    // estimates of calls still open, which count against the limit.
     description:
-      "Get the episode's budget: the limit, what has been consumed, and what remains.",
+      "Get the episode's budget from its spend ledger: the limit, what has been spent, what is reserved by " +
+      "calls still open, and what remains. Paid tools (pva_generate_image on fal, pva_generate_minimax_h3_video) " +
+      "are refused once a call would pass the limit; only the operator can raise it or release a reservation.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),

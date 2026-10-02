@@ -6,7 +6,7 @@
 library/
 └── channel-slug/
     ├── channel.md
-    ├── settings.yaml
+    ├── settings.yaml                   # `budget:` caps paid calls (avg-91o); nearest level wins
     ├── brand/                          # channel knowledge
     ├── characters/
     ├── references/

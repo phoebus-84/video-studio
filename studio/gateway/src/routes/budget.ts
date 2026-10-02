@@ -10,180 +10,143 @@
 // possible thing to make up: it is the number an operator would trust to decide
 // whether to keep going.
 //
-// Everything here is read from disk, and the response names where each figure
-// came from so it can be checked rather than believed.
+// It then read costs from `assets/manifest.json` — which nothing in the tree
+// writes, so an episode that bought forty images reported $0. Since avg-91o
+// the spend is the journal's ledger: Pi's paid tools reserve an estimate
+// before the provider is called and settle it after, and this replays those
+// records through the same derivation the stage guard and `vpr budget` use.
+// Costs older productions did write to the manifest still count, reported
+// apart. The response names where each figure came from so it can be checked
+// rather than believed.
 // ---------------------------------------------------------------------------
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import { parse as parseYaml } from "yaml";
-import { channelPath, seriesPath, episodePath } from "@studio/contracts/src/layout.mjs";
+import { readEpisodeBudget, type BudgetReport as LedgerReport } from "@studio/runtime";
+import { releaseSpend } from "@studio/contracts/src/budget.mjs";
+import { episodePath } from "@studio/contracts/src/layout.mjs";
 
-/** Money as the contracts define it: an integer count of millionths. */
-interface Money {
-  currency: string;
-  micros: number;
-}
-
-interface BudgetEnvelope {
-  currency: string;
-  limitMicros: number;
-  warnAtMicros?: number;
-}
+type EpisodeParams = { channel: string; series: string; episode: string };
 
 export interface BudgetReport {
   /** Null when no budget is configured. Absence is reported, never invented. */
   limitMicros: number | null;
+  /** Spent: settled calls, plus costs older productions recorded. */
   consumedMicros: number;
-  /** Null when there is no limit to subtract from. */
+  /** Estimates of calls reserved and never settled or released. They count. */
+  reservedMicros: number;
+  /** Consumed plus reserved: what the limit is checked against. */
+  committedMicros: number;
+  /** Null when there is no limit to subtract from. Negative when overspent. */
   remainingMicros: number | null;
   currency: string | null;
-  /** True once spend has passed the configured warning threshold. */
+  /** True once committed spend has passed the configured warning threshold. */
   warn: boolean;
-  /** True once spend has reached the limit. */
+  /** True once committed spend has reached the limit. */
   exhausted: boolean;
+  /** The open reservations, so an operator can check and release them. */
+  open: LedgerReport["open"];
   /** Where each figure came from, so the numbers can be audited. */
   sources: {
-    /** Settings file the limit was read from, or null when none sets one. */
-    limitFrom: string | null;
-    /** How many asset attempts contributed a recorded cost. */
+    /** Settings level the limit was read from, or null when none sets one. */
+    limitFrom: "episode" | "series" | "channel" | null;
+    /** Calls settled; of those, how many at the estimate (no cost reported). */
+    settledCalls: number;
+    estimatedCalls: number;
+    releasedCalls: number;
+    openCalls: number;
+    /** Calls made with no known price: their spend is unknown, not zero. */
+    unpricedCalls: number;
+    /** Legacy asset attempts with a cost in assets/manifest.json. */
     costedAttempts: number;
-    /** Attempts with no cost recorded; their spend is unknown, not zero. */
+    /** Legacy attempts with no cost recorded; their spend is unknown, not zero. */
     uncostedAttempts: number;
-    /** Currencies seen, when attempts disagree. */
+    /** Currencies seen, when amounts disagree; others are never summed in. */
     mixedCurrencies?: string[];
   };
 }
 
-async function readYaml(file: string): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed = parseYaml(await fs.readFile(file, "utf-8"));
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-function asEnvelope(value: unknown): BudgetEnvelope | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Record<string, unknown>;
-  const limit = raw.limitMicros;
-  if (typeof limit !== "number" || !Number.isFinite(limit)) return null;
+function toReport(ledger: LedgerReport): BudgetReport {
+  const other = Object.keys(ledger.otherCurrencies ?? {});
   return {
-    currency: typeof raw.currency === "string" ? raw.currency : "USD",
-    limitMicros: limit,
-    warnAtMicros: typeof raw.warnAtMicros === "number" ? raw.warnAtMicros : undefined,
-  };
-}
-
-/**
- * The budget governing an episode.
- *
- * Settings inherit episode -> series -> channel, so the nearest declaration
- * wins. Nothing is defaulted: an episode under no budget reports no budget.
- */
-async function resolveLimit(
-  root: string,
-  p: { channel: string; series: string; episode: string },
-): Promise<{ envelope: BudgetEnvelope | null; from: string | null }> {
-  const candidates: Array<[string, string]> = [
-    [path.join(episodePath(root, p.channel, p.series, p.episode), "settings.yaml"), "episode"],
-    [path.join(seriesPath(root, p.channel, p.series), "settings.yaml"), "series"],
-    [path.join(channelPath(root, p.channel), "settings.yaml"), "channel"],
-  ];
-
-  for (const [file, level] of candidates) {
-    const doc = await readYaml(file);
-    const envelope = asEnvelope(doc?.budget);
-    if (envelope) return { envelope, from: level };
-  }
-  return { envelope: null, from: null };
-}
-
-/**
- * Spend recorded against an episode.
- *
- * Every generated asset records what it cost alongside its provenance, so the
- * manifest is the auditable record. An attempt with no cost is counted
- * separately rather than treated as free — unknown is not zero.
- */
-async function consumedFrom(
-  root: string,
-  p: { channel: string; series: string; episode: string },
-): Promise<{ micros: number; costed: number; uncosted: number; currencies: Set<string> }> {
-  const file = path.join(
-    episodePath(root, p.channel, p.series, p.episode),
-    "assets",
-    "manifest.json",
-  );
-
-  let manifest: { assets?: Array<{ attempts?: Array<{ cost?: Money }> }> };
-  try {
-    manifest = JSON.parse(await fs.readFile(file, "utf-8"));
-  } catch {
-    return { micros: 0, costed: 0, uncosted: 0, currencies: new Set() };
-  }
-
-  let micros = 0;
-  let costed = 0;
-  let uncosted = 0;
-  const currencies = new Set<string>();
-
-  for (const group of manifest.assets ?? []) {
-    for (const attempt of group.attempts ?? []) {
-      const cost = attempt.cost;
-      if (cost && typeof cost.micros === "number") {
-        micros += cost.micros;
-        costed++;
-        if (cost.currency) currencies.add(cost.currency);
-      } else {
-        uncosted++;
-      }
-    }
-  }
-
-  return { micros, costed, uncosted, currencies };
-}
-
-export async function buildBudgetReport(
-  root: string,
-  p: { channel: string; series: string; episode: string },
-): Promise<BudgetReport> {
-  const [{ envelope, from }, spend] = await Promise.all([
-    resolveLimit(root, p),
-    consumedFrom(root, p),
-  ]);
-
-  const limitMicros = envelope?.limitMicros ?? null;
-  const currency = envelope?.currency ?? [...spend.currencies][0] ?? null;
-
-  return {
-    limitMicros,
-    consumedMicros: spend.micros,
-    remainingMicros: limitMicros === null ? null : limitMicros - spend.micros,
-    currency,
-    warn: envelope?.warnAtMicros !== undefined && spend.micros >= envelope.warnAtMicros,
-    exhausted: limitMicros !== null && spend.micros >= limitMicros,
+    limitMicros: ledger.limitMicros,
+    consumedMicros: ledger.spentMicros,
+    reservedMicros: ledger.reservedMicros,
+    committedMicros: ledger.committedMicros,
+    remainingMicros: ledger.remainingMicros,
+    currency: ledger.currency,
+    warn: ledger.warn,
+    exhausted: ledger.exhausted,
+    open: ledger.open,
     sources: {
-      limitFrom: from,
-      costedAttempts: spend.costed,
-      uncostedAttempts: spend.uncosted,
+      limitFrom: ledger.limitFrom,
+      settledCalls: ledger.counts.settled,
+      estimatedCalls: ledger.counts.estimated,
+      releasedCalls: ledger.counts.released,
+      openCalls: ledger.counts.open,
+      unpricedCalls: ledger.counts.unpriced,
+      costedAttempts: ledger.legacy?.costed ?? 0,
+      uncostedAttempts: ledger.legacy?.uncosted ?? 0,
       // Summing across currencies would produce a meaningless total, so the
       // disagreement is reported rather than hidden.
-      ...(spend.currencies.size > 1 ? { mixedCurrencies: [...spend.currencies] } : {}),
+      ...(other.length > 0 ? { mixedCurrencies: [...(ledger.currency ? [ledger.currency] : []), ...other] } : {}),
     },
   };
+}
+
+export async function buildBudgetReport(root: string, p: EpisodeParams): Promise<BudgetReport> {
+  return toReport(await readEpisodeBudget(root, p));
 }
 
 export function registerBudgetRoutes(app: FastifyInstance, root: string): void {
   app.get("/api/channels/:channel/series/:series/episodes/:episode/budget", {
     schema: {
-      description: "Budget limit and recorded spend for an episode, read from disk.",
+      description: "Budget limit and the spend ledger for an episode, read from the journal.",
       tags: ["production"],
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const p = request.params as { channel: string; series: string; episode: string };
-    return reply.send(await buildBudgetReport(root, p));
+    const p = request.params as EpisodeParams;
+    try {
+      return reply.send(await buildBudgetReport(root, p));
+    } catch (e) {
+      // A ledger that cannot be read is not a ledger that says $0.
+      return reply.code(500).send({
+        error: "BUDGET_UNREADABLE",
+        message: `The episode's spend ledger cannot be read: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  });
+
+  // Closing an open reservation as spending nothing frees budget, so it is
+  // the operator's alone: an agent that could release its own reservations
+  // would have no cap. It is for a call that died between reserving and
+  // settling, after checking the provider's dashboard.
+  app.post("/api/channels/:channel/series/:series/episodes/:episode/budget/reservations/:reserveId/release", {
+    schema: {
+      description: "Release an open spend reservation (operator only).",
+      tags: ["production"],
+      body: {
+        type: "object",
+        additionalProperties: false,
+        properties: { note: { type: "string", maxLength: 2000 } },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { reserveId, ...p } = request.params as EpisodeParams & { reserveId: string };
+    if (request.principal !== "operator") {
+      return reply.code(403).send({
+        error: "OPERATOR_REQUIRED",
+        message: "Only the operator can release a reservation: it frees budget. Nothing was recorded.",
+      });
+    }
+    const note = (request.body as { note?: string } | undefined)?.note?.trim();
+    const released = await releaseSpend(episodePath(root, p.channel, p.series, p.episode), {
+      episode: p, actor: "human", reserveId,
+      reason: note ? `released by the operator: ${note}` : "released by the operator",
+    });
+    if (!released.ok) {
+      const code = released.code === "BUDGET_NOT_OPEN" ? 409 : released.code === "BUDGET_INVALID" ? 400 : 503;
+      return reply.code(code).send({ error: released.code, message: released.reason });
+    }
+    return reply.send({ released: reserveId, budget: await buildBudgetReport(root, p) });
   });
 }

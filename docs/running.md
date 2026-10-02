@@ -242,8 +242,8 @@ correct, not a bug: files in a directory are not evidence that a stage ran
 under a lease, and the previous behaviour (inferring completion from file
 existence) is what made the CLI's report disagree with everything else.
 
-There is no budget line in the output. There is no ledger behind one yet
-(avg-91o), and a zero is a number an operator would act on.
+Its output carries the episode's budget, from the spend ledger described in
+"Budget" below.
 
 **`vpr approve`** and **`vpr reject`** (which requires `--note <text>`)
 decide a stage that completed with `gates.review: human` — the same call the gateway's
@@ -286,6 +286,55 @@ node studio/runtime/dist/src/cli.js select my-channel/my-series/ep001 illustrati
   also records a new review request, because nobody has approved those bytes.
 - **Candidates are never pruned.** An episode that runs a stage many times
   keeps every result.
+
+### Budget
+
+Paid calls are journal records (avg-91o). Before a paid tool calls a provider,
+it **reserves** the call's estimated price. Afterwards it **settles** the
+reservation with what the provider charged. If the call never reached the
+provider, or the provider refused it, the tool **releases** the reservation
+instead. Today the paid tools are `pva_generate_image` on a fal model and
+`pva_generate_minimax_h3_video`. The Codex image provider bills your
+ChatGPT plan, not money, so it reserves nothing.
+
+The limit is the nearest `budget:` in `settings.yaml`, looked up in the
+episode first, then the series, then the channel:
+
+```yaml
+budget:
+  currency: USD
+  limitMicros: 5000000   # $5.00
+  warnAtMicros: 4000000  # optional
+```
+
+- **The check is atomic.** A reservation is checked and written under the
+  episode's budget lock, so two sessions cannot both spend the last dollar.
+  A call that would take committed spend (spent plus reserved) past the limit
+  is refused before fal is called, and the refusal states the figures.
+- **A paid stage stops when the budget is used up.** Once the budget is spent,
+  a stage that declares a paid capability (`image.generate`, `image.edit`,
+  `video.generate`) is reported `blocked` and refuses to start. Stages that
+  spend nothing still run.
+- **No `budget:` means no cap, not no record.** Every call is still recorded.
+- **A model with no known price** is refused under a budget, because there is
+  nothing to check it against. Without a budget it is recorded as unpriced.
+- **An open reservation counts.** A process that died mid-call may still have
+  been billed. `vpr budget` lists what is open. Check the provider's dashboard,
+  then release the call yourself:
+
+```bash
+node studio/runtime/dist/src/cli.js budget my-channel/my-series/ep001 --library "$PWD/library"
+node studio/runtime/dist/src/cli.js budget my-channel/my-series/ep001 release rsv_01J… \
+  --note "no charge on the fal dashboard" --library "$PWD/library"
+```
+
+Only the operator can release a reservation, because releasing frees budget.
+The gateway's `POST …/budget/reservations/:id/release` has the same rule.
+
+**What the budget does not stop:** the ledger keeps Pi's *tools* honest. Pi's
+environment holds `FAL_KEY`, so a `curl` from its shell reaches fal with no
+reservation, and spend lines are not signed. This is the same same-user
+boundary as the operator key (avg-qr4.8).
 
 ## The operator key
 

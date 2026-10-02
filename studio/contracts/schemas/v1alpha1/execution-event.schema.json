@@ -95,6 +95,52 @@
         "signature": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
+    "Money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "micros"],
+      "properties": {
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "micros": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "SpendReserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A paid call is about to reach its provider (avg-91o). Appended under the episode's budget lock after checking the estimate against the budget; counts against it until settled or released.",
+      "required": ["reserveId", "capability", "provider", "estimate"],
+      "properties": {
+        "reserveId": { "type": "string", "pattern": "^rsv_[0-9A-HJKMNP-TV-Z]{26}$" },
+        "capability": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "profile": { "type": "string", "minLength": 1 },
+        "purpose": { "type": "string", "minLength": 1 },
+        "estimate": { "$ref": "#/$defs/Money" },
+        "priced": { "const": false, "description": "Present only when no price is known for the model, so the estimate is a placeholder 0." }
+      }
+    },
+    "SpendSettled": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The call went out. `basis` says whether `cost` is what the provider reported or the estimate standing in for a figure it did not send.",
+      "required": ["reserveId", "cost", "basis"],
+      "properties": {
+        "reserveId": { "type": "string", "pattern": "^rsv_[0-9A-HJKMNP-TV-Z]{26}$" },
+        "cost": { "$ref": "#/$defs/Money" },
+        "basis": { "enum": ["provider", "estimate"] },
+        "providerRequestId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "SpendReleased": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Nothing was spent: the call never reached the provider, the provider refused it, or the operator closed a reservation after checking.",
+      "required": ["reserveId", "reason"],
+      "properties": {
+        "reserveId": { "type": "string", "pattern": "^rsv_[0-9A-HJKMNP-TV-Z]{26}$" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
     "StageFailed": {
       "type": "object",
       "additionalProperties": false,

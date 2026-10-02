@@ -27,7 +27,8 @@ import {
   loadSoundCueSheet,
 } from "./multitrack-compose.js";
 import { CodexImageClient } from "@av/codex-image";
-import { createFalClient, getProfile } from "@av/fal-media";
+import { createFalClient, getProfile, FalHttpError, FalValidationError } from "@av/fal-media";
+import { paidCall, providerCost, type SpendCall } from "./spend.js";
 import {
   CODEX_PROVIDER,
   DEFAULT_FAL_MODEL,
@@ -116,6 +117,7 @@ function asDataUrl(filePath: string): string {
 async function generateImage(
   prompt: string,
   model?: string,
+  spend?: SpendCall,
 ): Promise<{ imageUrl: string; data: Buffer; seed: number; model: string }> {
   const apiKey = (await resolveConfig()).falKeyRef;
   if (!apiKey) throw new Error("FAL_KEY env var not set");
@@ -139,6 +141,9 @@ async function generateImage(
     ),
   };
 
+  // From here a failure may have been billed (avg-91o): the ledger settles
+  // it at the estimate unless the provider answers with a refusal below.
+  spend?.sending();
   const res = await fetch(`https://fal.run/${modelName}`, {
     method: "POST",
     headers: {
@@ -149,6 +154,9 @@ async function generateImage(
   });
 
   if (!res.ok) {
+    // A 4xx is fal declining the request — nothing generated, nothing billed.
+    // A 5xx or 429 says nothing about whether work was done, so it settles.
+    if (res.status >= 400 && res.status < 500 && res.status !== 429) spend?.refused();
     const err = await res.json().catch(() => ({})) as any;
     throw new Error(`fal.ai error: ${res.status} ${err?.detail ?? res.statusText}`);
   }
@@ -522,7 +530,13 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           provider.kind === "codex"
             ? await generateImageViaCodex(params.prompt, provider.model, ctx.modelRegistry, referenceImages, signal)
             : await (async () => {
-                const fal = await generateImage(params.prompt, provider.model);
+                // Through the episode's spend ledger (avg-91o): reserved
+                // before the request, settled after, refused over budget.
+                const fal = await paidCall(
+                  { libraryRoot: LIBRARY_ROOT, channel: params.channel, series: params.series, episode: params.episode },
+                  { capability: "image.generate", provider: "fal", model: provider.model, purpose: `image ${params.sceneId}` },
+                  async (spend) => ({ value: await generateImage(params.prompt, provider.model, spend) }),
+                );
                 return {
                   data: fal.data,
                   model: fal.model,
@@ -660,16 +674,36 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         });
 
         const client = createFalClient(config.falKeyRef);
-        const result = await client.submitAndWait({
-          idempotencyKey: `${params.channel}-${params.series}-${params.episode}-${params.shotId}-${requestHash}`,
-          binding: {
-            endpointId: profile.endpointId,
-            contractVersion: profile.contractVersion,
-            baseUrl: "",
+        // Through the episode's spend ledger (avg-91o). A clip is the most
+        // expensive call the studio makes; it is reserved at the profile's
+        // price before submission and settled at what fal reports.
+        const result = await paidCall(
+          { libraryRoot: LIBRARY_ROOT, channel: params.channel, series: params.series, episode: params.episode },
+          { capability: "video.generate", provider: "fal", model: profile.profileId, purpose: `clip ${params.shotId}` },
+          async (spend) => {
+            spend.sending();
+            try {
+              const generated = await client.submitAndWait({
+                idempotencyKey: `${params.channel}-${params.series}-${params.episode}-${params.shotId}-${requestHash}`,
+                binding: {
+                  endpointId: profile.endpointId,
+                  contractVersion: profile.contractVersion,
+                  baseUrl: "",
+                },
+                parameters,
+                timeoutMs: 900_000,
+              }, signal, { maxWaitMs: 900_000 });
+              return { value: generated, cost: providerCost(generated.cost), providerRequestId: generated.providerRequestId };
+            } catch (e) {
+              // Refused by validation before submit, or by fal with a 4xx:
+              // nothing generated. Anything else may have been billed.
+              if (e instanceof FalValidationError || (e instanceof FalHttpError && e.status >= 400 && e.status < 500 && e.status !== 429)) {
+                spend.refused();
+              }
+              throw e;
+            }
           },
-          parameters,
-          timeoutMs: 900_000,
-        }, signal, { maxWaitMs: 900_000 });
+        );
 
         const output = result.outputs.find((candidate) => candidate.contentType.startsWith("video/")) ?? result.outputs[0];
         if (!output) throw new Error("MiniMax H3 completed without a video output");

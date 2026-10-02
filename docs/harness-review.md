@@ -63,8 +63,8 @@ media/checker cannot pass QA; changing a reviewed artifact invalidates the revie
 **Evidence (fixed, avg-qr4 "CLI and agent on the execution service"):**
 `studio/runtime/src/cli.ts`, `cmdStatus`, *used to* infer completion from
 output-file existence and emit a zero-consumption budget; it now replays the
-episode journal through `ExecutionService.status` and reports no budget at all,
-because nothing measures one yet (avg-91o). `cmdRun` *used to* select the first
+episode journal through `ExecutionService.status`, and reports the journal's
+spend ledger as its budget (avg-91o, below). `cmdRun` *used to* select the first
 stage missing outputs without driving the lease/state-machine/policy engine; it
 now claims a stage through the service, takes a real lease, and prints the
 `vpr complete` line that closes it. `cmdRerun` *used to* return an empty plan;
@@ -111,6 +111,22 @@ granularity.
   lock, with a compare-and-swap on the take the caller saw, so a second session
   is refused rather than silently winning.
 - Selecting a different take marks the stages that depend on it stale.
+
+**Budget reservations (avg-91o, see the
+[design doc](superpowers/specs/2026-10-02-spend-ledger-design.md)):** the CLI
+and the gateway each used to configure a budget guard that said yes to
+everything, and the in-memory `BudgetLedger` had no callers. The money was
+spent inside Pi's tools, where no stage-level guard could see it.
+- A paid call now reserves its estimate in the journal before reaching the
+  provider, and settles or releases it afterwards. The check and the append
+  happen under the episode's budget lock, so two sessions cannot both spend the
+  last of the budget.
+- `JournalBudgetGuard` refuses a stage that declares a paid capability once
+  committed spend reaches the limit. `/budget`, `vpr budget` and `vpr status`
+  report the same ledger.
+- Releasing an open reservation is the operator's alone.
+- Not addressed: Pi still holds `FAL_KEY`, and spend lines are unsigned, so a
+  deliberate same-user bypass remains with avg-qr4.8.
 
 ### P0 — “Human approval” needs an authenticated, revision-bound origin (addressed for the API and Pi's shell by accident; deliberate same-user access remains with avg-qr4.8)
 

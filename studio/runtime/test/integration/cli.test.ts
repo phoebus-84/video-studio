@@ -7,6 +7,7 @@ import path from "node:path";
 import { appendJournalEvent, parseJournal, JOURNAL_RELATIVE_PATH } from "@studio/contracts/src/journal.mjs";
 import { deriveGateState } from "@studio/contracts/src/gate-review.mjs";
 import { verifyReceipt } from "@studio/contracts/src/receipt.mjs";
+import { reserveSpend } from "@studio/contracts/src/budget.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -855,12 +856,17 @@ describe("vpr run / vpr complete", () => {
       expect(brief.lease.holder).toMatch(/^cli\/pid-/);
     });
 
-    it("no longer reports a budget it cannot measure", async () => {
+    // It used to print `consumed: 0, reserved: 0` whatever had been spent,
+    // then nothing at all until a ledger existed (avg-91o). Now it reports
+    // the ledger — and still invents no limit for an episode that sets none.
+    it("reports the budget the ledger measures, inventing no limit", async () => {
       const { root } = await episodeFixture();
 
       const result = vpr(["status", "childrens/fairy-tales/ep", "--library", root, "--json"]);
 
-      expect(result.json().budget).toBeUndefined();
+      expect(result.json().budget).toMatchObject({
+        limitMicros: null, limitFrom: null, spentMicros: 0, reservedMicros: 0, exhausted: false,
+      });
     });
   });
 });
@@ -1195,5 +1201,72 @@ describe("vpr takes / vpr select (avg-qr4.6)", () => {
   it("refuses an attempt number that is not one", () => {
     expect(vpr(["select", EP, "brief", "first"]).status).toBe(1);
     expect(vpr(["select", EP, "brief", "1", "--expect", "latest"]).status).toBe(1);
+  });
+});
+
+describe("vpr budget (avg-91o)", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
+  });
+
+  const PIPELINES = path.resolve(__dirname, "../../../pipelines/pipelines");
+  const EP = "childrens/fairy-tales/ep";
+  const REF = { channel: "childrens", series: "fairy-tales", episode: "ep" };
+
+  function vpr(args: string[], env: Record<string, string> = {}) {
+    const result = spawnSync("node", [cliPath, ...args], {
+      encoding: "utf-8",
+      env: { ...process.env, AVG_BUILTIN_PIPELINES: PIPELINES,
+             AVG_OPERATOR_KEY_FILE: path.join(tmpdir(), "vpr-cli-no-operator-key"), ...env },
+    });
+    return { status: result.status ?? 1, json: () => JSON.parse(result.stdout?.toString() ?? "{}") };
+  }
+
+  /** An episode under a $1 series budget, with one call reserved and never settled. */
+  async function episodeWithOpenCall() {
+    const root = await mkdtemp(path.join(tmpdir(), "vpr-budget-"));
+    roots.push(root);
+    const dir = path.join(root, "childrens", "series", "fairy-tales", "episodes", "ep");
+    await mkdir(path.join(dir, "journal"), { recursive: true });
+    await writeFile(path.join(root, "childrens", "series", "fairy-tales", "settings.yaml"),
+      "budget:\n  currency: USD\n  limitMicros: 1000000\n  warnAtMicros: 800000\n");
+    const reserved = await reserveSpend(dir, {
+      episode: REF, capability: "image.generate", provider: "fal", estimate: { currency: "USD", micros: 250_000 },
+    });
+    if (!reserved.ok) throw new Error(reserved.reason);
+    const keyFile = path.join(root, ".operator-key");
+    await writeFile(keyFile, "operator-key-for-tests", { mode: 0o600 });
+    return { root, reserveId: reserved.reserveId, operator: { AVG_OPERATOR_KEY_FILE: keyFile } };
+  }
+
+  it("reports the ledger: the limit, where it came from, and the open call", async () => {
+    const { root, reserveId } = await episodeWithOpenCall();
+    const out = vpr(["budget", EP, "--library", root, "--json"]);
+    expect(out.status).toBe(0);
+    const { budget } = out.json();
+    expect(budget).toMatchObject({ limitMicros: 1_000_000, limitFrom: "series", reservedMicros: 250_000, remainingMicros: 750_000 });
+    expect(budget.open.map((r: { reserveId: string }) => r.reserveId)).toEqual([reserveId]);
+  });
+
+  it("puts the budget in status", async () => {
+    const { root } = await episodeWithOpenCall();
+    const out = vpr(["status", EP, "--library", root, "--json"]);
+    expect(out.status).toBe(0);
+    expect(out.json().budget).toMatchObject({ committedMicros: 250_000 });
+  });
+
+  it("lets only the operator release a reservation", async () => {
+    const { root, reserveId, operator } = await episodeWithOpenCall();
+    const agent = vpr(["budget", EP, "release", reserveId, "--library", root, "--json"], { AVG_HEADLESS: "1" });
+    expect(agent.status).not.toBe(0);
+    expect(agent.json().error).toMatch(/Only the operator/);
+
+    const released = vpr(["budget", EP, "release", reserveId, "--note", "no charge on the dashboard", "--library", root, "--json"], operator);
+    expect(released.status).toBe(0);
+    expect(vpr(["budget", EP, "--library", root, "--json"]).json().budget.reservedMicros).toBe(0);
+
+    const again = vpr(["budget", EP, "release", reserveId, "--library", root, "--json"], operator);
+    expect(again.json().error).toMatch(/already settled or released/);
   });
 });
