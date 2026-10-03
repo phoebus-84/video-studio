@@ -20,6 +20,7 @@ Everything is here, in one place.
 | [Domain language](./context) | What does each term mean? Read this before naming anything. |
 | [Workspace layout](./workspace) | What does the on-disk channel/series/episode tree look like? |
 | [Pipelines](./pipelines) | How are pipeline manifests and overrides structured? |
+| [DaVinci Resolve handoff](./resolve-handoff) | How do I bring reviewed cuts, assets and revised narration to a human editor through upstream MCP? |
 
 ## Packages
 

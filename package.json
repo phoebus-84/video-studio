@@ -37,6 +37,7 @@
     "typecheck": "node tools/run-all.mjs typecheck",
     "doctor": "node tools/doctor.mjs",
     "smoke:blender": "node --import tsx tools/smoke-blender-harness.mjs",
+    "resolve:plan": "node studio/agent/src/resolve-handoff.mjs",
     "docs:generate": "node tools/gen-docs.mjs && npm run docs:sync",
     "docs:check": "node tools/gen-docs.mjs --check",
     "build": "node tools/run-all.mjs build",

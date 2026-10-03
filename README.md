@@ -83,6 +83,7 @@ npm run docs:build   # also fails on any dead internal link
 - [Pipelines](docs/pipelines.md)
 - [Contributing](docs/contributing.md)
 - [Blender setup and workflow](packages/blender/README.md)
+- [DaVinci Resolve editorial handoff](docs/resolve-handoff.md) — optional integration through the actively maintained [davinci-resolve-mcp](https://github.com/samuelgursky/davinci-resolve-mcp)
 - [Harness review and improvement priorities](docs/harness-review.md)
 - [Per-component reference](docs/index.md#packages)
 - [Decision records](docs/adr/)
@@ -95,4 +96,5 @@ npm run typecheck         # every module's typecheck
 npm run check             # paths + boundaries + typecheck + tests
 npm run compose -- --list # available profiles
 npm run doctor            # toolchain, credentials, capability readiness
+npm run resolve:plan -- --help # offline Resolve handoff preflight; live edits use upstream MCP
 ```
