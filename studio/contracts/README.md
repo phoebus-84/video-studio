@@ -26,6 +26,7 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
 | `edit-timeline.schema.json` | Edit timeline. `v1alpha2/`: NLE tracks of kit instances and audio, sections with spec provenance, integer frames (ADR-0034), checked by `src/edit-timeline.mjs`. `v1alpha1/`: deprecated segment list |
 | `word-timing.schema.json` | When each word of one audio take is spoken, in seconds of that audio: written words with their spoken form where it differs, lines as word ranges, speech spans, lip-sync energy; provider-neutral; checked by `src/word-timing.mjs` |
 | `cue.schema.json` | When something happens in terms of the voice: a whole word (or `*` prefix), seconds, or a word / line / take / mark object with `at` and `offset`; resolved to an absolute frame, never by fallback, by `src/cues.mjs` |
+| `narration-takes.schema.json` | Every accepted voice take of an episode, from any tool (text as written, `spokenText` exactly as the tool received it, voice provenance, its word timing), and what each unit plays: takes in order with pauses and declared scene pauses; laid out and mapped from the Qwen narration manifest by `src/narration-takes.mjs` |
 | `review-thread.schema.json` | Anchored review conversations with comments |
 | `provider-job.schema.json` | Tracked provider invocations with cost and idempotency |
 | `error-envelope.schema.json` | Cross-process error envelope with typed codes |
