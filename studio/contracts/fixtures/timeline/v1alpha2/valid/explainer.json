@@ -1,0 +1,144 @@
+{
+  "apiVersion": "studio.video/v1alpha2",
+  "kind": "EditTimeline",
+  "episodeRef": {
+    "channel": "childrens",
+    "series": "fairy-tales",
+    "episode": "red-riding-hood"
+  },
+  "revision": 1,
+  "fps": 30,
+  "durationInFrames": 765,
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "assets": {
+    "scene-01-woods": {
+      "path": "assets/images/scene-01-woods.png",
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "kind": "image"
+    },
+    "scene-02-grandma": {
+      "path": "assets/images/scene-02-grandma.png",
+      "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "kind": "image"
+    },
+    "scene-03-ending": {
+      "path": "assets/images/scene-03-ending.png",
+      "hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "kind": "image"
+    }
+  },
+  "tracks": [
+    {
+      "id": "main",
+      "type": "visual",
+      "z": 0,
+      "items": [
+        {
+          "id": "scene-01-woods",
+          "from": 0,
+          "duration": 270,
+          "kit": {
+            "name": "still",
+            "version": "1.0.0"
+          },
+          "props": {
+            "src": {
+              "$asset": "scene-01-woods"
+            }
+          }
+        },
+        {
+          "id": "scene-02-grandma",
+          "from": 255,
+          "duration": 300,
+          "kit": {
+            "name": "still",
+            "version": "1.0.0"
+          },
+          "props": {
+            "src": {
+              "$asset": "scene-02-grandma"
+            },
+            "fit": "cover",
+            "scale": 1.1
+          },
+          "transitionIn": {
+            "type": "crossfade",
+            "duration": 15
+          },
+          "transitionOut": {
+            "type": "fade",
+            "duration": 24
+          }
+        },
+        {
+          "id": "scene-03-ending",
+          "from": 555,
+          "duration": 210,
+          "kit": {
+            "name": "still",
+            "version": "1.0.0"
+          },
+          "props": {
+            "src": {
+              "$asset": "scene-03-ending"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "captions",
+      "type": "visual",
+      "z": 20,
+      "items": [
+        {
+          "id": "scene-01-woods-caption",
+          "from": 15,
+          "duration": 225,
+          "kit": {
+            "name": "captions",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "Once upon a time, in a village by the woods...",
+            "position": "bottom"
+          }
+        },
+        {
+          "id": "scene-02-grandma-caption",
+          "from": 270,
+          "duration": 270,
+          "kit": {
+            "name": "captions",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "Little Red Riding Hood knocked at the door.",
+            "position": "bottom"
+          }
+        },
+        {
+          "id": "scene-03-ending-caption",
+          "from": 585,
+          "duration": 165,
+          "kit": {
+            "name": "captions",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "And they all lived happily ever after.",
+            "position": "center",
+            "fontSize": 48
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "migratedFrom": "studio.video/v1alpha1"
+  }
+}
