@@ -1,0 +1,11 @@
+{
+  "expect": "text-mismatch",
+  "base": "epoca-take.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/words/1/text",
+      "value": "da"
+    }
+  ]
+}

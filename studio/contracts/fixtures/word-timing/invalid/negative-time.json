@@ -1,0 +1,11 @@
+{
+  "expect": "schema",
+  "base": "san-martino-recital.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/words/0/start",
+      "value": -0.1
+    }
+  ]
+}
