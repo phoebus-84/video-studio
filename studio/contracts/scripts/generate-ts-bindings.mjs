@@ -16,36 +16,38 @@ import { execSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
-const schemasDir = resolve(root, "schemas/v1alpha1");
 const outDir = resolve(root, "bindings/ts");
+
+// Each resource version is generated on its own: refs resolve only within a
+// version, and v1alpha1 keeps its historical place at the top of bindings/ts.
+const VERSIONS = [
+  { dir: "schemas/v1alpha1", out: "." },
+  { dir: "schemas/v1alpha2", out: "v1alpha2" },
+];
 
 const checkMode = process.argv.includes("--check");
 
-// ── Load all schemas ────────────────────────────────────────────────────────
+// ── Load all schemas of one version ─────────────────────────────────────────
 
-const schemas = {};
-const schemaFiles = readdirSync(schemasDir).filter((f) => f.endsWith(".schema.json"));
-for (const file of schemaFiles) {
-  const schema = JSON.parse(readFileSync(resolve(schemasDir, file), "utf-8"));
-  const name = file.replace(".schema.json", "");
-  schemas[name] = { file, schema, name };
-}
+let schemas = {};
+let idToSchema = {}; // $id → { name, defs }
+let baseToName = {}; // filename → name, for short refs like "identity.schema.json"
 
-// ── Build cross-reference map ───────────────────────────────────────────────
-
-// Map: $id → { file, defs }
-const idToSchema = {};
-for (const [name, entry] of Object.entries(schemas)) {
-  const $id = entry.schema.$id;
-  if ($id) {
-    idToSchema[$id] = { name, defs: new Set(Object.keys(entry.schema.$defs ?? {})) };
+function loadSchemas(schemasDir) {
+  schemas = {};
+  for (const file of readdirSync(schemasDir).filter((f) => f.endsWith(".schema.json"))) {
+    const schema = JSON.parse(readFileSync(resolve(schemasDir, file), "utf-8"));
+    const name = file.replace(".schema.json", "");
+    schemas[name] = { file, schema, name };
   }
-}
-
-// Also map by basename for short refs like "identity.schema.json"
-const baseToName = {};
-for (const [name, entry] of Object.entries(schemas)) {
-  baseToName[entry.file] = name;
+  idToSchema = {};
+  baseToName = {};
+  for (const [name, entry] of Object.entries(schemas)) {
+    if (entry.schema.$id) {
+      idToSchema[entry.schema.$id] = { name, defs: new Set(Object.keys(entry.schema.$defs ?? {})) };
+    }
+    baseToName[entry.file] = name;
+  }
 }
 
 /** Resolve a $ref to { schemaName, defName } or null if external/unresolvable. */
@@ -138,7 +140,7 @@ function toTsType(schema, context, required = true) {
   if (type === "array") {
     if (schema.items) {
       const itemType = toTsType(schema.items, context, true);
-      return `${itemType}[]`;
+      return itemType.includes(" | ") ? `(${itemType})[]` : `${itemType}[]`;
     }
     return "unknown[]";
   }
@@ -146,6 +148,11 @@ function toTsType(schema, context, required = true) {
   // Handle object — generate inline type
   if (type === "object" && schema.properties) {
     return generateInlineObject(schema, context);
+  }
+
+  // Maps: objects whose values all share one schema
+  if (type === "object" && schema.additionalProperties && typeof schema.additionalProperties === "object") {
+    return `Record<string, ${toTsType(schema.additionalProperties, context, true)}>`;
   }
 
   // Fallback for objects without properties
@@ -310,9 +317,16 @@ function generateBindings(outputPath) {
 
 // ── Run ──────────────────────────────────────────────────────────────────────
 
+function generateAll(base) {
+  for (const version of VERSIONS) {
+    loadSchemas(resolve(root, version.dir));
+    generateBindings(resolve(base, version.out));
+  }
+}
+
 if (checkMode) {
   const tmpOut = resolve(tmpdir(), `contracts-bindings-${Date.now()}`);
-  generateBindings(tmpOut);
+  generateAll(tmpOut);
 
   // Diff against current bindings/ts/
   try {
@@ -329,6 +343,6 @@ if (checkMode) {
     throw err;
   }
 } else {
-  generateBindings(outDir);
+  generateAll(outDir);
   console.log("TypeScript bindings generated in bindings/ts/");
 }
