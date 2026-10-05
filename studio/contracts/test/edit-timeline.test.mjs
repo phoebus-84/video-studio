@@ -66,6 +66,24 @@ describe("validateEditTimeline", () => {
     assert.deepEqual(codes(validateEditTimeline(doc)), ["bad-crossfade"]);
   });
 
+  it("rejects a crossfade that would put three items on screen at once", () => {
+    const doc = lesson();
+    const still = (id, from, duration, crossfade) => ({
+      id, from, duration, kit: { name: "still", version: "1.0.0" }, props: { src: { $asset: "painting-1" } },
+      ...(crossfade ? { transitionIn: { type: "crossfade", duration: crossfade } } : {}),
+    });
+    doc.tracks[1].items = [still("a", 100, 100), still("b", 190, 110, 10), still("c", 195, 205, 105)];
+    assert.deepEqual(validateEditTimeline(doc).map((p) => [p.code, p.path]), [["bad-crossfade", "$.tracks[1].items[2].transitionIn"]]);
+  });
+
+  it("rejects a crossfade that starts on the same frame as the previous item", () => {
+    const doc = lesson();
+    doc.tracks[1].items[1].from = 120; // same frame as painting-1, which ends at 420
+    doc.tracks[1].items[1].duration = 350; // ends at 470, after painting-1
+    doc.tracks[1].items[1].transitionIn.duration = 300; // overlap 420 - 120
+    assert.deepEqual(codes(validateEditTimeline(doc)), ["bad-crossfade"]);
+  });
+
   it("finds asset references nested in arrays and next to other keys", () => {
     const doc = lesson();
     doc.tracks[3].items[0].props.layers = [{ image: { $asset: "nowhere", fit: "cover" } }];
@@ -123,5 +141,34 @@ describe("migrateEditTimelineV1alpha1", () => {
 
   it("refuses anything but a v1alpha1 timeline", () => {
     assert.throws(() => migrateEditTimelineV1alpha1(lesson(), { assetHashes: hashes }), /v1alpha1 EditTimeline/);
+  });
+  it("rounds absolute times, so adjacent segments never overlap after migration", () => {
+    const doc = {
+      ...basic(),
+      fps: 25,
+      segments: [
+        { id: "a", sourceAsset: "assets/images/scene-01-woods.png", sourceKind: "image", startSec: 0.02, durationSec: 1.02 },
+        { id: "b", sourceAsset: "assets/images/scene-02-grandma.png", sourceKind: "image", startSec: 1.04, durationSec: 1 },
+      ],
+    };
+    const migrated = migrateEditTimelineV1alpha1(doc, { assetHashes: hashes });
+    assert.deepEqual(migrated.tracks[0].items.map((it) => [it.from, it.duration]), [[1, 25], [26, 25]]);
+    assert.deepEqual(validateEditTimeline(migrated), []);
+  });
+
+  it("keeps the sound of a video segment unless it is muted", () => {
+    const video = (id, audio) => ({ id, sourceAsset: `assets/clips/${id}.mp4`, sourceKind: "video", startSec: 0, durationSec: 2, ...(audio ? { audio } : {}) });
+    const doc = { ...basic(), segments: [video("c1")] };
+    const migrated = migrateEditTimelineV1alpha1(doc, { assetHashes: { "assets/clips/c1.mp4": `sha256:${"4".repeat(64)}` } });
+    assert.deepEqual(migrated.tracks.find((t) => t.id === "sound")?.items, [{ id: "c1-sound", from: 0, duration: 60, asset: "c1" }]);
+    const muted = { ...basic(), segments: [video("c2", { mute: true })] };
+    const silent = migrateEditTimelineV1alpha1(muted, { assetHashes: { "assets/clips/c2.mp4": `sha256:${"5".repeat(64)}` } });
+    assert.equal(silent.tracks.find((t) => t.id === "sound"), undefined);
+  });
+
+  it("throws instead of returning a timeline that fails validation", () => {
+    const doc = basic();
+    doc.segments[0].id = "scene 01";
+    assert.throws(() => migrateEditTimelineV1alpha1(doc, { assetHashes: hashes }), /not a valid v1alpha2 timeline:.*schema/);
   });
 });

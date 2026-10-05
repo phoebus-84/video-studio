@@ -188,10 +188,15 @@ function checkOverlaps(doc) {
   const out = [];
   doc.tracks.forEach((t, ti) => {
     const order = t.items.map((it, ii) => ({ it, ii })).sort((a, b) => a.it.from - b.it.from || a.ii - b.ii);
-    let lastEnd = null;
+    // `previous` is the earlier item that ends last; `before` is the latest end
+    // among all the others. A crossfade may overlap `previous` only: if it also
+    // reaches back into `before`, three items would be on screen at once.
+    let previous = null;
+    let before = -Infinity;
     for (const { it, ii } of order) {
       const p = itemPath(ti, ii);
       const end = it.from + it.duration;
+      const lastEnd = previous ? previous.end : null;
       const crossfade = it.transitionIn?.type === "crossfade" ? it.transitionIn.duration : null;
       if (lastEnd === null || it.from >= lastEnd) {
         if (crossfade !== null) {
@@ -200,15 +205,24 @@ function checkOverlaps(doc) {
         }
       } else if (crossfade !== null) {
         const overlap = lastEnd - it.from;
-        if (overlap !== crossfade || end <= lastEnd) {
+        const problems = [];
+        if (overlap !== crossfade) problems.push(`overlaps the previous item by ${overlap}`);
+        if (end <= lastEnd) problems.push("ends inside it");
+        if (it.from <= previous.from) problems.push("starts no later than it");
+        if (it.from < before) problems.push(`also overlaps an earlier item that ends at ${before}`);
+        if (problems.length > 0) {
           out.push(issue("bad-crossfade", `${p}.transitionIn`,
-            `item "${it.id}" crossfades over ${crossfade} frames but overlaps the previous item by ${overlap}` +
-            (end <= lastEnd ? " and ends inside it" : "")));
+            `item "${it.id}" crossfades over ${crossfade} frames but ${problems.join(", ")}`));
         }
       } else {
         out.push(issue("overlap", `${p}.from`, `item "${it.id}" starts at ${it.from}, before the previous item on track "${t.id}" ends at ${lastEnd}`));
       }
-      lastEnd = lastEnd === null ? end : Math.max(lastEnd, end);
+      if (!previous || end > previous.end) {
+        if (previous) before = Math.max(before, previous.end);
+        previous = { from: it.from, end };
+      } else {
+        before = Math.max(before, end);
+      }
     }
   });
   return out;
@@ -258,6 +272,8 @@ function checkFades(doc) {
 // becomes an audio item. Segment audio settings on images are dropped: an
 // image has no sound. v1alpha2 requires a content hash for every asset and
 // v1alpha1 had none, so the caller supplies them; a missing one is an error.
+// The result is validated before it is returned: a v1alpha1 document v1alpha2
+// cannot express (an id with spaces, overlapping captions) throws.
 
 const CAPTION_PROPS = ["position", "font", "fontSize", "color", "backgroundColor"];
 
@@ -274,6 +290,12 @@ export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
     throw new RangeError(`fps ${doc.fps} is not an integer; v1alpha2 counts whole frames`);
   }
   const frames = (seconds) => Math.round(seconds * doc.fps);
+  // Round absolute times, never a start and a length separately: two
+  // segments that touch in seconds must still touch in frames.
+  const span = (startSec, durationSec) => {
+    const from = frames(startSec);
+    return { from, duration: Math.max(1, frames(startSec + durationSec) - from) };
+  };
 
   const missing = [...new Set(doc.segments.map((s) => s.sourceAsset))].filter((p) => !assetHashes[p]);
   if (missing.length > 0) throw new Error(`no content hash for: ${missing.join(", ")}`);
@@ -285,20 +307,23 @@ export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
 
   doc.segments.forEach((s) => {
     const kind = s.sourceKind === "video" ? "video" : "image";
-    const from = frames(s.startSec);
-    const duration = frames(s.durationSec);
+    const { from, duration } = span(s.startSec, s.durationSec);
     assets[s.id] = { path: s.sourceAsset, hash: assetHashes[s.sourceAsset], kind };
     const props = { src: { $asset: s.id } };
     if (s.transform?.fit) props.fit = s.transform.fit;
     if (s.transform?.scale) props.scale = s.transform.scale;
     main.push({ id: s.id, from, duration, kit: { name: kind === "video" ? "clip" : "still", version: "1.0.0" }, props });
-    if (s.caption) captions.push(captionItem(`${s.id}-caption`, from + frames(s.caption.start), frames(s.caption.duration), s.caption));
-    if (kind === "video" && s.audio && !s.audio.mute) {
+    if (s.caption) {
+      const at = span(s.startSec + s.caption.start, s.caption.duration);
+      captions.push(captionItem(`${s.id}-caption`, at.from, at.duration, s.caption));
+    }
+    // In v1alpha1 a scene's sound plays unless `audio.mute` says otherwise.
+    if (kind === "video" && !s.audio?.mute) {
       sound.push(compact({
         id: `${s.id}-sound`, from, duration, asset: s.id,
-        gain: s.audio.volume,
-        fadeIn: s.audio.fadeIn === undefined ? undefined : frames(s.audio.fadeIn),
-        fadeOut: s.audio.fadeOut === undefined ? undefined : frames(s.audio.fadeOut),
+        gain: s.audio?.volume,
+        fadeIn: s.audio?.fadeIn === undefined ? undefined : frames(s.audio.fadeIn),
+        fadeOut: s.audio?.fadeOut === undefined ? undefined : frames(s.audio.fadeOut),
       }));
     }
   });
@@ -319,9 +344,10 @@ export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
   }
 
   (doc.captions ?? []).forEach((c, ci) => {
-    const segment = main[c.segmentIndex];
+    const segment = doc.segments[c.segmentIndex];
     if (!segment) throw new RangeError(`captions[${ci}] names segment ${c.segmentIndex}, which does not exist`);
-    captions.push(captionItem(`caption-${ci + 1}`, segment.from + frames(c.start), frames(c.duration), c));
+    const at = span(segment.startSec + c.start, c.duration);
+    captions.push(captionItem(`caption-${ci + 1}`, at.from, at.duration, c));
   });
 
   const tracks = [{ id: "main", type: "visual", z: 0, items: main }];
@@ -330,7 +356,7 @@ export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
 
   const durationInFrames = Math.max(...tracks.flatMap((t) => t.items.map((it) => it.from + it.duration)));
 
-  return {
+  const migrated = {
     apiVersion: EDIT_TIMELINE_API_VERSION,
     kind: "EditTimeline",
     episodeRef: doc.episodeRef,
@@ -342,6 +368,13 @@ export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
     tracks,
     metadata: { migratedFrom: "studio.video/v1alpha1" },
   };
+  // A migration returns a valid timeline or nothing: ids that v1alpha2 does not
+  // allow, simultaneous captions, a dissolve longer than its segment all end here.
+  const problems = validateEditTimeline(migrated);
+  if (problems.length > 0) {
+    throw new Error(`not a valid v1alpha2 timeline: ${problems.map((p) => `${p.code} at ${p.path}`).join("; ")}`);
+  }
+  return migrated;
 }
 
 function captionItem(id, from, duration, caption) {
