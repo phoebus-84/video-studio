@@ -2,6 +2,8 @@
 // The document types themselves are generated from the schema into
 // bindings/ts/v1alpha2/edit-timeline.ts.
 
+import type { EditTimeline } from "../bindings/ts/v1alpha2/edit-timeline.ts";
+
 export declare const EDIT_TIMELINE_API_VERSION: "studio.video/v1alpha2";
 
 export type EditTimelineProblemCode =
@@ -31,3 +33,12 @@ export declare function validateEditTimeline(doc: unknown): EditTimelineProblem[
 
 /** `/tracks/2/items/0/from` → `$.tracks[2].items[0].from`. */
 export declare function jsonPath(pointer: string): string;
+
+/**
+ * Convert a `studio.video/v1alpha1` timeline. Throws when a source asset has no
+ * hash in `assetHashes`, when fps is not an integer, or when `doc` is not v1alpha1.
+ */
+export declare function migrateEditTimelineV1alpha1(
+  doc: unknown,
+  options?: { assetHashes?: Record<string, string> },
+): EditTimeline;

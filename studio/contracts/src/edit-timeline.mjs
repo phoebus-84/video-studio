@@ -246,3 +246,110 @@ function checkFades(doc) {
   );
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Migration from v1alpha1
+// ---------------------------------------------------------------------------
+// v1alpha1 is a sequence of segments in seconds. Each segment becomes a
+// `still` (or `clip`, for video) item on one visual track; captions become a
+// `captions` track; a dissolve or wipe into the next segment becomes a
+// crossfade that keeps every segment's start time (the earlier item is
+// lengthened), a fade becomes a transitionOut. The sound of a video segment
+// becomes an audio item. Segment audio settings on images are dropped: an
+// image has no sound. v1alpha2 requires a content hash for every asset and
+// v1alpha1 had none, so the caller supplies them; a missing one is an error.
+
+const CAPTION_PROPS = ["position", "font", "fontSize", "color", "backgroundColor"];
+
+/**
+ * @param {object} doc a studio.video/v1alpha1 EditTimeline
+ * @param {{assetHashes?: Record<string, string>}} options content hash per sourceAsset path
+ * @returns {object} a studio.video/v1alpha2 EditTimeline
+ */
+export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
+  if (doc?.apiVersion !== "studio.video/v1alpha1" || doc?.kind !== "EditTimeline") {
+    throw new TypeError("expected a studio.video/v1alpha1 EditTimeline");
+  }
+  if (!Number.isInteger(doc.fps)) {
+    throw new RangeError(`fps ${doc.fps} is not an integer; v1alpha2 counts whole frames`);
+  }
+  const frames = (seconds) => Math.round(seconds * doc.fps);
+
+  const missing = [...new Set(doc.segments.map((s) => s.sourceAsset))].filter((p) => !assetHashes[p]);
+  if (missing.length > 0) throw new Error(`no content hash for: ${missing.join(", ")}`);
+
+  const assets = {};
+  const main = [];
+  const captions = [];
+  const sound = [];
+
+  doc.segments.forEach((s) => {
+    const kind = s.sourceKind === "video" ? "video" : "image";
+    const from = frames(s.startSec);
+    const duration = frames(s.durationSec);
+    assets[s.id] = { path: s.sourceAsset, hash: assetHashes[s.sourceAsset], kind };
+    const props = { src: { $asset: s.id } };
+    if (s.transform?.fit) props.fit = s.transform.fit;
+    if (s.transform?.scale) props.scale = s.transform.scale;
+    main.push({ id: s.id, from, duration, kit: { name: kind === "video" ? "clip" : "still", version: "1.0.0" }, props });
+    if (s.caption) captions.push(captionItem(`${s.id}-caption`, from + frames(s.caption.start), frames(s.caption.duration), s.caption));
+    if (kind === "video" && s.audio && !s.audio.mute) {
+      sound.push(compact({
+        id: `${s.id}-sound`, from, duration, asset: s.id,
+        gain: s.audio.volume,
+        fadeIn: s.audio.fadeIn === undefined ? undefined : frames(s.audio.fadeIn),
+        fadeOut: s.audio.fadeOut === undefined ? undefined : frames(s.audio.fadeOut),
+      }));
+    }
+  });
+
+  const transitions = new Map(doc.segments.map((s, i) => [i, s.transition]));
+  for (const t of doc.transitions ?? []) transitions.set(t.afterSegmentIndex, t);
+  for (const [i, t] of transitions) {
+    if (!t || t.type === "none" || !main[i]) continue;
+    const d = frames(t.duration);
+    if (d <= 0) continue;
+    const next = main[i + 1];
+    if ((t.type === "dissolve" || t.type === "wipe") && next) {
+      main[i].duration = next.from + d - main[i].from;
+      next.transitionIn = { type: "crossfade", duration: d };
+    } else {
+      main[i].transitionOut = { type: "fade", duration: d };
+    }
+  }
+
+  (doc.captions ?? []).forEach((c, ci) => {
+    const segment = main[c.segmentIndex];
+    if (!segment) throw new RangeError(`captions[${ci}] names segment ${c.segmentIndex}, which does not exist`);
+    captions.push(captionItem(`caption-${ci + 1}`, segment.from + frames(c.start), frames(c.duration), c));
+  });
+
+  const tracks = [{ id: "main", type: "visual", z: 0, items: main }];
+  if (captions.length > 0) tracks.push({ id: "captions", type: "visual", z: 20, items: captions });
+  if (sound.length > 0) tracks.push({ id: "sound", type: "audio", items: sound });
+
+  const durationInFrames = Math.max(...tracks.flatMap((t) => t.items.map((it) => it.from + it.duration)));
+
+  return {
+    apiVersion: EDIT_TIMELINE_API_VERSION,
+    kind: "EditTimeline",
+    episodeRef: doc.episodeRef,
+    revision: doc.revision,
+    fps: doc.fps,
+    durationInFrames,
+    resolution: doc.resolution,
+    assets,
+    tracks,
+    metadata: { migratedFrom: "studio.video/v1alpha1" },
+  };
+}
+
+function captionItem(id, from, duration, caption) {
+  const props = { text: caption.text };
+  for (const key of CAPTION_PROPS) if (caption[key] !== undefined) props[key] = caption[key];
+  return { id, from, duration, kit: { name: "captions", version: "1.0.0" }, props };
+}
+
+function compact(record) {
+  return Object.fromEntries(Object.entries(record).filter(([, v]) => v !== undefined));
+}

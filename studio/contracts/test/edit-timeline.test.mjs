@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   EDIT_TIMELINE_API_VERSION,
   jsonPath,
+  migrateEditTimelineV1alpha1,
   validateEditTimeline,
 } from "../src/edit-timeline.mjs";
 import { applyPatch } from "../scripts/lib/json-patch.mjs";
@@ -89,5 +90,38 @@ describe("jsonPath", () => {
     assert.equal(jsonPath("/tracks/2/items/0/from"), "$.tracks[2].items[0].from");
     assert.equal(jsonPath("/assets/take-epoca/hash"), '$.assets["take-epoca"].hash');
     assert.equal(jsonPath("/a~1b/c~0d"), '$["a/b"]["c~d"]');
+  });
+});
+
+describe("migrateEditTimelineV1alpha1", () => {
+  const basic = () => read(resolve(root, "fixtures/timeline/valid/basic.json"));
+  const hashes = {
+    "assets/images/scene-01-woods.png": `sha256:${"1".repeat(64)}`,
+    "assets/images/scene-02-grandma.png": `sha256:${"2".repeat(64)}`,
+    "assets/images/scene-03-ending.png": `sha256:${"3".repeat(64)}`,
+  };
+
+  it("maps the v1alpha1 basic fixture to the v1alpha2 explainer fixture", () => {
+    const migrated = migrateEditTimelineV1alpha1(basic(), { assetHashes: hashes });
+    assert.deepEqual(migrated, read(resolve(v2, "valid/explainer.json")));
+    assert.equal(migrated.apiVersion, EDIT_TIMELINE_API_VERSION);
+    assert.deepEqual(validateEditTimeline(migrated), []);
+  });
+
+  it("refuses to invent a content hash", () => {
+    const partial = { ...hashes };
+    delete partial["assets/images/scene-02-grandma.png"];
+    assert.throws(
+      () => migrateEditTimelineV1alpha1(basic(), { assetHashes: partial }),
+      /no content hash for: assets\/images\/scene-02-grandma\.png/,
+    );
+  });
+
+  it("refuses a fractional frame rate", () => {
+    assert.throws(() => migrateEditTimelineV1alpha1({ ...basic(), fps: 29.97 }, { assetHashes: hashes }), /not an integer/);
+  });
+
+  it("refuses anything but a v1alpha1 timeline", () => {
+    assert.throws(() => migrateEditTimelineV1alpha1(lesson(), { assetHashes: hashes }), /v1alpha1 EditTimeline/);
   });
 });
