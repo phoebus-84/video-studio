@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { layoutUnit, validateNarrationTakes } from "../src/narration-takes.mjs";
+import {
+  QWEN_PROVIDER,
+  layoutUnit,
+  takesFromNarrationManifest,
+  validateNarrationTakes,
+} from "../src/narration-takes.mjs";
 import { resolveCue } from "../src/cues.mjs";
 import { applyPatch } from "../scripts/lib/json-patch.mjs";
 
@@ -133,5 +138,72 @@ describe("layoutUnit", () => {
 
   it("throws for a unit that does not exist", () => {
     assert.throws(() => layoutUnit(doc(), "genesi", timings()), RangeError);
+  });
+});
+
+describe("takesFromNarrationManifest", () => {
+  const wav = (name, durationSeconds, hex) => ({
+    path: `artifacts/narration/${name}.wav`, contentHash: `sha256:${hex.repeat(64)}`, sizeBytes: 1000,
+    durationSeconds, sampleRate: 24000, channels: 1, sampleWidthBytes: 2,
+  });
+  // The lighter shape studio/agent/src/narration-manifest.ts writes.
+  const agentManifest = {
+    schemaVersion: "0.1.0",
+    leadInSilenceSeconds: 0.5,
+    entries: [
+      { segmentId: "s1", wav: wav("s1", 1.5, "1"), pauseAfterMs: 250, acceptedAttemptId: "a1" },
+      { segmentId: "s2", wav: wav("s2", 2.25, "2"), pauseAfterMs: 400 },
+      { segmentId: "s3", wav: wav("s3", 0.75, "3"), pauseAfterMs: 0 },
+    ],
+    captions: [
+      { segmentId: "s1", index: 1, startSeconds: 0.5, endSeconds: 2, text: "Uno." },
+      { segmentId: "s2", index: 2, startSeconds: 2.25, endSeconds: 4.5, text: "Due." },
+      { segmentId: "s3", index: 3, startSeconds: 4.9, endSeconds: 5.65, text: "Tre." },
+    ],
+  };
+  const timingFor = (take) => ({
+    apiVersion: "studio.video/v1alpha1", kind: "WordTiming", take: { id: take.id }, audio: take.audio, text: take.text,
+    language: "it", alignment: { provider: "whisper-cpp", method: "asr", createdAt: "2026-10-05T00:00:00Z" },
+    words: [{ text: take.text, start: 0.1, end: take.audio.durationSeconds - 0.1 }],
+  });
+
+  it("maps the canonical manifest fixture, text from its segment", () => {
+    const fixture = read("fixtures/narration/valid.json");
+    const { takes, leadInSeconds } = takesFromNarrationManifest(fixture.manifest, { segments: [fixture.segment] });
+    assert.equal(leadInSeconds, 0);
+    assert.deepEqual(validateNarrationTakes(takes), []);
+    assert.deepEqual(takes.takes[0], {
+      id: "scene-1.turn-1",
+      audio: { path: "artifacts/narration/scene-1.wav", hash: fixture.manifest.entries[0].wav.contentHash, durationSeconds: 1 },
+      text: "Hello world.",
+      role: "narrator",
+      language: "en-US",
+      voice: { provider: QWEN_PROVIDER },
+      source: { segmentId: "scene-1.turn-1", attemptId: "11111111-1111-4111-8111-111111111111" },
+    });
+  });
+
+  it("maps the agent's manifest, text from captions, positions unchanged", () => {
+    const { takes, leadInSeconds } = takesFromNarrationManifest(agentManifest);
+    assert.deepEqual(validateNarrationTakes(takes), []);
+    assert.deepEqual(takes.units, [{
+      id: "narration",
+      sequence: [{ take: "s1" }, { take: "s2", pauseBefore: 0.25 }, { take: "s3", pauseBefore: 0.4 }],
+    }]);
+    const timings = Object.fromEntries(takes.takes.map((t) => [t.id, timingFor(t)]));
+    const { layout } = layoutUnit(takes, "narration", timings);
+    // The agent's cursor: lead-in, then duration + pause per segment.
+    let cursor = agentManifest.leadInSilenceSeconds;
+    const expected = agentManifest.entries.map((e) => {
+      const at = Number(cursor.toFixed(6));
+      cursor += e.wav.durationSeconds + e.pauseAfterMs / 1000;
+      return at;
+    });
+    assert.deepEqual(layout.pieces.map((p) => Number((leadInSeconds + p.at).toFixed(6))), expected);
+  });
+
+  it("refuses to map a segment it has no text for", () => {
+    const bare = { ...agentManifest, captions: agentManifest.captions.slice(1) };
+    assert.throws(() => takesFromNarrationManifest(bare), /no text for segments: s1/);
   });
 });

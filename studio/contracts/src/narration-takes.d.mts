@@ -51,3 +51,14 @@ export declare function layoutUnit(
   unitId: string,
   timings: Record<string, WordTiming>,
 ): { layout: UnitLayout } | { problems: NarrationTakesProblem[] };
+
+export declare const QWEN_PROVIDER: "qwen3-tts-local";
+
+/**
+ * Map a Qwen narration manifest into takes and one unit, "narration".
+ * Throws when a segment has no text in `segments` or in the manifest's captions.
+ */
+export declare function takesFromNarrationManifest(
+  manifest: unknown,
+  options?: { segments?: unknown[] },
+): { takes: NarrationTakes; leadInSeconds: number };

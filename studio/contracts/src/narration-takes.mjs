@@ -189,3 +189,44 @@ function joinEnergy(energies, durationSeconds) {
   }
   return { rate, values };
 }
+
+/** The provider name the Qwen mapping records. */
+export const QWEN_PROVIDER = "qwen3-tts-local";
+
+/**
+ * Map a Qwen narration manifest (canonical or the agent's lighter shape) into
+ * takes and one unit, "narration", whose positions equal the manifest's.
+ * @param {object} manifest
+ * @param {{segments?: object[]}} [options] NarrationSegment records, for text, role and language
+ * @returns {{takes: object, leadInSeconds: number}}
+ */
+export function takesFromNarrationManifest(manifest, { segments = [] } = {}) {
+  const bySegment = new Map(segments.map((s) => [s.segmentId, s]));
+  const captions = new Map();
+  for (const c of manifest.captions ?? []) if (!captions.has(c.segmentId)) captions.set(c.segmentId, c.text);
+  const missing = manifest.entries.map((e) => e.segmentId).filter((id) => !bySegment.has(id) && !captions.has(id));
+  if (missing.length > 0) throw new Error(`no text for segments: ${missing.join(", ")}`);
+
+  const takes = manifest.entries.map((entry) => {
+    const segment = bySegment.get(entry.segmentId);
+    const text = segment ? segment.displayText : captions.get(entry.segmentId);
+    const take = {
+      id: entry.segmentId,
+      audio: { path: entry.wav.path, hash: entry.wav.contentHash, durationSeconds: entry.wav.durationSeconds },
+      text,
+      voice: { provider: QWEN_PROVIDER },
+    };
+    if (segment && segment.spokenText !== segment.displayText) take.spokenText = segment.spokenText;
+    if (segment?.role) take.role = segment.role;
+    if (segment?.language) take.language = segment.language;
+    take.source = { segmentId: entry.segmentId, ...(entry.acceptedAttemptId ? { attemptId: entry.acceptedAttemptId } : {}) };
+    return take;
+  });
+  const sequence = manifest.entries.map((entry, i) =>
+    i === 0 ? { take: entry.segmentId } : { take: entry.segmentId, pauseBefore: manifest.entries[i - 1].pauseAfterMs / 1000 },
+  );
+  return {
+    takes: { apiVersion: "studio.video/v1alpha1", kind: "NarrationTakes", takes, units: [{ id: "narration", sequence }] },
+    leadInSeconds: manifest.leadInSilenceSeconds ?? 0,
+  };
+}
