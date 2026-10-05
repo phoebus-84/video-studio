@@ -10,9 +10,19 @@ export interface CueProblem {
   message: string;
 }
 
-/** One take placed in the episode. `timing` must already pass validateWordTiming. */
+/**
+ * The words a cue is matched against: a take's WordTiming, or a narration
+ * unit's layout timing (several takes as one sequence of words).
+ */
+export interface CueTiming {
+  take: { id: string };
+  words: Pick<WordTiming["words"][number], "text" | "start" | "end">[];
+  lines?: Pick<NonNullable<WordTiming["lines"]>[number], "firstWord" | "lastWord">[];
+}
+
+/** One take or unit placed in the episode. A WordTiming must already pass validateWordTiming. */
 export interface CueScope {
-  timing: WordTiming;
+  timing: CueTiming;
   /** Where the take starts in the episode, in seconds (>= 0). */
   startSeconds: number;
   /** Frames per second of the episode (a positive integer). */
