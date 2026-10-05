@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import * as fs from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { buildBudgetReport } from "../src/routes/budget.js";
+import Fastify from "fastify";
+import { buildBudgetReport, registerBudgetRoutes } from "../src/routes/budget.js";
+import { reserveSpend, settleSpend } from "@studio/contracts/src/budget.mjs";
 
 const TMP = resolve(".test-tmp/budget");
 const REF = { channel: "acme", series: "s1", episode: "ep-01" };
@@ -143,5 +145,72 @@ describe("budget", () => {
     const report = await buildBudgetReport(TMP, REF);
     expect(report.consumedMicros).toBe(0);
     expect(report.sources.costedAttempts).toBe(0);
+  });
+
+  // ── The ledger (avg-91o) ──────────────────────────────────────────────────
+
+  const USD = (micros: number) => ({ currency: "USD", micros });
+  const reserve = async (micros: number) => {
+    const r = await reserveSpend(episodeDir, {
+      episode: REF, capability: "image.generate", provider: "fal", estimate: USD(micros),
+    });
+    if (!r.ok) throw new Error(r.reason);
+    return r.reserveId;
+  };
+
+  it("counts what Pi's paid tools reserved and settled in the journal", async () => {
+    await writeSettings(seriesDir, { currency: "USD", limitMicros: 1_000_000 });
+    const settled = await reserve(300_000);
+    await settleSpend(episodeDir, { episode: REF, reserveId: settled, cost: USD(280_000), basis: "provider" });
+    await reserve(100_000);
+
+    const report = await buildBudgetReport(TMP, REF);
+    expect(report).toMatchObject({
+      limitMicros: 1_000_000, consumedMicros: 280_000, reservedMicros: 100_000,
+      committedMicros: 380_000, remainingMicros: 620_000,
+    });
+    expect(report.sources).toMatchObject({ settledCalls: 1, estimatedCalls: 0, openCalls: 1 });
+    expect(report.open).toHaveLength(1);
+  });
+
+  describe("releasing a reservation", () => {
+    async function app(principal: "operator" | "agent") {
+      const instance = Fastify();
+      instance.addHook("preHandler", async (req) => {
+        (req as { principal?: string }).principal = principal;
+      });
+      registerBudgetRoutes(instance, TMP);
+      await instance.ready();
+      return instance;
+    }
+    const url = (id: string) =>
+      `/api/channels/${REF.channel}/series/${REF.series}/episodes/${REF.episode}/budget/reservations/${id}/release`;
+
+    it("is the operator's, and frees the estimate", async () => {
+      const id = await reserve(250_000);
+      const server = await app("operator");
+      const res = await server.inject({ method: "POST", url: url(id), payload: { note: "no charge on fal" } });
+      await server.close();
+      expect(res.statusCode).toBe(200);
+      expect(res.json().budget.reservedMicros).toBe(0);
+    });
+
+    it("is refused to an agent, which would otherwise have no cap", async () => {
+      const id = await reserve(250_000);
+      const server = await app("agent");
+      const res = await server.inject({ method: "POST", url: url(id), payload: {} });
+      await server.close();
+      expect(res.statusCode).toBe(403);
+      expect((await buildBudgetReport(TMP, REF)).reservedMicros).toBe(250_000);
+    });
+
+    it("refuses a reservation that is already closed", async () => {
+      const id = await reserve(250_000);
+      await settleSpend(episodeDir, { episode: REF, reserveId: id, cost: USD(250_000), basis: "estimate" });
+      const server = await app("operator");
+      const res = await server.inject({ method: "POST", url: url(id), payload: {} });
+      await server.close();
+      expect(res.statusCode).toBe(409);
+    });
   });
 });

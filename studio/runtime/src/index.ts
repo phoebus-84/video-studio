@@ -250,26 +250,19 @@ export type {
   StalenessAcceptance,
 } from "./staleness/index.js";
 
-// Policy (approval gates and budget enforcement)
+// Policy (approval gates). The budget is the journal's spend ledger in
+// @studio/contracts/src/budget.mjs (avg-91o), guarded by JournalBudgetGuard.
 export {
   checkGate,
   checkGates,
   detectDowngrade,
   PolicyError,
   POLICY_CODES,
-  createLedger,
-  reserveBudget,
-  consumeReserve,
-  releaseReserve,
-  BudgetError,
-  BUDGET_CODES,
 } from "./policy/index.js";
 export type {
   PolicyGate,
   GateDecision,
   GateCheckResult,
-  BudgetReserve,
-  BudgetLedger,
 } from "./policy/index.js";
 
 // Rerun (targeted reruns and crash recovery)
@@ -286,8 +279,12 @@ export type {
 } from "./rerun/index.js";
 
 // Execution (one meaning for run/status/rerun)
-export { ExecutionService, dependenciesMet, JournalReviewGate, REVIEW_SATISFIED_BY } from "./execution/index.js";
+export {
+  ExecutionService, dependenciesMet, JournalReviewGate, REVIEW_SATISFIED_BY,
+  JournalBudgetGuard, readEpisodeBudget, declaresPaidCapability,
+} from "./execution/index.js";
 export type {
+  BudgetReport,
   DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict, ReviewContext,
   OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
   ExecutionError, ExecutionServiceOptions, Principal, ReviewInput,

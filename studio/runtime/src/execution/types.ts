@@ -99,7 +99,13 @@ export interface ReviewContext {
   episode: string;
 }
 
-/** A budget reservation, opaque to the service. */
+/**
+ * What a budget guard's "yes" carries, opaque to the service.
+ *
+ * Since avg-91o nothing is reserved here — a paid call reserves its own
+ * estimate in the journal's spend ledger (`@studio/contracts/src/budget.mjs`)
+ * — so `JournalBudgetGuard` answers `{ reserveId: "none", estimatedCost: 0 }`.
+ */
 export interface Reservation {
   reserveId: string;
   estimatedCost: number;
@@ -111,6 +117,10 @@ export interface Reservation {
  * Absence is refusal: a service with no guard does not run stages that could
  * cost money. "Missing budget reservations fail closed" is met by construction
  * rather than by remembering to check.
+ *
+ * A READ: `status` asks it on every poll, so an implementation must not mint
+ * anything by answering. `JournalBudgetGuard` refuses a stage that declares a
+ * paid capability once the episode's budget is used up.
  */
 export interface BudgetGuard {
   maySpend(stage: ResolvedStage, ctx: DispatchContext): Promise<Result<Reservation, { code: string; message: string }>>;
@@ -233,22 +243,15 @@ export interface CompleteInput {
  * `status` answers the CLAIM question, and says so here rather than implying
  * more. A stage reported `runnable` has passed every gate a claim applies:
  * its dependencies have completed, their reviews are satisfied, it does not
- * declare `autopilot: false`, and a budget guard is configured. Those come
+ * declare `autopilot: false`, and the budget guard lets it spend. Those come
  * from the same code a claim runs, so the two cannot disagree about them.
  *
- * Two things it deliberately does not promise:
- *
- * - Whether THIS composition can also perform the stage itself. `run` refuses
- *   a stage its injected dispatcher does not handle, but that is a run-only
- *   gate, and `status` cannot know whether its caller means to run or to
- *   claim. The CLI injects no dispatcher at all and performs claimed stages
- *   by hand, so reporting "no dispatcher is configured" as `blocked` would be
- *   false for that caller.
- * - Whether the configured budget guard would refuse this particular stage.
- *   Discovering that means calling `maySpend`, which mints a reservation
- *   nothing in this tree releases; a polled read endpoint that reserved
- *   budget on every tick would be a worse bug than the disagreement it
- *   removes. The guard's presence is checked, its verdict is not asked for.
+ * One thing it deliberately does not promise: whether THIS composition can
+ * also perform the stage itself. `run` refuses a stage its injected
+ * dispatcher does not handle, but that is a run-only gate, and `status`
+ * cannot know whether its caller means to run or to claim. The CLI injects no
+ * dispatcher at all and performs claimed stages by hand, so reporting "no
+ * dispatcher is configured" as `blocked` would be false for that caller.
  */
 export type StageState =
   | "pending" | "runnable" | "running" | "blocked" | "failed" | "completed" | "awaiting_review"

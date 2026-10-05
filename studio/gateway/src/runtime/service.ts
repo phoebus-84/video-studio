@@ -10,7 +10,7 @@
 // test that supplied its own manifests.
 // ---------------------------------------------------------------------------
 
-import { ExecutionService, JournalReviewGate } from "@studio/runtime";
+import { ExecutionService, JournalReviewGate, JournalBudgetGuard } from "@studio/runtime";
 import { createStudioDispatcher } from "@studio/adapters";
 import { builtinPipelinesPath } from "./client.js";
 
@@ -69,12 +69,10 @@ export function makeExecutionService(
     // verify a human receipt: composed with `null`, every human approval
     // reads as unverifiable and its dependents stay blocked.
     review: new JournalReviewGate(operatorKey),
-    // No budget subsystem is wired anywhere yet (avg-91o). An explicit
-    // pass-through keeps the gap visible rather than blocking every stage
-    // for a reason nobody can act on.
-    budget: {
-      maySpend: async () => ({ ok: true as const, value: { reserveId: "gateway", estimatedCost: 0 } }),
-    },
+    // The journal's spend ledger (avg-91o), the same guard the CLI composes:
+    // a stage that declares a paid capability is refused once the episode's
+    // budget is used up. It reserves nothing — Pi's paid tools do, per call.
+    budget: new JournalBudgetGuard(libraryRoot),
     holder: `gateway/pid-${process.pid}`,
     // Stated, not inherited — the same reasoning as the CLI's composition.
     // The engine's 5-minute default was sized for a synchronous dispatcher;

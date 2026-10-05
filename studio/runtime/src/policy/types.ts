@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Policy types — approval gates and budget enforcement
+// Policy types — approval gates
 // ---------------------------------------------------------------------------
 
 /** A gate declared by a pipeline stage that requires approval. */
@@ -23,36 +23,4 @@ export interface GateCheckResult {
   decision: GateDecision;
   /** Reason for the decision (machine-readable). */
   reason: string;
-}
-
-/** A budget reserve entry. */
-export interface BudgetReserve {
-  /** Unique reserve ID. */
-  reserveId: string;
-  /** Stage that requested the reserve. */
-  stageId: string;
-  /** Estimated cost. */
-  estimatedCost: number;
-  /** When the reserve was created. */
-  createdAt: string;
-  /** Whether this reserve has been consumed (spent). */
-  consumed: boolean;
-  /** Actual cost after execution (if consumed). */
-  actualCost?: number;
-}
-
-/** Budget ledger tracking reserves and spend. */
-export interface BudgetLedger {
-  /** Episode slug. */
-  episodeSlug: string;
-  /** Total budget limit. */
-  limit: number;
-  /** Currently reserved (not yet spent). */
-  reserved: number;
-  /** Total spent. */
-  spent: number;
-  /** Available (limit - reserved - spent). */
-  available: number;
-  /** All reserve entries. */
-  reserves: BudgetReserve[];
 }

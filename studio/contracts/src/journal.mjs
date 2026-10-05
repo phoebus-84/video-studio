@@ -73,6 +73,9 @@ export const JOURNAL_EVENTS = Object.freeze([
   "artifact-written",
   "staleness-marked",
   "take-selected",
+  "spend-reserved",
+  "spend-settled",
+  "spend-released",
   "supersession-recorded",
   "deliverable-current-changed",
 ]);
@@ -109,6 +112,12 @@ const REQUIRED_EXECUTION_FIELDS = Object.freeze({
   // or no hashes cannot be checked against the candidate it claims to pick
   // (avg-qr4.6) — the same reason the five above must name their lease.
   "take-selected": ["stageId", "decision", "origin", "binding"],
+  // The spend ledger (avg-91o). Not about a stage at all: a reservation is
+  // matched to its settlement by `reserveId`, so a line without one cannot be
+  // closed, and an open reservation counts against the budget for ever.
+  "spend-reserved": ["reserveId", "capability", "provider", "estimate"],
+  "spend-settled": ["reserveId", "cost", "basis"],
+  "spend-released": ["reserveId", "reason"],
 });
 
 /** Where an episode's journal lives, relative to the episode directory. */

@@ -17,6 +17,9 @@ export type JournalEventType =
   | "artifact-written"
   | "staleness-marked"
   | "take-selected"
+  | "spend-reserved"
+  | "spend-settled"
+  | "spend-released"
   | "supersession-recorded"
   | "deliverable-current-changed";
 

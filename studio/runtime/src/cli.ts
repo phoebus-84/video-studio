@@ -24,7 +24,8 @@ import { SystemClock } from "./ports/clock.js";
 import { FileSystemSnapshotStore } from "./pipeline/fs-snapshot-store.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
-import { ExecutionService, JournalReviewGate } from "./execution/index.js";
+import { ExecutionService, JournalReviewGate, JournalBudgetGuard, readEpisodeBudget } from "./execution/index.js";
+import { releaseSpend } from "@studio/contracts/src/budget.mjs";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
 import { resolveCliCredential } from "./execution/principal.js";
 import type { RerunMode } from "./rerun/index.js";
@@ -336,15 +337,85 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     return exitCodeFor(status.error);
   }
 
-  // No budget field. The old one reported `consumed: 0, reserved: 0`
-  // unconditionally — a number a caller can act on, that nothing measured.
-  // Budget reporting returns when there is a ledger behind it (avg-91o).
+  // The budget is back now that a ledger stands behind it (avg-91o). The
+  // old field reported `consumed: 0, reserved: 0` unconditionally; this one
+  // is the journal's spend, and null only when the ledger cannot be read.
+  let budget: Awaited<ReturnType<typeof readEpisodeBudget>> | null = null;
+  try {
+    budget = await readEpisodeBudget(libraryFrom(args) || ".", parsed);
+  } catch { /* reported as null rather than failing the status */ }
   emit(ctx, {
     message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}`,
     episode: parsed,
     pipeline: status.value.pipeline,
     stages: status.value.stages,
+    budget,
   });
+  return EX_OK;
+}
+
+// ── budget (avg-91o) ────────────────────────────────────────────────────────
+
+/**
+ * `vpr budget <ep>` reports the spend ledger; `vpr budget <ep> release <id>`
+ * closes an open reservation as spending nothing.
+ *
+ * Releasing is the operator's: it frees budget, and an agent that could free
+ * its own reservations would have no cap. It is for a call that died between
+ * reserving and settling — check the provider's dashboard first, because an
+ * open reservation counts precisely because the provider may have billed it.
+ */
+async function cmdBudget(ctx: CliContext, args: string[]): Promise<number> {
+  const usage = "Usage: vpr budget <channel>/<series>/<episode> [release <reservation-id> [--note <why>]]";
+  const positional = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1] === "--note") && !(i > 0 && args[i - 1] === "--library"));
+  const parsed = positional[0] ? parsePath(positional[0]) : null;
+  if (!parsed) {
+    emit(ctx, { error: usage });
+    return EX_USAGE;
+  }
+  const root = libraryFrom(args) || ".";
+
+  if (positional[1] === undefined) {
+    try {
+      const budget = await readEpisodeBudget(root, parsed);
+      emit(ctx, { message: `Budget for ${positional[0]}`, episode: parsed, budget });
+      return EX_OK;
+    } catch (e) {
+      emit(ctx, { error: `The budget cannot be read: ${e instanceof Error ? e.message : String(e)}` });
+      return EX_RUNTIME;
+    }
+  }
+
+  const reserveId = positional[2];
+  if (positional[1] !== "release" || !reserveId) {
+    emit(ctx, { error: usage });
+    return EX_USAGE;
+  }
+  if (ctx.dryRun) {
+    emit(ctx, { message: `[DRY RUN] Would release ${reserveId} for ${positional[0]}`, dryRun: true });
+    return EX_OK;
+  }
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+  if (credential.principal !== "operator") {
+    emit(ctx, { error: `Only the operator can release a reservation: it frees budget. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+  const note = flagValue(args, "--note");
+  const released = await releaseSpend(episodePath(root, parsed.channel, parsed.series, parsed.episode), {
+    episode: parsed, actor: "human", reserveId,
+    reason: note ? `released by the operator: ${note}` : "released by the operator",
+  });
+  if (!released.ok) {
+    emit(ctx, { error: released.reason, code: released.code });
+    return EX_RUNTIME;
+  }
+  emit(ctx, { message: `Reservation ${reserveId} is released for ${positional[0]}`, reserveId });
   return EX_OK;
 }
 
@@ -708,11 +779,10 @@ function makeService(args: string[], leaseTtlMs: number, operatorKey: string | n
     // trigger `createDefaultLoader`'s `??` fallback — the operator's escape
     // hatch would be dead exactly when it is reached for.
     builtinPipelines: process.env.AVG_BUILTIN_PIPELINES || undefined,
-    // Absence is refusal, and there is no budget subsystem wired anywhere yet
-    // — BudgetLedger's reserve/consume/release have no callers (avg-91o). An
-    // explicit pass-through keeps the gap visible in code rather than making
-    // every claim fail for a reason nobody can act on.
-    budget: { maySpend: async () => ok({ reserveId: "cli", estimatedCost: 0 }) },
+    // The journal's spend ledger (avg-91o), the same guard the gateway
+    // composes: a stage that declares a paid capability is refused once the
+    // episode's budget is used up. It reserves nothing — the paid call does.
+    budget: new JournalBudgetGuard(libraryFrom(args) || "."),
     holder: `cli/pid-${process.pid}`,
     // Stated, not inherited; see `claimTtlMs`.
     leaseTtlMs,
@@ -1187,6 +1257,7 @@ const COMMANDS: Record<string, CliCommand> = {
   rerun: { name: "rerun", description: "Plan targeted reruns: which stages re-run, which are preserved", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|rerun-affected-downstream|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },
+  budget: { name: "budget", description: "Show the episode's spend ledger; the operator can release an open reservation", usage: "vpr budget <channel>/<series>/<episode> [release <reservation-id> [--note <why>]] [--json] [--dry-run]", examples: ["vpr budget my-channel/my-series/ep001", "vpr budget my-channel/my-series/ep001 release rsv_01J9Z… --note 'fal dashboard shows no charge'"], run: cmdBudget },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },

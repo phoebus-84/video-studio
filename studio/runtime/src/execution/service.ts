@@ -56,13 +56,15 @@ interface ClaimInternal {
  * The refusal a composition with no budget guard earns.
  *
  * Shared by `claimInternal` and `status` so the two say the same sentence
- * about the same stage. It is a PRESENCE check and nothing more: `status`
- * must never call `maySpend`, which mints a reservation nothing in this tree
- * releases (avg-91o), and a polled read endpoint that quietly reserved budget
- * would be a worse bug than the disagreement this module removes.
+ * about the same stage.
  */
 function noBudgetGuardRefusal(stageId: string): string {
   return `no budget guard is configured, so "${stageId}" may not spend`;
+}
+
+/** The refusal a budget guard's "no" becomes — the same sentence from `claim` and `status`. */
+function budgetRefusal(stageId: string, message: string): string {
+  return `budget refused "${stageId}": ${message}`;
 }
 
 /** How long `select()` holds a stage's lock: enough to verify and copy a large take. */
@@ -225,12 +227,23 @@ export class ExecutionService {
             `"${stage.definition.id}" cannot be judged: its review gate failed: ` +
             `${e instanceof Error ? e.message : String(e)}`;
         }
-        // The budget guard's PRESENCE, which `claimInternal` checks below the
-        // gates above. Its verdict is not asked for — `maySpend` reserves.
+        // The budget guard, which `claimInternal` asks below the gates above.
         // Ordered after `whyBlocked` so both paths name the same first
         // problem, and so this never masks a dependency or review refusal.
+        // Its verdict is asked for too, since avg-91o made `maySpend` a
+        // read: the spend is reserved by the paid call itself, so a polled
+        // status no longer mints anything by asking.
         if (!stateReason && !this.options.budget) {
           stateReason = noBudgetGuardRefusal(stage.definition.id);
+        } else if (!stateReason && this.options.budget) {
+          try {
+            const permitted = await this.options.budget.maySpend(stage, {
+              episodeDir, ref, attemptNumber: instance.attempts.length + 1, log: () => {},
+            });
+            if (!permitted.ok) stateReason = budgetRefusal(stage.definition.id, permitted.error.message);
+          } catch (e) {
+            stateReason = budgetRefusal(stage.definition.id, e instanceof Error ? e.message : String(e));
+          }
         }
       }
 
@@ -581,7 +594,7 @@ export class ExecutionService {
     }
     const permitted = await this.options.budget.maySpend(stage, ctx);
     if (!permitted.ok) {
-      return blocked(`budget refused "${stageId}": ${permitted.error.message}`);
+      return blocked(budgetRefusal(stageId, permitted.error.message));
     }
 
     // ── The state the stage is actually in ────────────────────────────────
