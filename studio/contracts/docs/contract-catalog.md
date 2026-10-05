@@ -16,6 +16,7 @@ This catalog assigns every durable wire or workspace concept to one contract fam
 | `narration` | Source-mapped Segment, immutable Synthesis Attempt, Signal Quality Report, ordered accepted-attempt Manifest, measured WAV/mastering metadata, caption cues, legacy read sidecar | Pi and TTS worker | runtime, composer, gateway, web | `qtw-48r.6.2` |
 | `timeline` | v1alpha2: tracks of versioned kit instances and audio items, ducking, sections with spec provenance, integer frames (ADR-0034) | Pi and editors | FFmpeg composer, runtime, web | `vwc-5q0.6` |
 | `word-timing` | Word Timing per take: words (written and spoken), lines as word ranges, speech spans, energy envelope, audio hash binding, aligner provenance | `speech.align` adapters | series compilers, cue resolver, kits, narration QA | `avg-7zp.1` |
+| `cue` | Cue grammar for series specs (word, prefix, seconds, word/line/take/mark objects) and its resolution to frames against a take's Word Timing | series spec authors (Pi, editors) | series compilers | `avg-7zp.2` |
 | `event` | Journal Event envelope, correlation and causation, typed lifecycle payloads, cursor | runtime and services | gateway, projections, web, Pi | `vwc-5q0.7` |
 | `review` | Review Thread, anchor, reply, resolution, stale anchor, approval decision | users, Pi, gateway | runtime, gateway, web, Pi | `vwc-5q0.7` |
 | `policy` | Approval Policy, Budget Envelope, reservation/reconciliation, material downgrade, stale acceptance | channel/series owners and runtime | runtime, Pi, gateway, web, adapters | `vwc-5q0.3`, `vwc-5q0.7` |
