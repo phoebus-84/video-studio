@@ -60,8 +60,8 @@
       "additionalProperties": false,
       "required": ["text", "start", "end"],
       "properties": {
-        "text": { "type": "string", "minLength": 1, "description": "The written token, as on screen." },
-        "spoken": { "type": "string", "minLength": 1, "description": "How the token was pronounced, only where it differs from text." },
+        "text": { "type": "string", "pattern": "^\\S+$", "description": "The written token, as on screen: one token, no whitespace, so word index equals token index." },
+        "spoken": { "type": "string", "pattern": "^\\S+$", "description": "How the token was pronounced, only where it differs from text." },
         "start": { "$ref": "#/$defs/Seconds" },
         "end": { "$ref": "#/$defs/Seconds" },
         "confidence": { "$ref": "#/$defs/Unit" }

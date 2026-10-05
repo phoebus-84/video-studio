@@ -70,6 +70,32 @@ describe("validateWordTiming", () => {
     assert.deepEqual(codes(validateWordTiming(tail)), ["out-of-range"]);
   });
 
+  it("accepts millisecond-rounded times exactly at the tolerances", () => {
+    // 47.833 + 0.05 is 47.882999… and 1.366 - 0.001 is 1.36500…01 in binary:
+    // aligners emit milliseconds, so exactly 50 ms and 1 ms must still pass.
+    const end = epoca();
+    end.words[117].end = 47.883;
+    assert.deepEqual(validateWordTiming(end), []);
+
+    const start = epoca();
+    assert.equal(start.words[4].end, 1.366);
+    start.words[5].start = 1.365;
+    assert.deepEqual(validateWordTiming(start), []);
+  });
+
+  it("refuses a word that contains whitespace", () => {
+    const doc = epoca();
+    doc.words[0].text = "Prima di";
+    doc.words.splice(1, 1);
+    assert.deepEqual(codes(validateWordTiming(doc)), ["schema"]);
+  });
+
+  it("treats a null audio hash as not given", () => {
+    const doc = epoca();
+    assert.deepEqual(validateWordTiming(doc, { audioHash: null }), []);
+    assert.deepEqual(validateWordTiming(doc, null), []);
+  });
+
   it("compares text ignoring whitespace runs, not punctuation", () => {
     const doc = epoca();
     doc.text = `  ${doc.text.replace(/ /g, "  \n")} `;

@@ -35,7 +35,7 @@ export interface Alignment {
 }
 
 export interface Word {
-  /** The written token, as on screen. */
+  /** The written token, as on screen: one token, no whitespace, so word index equals token index. */
   text: string;
   /** How the token was pronounced, only where it differs from text. */
   spoken?: string;

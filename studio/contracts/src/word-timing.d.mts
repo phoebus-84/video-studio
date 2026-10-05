@@ -28,7 +28,7 @@ export interface WordTimingProblem {
  * Every problem in `doc`; an empty array means the timing is valid. Pass the
  * real hash of the audio file as `audioHash` to reject timing made for another take.
  */
-export declare function validateWordTiming(doc: unknown, options?: { audioHash?: string }): WordTimingProblem[];
+export declare function validateWordTiming(doc: unknown, options?: { audioHash?: string | null } | null): WordTimingProblem[];
 
 export interface LineSpan {
   id: string;
