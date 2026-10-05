@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/word-timing.schema.json",
+  "title": "Video Studio word timing schema",
+  "description": "When each word of one audio take is spoken. Provider-neutral: the audio may come from any TTS or recording, the timing from any aligner. Times are seconds of the take's own audio. Rules a schema cannot express (order, ranges, text agreement) are checked by validateWordTiming in src/word-timing.mjs.",
+  "$defs": {
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "Seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "Unit": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "TakeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The narration segment and attempt this take belongs to, when it came from the narration manifest.",
+          "properties": {
+            "segmentId": { "type": "string", "minLength": 1 },
+            "attemptId": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "AudioRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash", "durationSeconds"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "hash": { "$ref": "#/$defs/ContentHash" },
+        "durationSeconds": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "Alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "method", "createdAt"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "description": "Open vocabulary, e.g. elevenlabs, whisper-cpp." },
+        "model": { "type": "string", "minLength": 1 },
+        "method": { "type": "string", "enum": ["forced", "asr"], "description": "forced: aligned against known text; asr: transcribed and snapped to the text." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Word": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "start", "end"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "description": "The written token, as on screen." },
+        "spoken": { "type": "string", "minLength": 1, "description": "How the token was pronounced, only where it differs from text." },
+        "start": { "$ref": "#/$defs/Seconds" },
+        "end": { "$ref": "#/$defs/Seconds" },
+        "confidence": { "$ref": "#/$defs/Unit" }
+      }
+    },
+    "Line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "firstWord", "lastWord"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "firstWord": { "type": "integer", "minimum": 0 },
+        "lastWord": { "type": "integer", "minimum": 0 },
+        "speaker": { "type": "string", "minLength": 1 }
+      }
+    },
+    "SpeechSpan": {
+      "type": "array",
+      "prefixItems": [{ "$ref": "#/$defs/Seconds" }, { "$ref": "#/$defs/Seconds" }],
+      "minItems": 2,
+      "maxItems": 2,
+      "items": false
+    },
+    "Energy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rate", "values"],
+      "properties": {
+        "rate": { "type": "number", "exclusiveMinimum": 0, "description": "Samples per second, independent of any timeline fps." },
+        "values": { "type": "array", "items": { "$ref": "#/$defs/Unit" } }
+      }
+    },
+    "WordTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "take", "audio", "text", "language", "alignment", "words"],
+      "properties": {
+        "apiVersion": { "type": "string", "const": "studio.video/v1alpha1" },
+        "kind": { "type": "string", "const": "WordTiming" },
+        "take": { "$ref": "#/$defs/TakeRef" },
+        "audio": { "$ref": "#/$defs/AudioRef" },
+        "text": { "type": "string", "minLength": 1, "description": "The written text the words reproduce." },
+        "spokenText": { "type": "string", "minLength": 1, "description": "The text sent to the TTS, when it differs from text." },
+        "language": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+        "alignment": { "$ref": "#/$defs/Alignment" },
+        "words": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Word" } },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/Line" } },
+        "speech": { "type": "array", "items": { "$ref": "#/$defs/SpeechSpan" } },
+        "energy": { "$ref": "#/$defs/Energy" },
+        "metadata": { "type": "object" }
+      }
+    }
+  }
+}

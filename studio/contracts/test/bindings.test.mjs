@@ -85,4 +85,10 @@ describe("TypeScript bindings", () => {
     assert.ok(content.includes("items: (VisualItem | AudioItem)[];"), "array of a union needs parentheses");
     assert.ok(content.includes("assets: Record<string, Asset>;"), "maps carry their value type");
   });
+
+  it("generates word timing with speech spans as tuples", () => {
+    const content = readBinding("word-timing");
+    assert.ok(content.includes("export interface WordTiming {"));
+    assert.ok(content.includes("export type SpeechSpan = [Seconds, Seconds];"), "prefixItems become a TS tuple");
+  });
 });
