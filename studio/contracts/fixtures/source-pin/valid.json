@@ -1,0 +1,42 @@
+[
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "short",
+    "source": {
+      "kind": "episode",
+      "series": "short",
+      "episode": "il-lampo"
+    },
+    "usedBy": [
+      "compile",
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {},
+    "paths": [
+      "artifacts/narration",
+      "assets/takes"
+    ]
+  }
+]

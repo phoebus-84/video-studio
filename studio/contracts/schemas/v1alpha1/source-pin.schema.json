@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/source-pin.schema.json",
+  "title": "Video Studio source pin schema",
+  "description": "An episode's read-only pin on shared material: a channel source (library/<channel>/sources/<name>) or another episode of the same channel, with an inventory of its files. Status re-checks the inventory; a changed source makes the stages that read it stale (ADR-0035). Checked and verified by src/source-pins.mjs.",
+  "$defs": {
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "LocalId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "ChannelSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "channel-source" },
+        "name": { "$ref": "#/$defs/LocalId" }
+      }
+    },
+    "EpisodeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "series", "episode"],
+      "properties": {
+        "kind": { "const": "episode" },
+        "series": { "$ref": "#/$defs/LocalId" },
+        "episode": { "$ref": "#/$defs/LocalId" }
+      }
+    },
+    "SourceRef": {
+      "oneOf": [{ "$ref": "#/$defs/ChannelSource" }, { "$ref": "#/$defs/EpisodeSource" }]
+    },
+    "RelativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))[^\\\\]+$",
+      "description": "A source-relative POSIX path, no leading slash, no .. segment."
+    },
+    "InventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash", "size", "mtimeMs"],
+      "properties": {
+        "hash": { "$ref": "#/$defs/ContentHash" },
+        "size": { "type": "integer", "minimum": 0 },
+        "mtimeMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "SourcePin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "id", "source", "usedBy", "pinnedAt", "files"],
+      "properties": {
+        "apiVersion": { "type": "string", "const": "studio.video/v1alpha1" },
+        "kind": { "type": "string", "const": "SourcePin" },
+        "id": { "$ref": "#/$defs/LocalId" },
+        "source": { "$ref": "#/$defs/SourceRef" },
+        "paths": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/RelativePath" } },
+        "usedBy": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "pinnedAt": { "type": "string", "format": "date-time" },
+        "files": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/RelativePath" },
+          "additionalProperties": { "$ref": "#/$defs/InventoryEntry" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,186 @@
+[
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "episode",
+      "series": "short"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    },
+    "paths": [
+      "../outside"
+    ]
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    },
+    "paths": [
+      "/etc"
+    ]
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "md5:x",
+        "size": 2,
+        "mtimeMs": 1
+      }
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "../x": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1
+      }
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "yesterday",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SourcePin",
+    "id": "poesia",
+    "source": {
+      "kind": "channel-source",
+      "name": "il-lampo"
+    },
+    "usedBy": [
+      "narration"
+    ],
+    "pinnedAt": "2026-10-05T18:00:00Z",
+    "files": {
+      "takes.json": {
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 2,
+        "mtimeMs": 1759600000000.5
+      }
+    },
+    "extra": true
+  }
+]

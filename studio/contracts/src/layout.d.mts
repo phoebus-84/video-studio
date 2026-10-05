@@ -15,6 +15,7 @@ export declare function seriesContainerPath(root: string, channel: string): stri
 export declare function seriesPath(root: string, channel: string, series: string): string;
 export declare function episodesContainerPath(root: string, channel: string, series: string): string;
 export declare function episodePath(root: string, channel: string, series: string, episode: string): string;
+export declare function sourcePath(root: string, channel: string, name: string): string;
 export declare function workspacePath(
   root: string,
   ref: { channel?: string; series?: string; episode?: string },
