@@ -26,6 +26,7 @@ import { episodePath } from "@studio/contracts/src/layout.mjs";
 import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
 import { ExecutionService, JournalReviewGate, JournalBudgetGuard, readEpisodeBudget } from "./execution/index.js";
 import { releaseSpend } from "@studio/contracts/src/budget.mjs";
+import type { SourceRef } from "@studio/contracts/src/source-pins.mjs";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
 import { resolveCliCredential } from "./execution/principal.js";
 import type { RerunMode } from "./rerun/index.js";
@@ -350,6 +351,110 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
     pipeline: status.value.pipeline,
     stages: status.value.stages,
     budget,
+  });
+  return EX_OK;
+}
+
+// ── pin (avg-7zp.5) ─────────────────────────────────────────────────────────
+
+/** `channel:<name>` or `episode:<series>/<episode>`. */
+function parseSourceFlag(value: string | undefined): SourceRef | null {
+  if (!value) return null;
+  const channel = /^channel:([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(value);
+  if (channel) return { kind: "channel-source", name: channel[1]! };
+  const episode = /^episode:([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(value);
+  if (episode) return { kind: "episode", series: episode[1]!, episode: episode[2]! };
+  return null;
+}
+
+/** Every value of a repeatable value-taking flag. */
+function flagValues(args: string[], name: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length - 1; i++) if (args[i] === name) out.push(args[i + 1]!);
+  return out;
+}
+
+/**
+ * `vpr pin add|verify|renew`: shared material an episode reads without
+ * copying it (ADR-0035). `verify` writes nothing; `renew` accepts a source's
+ * current version and journals which stages must be redone — any actor may,
+ * because renewal hides nothing.
+ */
+async function cmdPin(ctx: CliContext, args: string[]): Promise<number> {
+  const usage =
+    "Usage: vpr pin add <channel>/<series>/<episode> <id> --source channel:<name>|episode:<series>/<episode> " +
+    "--used-by <stage>[,<stage>...] [--path <p>]... | vpr pin verify <channel>/<series>/<episode> | " +
+    "vpr pin renew <channel>/<series>/<episode> <id> [--pipeline <name>]";
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  const [sub, episodeArg, id] = positionalArgs(remaining);
+  const parsed = episodeArg ? parsePath(episodeArg) : null;
+  if (!parsed || (sub !== "add" && sub !== "verify" && sub !== "renew")) {
+    emit(ctx, { error: usage });
+    return EX_USAGE;
+  }
+  const ttl = claimTtlMs();
+  if (!ttl.ok) {
+    emit(ctx, { error: ttl.error });
+    return EX_USAGE;
+  }
+  const service = makeService(args, ttl.value, null);
+  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
+
+  if (sub === "verify") {
+    const pins = await service.verifyPins(parsed);
+    const changed = pins.filter((p) => p.changed.length > 0 || p.problem).length;
+    emit(ctx, { message: `${pins.length} pin(s) for ${episodeArg}, ${changed} with changes or problems`, episode: parsed, pins });
+    return EX_OK;
+  }
+  if (!id) {
+    emit(ctx, { error: usage });
+    return EX_USAGE;
+  }
+
+  if (sub === "add") {
+    const source = parseSourceFlag(flagValue(remaining, "--source"));
+    const usedBy = (flagValue(remaining, "--used-by") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    if (!source || usedBy.length === 0) {
+      emit(ctx, { error: usage });
+      return EX_USAGE;
+    }
+    if (ctx.dryRun) {
+      emit(ctx, { message: `[DRY RUN] Would pin ${id} for ${episodeArg}`, dryRun: true });
+      return EX_OK;
+    }
+    const paths = flagValues(remaining, "--path");
+    const out = await service.addPin(parsed, pipeline, { id, source, usedBy, ...(paths.length > 0 ? { paths } : {}) });
+    if (!out.ok) {
+      emit(ctx, { error: `${out.error.code}: ${out.error.message}` });
+      return exitCodeFor(out.error);
+    }
+    if (!out.value.ok) {
+      emit(ctx, { error: out.value.refusal.message, code: out.value.refusal.code });
+      return out.value.refusal.code === "unknown-stage" ? EX_USAGE : EX_RUNTIME;
+    }
+    emit(ctx, { message: `Pinned "${id}" for ${episodeArg}: ${Object.keys(out.value.pin.files).length} file(s)`, pin: out.value.pin });
+    return EX_OK;
+  }
+
+  if (ctx.dryRun) {
+    emit(ctx, { message: `[DRY RUN] Would renew pin ${id} for ${episodeArg}`, dryRun: true });
+    return EX_OK;
+  }
+  const actor = resolveCliCredential().principal === "operator" ? "human" : "pi";
+  const out = await service.renewPin(parsed, pipeline, id, actor);
+  if (!out.ok) {
+    emit(ctx, { error: `${out.error.code}: ${out.error.message}` });
+    return exitCodeFor(out.error);
+  }
+  if (!out.value.ok) {
+    emit(ctx, { error: out.value.refusal.message, code: out.value.refusal.code });
+    return EX_RUNTIME;
+  }
+  emit(ctx, {
+    message: out.value.changed.length === 0
+      ? `Pin "${id}" renewed: its source had not changed`
+      : `Pin "${id}" renewed: ${out.value.changed.length} change(s); stale until they run again: ${out.value.affected.join(", ")}`,
+    changed: out.value.changed, affected: out.value.affected,
   });
   return EX_OK;
 }
@@ -922,6 +1027,8 @@ const VALUE_FLAGS = new Set([
   // leak into `positionalArgs` — harmlessly today, since only index 0 of that
   // list is used, but silently wrong the moment a second positional is added.
   "--mode", "--stages",
+  // `pin`'s (avg-7zp.5).
+  "--source", "--used-by", "--path",
 ]);
 
 /**
@@ -1257,6 +1364,7 @@ const COMMANDS: Record<string, CliCommand> = {
   rerun: { name: "rerun", description: "Plan targeted reruns: which stages re-run, which are preserved", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|rerun-affected-downstream|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },
+  pin: { name: "pin", description: "Pin shared material (a channel source or another episode), verify it, or renew it to accept a new version", usage: "vpr pin add <channel>/<series>/<episode> <id> --source channel:<name>|episode:<series>/<episode> --used-by <stage>[,<stage>...] [--path <p>]... | vpr pin verify <channel>/<series>/<episode> | vpr pin renew <channel>/<series>/<episode> <id> [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr pin add dentro-i-versi/long/il-lampo poesia --source channel:il-lampo --used-by narration", "vpr pin verify dentro-i-versi/long/il-lampo", "vpr pin renew dentro-i-versi/long/il-lampo poesia"], run: cmdPin },
   budget: { name: "budget", description: "Show the episode's spend ledger; the operator can release an open reservation", usage: "vpr budget <channel>/<series>/<episode> [release <reservation-id> [--note <why>]] [--json] [--dry-run]", examples: ["vpr budget my-channel/my-series/ep001", "vpr budget my-channel/my-series/ep001 release rsv_01J9Z… --note 'fal dashboard shows no charge'"], run: cmdBudget },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
