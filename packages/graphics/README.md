@@ -12,7 +12,13 @@ Generated images are useful for illustrations but unreliable for exact code, lab
 
 ## Safety
 
-Repository content is treated as data. The renderer does not execute source code or arbitrary HTML/JavaScript.
+Repository content is treated as passive data: runtime shape validation runs
+before hashing, text is escaped, and content/canvas sizes are bounded. The SVG
+builder rejects active tags, URL references and arbitrary CSS. Current kinds do
+not read files or embed images.
+
+See [Security and resource bounds](docs/security.md) for limits, diagnostics and
+the distinction between cooperative deadlines and host-enforced isolation.
 
 ## Plan
 

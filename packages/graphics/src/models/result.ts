@@ -24,7 +24,7 @@ export interface RenderDiagnostic {
  * Closed vocabulary for render outcome.
  * - `success`: Fully rendered with no degradation.
  * - `partial`: Rendered but with warnings or non-fatal fallbacks.
- * - `failed`: Could not produce any output SVG.
+ * - `failed`: Rendering was refused or failed; SVG is diagnostic only.
  */
 export type RenderStatus = 'success' | 'partial' | 'failed';
 
@@ -33,7 +33,7 @@ export type RenderStatus = 'success' | 'partial' | 'failed';
 export interface GraphicRenderResult {
   /** Stable opaque ID, e.g. "gr_01J..." */
   stableId: string;
-  /** Canonical sha256-prefixed hash of the canonical request and environment */
+  /** Canonical sha256 request/environment hash; for rejected input, a safe rejection fingerprint */
   requestHash: string;
   /** The rendered SVG content as a string */
   svgContent: string;
@@ -41,7 +41,7 @@ export interface GraphicRenderResult {
   width: number;
   /** Output height (matches request height for success) */
   height: number;
-  /** Kind from the originating request */
+  /** Request kind for valid input; title-frame for preflight rejection */
   kind: GraphicKind;
   /** Render outcome */
   status: RenderStatus;

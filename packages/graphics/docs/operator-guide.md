@@ -8,6 +8,15 @@ npm test        # run all tests
 npm run check   # type-check + tests
 ```
 
+## Security
+
+Read [Security and resource bounds](security.md) before accepting repository or
+user content. Inputs are runtime-validated, SVG tags/attributes are allowlisted,
+and oversized content is rejected rather than truncated. Tests exercise hostile
+markup, malformed input, traversal/URLs and deterministic resource failures.
+The time budget is cooperative, not a process sandbox; current kinds perform no
+image/file/network IO.
+
 ## Package layout
 
 ```
@@ -60,9 +69,11 @@ npm test
 2. Add a content interface in the same file
 3. Add a `renderXxx()` function in `src/pipeline/renderer.ts`
 4. Add the kind to the `switch` statement in `renderByKind()`
-5. Add validation in `validateRequest()`
+5. Add the closed runtime shape and collection limits in `src/pipeline/safety.ts`,
+   and semantic checks in `validateRequest()`; validate before hashing
 6. Add a smoke test entry in `test/pipeline/renderer.test.ts` (`makeValidRequest`)
-7. Add a dedicated test block
+7. Add a dedicated test block and injection/resource-limit cases in
+   `test/pipeline/security.test.ts`
 8. Update `docs/contracts.md`
 
 ## Design tokens

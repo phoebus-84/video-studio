@@ -24,6 +24,7 @@ it grows a dependency on `studio/*`. Studio-specific integration lives in
 - [Charter and overview](../reference/graphics/readme.md)
 - [Contracts](../reference/graphics/docs/contracts.md)
 - [Operator guide](../reference/graphics/docs/operator-guide.md)
+- [Security](../reference/graphics/docs/security.md)
 
 ## Commands
 
