@@ -5,9 +5,10 @@
 import React from 'react';
 import {AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame} from 'remotion';
 import {KITS} from './kits/registry.js';
-import type {AudioItem, EditTimeline, Track, VisualItem} from './schema.js';
+import type {AudioItem, EditTimeline, VisualItem} from './schema.js';
 import {isAudioItem} from './schema.js';
 import {itemVolume} from './volume.js';
+import {visualLayers} from './layers.js';
 
 export interface TimelineProps {
   timeline: EditTimeline;
@@ -46,24 +47,13 @@ const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; asse
   );
 };
 
-const byZ = (tracks: Track[]) =>
-  tracks
-    .map((track, index) => ({track, index}))
-    .filter(({track}) => track.type === 'visual' && !track.hidden)
-    .sort((a, b) => (a.track.z ?? 0) - (b.track.z ?? 0) || a.index - b.index)
-    .map(({track}) => track);
-
 export const Timeline: React.FC<TimelineProps> = ({timeline, files, assetFrames}) => (
   <AbsoluteFill style={{backgroundColor: '#000000'}}>
-    {byZ(timeline.tracks).map((track) =>
-      track.items.map((item) =>
-        isAudioItem(item) ? null : (
-          <Sequence key={`${track.id}/${item.id}`} from={item.from} durationInFrames={item.duration}>
-            <ItemLayer item={item} files={files} assetFrames={assetFrames} />
-          </Sequence>
-        ),
-      ),
-    )}
+    {visualLayers(timeline).map(({track, item}) => (
+      <Sequence key={`${track.id}/${item.id}`} from={item.from} durationInFrames={item.duration}>
+        <ItemLayer item={item} files={files} assetFrames={assetFrames} />
+      </Sequence>
+    ))}
     {timeline.tracks
       .filter((track) => track.type === 'audio' && !track.muted)
       .map((track) =>

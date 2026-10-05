@@ -5,6 +5,7 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readdirSync} from 'node:fs';
 import {mkdtemp, mkdir, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -20,6 +21,8 @@ const probe = (file: string) =>
   JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file], {encoding: 'utf8'}).stdout) as {
     streams: {codec_type: string; codec_name: string; width?: number; height?: number; r_frame_rate?: string; nb_frames?: string}[];
   };
+/** Temporary directories Remotion and this package create. */
+const remotionTemp = () => readdirSync(tmpdir()).filter((n) => /remotion|react-motion/.test(n)).sort();
 const measure = (file: string) => {
   const r = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-af', 'loudnorm=print_format=json', '-f', 'null', '-'], {encoding: 'utf8'});
   const text = r.stderr.slice(r.stderr.lastIndexOf('{'), r.stderr.lastIndexOf('}') + 1);
@@ -38,8 +41,10 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
       ffmpeg(['-f', 'lavfi', '-i', `color=c=${colors[i++]}:s=1920x1080`, '-frames:v', '1', path.join(root, asset.path)]);
       asset.hash = await sha256(path.join(root, asset.path));
     }
-    const out = path.join(root, 'out.mp4');
+    const out = path.join(root, 'renders', 'nested', 'out.mp4'); // a directory that does not exist yet
+    const leftoversBefore = remotionTemp();
     const result = await renderTimeline({timeline: doc, assetRoot: root, outputPath: out});
+    assert.deepEqual(remotionTemp(), leftoversBefore, 'a render must leave no bundle or staging directory behind');
     const info = probe(out);
     const video = info.streams.find((s) => s.codec_type === 'video')!;
     assert.equal(video.codec_name, 'h264');

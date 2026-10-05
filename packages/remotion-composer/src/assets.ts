@@ -52,8 +52,10 @@ export async function stageAssets(
   const publicDir = await mkdtemp(path.join(tmpdir(), 'remotion-composer-'));
   await mkdir(path.join(publicDir, 'assets'));
   const files: Record<string, string> = {};
-  for (const [id, abs] of Object.entries(sources)) {
-    const name = `assets/${id}${path.extname(abs)}`;
+  // The index makes every name unique, even ids that differ only by case on a
+  // case-insensitive filesystem, or `x` with a.mp3 beside `x.mp3` without one.
+  for (const [index, [id, abs]] of Object.entries(sources).entries()) {
+    const name = `assets/${index}-${id}${path.extname(abs)}`;
     const target = path.join(publicDir, name);
     try {
       await link(abs, target);

@@ -2,8 +2,7 @@
 // two-pass loudness → result record. The caller gives an output path; where
 // renders live in an episode is the studio's business, not this package's.
 
-import {spawnSync} from 'node:child_process';
-import {mkdtemp, rename, rm, stat} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -14,6 +13,7 @@ import {ComposerError} from './errors.js';
 import {DEFAULT_LOUDNESS, normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './loudness.js';
 import {isAudioItem} from './schema.js';
 import {validateTimeline} from './validate.js';
+import {videoFrames} from './probe.js';
 
 export interface RenderTimelineOptions {
   /** A studio.video/v1alpha2 EditTimeline that already passed validateEditTimeline. */
@@ -33,13 +33,6 @@ export interface RenderResult {
   hash: string;
   kits: {name: string; version: string}[];
   loudness: LoudnessResult | null;
-}
-
-/** How many frames a video file lasts, from ffprobe. */
-function videoFrames(file: string, fps: number): number {
-  const out = spawnSync(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], {encoding: 'utf8'});
-  const seconds = Number(out.stdout.trim());
-  return Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.floor(seconds * fps)) : Number.POSITIVE_INFINITY;
 }
 
 export async function renderTimeline(options: RenderTimelineOptions): Promise<RenderResult> {
@@ -63,9 +56,15 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     const inputProps = {timeline, files: staged.files, assetFrames};
     const entryPoint = path.join(path.dirname(fileURLToPath(import.meta.url)), 'remotion-entry.js');
     const hasAudio = timeline.tracks.some((t) => t.type === 'audio' && !t.muted && t.items.some(isAudioItem));
-    const rendered = path.join(work, 'render.mp4');
+    const output = path.resolve(options.outputPath);
+    await mkdir(path.dirname(output), {recursive: true});
+    // Without audio there is nothing to normalise: render straight to the output
+    // (no cross-filesystem rename). With audio, loudness writes the output.
+    const rendered = hasAudio ? path.join(work, 'render.mp4') : output;
     try {
-      const serveUrl = await bundle({entryPoint, publicDir: staged.publicDir});
+      // The bundle — which copies the staged public directory — lives in the work
+      // directory, so it is removed with it, on success and on failure.
+      const serveUrl = await bundle({entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle')});
       const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps});
       await renderMedia({
         composition, serveUrl, inputProps,
@@ -79,7 +78,6 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       throw new ComposerError('render-failed', `Remotion could not render the timeline: ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    const output = path.resolve(options.outputPath);
     let loudness: LoudnessResult | null = null;
     if (hasAudio) {
       try {
@@ -87,9 +85,6 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       } catch (e) {
         throw new ComposerError('loudness-failed', `loudness could not be normalised: ${e instanceof Error ? e.message : String(e)}`);
       }
-    } else {
-      // Nothing to normalise: the silent track Remotion enforced is the audio.
-      await rename(rendered, output);
     }
 
     const kits = [...new Map(timeline.tracks.flatMap((t) => t.items).filter((i) => !isAudioItem(i))

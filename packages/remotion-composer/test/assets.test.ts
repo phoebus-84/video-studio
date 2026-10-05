@@ -31,11 +31,29 @@ describe('stageAssets', () => {
     assert.ok(out.ok);
     if (!out.ok) return;
     assert.deepEqual(out.staged.files, {
-      'scene-01-woods': 'assets/scene-01-woods.png',
-      'scene-02-grandma': 'assets/scene-02-grandma.png',
-      'scene-03-ending': 'assets/scene-03-ending.png',
+      'scene-01-woods': 'assets/0-scene-01-woods.png',
+      'scene-02-grandma': 'assets/1-scene-02-grandma.png',
+      'scene-03-ending': 'assets/2-scene-03-ending.png',
     });
-    assert.equal(await readFile(path.join(out.staged.publicDir, 'assets/scene-02-grandma.png'), 'utf8'), 'image 1');
+    assert.equal(await readFile(path.join(out.staged.publicDir, out.staged.files['scene-02-grandma']!), 'utf8'), 'image 1');
+    await out.staged.cleanup();
+    await rm(root, {recursive: true, force: true});
+  });
+
+  it('never lets two assets share a staged name, even ids that differ only by case', async () => {
+    const root = await episodeWith({'a/intro.png': 'one', 'b/intro.png': 'two'});
+    const doc = clone(fixture('explainer.json')) as EditTimeline;
+    doc.assets = {
+      Intro: {path: 'a/intro.png', hash: await sha256(path.join(root, 'a/intro.png')), kind: 'image'},
+      intro: {path: 'b/intro.png', hash: await sha256(path.join(root, 'b/intro.png')), kind: 'image'},
+    };
+    const out = await stageAssets(doc, root);
+    assert.ok(out.ok);
+    if (!out.ok) return;
+    const names = Object.values(out.staged.files).map((n) => n.toLowerCase());
+    assert.equal(new Set(names).size, 2);
+    assert.equal(await readFile(path.join(out.staged.publicDir, out.staged.files.Intro!), 'utf8'), 'one');
+    assert.equal(await readFile(path.join(out.staged.publicDir, out.staged.files.intro!), 'utf8'), 'two');
     await out.staged.cleanup();
     await rm(root, {recursive: true, force: true});
   });
