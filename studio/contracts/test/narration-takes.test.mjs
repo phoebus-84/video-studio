@@ -136,6 +136,14 @@ describe("layoutUnit", () => {
     }
   });
 
+  it("refuses two holds after the same word", () => {
+    const d = doc();
+    d.units[1].sequence[0].holds.push({ afterWord: "temporale.", seconds: 1, reason: "again" });
+    assert.deepEqual(layoutUnit(d, "epoca", timings()).problems.map((p) => [p.code, p.path]), [
+      ["bad-hold", "$.units[1].sequence[0].holds[1].afterWord"],
+    ]);
+  });
+
   it("throws for a unit that does not exist", () => {
     assert.throws(() => layoutUnit(doc(), "genesi", timings()), RangeError);
   });
@@ -200,6 +208,17 @@ describe("takesFromNarrationManifest", () => {
       return at;
     });
     assert.deepEqual(layout.pieces.map((p) => Number((leadInSeconds + p.at).toFixed(6))), expected);
+  });
+
+  it("treats a missing pauseAfterMs as no pause, as the agent does", () => {
+    const entries = agentManifest.entries.map((e, i) => (i === 0 ? { segmentId: e.segmentId, wav: e.wav } : e));
+    const { takes } = takesFromNarrationManifest({ ...agentManifest, entries });
+    assert.equal(takes.units[0].sequence[1].pauseBefore, 0);
+  });
+
+  it("throws instead of returning takes that fail validation", () => {
+    const entries = agentManifest.entries.map((e, i) => (i === 0 ? { ...e, pauseAfterMs: 20000 } : e));
+    assert.throws(() => takesFromNarrationManifest({ ...agentManifest, entries }), /not valid narration takes:.*schema/);
   });
 
   it("refuses to map a segment it has no text for", () => {
