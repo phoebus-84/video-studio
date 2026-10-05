@@ -54,6 +54,7 @@ export const CHANNEL_KNOWLEDGE = Object.freeze([
   "characters",
   "references",
   "skills",
+  "sources",
   "voices",
 ]);
 
@@ -95,6 +96,11 @@ export function episodesContainerPath(root, channel, series) {
 /** `<root>/<channel>/series/<series>/episodes/<episode>` */
 export function episodePath(root, channel, series, episode) {
   return join(episodesContainerPath(root, channel, series), episode);
+}
+
+/** Path to a channel source: shared material episodes pin, never copy (ADR-0035). */
+export function sourcePath(root, channel, name) {
+  return join(channelPath(root, channel), "sources", name);
 }
 
 /**
