@@ -27,6 +27,11 @@ export const WORD_OVERLAP_TOLERANCE_SECONDS = 0.001;
 export const DURATION_TOLERANCE_SECONDS = 0.05;
 /** The energy envelope may be this many samples longer or shorter than the audio. */
 export const ENERGY_LENGTH_TOLERANCE_SAMPLES = 1;
+/**
+ * Slack for binary floating point: 47.833 + 0.05 is 47.882999…, so a word
+ * ending at exactly 47.883 — exactly 50 ms late — must not be flagged.
+ */
+const FLOAT_EPSILON = 1e-9;
 
 let compiled = null;
 
@@ -49,10 +54,11 @@ const collapse = (text) => text.trim().split(/\s+/).join(" ");
 /**
  * Validate a WordTiming document.
  * @param {unknown} doc
- * @param {{audioHash?: string}} [options] the real hash of the audio file, when the caller has it
+ * @param {{audioHash?: string | null} | null} [options] the real hash of the audio file, when the caller has it
  * @returns {{code: string, message: string, path: string}[]} every problem; empty when valid.
  */
-export function validateWordTiming(doc, { audioHash } = {}) {
+export function validateWordTiming(doc, options) {
+  const audioHash = options?.audioHash ?? undefined;
   const validate = schemaValidator();
   if (!validate(doc)) {
     return validate.errors.map((e) =>
@@ -76,14 +82,14 @@ function checkAudio(doc, audioHash) {
 
 function checkWords(doc) {
   const out = [];
-  const limit = doc.audio.durationSeconds + DURATION_TOLERANCE_SECONDS;
+  const limit = doc.audio.durationSeconds + DURATION_TOLERANCE_SECONDS + FLOAT_EPSILON;
   doc.words.forEach((w, i) => {
     const p = `$.words[${i}]`;
     if (w.end < w.start) {
       out.push(issue("word-order", `${p}.end`, `word "${w.text}" ends at ${w.end}, before it starts at ${w.start}`));
     }
     const previous = doc.words[i - 1];
-    if (previous && w.start < previous.end - WORD_OVERLAP_TOLERANCE_SECONDS) {
+    if (previous && w.start < previous.end - WORD_OVERLAP_TOLERANCE_SECONDS - FLOAT_EPSILON) {
       out.push(issue("word-order", `${p}.start`, `word "${w.text}" starts at ${w.start}, before "${previous.text}" ends at ${previous.end}`));
     }
     if (w.end > limit) {
@@ -125,7 +131,7 @@ function checkLines(doc) {
 
 function checkSpeech(doc) {
   const out = [];
-  const limit = doc.audio.durationSeconds + DURATION_TOLERANCE_SECONDS;
+  const limit = doc.audio.durationSeconds + DURATION_TOLERANCE_SECONDS + FLOAT_EPSILON;
   let previousEnd = -Infinity;
   (doc.speech ?? []).forEach(([start, end], i) => {
     const p = `$.speech[${i}]`;
