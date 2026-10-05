@@ -96,4 +96,10 @@ describe("TypeScript bindings", () => {
     const content = readBinding("cue");
     assert.ok(content.includes("export type Cue = WordPattern | number | WordCue | LineCue | TakeCue | MarkCue;"));
   });
+
+  it("generates the narration takes contract", () => {
+    const content = readBinding("narration-takes");
+    assert.ok(content.includes("export interface NarrationTakes {"));
+    assert.ok(content.includes("holds?: Hold[];"));
+  });
 });

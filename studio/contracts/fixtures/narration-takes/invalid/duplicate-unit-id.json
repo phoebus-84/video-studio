@@ -1,0 +1,11 @@
+{
+  "expect": "duplicate-id",
+  "base": "il-lampo.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/units/3/id",
+      "value": "ascolto1"
+    }
+  ]
+}

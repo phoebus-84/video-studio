@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/narration-takes.schema.json",
+  "title": "Video Studio narration takes schema",
+  "description": "Every accepted voice take of an episode, whatever tool made it, and what each unit of the spec plays: an ordered sequence of takes with pauses and declared scene pauses. Text preparation follows the tool; spokenText records exactly what the tool received. Checked by validateNarrationTakes and laid out by layoutUnit in src/narration-takes.mjs.",
+  "$defs": {
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "LocalId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "AudioRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash", "durationSeconds"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "hash": { "$ref": "#/$defs/ContentHash" },
+        "durationSeconds": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "Voice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider"],
+      "description": "Provenance only: what made the take. The contract interprets none of it.",
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "description": "Open vocabulary, e.g. elevenlabs, qwen3-tts-local." },
+        "model": { "type": "string", "minLength": 1 },
+        "voiceId": { "type": "string", "minLength": 1 },
+        "settings": { "type": "object", "description": "Provider parameters, recorded as sent." },
+        "direction": { "type": "string", "minLength": 1, "description": "An instruction sent separately from the text, e.g. Qwen's composed direction." }
+      }
+    },
+    "FileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "hash": { "$ref": "#/$defs/ContentHash" }
+      }
+    },
+    "TakeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The narration manifest entry this take came from.",
+      "properties": {
+        "segmentId": { "type": "string", "minLength": 1 },
+        "attemptId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Take": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "audio", "text", "voice"],
+      "properties": {
+        "id": { "$ref": "#/$defs/LocalId" },
+        "audio": { "$ref": "#/$defs/AudioRef" },
+        "text": { "type": "string", "minLength": 1, "description": "The written text: on screen, matched by cues, reproduced by the take's WordTiming." },
+        "spokenText": { "type": "string", "minLength": 1, "description": "Exactly what the tool received, in its own format (tags, pronunciation spellings…)." },
+        "role": { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+        "voice": { "$ref": "#/$defs/Voice" },
+        "timing": { "$ref": "#/$defs/FileRef", "description": "The take's WordTiming file." },
+        "source": { "$ref": "#/$defs/TakeSource" }
+      }
+    },
+    "Hold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["afterWord", "seconds", "reason"],
+      "description": "A declared scene pause inside the take, after a word that ends a sentence.",
+      "properties": {
+        "afterWord": { "type": "string", "pattern": "^\\S+$" },
+        "n": { "type": "integer", "minimum": 1 },
+        "seconds": { "type": "number", "minimum": 0.5, "maximum": 4 },
+        "reason": { "type": "string", "pattern": "\\S" }
+      }
+    },
+    "SequenceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["take"],
+      "properties": {
+        "take": { "$ref": "#/$defs/LocalId" },
+        "pauseBefore": { "type": "number", "minimum": 0, "maximum": 10, "description": "Seconds of silence before this take; required from the second entry on, forbidden on the first." },
+        "holds": { "type": "array", "items": { "$ref": "#/$defs/Hold" } }
+      }
+    },
+    "Unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sequence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/LocalId" },
+        "source": { "type": "string", "minLength": 1, "description": "JSON path into the spec." },
+        "sequence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/SequenceEntry" } }
+      }
+    },
+    "NarrationTakes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "takes", "units"],
+      "properties": {
+        "apiVersion": { "type": "string", "const": "studio.video/v1alpha1" },
+        "kind": { "type": "string", "const": "NarrationTakes" },
+        "takes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Take" } },
+        "units": { "type": "array", "items": { "$ref": "#/$defs/Unit" } },
+        "metadata": { "type": "object" }
+      }
+    }
+  }
+}

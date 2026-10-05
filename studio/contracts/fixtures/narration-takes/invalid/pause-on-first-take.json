@@ -1,0 +1,11 @@
+{
+  "expect": "bad-pause",
+  "base": "il-lampo.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/units/0/sequence/0/pauseBefore",
+      "value": 0.5
+    }
+  ]
+}
