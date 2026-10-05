@@ -16,6 +16,7 @@
     "packages/infographics",
     "packages/terminal-recorder",
     "packages/video-composer",
+    "packages/remotion-composer",
     "studio/contracts",
     "studio/runtime",
     "studio/pipelines",

@@ -74,6 +74,28 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/remotion-composer": {
+      "name": "@av/remotion-composer",
+      "version": "0.1.0",
+      "bin": {
+        "render-timeline": "./dist/cli.js"
+      },
+      "dependencies": {
+        "@remotion/bundler": "4.0.505",
+        "@remotion/renderer": "4.0.505",
+        "react": "19.2.4",
+        "react-dom": "19.2.4",
+        "remotion": "4.0.505",
+        "zod": "3.25.76",
+      },
+      "devDependencies": {
+        "@types/node": "^24.10.0",
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/terminal-recorder": {
       "name": "@av/terminal-recorder",
       "version": "0.1.0",
@@ -278,6 +300,8 @@
     "@av/graphics": ["@av/graphics@workspace:packages/graphics"],
 
     "@av/infographics": ["@av/infographics@workspace:packages/infographics"],
+
+    "@av/remotion-composer": ["@av/remotion-composer@workspace:packages/remotion-composer"],
 
     "@av/terminal-recorder": ["@av/terminal-recorder@workspace:packages/terminal-recorder"],
 
@@ -1777,6 +1801,8 @@
 
     "@av/infographics/@types/node": ["@types/node@24.13.3", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q=="],
 
+    "@av/remotion-composer/@types/node": ["@types/node@24.13.3", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q=="],
+
     "@av/video-composer/@types/node": ["@types/node@20.19.43", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA=="],
 
     "@aws-sdk/credential-provider-http/@smithy/node-http-handler": ["@smithy/node-http-handler@4.11.0", "", { "dependencies": { "@smithy/core": "^3.33.0", "@smithy/types": "^4.17.0", "tslib": "^2.6.2" } }, "sha512-ssHIZsadPUA3lGdnoByxfnjtb9xPYQLvdfJRLKIwxOoa6tO1suG4sLFSsgd7D/CsvYd8QbBIuKTImuJha5l6aQ=="],
@@ -1948,6 +1974,8 @@
     "@av/fal-media/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "@av/infographics/@types/node/undici-types": ["undici-types@7.18.2", "", {}, "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="],
+
+    "@av/remotion-composer/@types/node/undici-types": ["undici-types@7.18.2", "", {}, "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="],
 
     "@av/video-composer/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
