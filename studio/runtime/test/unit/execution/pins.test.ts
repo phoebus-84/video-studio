@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -147,6 +147,50 @@ describe("a changed source", () => {
   });
 });
 
+describe("pins that cannot be checked", () => {
+  it("keeps status working and reports the readers when a source cannot be read", async () => {
+    const { source, svc } = await setup();
+    await svc.addPin(REF, "review-chain", { id: "poesia", source: channelSource, usedBy: ["upstream"] });
+    await runChain(svc);
+    await chmod(join(source, "timing"), 0o000);
+    try {
+      const s = await states(svc);
+      expect(s.upstream!.state).toBe("stale");
+      expect(s.upstream!.reason).toMatch(/^"upstream" is stale: pin "poesia" cannot be checked: /);
+    } finally {
+      await chmod(join(source, "timing"), 0o755);
+    }
+  });
+
+  it("reports every stage when a pin names no stage the pipeline still has", async () => {
+    const { dir, source, svc } = await setup();
+    await svc.addPin(REF, "review-chain", { id: "poesia", source: channelSource, usedBy: ["upstream"] });
+    await runChain(svc);
+    const file = join(dir, "source", "pins", "poesia.json");
+    const pin = JSON.parse(await readFile(file, "utf-8"));
+    await writeFile(file, JSON.stringify({ ...pin, usedBy: ["renamed-stage"] }));
+    await writeFile(join(source, "takes.json"), '{"takes":[]}');
+    const s = await states(svc);
+    expect(s.upstream!.state).toBe("stale");
+    expect(s.downstream!.state).toBe("stale");
+    expect(s.upstream!.reason).toMatch(/pin "poesia" names no stage of this pipeline \(renamed-stage\)/);
+  });
+
+  it("refuses to pin a path that does not exist", async () => {
+    const { svc } = await setup();
+    const out = await svc.addPin(REF, "review-chain", { id: "poesia", source: channelSource, usedBy: ["upstream"], paths: ["nope"] });
+    expect(out.ok && !out.value.ok && out.value.refusal.code).toBe("invalid-pin");
+  });
+
+  it("refuses a pin id that is not a plain name, before touching the filesystem", async () => {
+    const { svc } = await setup();
+    const renew = await svc.renewPin(REF, "review-chain", "../../x", "human");
+    expect(renew.ok && !renew.value.ok && renew.value.refusal.code).toBe("invalid-pin");
+    const add = await svc.addPin(REF, "review-chain", { id: "../x", source: channelSource, usedBy: ["upstream"] });
+    expect(add.ok && !add.value.ok && add.value.refusal.code).toBe("invalid-pin");
+  });
+});
+
 describe("renewing a pin", () => {
   it("journals what changed and keeps its readers stale until they run again", async () => {
     const { dir, source, svc } = await setup();
@@ -183,6 +227,21 @@ describe("renewing a pin", () => {
     expect(renewed.ok && renewed.value.ok && renewed.value.affected).toEqual([]);
     const events = parseJournal(await readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8"), { strict: true });
     expect(events.some((e) => e.type === "staleness-marked")).toBe(false);
+  });
+
+  it("leaves the pin as it was when the journal cannot be written", async () => {
+    const { dir, source, svc } = await setup();
+    await svc.addPin(REF, "review-chain", { id: "poesia", source: channelSource, usedBy: ["upstream"] });
+    await runChain(svc);
+    await writeFile(join(source, "takes.json"), '{"takes":[]}');
+    const file = join(dir, "source", "pins", "poesia.json");
+    const before = await readFile(file, "utf-8");
+    await rm(join(dir, "journal"), { recursive: true, force: true });
+    await writeFile(join(dir, "journal"), "not a directory"); // appending to journal/events.jsonl now fails
+
+    const out = await svc.renewPin(REF, "review-chain", "poesia", "human");
+    expect(out.ok && !out.value.ok && out.value.refusal.code).toBe("journal-unwritable");
+    expect(await readFile(file, "utf-8")).toBe(before);
   });
 
   it("refuses a pin that does not exist", async () => {
