@@ -29,6 +29,9 @@ import { expandOutputs, preserveCandidate, verifyCandidate, materialize, removeD
 import { resolvePipeline } from "../pipeline/resolver.js";
 import { createDefaultLoader } from "../pipeline/fs-loader.js";
 import type { ResolvedPipeline, ResolvedStage } from "../pipeline/types.js";
+import { addPin, pinStaleness, renewPin, verifyPins } from "./pins.js";
+import type { PinActor, PinRefusal } from "./pins.js";
+import type { PinChange, SourcePin, SourceRef } from "@studio/contracts/src/source-pins.mjs";
 import { ok, err, type Result } from "../result.js";
 import { StageStateMachine, LeaseError, attemptsSinceLastSuccess } from "../engine/state-machine.js";
 import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from "../engine/types.js";
@@ -206,6 +209,11 @@ export class ExecutionService {
       key: this.options.operatorKey ?? null, episode: episodeSlug(ref),
     });
 
+    // Shared material this episode pinned (avg-7zp.5): a changed source makes
+    // the stages that read it, and their downstream, stale. Read-only — stat
+    // first, hash only what moved.
+    const pinned = await pinStaleness(this.options.libraryRoot, ref, episodeDir, resolved.value);
+
     const reports: StageStatusReport[] = [];
     for (const stage of stages) {
       const instance = derived.get(stage.definition.id)!;
@@ -258,7 +266,13 @@ export class ExecutionService {
         if (marked > lastIndexOfType("stage-completed", stage.definition.id) &&
             marked > lastIndexOfType("approval-granted", stage.definition.id)) {
           state = "stale";
-          stateReason = `"${stage.definition.id}" is stale: an upstream stage changed after it ran`;
+          const trigger = (events.value[marked]!.data as { trigger?: string } | undefined)?.trigger;
+          stateReason = trigger?.startsWith("pin:")
+            ? `"${stage.definition.id}" is stale: source pin "${trigger.slice(4)}" was renewed after it ran`
+            : `"${stage.definition.id}" is stale: an upstream stage changed after it ran`;
+        } else if (pinned.has(stage.definition.id)) {
+          state = "stale";
+          stateReason = `"${stage.definition.id}" is stale: ${pinned.get(stage.definition.id)}`;
         } else if (stage.definition.gates.review === "none") {
           state = "completed";
         } else {
@@ -325,6 +339,33 @@ export class ExecutionService {
     }
 
     return ok({ ref, pipeline, stages: reports });
+  }
+
+  /** Pin shared material for this episode (avg-7zp.5): inventory it and write source/pins/<id>.json. */
+  async addPin(
+    ref: EpisodeRef, pipeline: string,
+    input: { id: string; source: SourceRef; usedBy: string[]; paths?: string[] },
+  ): Promise<Result<{ ok: true; pin: SourcePin } | { ok: false; refusal: PinRefusal }, ExecutionError>> {
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    return ok(await addPin(this.options.libraryRoot, ref, this.episodeDir(ref), resolved.value, { ...input, now: this.now() }));
+  }
+
+  /** Every pin of the episode and what changed in its source. Writes nothing. */
+  async verifyPins(ref: EpisodeRef): Promise<{ id: string; source?: SourceRef; changed: PinChange[]; problem?: string }[]> {
+    return verifyPins(this.options.libraryRoot, ref, this.episodeDir(ref));
+  }
+
+  /**
+   * Accept a pinned source's current version: rewrite the inventory and journal
+   * which stages must be redone. Any actor may: renewal hides nothing.
+   */
+  async renewPin(
+    ref: EpisodeRef, pipeline: string, id: string, actor: PinActor,
+  ): Promise<Result<{ ok: true; changed: PinChange[]; affected: string[] } | { ok: false; refusal: PinRefusal }, ExecutionError>> {
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    return ok(await renewPin(this.options.libraryRoot, ref, this.episodeDir(ref), resolved.value, { id, actor, now: this.now() }));
   }
 
   /**
