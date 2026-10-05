@@ -1,0 +1,11 @@
+{
+  "expect": "unknown-take",
+  "base": "il-lampo.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/units/1/sequence/0/take",
+      "value": "genesi"
+    }
+  ]
+}

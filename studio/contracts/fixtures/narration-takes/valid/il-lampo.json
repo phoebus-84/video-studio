@@ -1,0 +1,108 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "NarrationTakes",
+  "takes": [
+    {
+      "id": "epoca",
+      "audio": {
+        "path": "assets/takes/epoca.mp3",
+        "hash": "sha256:f6a2b821d310658eefa4aac4fbe231c1e12e13099ba26bd377227487733d0013",
+        "durationSeconds": 47.833
+      },
+      "text": "Prima di entrare nei versi, guardiamo gli anni in cui nascono. Il lampo esce nel milleottocentonovantaquattro, nella terza edizione di Myricae. L'Italia è unita da poco più di trent'anni, ed è un paese povero: più di un italiano su due non sa né leggere né scrivere. Ogni anno, centinaia di migliaia di persone emigrano, molte verso le Americhe, in cerca di lavoro. Nelle campagne crescono le proteste: in Sicilia i Fasci dei lavoratori chiedono pane e terra, e all'inizio del milleottocentonovantaquattro il governo di Francesco Crispi risponde con lo stato d'assedio. È un'epoca di tensioni e di paure, carica come un cielo prima del temporale. E Pascoli porta dentro anche un temporale tutto suo. Riguarda suo padre, Ruggero.",
+      "spokenText": "Prima di entrare nei versi, guardiamo gli anni in cui nascono. Il lampo esce nel milleottocentonovantaquattro, nella terza edizione di Mirìce. L'Italia è unita da poco più di trent'anni, ed è un paese povero: più di un italiano su due non sa né leggere né scrivere. Ogni anno, centinaia di migliaia di persone emigrano, molte verso le Americhe, in cerca di lavoro. Nelle campagne crescono le proteste: in Sicilia i Fasci dei lavoratori chiedono pane e terra, e all'inizio del milleottocentonovantaquattro il governo di Francesco Crispi risponde con lo stato d'assedio. È un'epoca di tensioni e di paure, carica come un cielo prima del temporale. E Pascoli porta dentro anche un temporale tutto suo. Riguarda suo padre, Ruggero.",
+      "role": "guide",
+      "language": "it",
+      "voice": {
+        "provider": "elevenlabs",
+        "model": "eleven_turbo_v2_5",
+        "voiceId": "fQmr8dTaOQq116mo2X7F",
+        "settings": {
+          "stability": 0.6,
+          "similarity_boost": 0.75,
+          "style": 0.1
+        }
+      },
+      "timing": {
+        "path": "artifacts/timing/epoca.json",
+        "hash": "sha256:84a1a7dbc36b8c25287706522b5431b964c29306b7cd366d49522928678811a8"
+      }
+    },
+    {
+      "id": "recitazione",
+      "audio": {
+        "path": "assets/takes/san-martino.wav",
+        "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "durationSeconds": 32.233
+      },
+      "text": "La nebbia agli irti colli piovigginando sale, e sotto il maestrale urla e biancheggia il mar; ma per le vie del borgo dal ribollir de’ tini va l’aspro odor de i vini l’anime a rallegrar. Gira su’ ceppi accesi lo spiedo scoppiettando: sta il cacciator fischiando su l’uscio a rimirar tra le rossastre nubi stormi d’uccelli neri, com’esuli pensieri, nel vespero migrar.",
+      "spokenText": "[warm, unhurried legato recitation in native Italian] La nebbia agli irti colli piovigginando sale, e sotto il maestrale urla e biancheggia il mar; ma per le vie del borgo dal ribollir de’ tini va l’aspro odor de i vini l’anime a rallegrar. Gira su’ ceppi accesi lo spiedo scoppiettando: sta il cacciator fischiando su l’uscio a rimirar tra le rossastre nubi stormi d’uccelli neri, com’esuli pensieri, nel vespero migrar.",
+      "role": "recitante",
+      "language": "it",
+      "voice": {
+        "provider": "elevenlabs",
+        "model": "eleven_v3",
+        "voiceId": "ts9siqBZkKbGEMralWeB",
+        "settings": {
+          "stability": 0.5
+        }
+      },
+      "timing": {
+        "path": "artifacts/timing/recitazione.json",
+        "hash": "sha256:99cb0d7a33f5a2c70967ee11c7d713d3166668c9f14dec230e9609f76ee8eee6"
+      }
+    }
+  ],
+  "units": [
+    {
+      "id": "ascolto1",
+      "source": "blocks[2]",
+      "sequence": [
+        {
+          "take": "recitazione"
+        }
+      ]
+    },
+    {
+      "id": "epoca",
+      "source": "blocks[3]",
+      "sequence": [
+        {
+          "take": "epoca",
+          "holds": [
+            {
+              "afterWord": "temporale.",
+              "seconds": 2.5,
+              "reason": "togliamo il suono: silenzio vero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "doppio",
+      "source": "blocks[9]",
+      "sequence": [
+        {
+          "take": "epoca"
+        },
+        {
+          "take": "recitazione",
+          "pauseBefore": 0.32
+        }
+      ]
+    },
+    {
+      "id": "ascolto2",
+      "source": "blocks[14]",
+      "sequence": [
+        {
+          "take": "recitazione"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "note": "takes from CreativeStudio Il lampo (epoca, real hash) and San Martino (recital, synthetic hash); timing hashes are those of the word-timing fixture files"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "expect": "duplicate-id",
+  "base": "il-lampo.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/takes/1/id",
+      "value": "epoca"
+    },
+    {
+      "op": "replace",
+      "path": "/units/0/sequence/0/take",
+      "value": "epoca"
+    },
+    {
+      "op": "replace",
+      "path": "/units/2/sequence/1/take",
+      "value": "epoca"
+    },
+    {
+      "op": "replace",
+      "path": "/units/3/sequence/0/take",
+      "value": "epoca"
+    }
+  ]
+}

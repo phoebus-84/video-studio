@@ -1,0 +1,11 @@
+{
+  "expect": "schema",
+  "base": "il-lampo.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/units/1/sequence/0/holds/0/seconds",
+      "value": 5
+    }
+  ]
+}
