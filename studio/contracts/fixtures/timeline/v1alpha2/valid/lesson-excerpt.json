@@ -1,0 +1,102 @@
+{
+  "apiVersion": "studio.video/v1alpha2",
+  "kind": "EditTimeline",
+  "episodeRef": {
+    "channel": "dentro-i-versi",
+    "series": "long",
+    "episode": "il-lampo"
+  },
+  "revision": 1,
+  "derivedFrom": {
+    "spec": {
+      "path": "artifacts/lesson.json",
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "revision": 3
+    },
+    "compiler": { "id": "dentro-i-versi/long", "version": "1.0.0" }
+  },
+  "fps": 30,
+  "durationInFrames": 900,
+  "resolution": { "width": 1920, "height": 1080 },
+  "assets": {
+    "room": { "path": "assets/images/room.png", "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "kind": "image" },
+    "painting-1": { "path": "assets/images/painting-1.png", "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "kind": "image" },
+    "painting-2": { "path": "assets/images/painting-2.png", "hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "kind": "image" },
+    "take-titolo": { "path": "assets/takes/titolo.wav", "hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "kind": "audio" },
+    "take-epoca": { "path": "assets/takes/epoca.wav", "hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "audio" },
+    "timing-epoca": { "path": "artifacts/timing/epoca.json", "hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "json" },
+    "music": { "path": "assets/music/arpa.mp3", "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "kind": "audio" }
+  },
+  "tracks": [
+    {
+      "id": "background",
+      "type": "visual",
+      "z": 0,
+      "items": [
+        { "id": "room", "from": 0, "duration": 900, "kit": { "name": "sala", "version": "1.0.0" }, "props": { "background": { "$asset": "room" } } }
+      ]
+    },
+    {
+      "id": "panel",
+      "type": "visual",
+      "z": 10,
+      "items": [
+        {
+          "id": "painting-1", "from": 120, "duration": 300,
+          "kit": { "name": "still", "version": "1.0.0" },
+          "props": { "src": { "$asset": "painting-1" }, "fit": "cover" },
+          "source": "blocks[3].story.phases[0]",
+          "transitionIn": { "type": "fade", "duration": 8 }
+        },
+        {
+          "id": "painting-2", "from": 412, "duration": 300,
+          "kit": { "name": "still", "version": "1.0.0" },
+          "props": { "src": { "$asset": "painting-2" }, "fit": "cover" },
+          "source": "blocks[3].story.phases[1]",
+          "transitionIn": { "type": "crossfade", "duration": 8 }
+        }
+      ]
+    },
+    {
+      "id": "guide",
+      "type": "visual",
+      "z": 30,
+      "items": [
+        { "id": "guide", "from": 0, "duration": 900, "kit": { "name": "interprete", "version": "1.0.0" }, "props": { "look": "attrice-dante", "energy": { "$asset": "timing-epoca" } } }
+      ]
+    },
+    {
+      "id": "verses",
+      "type": "visual",
+      "z": 40,
+      "items": [
+        {
+          "id": "verses-epoca", "from": 120, "duration": 600,
+          "kit": { "name": "verse-bar", "version": "1.0.0" },
+          "props": { "lines": ["E cielo e terra si mostrò qual era"], "timing": { "$asset": "timing-epoca" } },
+          "source": "blocks[3]"
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "type": "audio",
+      "items": [
+        { "id": "voice-titolo", "from": 15, "duration": 90, "asset": "take-titolo", "gain": 1, "fadeIn": 4, "fadeOut": 4, "source": "blocks[1]" },
+        { "id": "voice-epoca", "from": 120, "duration": 600, "asset": "take-epoca", "gain": 1, "source": "blocks[3]" }
+      ]
+    },
+    {
+      "id": "music",
+      "type": "audio",
+      "duck": { "under": ["voice"], "gain": 0.4, "attack": 6, "release": 9 },
+      "items": [
+        { "id": "music", "from": 0, "duration": 900, "asset": "music", "gain": 0.6, "fadeIn": 30, "fadeOut": 45 }
+      ]
+    }
+  ],
+  "sections": [
+    { "id": "titolo", "from": 0, "duration": 110, "source": "blocks[1]" },
+    { "id": "epoca", "from": 120, "duration": 600, "source": "blocks[3]", "chapter": { "number": 1, "title": "L'epoca" } }
+  ]
+}

@@ -76,4 +76,13 @@ describe("TypeScript bindings", () => {
     const content = readBinding("workspace");
     assert.ok(content.includes("./identity"), "workspace.ts should import from identity");
   });
+
+  it("generates the v1alpha2 edit timeline in its own directory", () => {
+    const path = resolve(bindingsDir, "v1alpha2/edit-timeline.ts");
+    assert.ok(existsSync(path), "Missing binding: v1alpha2/edit-timeline.ts");
+    const content = readFileSync(path, "utf-8");
+    assert.ok(content.includes('apiVersion: "studio.video/v1alpha2";'));
+    assert.ok(content.includes("items: (VisualItem | AudioItem)[];"), "array of a union needs parentheses");
+    assert.ok(content.includes("assets: Record<string, Asset>;"), "maps carry their value type");
+  });
 });

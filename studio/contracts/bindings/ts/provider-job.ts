@@ -35,7 +35,7 @@ export interface ProviderJob {
   outputs?: OutputAsset[];
   cost?: CostBreakdown;
   /** Map of artifact path to revision at submission time. */
-  sourceRevisions?: Record<string, unknown>;
+  sourceRevisions?: Record<string, string>;
   /** Caller-chosen key surviving restarts. Duplicate submissions with the same key return the recorded result. */
   idempotencyKey: string;
 }
