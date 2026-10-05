@@ -89,6 +89,10 @@ export default defineConfig({
         ],
       },
       {
+        text: "Editorial handoff",
+        items: [{ text: "DaVinci Resolve", link: "/resolve-handoff" }],
+      },
+      {
         text: "Packages — reusable",
         collapsed: false,
         items: componentLinks(true),

@@ -2,7 +2,21 @@ import { it, expect } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { discoverSkills } from "../src/skills.js";
+
+it("discovers and loads the optional Resolve handoff production skill", async () => {
+  const root = await mkdtemp(join(tmpdir(), "resolve-skill-"));
+  try {
+    const builtInPath = fileURLToPath(new URL("../../../skills/studio/", import.meta.url));
+    const catalog = await discoverSkills({ libraryRoot: root, builtInPath });
+    expect(catalog.list({ source: "built-in" }).find(s => s.id === "resolve-handoff")?.description).toContain("DaVinci Resolve");
+    const skill = await catalog.load("resolve-handoff");
+    expect(skill).toContain("https://github.com/samuelgursky/davinci-resolve-mcp");
+    expect(skill).toContain("planned-not-imported");
+    expect(skill).toContain("human listening");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 it("discovers composed flat/folder skills and scopes layout-2 series overrides", async () => {
   const root = await mkdtemp(join(tmpdir(), "skills-discovery-"));

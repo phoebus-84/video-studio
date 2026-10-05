@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "name": "Editorial review",
+    "mode": "existing",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080
+  },
+  "assets": [
+    { "id": "picture", "path": "output/review/visuals.mp4", "kind": "video", "bin": ["Review", "Picture"] },
+    { "id": "narration", "path": "artifacts/narration/review/closing.wav", "kind": "audio", "bin": ["Review", "Narration"] },
+    { "id": "music", "path": "output/review/audio/music.wav", "kind": "audio", "bin": ["Review", "Stems"] },
+    { "id": "master", "path": "output/review/master.mp4", "kind": "video-audio", "bin": ["Review", "Final"] }
+  ],
+  "timelines": [
+    {
+      "name": "Review - Editable narration",
+      "tracks": [
+        { "type": "video", "index": 1, "name": "Silent picture" },
+        { "type": "audio", "index": 1, "name": "Narration", "audioType": "mono" },
+        { "type": "audio", "index": 2, "name": "Music", "audioType": "stereo" }
+      ],
+      "items": [
+        { "assetId": "picture", "sourceInFrame": 0, "sourceOutFrame": 720, "recordFrame": 0, "trackType": "video", "trackIndex": 1 },
+        { "assetId": "narration", "sourceInFrame": 0, "sourceOutFrame": 96, "recordFrame": 576, "trackType": "audio", "trackIndex": 1 },
+        { "assetId": "music", "sourceInFrame": 0, "sourceOutFrame": 720, "recordFrame": 0, "trackType": "audio", "trackIndex": 2 }
+      ]
+    },
+    {
+      "name": "Review - Final master",
+      "tracks": [
+        { "type": "video", "index": 1, "name": "Master picture" },
+        { "type": "audio", "index": 1, "name": "Master mix", "audioType": "stereo" }
+      ],
+      "items": [
+        { "assetId": "master", "sourceInFrame": 0, "sourceOutFrame": 720, "recordFrame": 0, "trackType": "video", "trackIndex": 1 },
+        { "assetId": "master", "sourceInFrame": 0, "sourceOutFrame": 720, "recordFrame": 0, "trackType": "audio", "trackIndex": 1 }
+      ]
+    }
+  ]
+}
