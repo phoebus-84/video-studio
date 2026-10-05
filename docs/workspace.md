@@ -11,6 +11,7 @@ library/
     ├── characters/
     ├── references/
     ├── skills/
+    ├── sources/                        # shared material episodes pin (ADR-0035)
     ├── voices/
     └── series/                         # explicit container
         └── series-slug/
@@ -25,7 +26,7 @@ library/
                 └── episode-slug/
                     ├── episode.yaml
                     ├── pipeline.snapshot.yaml
-                    ├── source/
+                    ├── source/                 # source/pins/<id>.json: pinned shared material
                     ├── artifacts/
                     ├── prompts/
                     ├── assets/
