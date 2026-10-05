@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateNarrationTakes } from "../src/narration-takes.mjs";
+import { layoutUnit, validateNarrationTakes } from "../src/narration-takes.mjs";
+import { resolveCue } from "../src/cues.mjs";
 import { applyPatch } from "../scripts/lib/json-patch.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,5 +38,100 @@ describe("validateNarrationTakes", () => {
       ["unknown-take", "$.units[1].sequence[0].take"],
       ["bad-pause", "$.units[2].sequence[1]"],
     ]);
+  });
+});
+
+describe("layoutUnit", () => {
+  it("lays out a single whole take", () => {
+    const { layout } = layoutUnit(doc(), "ascolto1", timings());
+    assert.equal(layout.durationSeconds, 32.233);
+    assert.deepEqual(layout.pieces, [{ take: "recitazione", at: 0, from: 0, duration: 32.233 }]);
+    assert.equal(layout.timing.take.id, "ascolto1");
+    assert.equal(layout.timing.words.length, 62);
+    assert.equal(layout.timing.lines.length, 8);
+    assert.equal(layout.energy.values.length, 967);
+  });
+
+  it("plays a reused take identically in another unit", () => {
+    const one = layoutUnit(doc(), "ascolto1", timings()).layout;
+    const two = layoutUnit(doc(), "ascolto2", timings()).layout;
+    assert.deepEqual({ ...two, timing: { ...two.timing, take: one.timing.take } }, one);
+  });
+
+  it("splits a held take in two pieces around the silence", () => {
+    const { layout } = layoutUnit(doc(), "epoca", timings());
+    // "temporale." ends 41.935, "E" starts 42.393: split at 42.164, 2.5 s of silence
+    assert.deepEqual(layout.pieces, [
+      { take: "epoca", at: 0, from: 0, duration: 42.164 },
+      { take: "epoca", at: 44.664, from: 42.164, duration: 5.669 },
+    ]);
+    assert.equal(layout.durationSeconds, 50.333);
+    assert.deepEqual(layout.timing.words[104], { text: "temporale.", start: 41.249, end: 41.935 });
+    assert.deepEqual(layout.timing.words[105], { text: "E", start: 44.893, end: 45.075 });
+    assert.deepEqual(layout.timing.words[20], { text: "Myricae.", spoken: "Mirìce.", start: 8.106, end: 8.628 });
+  });
+
+  it("puts silence in the energy where the hold is", () => {
+    const { layout } = layoutUnit(doc(), "epoca", timings());
+    assert.equal(layout.energy.rate, 30);
+    assert.equal(layout.energy.values.length, Math.round(50.333 * 30));
+    const silence = layout.energy.values.slice(Math.round(42.164 * 30), Math.round(44.664 * 30));
+    assert.ok(silence.length > 70 && silence.every((v) => v === 0));
+  });
+
+  it("chains two takes with the pause before the second", () => {
+    const { layout } = layoutUnit(doc(), "doppio", timings());
+    assert.deepEqual(layout.pieces, [
+      { take: "epoca", at: 0, from: 0, duration: 47.833 },
+      { take: "recitazione", at: 48.153, from: 0, duration: 32.233 },
+    ]);
+    assert.equal(layout.durationSeconds, 80.386);
+    assert.equal(layout.timing.words.length, 118 + 62);
+    assert.deepEqual(layout.timing.words[118], { text: "La", start: 52.243, end: 52.323 }); // 48.153 + 4.09
+    assert.deepEqual(layout.timing.lines[0], { id: "c1", firstWord: 118, lastWord: 124, speaker: "recitante" });
+  });
+
+  it("omits energy when one take has none", () => {
+    const t = timings();
+    delete t.epoca.energy;
+    const { layout } = layoutUnit(doc(), "doppio", t);
+    assert.equal(layout.energy, undefined);
+  });
+
+  it("lets cues resolve on the words of a whole unit", () => {
+    const { layout } = layoutUnit(doc(), "doppio", timings());
+    const scope = { timing: layout.timing, startSeconds: 10, fps: 30 };
+    assert.equal(resolveCue({ word: "temporale" }, scope).frame, Math.round((10 + 41.249) * 30));
+    assert.equal(resolveCue({ line: 3, at: "end" }, scope).frame, Math.round((10 + 48.153 + 14.09) * 30));
+  });
+
+  it("refuses a take without its WordTiming", () => {
+    const t = timings();
+    delete t.recitazione;
+    assert.deepEqual(layoutUnit(doc(), "doppio", t).problems.map((p) => [p.code, p.path]), [
+      ["missing-timing", "$.units[2].sequence[1].take"],
+    ]);
+  });
+
+  it("refuses a WordTiming made for another file or another text", () => {
+    const otherFile = timings();
+    otherFile.epoca.audio.hash = `sha256:${"9".repeat(64)}`;
+    assert.deepEqual(codes(layoutUnit(doc(), "epoca", otherFile).problems), ["timing-mismatch"]);
+    const otherText = timings();
+    otherText.epoca.text = otherText.epoca.text.replace("Prima", "Dopo");
+    assert.deepEqual(codes(layoutUnit(doc(), "epoca", otherText).problems), ["timing-mismatch"]);
+  });
+
+  it("refuses a hold after a missing word, mid-sentence, or after the last word", () => {
+    for (const afterWord of ["nuvola.", "lampo", "Ruggero."]) {
+      const d = doc();
+      d.units[1].sequence[0].holds[0].afterWord = afterWord;
+      const { problems } = layoutUnit(d, "epoca", timings());
+      assert.deepEqual(problems.map((p) => [p.code, p.path]), [["bad-hold", "$.units[1].sequence[0].holds[0].afterWord"]], afterWord);
+    }
+  });
+
+  it("throws for a unit that does not exist", () => {
+    assert.throws(() => layoutUnit(doc(), "genesi", timings()), RangeError);
   });
 });

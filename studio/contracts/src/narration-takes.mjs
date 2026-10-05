@@ -20,6 +20,7 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import schema from "../schemas/v1alpha1/narration-takes.schema.json" with { type: "json" };
 import { jsonPath } from "./edit-timeline.mjs";
+import { normalizeWord } from "./cues.mjs";
 
 let compiled = null;
 
@@ -71,4 +72,120 @@ export function validateNarrationTakes(doc) {
     });
   });
   return out;
+}
+
+const SENTENCE_END = /[.!?:]$/;
+
+/** Times are kept to the microsecond, as the agent's narration manifest does: no 5.668999999999997. */
+const us = (seconds) => Number(seconds.toFixed(6));
+
+/** Where to split a take for a hold, or a problem. */
+function holdSplit(hold, timing, path) {
+  const key = normalizeWord(hold.afterWord);
+  const n = hold.n ?? 1;
+  const hits = timing.words.map((w, i) => (normalizeWord(w.text) === key ? i : -1)).filter((i) => i >= 0);
+  if (hits.length < n) {
+    return { problem: issue("bad-hold", `${path}.afterWord`, `"${hold.afterWord}"${n > 1 ? ` #${n}` : ""} is said ${hits.length} time${hits.length === 1 ? "" : "s"} in take "${timing.take.id}"`) };
+  }
+  const i = hits[n - 1];
+  const word = timing.words[i];
+  if (!SENTENCE_END.test(word.text)) {
+    return { problem: issue("bad-hold", `${path}.afterWord`, `"${word.text}" does not end a sentence: a scene pause only follows . ! ? or :`) };
+  }
+  if (i === timing.words.length - 1) {
+    return { problem: issue("bad-hold", `${path}.afterWord`, `"${word.text}" is the last word of take "${timing.take.id}": use the pause before the next take instead`) };
+  }
+  return { at: (word.end + timing.words[i + 1].start) / 2 };
+}
+
+/**
+ * Lay out one unit: audio pieces, words and lines in unit time, energy.
+ * `doc` must already pass validateNarrationTakes; `timings` maps take id → valid WordTiming.
+ * @returns {{layout: object} | {problems: {code: string, message: string, path: string}[]}}
+ */
+export function layoutUnit(doc, unitId, timings) {
+  const ui = doc.units.findIndex((u) => u.id === unitId);
+  if (ui === -1) throw new RangeError(`no unit "${unitId}"`);
+  const unit = doc.units[ui];
+  const takes = new Map(doc.takes.map((t) => [t.id, t]));
+  const problems = [];
+  const pieces = [];
+  const words = [];
+  const lines = [];
+  const energies = [];
+  let cursor = 0;
+
+  unit.sequence.forEach((entry, ei) => {
+    const p = `$.units[${ui}].sequence[${ei}]`;
+    const take = takes.get(entry.take);
+    const timing = timings?.[entry.take];
+    if (!timing) {
+      problems.push(issue("missing-timing", `${p}.take`, `take "${entry.take}" has no WordTiming: its words cannot be placed`));
+      return;
+    }
+    if (timing.audio.hash !== take.audio.hash) {
+      problems.push(issue("timing-mismatch", `${p}.take`, `the WordTiming given for "${entry.take}" was made for ${timing.audio.hash}, not ${take.audio.hash}`));
+      return;
+    }
+    if (timing.text !== take.text) {
+      problems.push(issue("timing-mismatch", `${p}.take`, `the WordTiming given for "${entry.take}" reproduces another text`));
+      return;
+    }
+    const splits = [];
+    (entry.holds ?? []).forEach((hold, hi) => {
+      const split = holdSplit(hold, timing, `${p}.holds[${hi}]`);
+      if (split.problem) problems.push(split.problem);
+      else splits.push({ at: split.at, seconds: hold.seconds });
+    });
+    splits.sort((a, b) => a.at - b.at);
+
+    cursor += entry.pauseBefore ?? 0;
+    const start = cursor;
+    const shift = (t) => t + splits.filter((s) => t >= s.at).reduce((sum, s) => sum + s.seconds, 0);
+
+    const firstPiece = pieces.length;
+    let from = 0;
+    let placed = 0;
+    for (const split of splits) {
+      pieces.push({ take: entry.take, at: us(start + from + placed), from: us(from), duration: us(split.at - from) });
+      placed += split.seconds;
+      from = split.at;
+    }
+    pieces.push({ take: entry.take, at: us(start + from + placed), from: us(from), duration: us(take.audio.durationSeconds - from) });
+
+    const firstWord = words.length;
+    for (const w of timing.words) {
+      words.push({ ...w, start: us(start + shift(w.start)), end: us(start + shift(w.start) + (w.end - w.start)) });
+    }
+    for (const line of timing.lines ?? []) {
+      lines.push({ ...line, firstWord: line.firstWord + firstWord, lastWord: line.lastWord + firstWord });
+    }
+    energies.push(timing.energy ? { energy: timing.energy, pieces: pieces.slice(firstPiece) } : null);
+
+    cursor = start + take.audio.durationSeconds + placed;
+  });
+
+  if (problems.length > 0) return { problems };
+  const layout = { durationSeconds: us(cursor), pieces, timing: { take: { id: unit.id }, words, lines } };
+  const energy = joinEnergy(energies, cursor);
+  if (energy) layout.energy = energy;
+  return { layout };
+}
+
+/** One envelope for the unit: each piece's slice of its take's energy, zeros in every silence. */
+function joinEnergy(energies, durationSeconds) {
+  if (energies.length === 0 || energies.some((e) => e === null)) return null;
+  const rate = energies[0].energy.rate;
+  if (energies.some((e) => e.energy.rate !== rate)) return null;
+  const values = new Array(Math.round(durationSeconds * rate)).fill(0);
+  for (const { energy, pieces } of energies) {
+    for (const piece of pieces) {
+      const slice = energy.values.slice(Math.round(piece.from * rate), Math.round((piece.from + piece.duration) * rate));
+      const at = Math.round(piece.at * rate);
+      slice.forEach((v, i) => {
+        if (at + i < values.length) values[at + i] = v;
+      });
+    }
+  }
+  return { rate, values };
 }
