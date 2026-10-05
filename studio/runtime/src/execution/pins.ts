@@ -38,7 +38,13 @@ export type PinRefusal =
   | { code: "self-pin"; message: string }
   | { code: "pin-exists"; message: string }
   | { code: "unknown-pin"; message: string }
-  | { code: "invalid-pin"; message: string };
+  | { code: "invalid-pin"; message: string }
+  | { code: "journal-unwritable"; message: string };
+
+/** A pin id is a plain name: it becomes a file name under source/pins/, so nothing else may reach the filesystem. */
+const PIN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const slugOf = (ref: EpisodeRef) => `${ref.channel}/${ref.series}/${ref.episode}`;
 
@@ -86,31 +92,44 @@ export async function pinStaleness(
 ): Promise<Map<string, string>> {
   const reasons = new Map<string, string>();
   const allStages = pipeline.stages.map((s) => s.definition.id);
-  const mark = (usedBy: string[], reason: string) => {
-    for (const id of affectedBy(pipeline, usedBy, ref)) if (!reasons.has(id)) reasons.set(id, reason);
+  const mark = (pinName: string, usedBy: string[], reason: string) => {
+    let affected = affectedBy(pipeline, usedBy, ref);
+    if (affected.length === 0) {
+      // Readers the pipeline no longer has must not hide a problem: report it everywhere.
+      affected = allStages;
+      reason = `pin "${pinName}" names no stage of this pipeline (${usedBy.join(", ")}); ${reason}`;
+    }
+    for (const id of affected) if (!reasons.has(id)) reasons.set(id, reason);
   };
   for (const { file, raw, error } of await readPinFiles(episodeDir)) {
     const readers = Array.isArray((raw as { usedBy?: unknown })?.usedBy)
       ? ((raw as { usedBy: unknown[] }).usedBy.filter((x) => typeof x === "string") as string[])
       : allStages;
     if (error) {
-      mark(readers, `pin "${file}" cannot be read: ${error}`);
+      mark(file, readers, `pin "${file}" cannot be read: ${error}`);
       continue;
     }
     const problems = validateSourcePin(raw);
     if (problems.length > 0) {
-      mark(readers, `pin "${file}" is not valid: ${problems[0]!.path} ${problems[0]!.message}`);
+      mark(file, readers, `pin "${file}" is not valid: ${problems[0]!.path} ${problems[0]!.message}`);
       continue;
     }
     const pin = raw as SourcePin;
     const dir = sourceDir(libraryRoot, ref.channel, pin.source);
     if (!existsSync(dir)) {
-      mark(pin.usedBy, `${sourceLabel(pin.source)} pinned as "${pin.id}" no longer exists`);
+      mark(pin.id, pin.usedBy, `${sourceLabel(pin.source)} pinned as "${pin.id}" no longer exists`);
       continue;
     }
-    const { changed } = await verifyPin(pin, dir);
+    let changed;
+    try {
+      ({ changed } = await verifyPin(pin, dir));
+    } catch (e) {
+      // One unreadable source must not take the whole status down: it is this pin's problem.
+      mark(pin.id, pin.usedBy, `pin "${pin.id}" cannot be checked: ${message(e)}`);
+      continue;
+    }
     if (changed.length > 0) {
-      mark(pin.usedBy, `${sourceLabel(pin.source)} changed since it was pinned: ${describeChanges(changed)} — renew the pin to accept the new version`);
+      mark(pin.id, pin.usedBy, `${sourceLabel(pin.source)} changed since it was pinned: ${describeChanges(changed)} — renew the pin to accept the new version`);
     }
   }
   return reasons;
@@ -144,6 +163,9 @@ export async function addPin(
   libraryRoot: string, ref: EpisodeRef, episodeDir: string, pipeline: ResolvedPipeline,
   input: { id: string; source: SourceRef; usedBy: string[]; paths?: string[]; now: Date },
 ): Promise<{ ok: true; pin: SourcePin } | { ok: false; refusal: PinRefusal }> {
+  if (!PIN_ID.test(input.id)) {
+    return { ok: false, refusal: { code: "invalid-pin", message: `pin id "${input.id}" is not a plain name` } };
+  }
   if (input.source.kind === "episode" && input.source.series === ref.series && input.source.episode === ref.episode) {
     return { ok: false, refusal: { code: "self-pin", message: `an episode cannot pin itself` } };
   }
@@ -160,11 +182,16 @@ export async function addPin(
   if (existsSync(file)) {
     return { ok: false, refusal: { code: "pin-exists", message: `pin "${input.id}" already exists: renew it instead` } };
   }
+  let files;
+  try {
+    files = await inventory(dir, input.paths);
+  } catch (e) {
+    return { ok: false, refusal: { code: "invalid-pin", message: `${sourceLabel(input.source)} cannot be inventoried: ${message(e)}` } };
+  }
   const pin = {
     apiVersion: "studio.video/v1alpha1", kind: "SourcePin", id: input.id, source: input.source,
     ...(input.paths && input.paths.length > 0 ? { paths: input.paths } : {}),
-    usedBy: input.usedBy, pinnedAt: input.now.toISOString(),
-    files: await inventory(dir, input.paths),
+    usedBy: input.usedBy, pinnedAt: input.now.toISOString(), files,
   } as SourcePin;
   const problems = validateSourcePin(pin);
   if (problems.length > 0) {
@@ -180,6 +207,9 @@ export async function renewPin(
   libraryRoot: string, ref: EpisodeRef, episodeDir: string, pipeline: ResolvedPipeline,
   input: { id: string; actor: PinActor; now: Date },
 ): Promise<{ ok: true; changed: PinChange[]; affected: string[] } | { ok: false; refusal: PinRefusal }> {
+  if (!PIN_ID.test(input.id)) {
+    return { ok: false, refusal: { code: "invalid-pin", message: `pin id "${input.id}" is not a plain name` } };
+  }
   const file = join(episodeDir, PINS_DIR, `${input.id}.json`);
   if (!existsSync(file)) return { ok: false, refusal: { code: "unknown-pin", message: `no pin "${input.id}"` } };
   let raw: unknown;
@@ -197,16 +227,27 @@ export async function renewPin(
   if (!existsSync(dir)) {
     return { ok: false, refusal: { code: "unknown-source", message: `${sourceLabel(pin.source)} does not exist at ${dir}` } };
   }
-  const { changed } = await verifyPin(pin, dir);
-  const renewed = { ...pin, pinnedAt: input.now.toISOString(), files: await inventory(dir, pin.paths) };
-  await writeAtomically(file, `${JSON.stringify(renewed, null, 2)}\n`);
+  let changed;
+  let files;
+  try {
+    ({ changed } = await verifyPin(pin, dir));
+    files = await inventory(dir, pin.paths);
+  } catch (e) {
+    return { ok: false, refusal: { code: "invalid-pin", message: `${sourceLabel(pin.source)} cannot be inventoried: ${message(e)}` } };
+  }
   const affected = changed.length > 0 ? affectedBy(pipeline, pin.usedBy, ref) : [];
   if (affected.length > 0) {
+    // Journal first: if the record cannot land, the pin keeps its old inventory and the
+    // change stays visible. The reverse order could accept a change nobody is told to redo.
     const trigger = `pin:${pin.id}`;
-    await appendJournalEvent(episodeDir, {
+    const written = await appendJournalEvent(episodeDir, {
       type: "staleness-marked", actor: input.actor, episode: ref,
       data: { stageId: trigger, trigger, affected: affected.map((stageId) => ({ stageId, path: [trigger, stageId] })), changed },
     });
+    if (!written) {
+      return { ok: false, refusal: { code: "journal-unwritable", message: `the journal cannot be written: pin "${pin.id}" was not renewed` } };
+    }
   }
+  await writeAtomically(file, `${JSON.stringify({ ...pin, pinnedAt: input.now.toISOString(), files }, null, 2)}\n`);
   return { ok: true, changed, affected };
 }
