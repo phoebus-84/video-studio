@@ -5,11 +5,13 @@
  * Usage: node scripts/check-timeline-fixtures.mjs
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import { validateEditTimeline } from "../src/edit-timeline.mjs";
+import { applyPatch } from "./lib/json-patch.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -191,11 +193,45 @@ if (validFixture.resolution.width !== 1920 || validFixture.resolution.height !==
   console.log("PASS resolution 1920×1080");
 }
 
+// ── v1alpha2 fixtures ───────────────────────────────────────────────────────
+// Valid fixtures must produce no problem at all. Each invalid fixture is a
+// valid base plus a patch, and must fail with exactly the code it names.
+
+const v2Dir = resolve(root, "fixtures/timeline/v1alpha2");
+const readJson = (path) => JSON.parse(readFileSync(path, "utf-8"));
+const v2Valid = readdirSync(resolve(v2Dir, "valid")).filter((f) => f.endsWith(".json"));
+const v2Invalid = readdirSync(resolve(v2Dir, "invalid")).filter((f) => f.endsWith(".json"));
+
+for (const file of v2Valid) {
+  const problems = validateEditTimeline(readJson(resolve(v2Dir, "valid", file)));
+  if (problems.length > 0) {
+    failures += 1;
+    console.error(`FAIL v1alpha2 valid ${file}:`, problems.map((p) => `${p.code} ${p.path}`).join("; "));
+  } else {
+    console.log(`PASS v1alpha2 valid ${file}`);
+  }
+}
+
+for (const file of v2Invalid) {
+  const fixture = readJson(resolve(v2Dir, "invalid", file));
+  const doc = applyPatch(readJson(resolve(v2Dir, "valid", fixture.base)), fixture.patch);
+  const found = [...new Set(validateEditTimeline(doc).map((p) => p.code))];
+  if (found.length !== 1 || found[0] !== fixture.expect) {
+    failures += 1;
+    console.error(`FAIL v1alpha2 invalid ${file}: expected [${fixture.expect}], got [${found.join(", ")}]`);
+  } else {
+    console.log(`PASS v1alpha2 invalid ${file} rejected with ${fixture.expect}`);
+  }
+}
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 if (failures) {
   console.error(`\n${failures} timeline check(s) failed`);
   process.exitCode = 1;
 } else {
-  console.log(`\n1 valid and ${invalidFixtures.length} invalid timeline fixtures passed`);
+  console.log(
+    `\nv1alpha1: 1 valid and ${invalidFixtures.length} invalid fixtures passed; ` +
+      `v1alpha2: ${v2Valid.length} valid and ${v2Invalid.length} invalid fixtures passed`,
+  );
 }
