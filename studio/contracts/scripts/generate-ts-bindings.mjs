@@ -136,6 +136,11 @@ function toTsType(schema, context, required = true) {
   if (type === "boolean") return "boolean";
   if (type === "null") return "null";
 
+  // Handle tuples: fixed-length arrays declared with prefixItems
+  if (type === "array" && Array.isArray(schema.prefixItems) && schema.items === false) {
+    return `[${schema.prefixItems.map((s) => toTsType(s, context, true)).join(", ")}]`;
+  }
+
   // Handle array
   if (type === "array") {
     if (schema.items) {
