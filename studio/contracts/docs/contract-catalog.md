@@ -14,7 +14,7 @@ This catalog assigns every durable wire or workspace concept to one contract fam
 | `asset` | Asset Attempt, Asset Manifest, Selected Asset, VideoAttempt, media probe summary | provider adapters and renderers | runtime, Pi, composer, gateway, web | `vwc-5q0.5`, `vwc-5q0.15` |
 | `provider-job` | Capability request, persisted provider job, progress, cancellation, normalized result | provider adapters and TTS worker | Pi, runtime, gateway, web | `vwc-5q0.7` |
 | `narration` | Source-mapped Segment, immutable Synthesis Attempt, Signal Quality Report, ordered accepted-attempt Manifest, measured WAV/mastering metadata, caption cues, legacy read sidecar | Pi and TTS worker | runtime, composer, gateway, web | `qtw-48r.6.2` |
-| `timeline` | Canvas, scene placements, visual primitives, overlays, captions, audio mix, output profile | Pi and editors | FFmpeg composer, runtime, web | `vwc-5q0.6` |
+| `timeline` | v1alpha2: tracks of versioned kit instances and audio items, ducking, sections with spec provenance, integer frames (ADR-0034) | Pi and editors | FFmpeg composer, runtime, web | `vwc-5q0.6` |
 | `event` | Journal Event envelope, correlation and causation, typed lifecycle payloads, cursor | runtime and services | gateway, projections, web, Pi | `vwc-5q0.7` |
 | `review` | Review Thread, anchor, reply, resolution, stale anchor, approval decision | users, Pi, gateway | runtime, gateway, web, Pi | `vwc-5q0.7` |
 | `policy` | Approval Policy, Budget Envelope, reservation/reconciliation, material downgrade, stale acceptance | channel/series owners and runtime | runtime, Pi, gateway, web, adapters | `vwc-5q0.3`, `vwc-5q0.7` |
