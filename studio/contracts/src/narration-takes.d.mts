@@ -56,7 +56,8 @@ export declare const QWEN_PROVIDER: "qwen3-tts-local";
 
 /**
  * Map a Qwen narration manifest into takes and one unit, "narration".
- * Throws when a segment has no text in `segments` or in the manifest's captions.
+ * Throws when a segment has no text in `segments` or in the manifest's captions,
+ * or when the result would not pass validateNarrationTakes.
  */
 export declare function takesFromNarrationManifest(
   manifest: unknown,

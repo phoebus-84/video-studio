@@ -95,7 +95,7 @@ function holdSplit(hold, timing, path) {
   if (i === timing.words.length - 1) {
     return { problem: issue("bad-hold", `${path}.afterWord`, `"${word.text}" is the last word of take "${timing.take.id}": use the pause before the next take instead`) };
   }
-  return { at: (word.end + timing.words[i + 1].start) / 2 };
+  return { at: (word.end + timing.words[i + 1].start) / 2, word: i };
 }
 
 /**
@@ -135,7 +135,10 @@ export function layoutUnit(doc, unitId, timings) {
     (entry.holds ?? []).forEach((hold, hi) => {
       const split = holdSplit(hold, timing, `${p}.holds[${hi}]`);
       if (split.problem) problems.push(split.problem);
-      else splits.push({ at: split.at, seconds: hold.seconds });
+      else if (splits.some((s) => s.word === split.word)) {
+        // Two pauses after one word would leave an empty piece of voice between them: declare one, longer.
+        problems.push(issue("bad-hold", `${p}.holds[${hi}].afterWord`, `"${hold.afterWord}" already has a scene pause in this playing of "${entry.take}"`));
+      } else splits.push({ at: split.at, word: split.word, seconds: hold.seconds });
     });
     splits.sort((a, b) => a.at - b.at);
 
@@ -223,10 +226,14 @@ export function takesFromNarrationManifest(manifest, { segments = [] } = {}) {
     return take;
   });
   const sequence = manifest.entries.map((entry, i) =>
-    i === 0 ? { take: entry.segmentId } : { take: entry.segmentId, pauseBefore: manifest.entries[i - 1].pauseAfterMs / 1000 },
+    // A missing pauseAfterMs is no pause, as the agent writes it (Math.max(0, … ?? 0)).
+    i === 0 ? { take: entry.segmentId } : { take: entry.segmentId, pauseBefore: (manifest.entries[i - 1].pauseAfterMs ?? 0) / 1000 },
   );
-  return {
-    takes: { apiVersion: "studio.video/v1alpha1", kind: "NarrationTakes", takes, units: [{ id: "narration", sequence }] },
-    leadInSeconds: manifest.leadInSilenceSeconds ?? 0,
-  };
+  const doc = { apiVersion: "studio.video/v1alpha1", kind: "NarrationTakes", takes, units: [{ id: "narration", sequence }] };
+  // Return valid takes or nothing: a pause beyond 10 s or an id the contract does not allow ends here.
+  const problems = validateNarrationTakes(doc);
+  if (problems.length > 0) {
+    throw new Error(`not valid narration takes: ${problems.map((p) => `${p.code} at ${p.path}`).join("; ")}`);
+  }
+  return { takes: doc, leadInSeconds: manifest.leadInSilenceSeconds ?? 0 };
 }
