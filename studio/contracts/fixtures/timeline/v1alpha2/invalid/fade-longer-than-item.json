@@ -1,0 +1,11 @@
+{
+  "expect": "fade-too-long",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/4/items/0/fadeIn",
+      "value": 120
+    }
+  ]
+}

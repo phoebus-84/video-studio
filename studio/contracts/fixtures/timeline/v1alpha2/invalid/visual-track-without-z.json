@@ -1,0 +1,10 @@
+{
+  "expect": "missing-z",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/tracks/2/z"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "expect": "unknown-asset",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/3/items/0/props/timing",
+      "value": {
+        "$asset": "timing-missing"
+      }
+    }
+  ]
+}

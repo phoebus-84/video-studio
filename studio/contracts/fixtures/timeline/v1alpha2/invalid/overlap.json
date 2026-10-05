@@ -1,0 +1,10 @@
+{
+  "expect": "overlap",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/tracks/1/items/1/transitionIn"
+    }
+  ]
+}

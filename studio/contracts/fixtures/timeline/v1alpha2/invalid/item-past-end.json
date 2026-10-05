@@ -1,0 +1,11 @@
+{
+  "expect": "out-of-range",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/5/items/0/duration",
+      "value": 901
+    }
+  ]
+}

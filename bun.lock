@@ -141,8 +141,8 @@
     },
     "studio/contracts": {
       "name": "@studio/contracts",
-      "version": "0.1.0",
-      "devDependencies": {
+      "version": "0.2.0",
+      "dependencies": {
         "ajv": "^8.18.0",
         "ajv-formats": "^3.0.1",
       },

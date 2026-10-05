@@ -1,0 +1,11 @@
+{
+  "expect": "schema",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/2/items/0/from",
+      "value": 0.5
+    }
+  ]
+}

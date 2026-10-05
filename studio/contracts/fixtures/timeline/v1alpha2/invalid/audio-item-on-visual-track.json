@@ -1,0 +1,16 @@
+{
+  "expect": "item-type",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/3/items/0",
+      "value": {
+        "id": "verses-epoca",
+        "from": 120,
+        "duration": 600,
+        "asset": "take-epoca"
+      }
+    }
+  ]
+}

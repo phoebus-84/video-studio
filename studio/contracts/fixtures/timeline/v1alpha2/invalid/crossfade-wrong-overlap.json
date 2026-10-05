@@ -1,0 +1,11 @@
+{
+  "expect": "bad-crossfade",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/1/items/1/from",
+      "value": 410
+    }
+  ]
+}

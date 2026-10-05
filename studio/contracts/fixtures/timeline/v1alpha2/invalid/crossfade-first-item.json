@@ -1,0 +1,14 @@
+{
+  "expect": "bad-crossfade",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/1/items/0/transitionIn",
+      "value": {
+        "type": "crossfade",
+        "duration": 8
+      }
+    }
+  ]
+}
