@@ -54,7 +54,7 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0033-blender-is-a-reusable-scene-provider) holds 33 accepted
+[`adr/`](./adr/0034-a-layered-kit-based-edit-timeline) holds 34 accepted
 decisions. The ones that most shape the code:
 
 | ADR | Decision |
@@ -65,5 +65,7 @@ decisions. The ones that most shape the code:
 | [0029](./adr/0029-skills-single-source-of-truth) | `skills/` is the source of truth; `.pi/skills/` is generated |
 | [0030](./adr/0030-secrets-are-environment-only-and-dev-auth-is-explicit) | Secrets are environment-only |
 | [0032](./adr/0032-single-repository-with-reusable-packages) | One repository, split into reusable packages and the product |
+| [0034](./adr/0034-a-layered-kit-based-edit-timeline) | The edit timeline is layered, kit-based and derived from the spec |
 
 ADR-0022 (independent repositories per module) is superseded by 0032.
+ADR-0009 (FFmpeg compiles a typed edit timeline) is superseded by 0034.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://video.studio/schemas/v1alpha1/edit-timeline.schema.json",
   "title": "Video Studio edit timeline schema",
-  "description": "Canonical schema for the edit timeline — a declarative, reviewable account of how visual and audio assets are arranged over time. Owned by video-workspace-contracts per ADR-0028. Maps to the ffmpeg-video-composer Timeline input type.",
+  "description": "Deprecated: superseded by v1alpha2 (ADR-0034); kept frozen for migration. Canonical schema for the edit timeline — a declarative, reviewable account of how visual and audio assets are arranged over time. Owned by video-workspace-contracts per ADR-0028. Maps to the ffmpeg-video-composer Timeline input type.",
   "$defs": {
     "EpisodeRef": {
       "type": "object",
