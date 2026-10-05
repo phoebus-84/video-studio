@@ -36,7 +36,8 @@ export declare function jsonPath(pointer: string): string;
 
 /**
  * Convert a `studio.video/v1alpha1` timeline. Throws when a source asset has no
- * hash in `assetHashes`, when fps is not an integer, or when `doc` is not v1alpha1.
+ * hash in `assetHashes`, when fps is not an integer, when `doc` is not v1alpha1,
+ * or when the result would not pass `validateEditTimeline`.
  */
 export declare function migrateEditTimelineV1alpha1(
   doc: unknown,
