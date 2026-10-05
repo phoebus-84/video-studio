@@ -5,6 +5,10 @@
 // Every function produces byte-stable output with no platform dependencies.
 // ---------------------------------------------------------------------------
 
+import { parseSvgDocument } from './svg-safety.js';
+import { checkSvgSize, GRAPHICS_LIMITS, GraphicsSafetyError } from './safety.js';
+import { performance } from 'node:perf_hooks';
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface SvgElement {
@@ -50,7 +54,9 @@ export interface LayoutOptions {
 /**
  * Render an SVG element tree to a string.
  */
-export function renderSvg(doc: SvgDocument): string {
+export function renderSvg(input: SvgDocument): string {
+  const deadline = performance.now() + GRAPHICS_LIMITS.maxRenderMs;
+  const doc = parseSvgDocument(input);
   const parts: string[] = [];
 
   // Deterministic attribute order
@@ -68,7 +74,12 @@ export function renderSvg(doc: SvgDocument): string {
 
   parts.push("</svg>");
 
-  return parts.join("\n") + "\n";
+  const svg = parts.join("\n") + "\n";
+  checkSvgSize(svg);
+  if (performance.now() > deadline) {
+    throw new GraphicsSafetyError('resource.render-time-limit', 'SVG construction exceeded its cooperative time budget');
+  }
+  return svg;
 }
 
 function renderElement(el: SvgElement, indent: number): string {

@@ -34,6 +34,10 @@ import type { ResolvedDesignTokens, ThemeProvenance } from '../theme/types.js';
 import { FontRegistry, createFontRegistry } from '../font/registry.js';
 import type { FontEntry } from '../font/registry.js';
 import { checkCoverage } from '../font/diagnostics.js';
+import { performance } from 'node:perf_hooks';
+import {
+  GRAPHICS_LIMITS, GraphicsSafetyError, parseGraphicRequest, isSafeFontFamily, checkSvgSize,
+} from './safety.js';
 
 // ── Internal theme adapter ──
 // Maps ResolvedDesignTokens to the CSS values used by kind renderers.
@@ -140,8 +144,21 @@ export class SVGRenderPipeline {
    * The same request in the same pinned environment always produces
    * byte-stable SVG output.
    */
-  async render(request: GraphicRenderRequest): Promise<GraphicRenderResult> {
+  async render(input: unknown, options: { signal?: AbortSignal } = {}): Promise<GraphicRenderResult> {
     const startMs = Date.now();
+    const deadline = performance.now() + GRAPHICS_LIMITS.maxRenderMs;
+    const checkBudget = () => {
+      if (options.signal?.aborted) throw new GraphicsSafetyError('resource.cancelled', 'Rendering was cancelled');
+      if (performance.now() > deadline) throw new GraphicsSafetyError('resource.render-time-limit', 'SVG construction exceeded its cooperative time budget');
+    };
+    let request: GraphicRenderRequest;
+    try {
+      checkBudget();
+      request = parseGraphicRequest(input);
+      checkBudget();
+    } catch (error) {
+      return rejectedResult(input, error, startMs, this.environmentId);
+    }
     const diagnostics: RenderDiagnostic[] = [];
 
     // ── Resolve theme ──
@@ -214,10 +231,13 @@ export class SVGRenderPipeline {
     let svgContent: string;
 
     try {
+      checkBudget();
       svgContent = this.renderByKind(request, style, safeArea);
+      checkSvgSize(svgContent);
+      checkBudget();
     } catch (err) {
       diagnostics.push({
-        code: 'render.unhandled',
+        code: err instanceof GraphicsSafetyError ? err.code : 'render.unhandled',
         level: 'error',
         message: `Unhandled render error: ${err instanceof Error ? err.message : String(err)}`,
       });
@@ -299,11 +319,12 @@ export class SVGRenderPipeline {
         (v) => v.weight === 400 && v.style === 'normal',
       ) ?? entry.variants[0];
 
-      if (normalVariant) {
-        result[role.key] = normalVariant.cssSpec;
+      const cssSpec = normalVariant?.cssSpec ?? `'${entry.family}', ${role.key === 'mono' ? 'monospace' : 'sans-serif'}`;
+      if (!isSafeFontFamily(cssSpec)) {
+        diagnostics.push({ code: 'security.unsafe-font', level: 'error',
+          message: `Font for role "${role.key}" must contain only literal family names, not CSS or URLs` });
       } else {
-        // Should not happen with bundled fonts, but handle gracefully
-        result[role.key] = `'${entry.family}', ${role.key === 'mono' ? 'monospace' : 'sans-serif'}`;
+        result[role.key] = cssSpec;
       }
     }
 
@@ -357,6 +378,32 @@ export class SVGRenderPipeline {
       }
     }
   }
+}
+
+// Rejected input is never hashed, echoed or interpolated into SVG geometry.
+// A safe rejection fingerprint is intentionally NOT a hash of the bad request.
+function rejectedResult(input: unknown, error: unknown, startMs: number, environmentId: string): GraphicRenderResult {
+  const diagnostic: RenderDiagnostic = {
+    code: error instanceof GraphicsSafetyError ? error.code : 'validation.invalid-data',
+    level: 'error',
+    message: error instanceof GraphicsSafetyError ? error.message.slice(0, 512) : 'Input could not be read as passive data',
+  };
+  const diagnostics = [diagnostic];
+  // Preserve the existing two-dimension diagnostics without invoking getters.
+  if (input && typeof input === 'object' && diagnostic.code === 'validation.invalid-width') {
+    const height = Object.getOwnPropertyDescriptor(input, 'height')?.value;
+    if (typeof height !== 'number' || !Number.isFinite(height) || height <= 0) {
+      diagnostics.push({ code: 'validation.invalid-height', level: 'error', message: 'height must be a positive finite number' });
+    }
+  }
+  const fingerprint = { rejected: diagnostics, environmentId };
+  const svgContent = svgDoc(400, 200, `<text x="20" y="80">Render Error</text><text x="20" y="110">${esc(diagnostic.message)}</text>`);
+  return {
+    stableId: generateStableId('gr', fingerprint), requestHash: computeContentHash(fingerprint),
+    svgContent, width: 400, height: 200, kind: 'title-frame', status: 'failed',
+    durationMs: Date.now() - startMs, diagnostics, timestamp: new Date().toISOString(),
+    svgHash: computeContentHash(svgContent), themeProvenance: null,
+  };
 }
 
 // ── Kind-specific renderers ──

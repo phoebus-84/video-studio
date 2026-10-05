@@ -1,6 +1,9 @@
 # Graphics renderer contracts
 
-This document describes the public API contracts for `@video-studio/studio-graphics-renderer`.
+This document describes the public API contracts for `@av/graphics`.
+
+See [Security and resource bounds](security.md) for runtime validation, failure
+fingerprints, the passive SVG subset, resource ceilings and host responsibilities.
 
 ## Capability
 
@@ -15,8 +18,8 @@ The input to the render pipeline. Contains:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `kind` | `GraphicKind` | yes | Discriminator: `code-frame`, `architecture-diagram`, `title-frame`, `callout`, `comparison-layout`, `simple-chart`, `infographic-primitive` |
-| `width` | `number` | yes | Output width in device-independent pixels (> 0) |
-| `height` | `number` | yes | Output height in device-independent pixels (> 0) |
+| `width` | `number` | yes | Output width in pixels (1–8192; total area capped) |
+| `height` | `number` | yes | Output height in pixels (1–8192; total area capped) |
 | `content` | `GraphicContent` | yes | Kind-specific content payload |
 | `themeId` | `string` | no | Theme identifier; defaults to `visual-bible-dark` |
 | `safeArea` | `SafeArea` | no | Safe area margins in pixels from each edge |
@@ -74,6 +77,11 @@ const pipeline = new SVGRenderPipeline({
 
 const result = await pipeline.render(request);
 ```
+
+`render` validates untrusted input before hashing and accepts an optional second
+argument `{ signal: AbortSignal }`. Invalid input returns a failed diagnostic
+result, never a successful placeholder. See the [security contract](security.md)
+for differences between rejection fingerprints and valid request hashes.
 
 **Determinism guarantee**: The same request in the same pinned environment always produces byte-identical SVG.
 
@@ -173,7 +181,10 @@ interface ImageResolver {
 }
 ```
 
-Resolves image URIs to embeddable data. Must not make network requests.
+Reserved interface for image URIs; current graphic kinds never call it or
+embed images. No allowed-root filesystem loader is implemented yet. A future
+implementation must enforce realpath root containment, raster MIME and resource
+limits and must not make network requests. See [Security](security.md#files-images-and-networking).
 
 ## Hashing
 
