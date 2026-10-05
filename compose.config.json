@@ -112,6 +112,21 @@
       },
       "docs": "docs/packages/video-composer.md"
     },
+    "remotion-composer": {
+      "path": "packages/remotion-composer",
+      "kind": "node",
+      "standalone": true,
+      "summary": "Renders a layered, kit-based edit timeline (studio.video/v1alpha2) with Remotion, then normalises loudness with FFmpeg. A second provider for video.compose.",
+      "capabilities": [
+        "video.compose"
+      ],
+      "requires": {
+        "system": [
+          "ffmpeg"
+        ]
+      },
+      "docs": "docs/packages/remotion-composer.md"
+    },
     "contracts": {
       "path": "studio/contracts",
       "kind": "node",
@@ -198,6 +213,7 @@
         "terminal-recorder",
         "infographics",
         "video-composer",
+        "remotion-composer",
         "contracts",
         "runtime",
         "pipelines",
@@ -212,7 +228,8 @@
       ],
       "defaultProviders": {
         "image.generate": "fal-media",
-        "image.edit": "fal-media"
+        "image.edit": "fal-media",
+        "video.compose": "video-composer"
       },
       "$comment": "image.generate has two providers. fal-media is the default because it is metered per image and predictable; codex-image bills against a ChatGPT plan and is selected per series with `image.provider: openai-codex` in pipeline.yaml."
     },
@@ -226,6 +243,7 @@
         "terminal-recorder",
         "infographics",
         "video-composer",
+        "remotion-composer",
         "contracts",
         "runtime",
         "pipelines",
@@ -240,7 +258,8 @@
       ],
       "defaultProviders": {
         "image.generate": "fal-media",
-        "image.edit": "fal-media"
+        "image.edit": "fal-media",
+        "video.compose": "video-composer"
       }
     },
     "headless": {
@@ -251,6 +270,7 @@
         "graphics",
         "terminal-recorder",
         "video-composer",
+        "remotion-composer",
         "contracts",
         "runtime",
         "pipelines",
@@ -262,7 +282,8 @@
       ],
       "defaultProviders": {
         "image.generate": "fal-media",
-        "image.edit": "fal-media"
+        "image.edit": "fal-media",
+        "video.compose": "video-composer"
       }
     },
     "blender": {
@@ -282,11 +303,15 @@
       "components": [
         "graphics",
         "infographics",
-        "video-composer"
+        "video-composer",
+        "remotion-composer"
       ],
       "skills": [
         "shared"
-      ]
+      ],
+      "defaultProviders": {
+        "video.compose": "video-composer"
+      }
     }
   },
   "defaultProfile": "full"
