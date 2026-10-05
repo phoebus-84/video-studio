@@ -1,0 +1,20 @@
+[
+  "",
+  "*",
+  "te*rr",
+  "terr**",
+  -1,
+  true,
+  null,
+  ["lampo", 2],
+  { "word": "lampo", "ofset": 1 },
+  { "word": "lampo", "line": 2 },
+  { "word": "lampo", "n": 0 },
+  { "word": "lampo", "n": 1.5 },
+  { "word": "lampo", "at": "middle" },
+  { "line": 0 },
+  { "take": "middle" },
+  { "take": "end", "at": "end" },
+  { "mark": "" },
+  { "offset": 1 }
+]

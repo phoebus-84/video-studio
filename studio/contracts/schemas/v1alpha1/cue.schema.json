@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://video.studio/schemas/v1alpha1/cue.schema.json",
+  "title": "Video Studio cue schema",
+  "description": "When something happens, in terms of the voice: a word, a line, the start or end of a take, a named mark, or seconds. Series spec schemas $ref Cue; resolveCue in src/cues.mjs turns a cue into an absolute frame against one take's WordTiming.",
+  "$defs": {
+    "WordPattern": {
+      "type": "string",
+      "pattern": "^[^*]+\\*?$",
+      "description": "A whole spoken word, matched ignoring case, accents and punctuation; a trailing * matches by prefix."
+    },
+    "Offset": {
+      "type": "number",
+      "description": "Seconds added to the resolved time; may be negative."
+    },
+    "At": {
+      "type": "string",
+      "enum": ["start", "end"]
+    },
+    "WordCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["word"],
+      "properties": {
+        "word": { "$ref": "#/$defs/WordPattern" },
+        "n": { "type": "integer", "minimum": 1, "description": "Which occurrence, counted from 1." },
+        "at": { "$ref": "#/$defs/At" },
+        "offset": { "$ref": "#/$defs/Offset" }
+      }
+    },
+    "LineCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1, "description": "Line (verse) number, counted from 1." },
+        "at": { "$ref": "#/$defs/At" },
+        "offset": { "$ref": "#/$defs/Offset" }
+      }
+    },
+    "TakeCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["take"],
+      "properties": {
+        "take": { "type": "string", "enum": ["start", "end"], "description": "start is 0; end is the end of the last spoken word." },
+        "offset": { "$ref": "#/$defs/Offset" }
+      }
+    },
+    "MarkCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mark"],
+      "properties": {
+        "mark": { "type": "string", "minLength": 1, "description": "A named mark supplied by the series compiler, e.g. picture:2." },
+        "offset": { "$ref": "#/$defs/Offset" }
+      }
+    },
+    "Cue": {
+      "anyOf": [
+        { "$ref": "#/$defs/WordPattern" },
+        { "type": "number", "minimum": 0, "description": "Seconds from the start of the take." },
+        { "$ref": "#/$defs/WordCue" },
+        { "$ref": "#/$defs/LineCue" },
+        { "$ref": "#/$defs/TakeCue" },
+        { "$ref": "#/$defs/MarkCue" }
+      ]
+    }
+  }
+}

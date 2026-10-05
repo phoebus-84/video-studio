@@ -1,0 +1,13 @@
+[
+  "lampo",
+  "terr*",
+  "l'italia",
+  0,
+  4.5,
+  { "word": "lampo" },
+  { "word": "di", "n": 3, "at": "end", "offset": -0.3 },
+  { "line": 3, "at": "end", "offset": 0.5 },
+  { "take": "start" },
+  { "take": "end", "offset": 4.3 },
+  { "mark": "picture:2", "offset": 0.3 }
+]

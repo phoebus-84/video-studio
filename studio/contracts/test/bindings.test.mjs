@@ -91,4 +91,9 @@ describe("TypeScript bindings", () => {
     assert.ok(content.includes("export interface WordTiming {"));
     assert.ok(content.includes("export type SpeechSpan = [Seconds, Seconds];"), "prefixItems become a TS tuple");
   });
+
+  it("generates the cue grammar as a union", () => {
+    const content = readBinding("cue");
+    assert.ok(content.includes("export type Cue = WordPattern | number | WordCue | LineCue | TakeCue | MarkCue;"));
+  });
 });
