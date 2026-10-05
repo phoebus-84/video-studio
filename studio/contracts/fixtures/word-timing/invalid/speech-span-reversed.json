@@ -1,0 +1,14 @@
+{
+  "expect": "speech-order",
+  "base": "san-martino-recital.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/speech/3",
+      "value": [
+        7.02,
+        6.98
+      ]
+    }
+  ]
+}

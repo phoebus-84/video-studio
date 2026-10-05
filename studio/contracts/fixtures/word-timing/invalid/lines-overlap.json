@@ -1,0 +1,11 @@
+{
+  "expect": "bad-line",
+  "base": "san-martino-recital.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/lines/1/firstWord",
+      "value": 5
+    }
+  ]
+}

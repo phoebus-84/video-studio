@@ -1,0 +1,11 @@
+{
+  "expect": "energy-length",
+  "base": "san-martino-recital.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/energy/rate",
+      "value": 25
+    }
+  ]
+}

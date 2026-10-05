@@ -1,0 +1,11 @@
+{
+  "expect": "out-of-range",
+  "base": "epoca-take.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/words/117/end",
+      "value": 48
+    }
+  ]
+}

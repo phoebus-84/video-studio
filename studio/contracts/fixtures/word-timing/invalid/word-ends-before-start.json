@@ -1,0 +1,11 @@
+{
+  "expect": "word-order",
+  "base": "epoca-take.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/words/2/end",
+      "value": 0.2
+    }
+  ]
+}
