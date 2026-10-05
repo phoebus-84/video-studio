@@ -89,6 +89,13 @@ describe("resolveCue on lines, takes, marks and seconds", () => {
     assert.deepEqual(resolveCue("versi", { timing: epoca, startSeconds: 12.5, fps: 24 }).seconds, 12.5 + 0.874);
   });
 
+  it("treats a time that is zero up to rounding as the start, not before it", () => {
+    // 0.1 + 0.7 - 0.8 is -1.1e-16 in binary floating point
+    const timing = { ...epoca, words: [{ text: "a", start: 0.7, end: 0.9 }] };
+    const result = resolveCue({ word: "a", offset: -0.8 }, { timing, startSeconds: 0.1, fps: 30 });
+    assert.deepEqual(result, { frame: 0, seconds: 0 });
+  });
+
   it("refuses a time before the start of the episode", () => {
     assert.equal(code({ take: "start", offset: -1 }, { ...scope, startSeconds: 0.5 }), "before-start");
   });
@@ -107,6 +114,20 @@ describe("resolveCue on malformed cues", () => {
   ]) {
     it(`refuses ${name}`, () => assert.equal(code(cue), "invalid-cue"));
   }
+
+  it("refuses a word with whitespace, which could only match by accident", () => {
+    assert.equal(code("lampo e"), "invalid-cue");
+  });
+
+  it("refuses a cue that resolves to an infinite time", () => {
+    assert.equal(code(1e308), "invalid-cue");
+  });
+
+  it("throws on marks that are not finite numbers", () => {
+    assert.throws(() => resolveCue({ mark: "m" }, { ...scope, marks: { m: "3" } }), TypeError);
+    assert.throws(() => resolveCue({ mark: "m" }, { ...scope, marks: { m: Number.NaN } }), TypeError);
+    assert.throws(() => resolveCue("lampo", { ...scope, startSeconds: Infinity }), TypeError);
+  });
 
   it("throws on a scope the compiler got wrong", () => {
     assert.throws(() => resolveCue("lampo", { ...scope, fps: 29.97 }), TypeError);
