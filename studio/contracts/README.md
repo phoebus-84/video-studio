@@ -27,6 +27,7 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
 | `word-timing.schema.json` | When each word of one audio take is spoken, in seconds of that audio: written words with their spoken form where it differs, lines as word ranges, speech spans, lip-sync energy; provider-neutral; checked by `src/word-timing.mjs` |
 | `cue.schema.json` | When something happens in terms of the voice: a whole word (or `*` prefix), seconds, or a word / line / take / mark object with `at` and `offset`; resolved to an absolute frame, never by fallback, by `src/cues.mjs` |
 | `narration-takes.schema.json` | Every accepted voice take of an episode, from any tool (text as written, `spokenText` exactly as the tool received it, voice provenance, its word timing), and what each unit plays: takes in order with pauses and declared scene pauses; laid out and mapped from the Qwen narration manifest by `src/narration-takes.mjs` |
+| `source-pin.schema.json` | An episode's pin on shared material — a channel source (`<channel>/sources/<name>`) or another episode of the channel — with an inventory (hash, size, mtime per file); verified cheaply by `src/source-pins.mjs` (ADR-0035) |
 | `review-thread.schema.json` | Anchored review conversations with comments |
 | `provider-job.schema.json` | Tracked provider invocations with cost and idempotency |
 | `error-envelope.schema.json` | Cross-process error envelope with typed codes |
