@@ -6,8 +6,8 @@
   "$defs": {
     "WordPattern": {
       "type": "string",
-      "pattern": "^[^*]+\\*?$",
-      "description": "A whole spoken word, matched ignoring case, accents and punctuation; a trailing * matches by prefix."
+      "pattern": "^[^*\\s]+\\*?$",
+      "description": "A whole spoken word (no whitespace), matched ignoring case, accents and punctuation; a trailing * matches by prefix."
     },
     "Offset": {
       "type": "number",

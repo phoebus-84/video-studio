@@ -20,6 +20,9 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import schema from "../schemas/v1alpha1/cue.schema.json" with { type: "json" };
 
+/** Slack for binary floating point: 0.1 + 0.7 - 0.8 is -1.1e-16, which is the start, not before it. */
+const FLOAT_EPSILON = 1e-9;
+
 let compiled = null;
 
 function cueValidator() {
@@ -50,8 +53,11 @@ function checkScope(scope) {
   if (!Number.isInteger(scope?.fps) || scope.fps <= 0) {
     throw new TypeError(`scope.fps must be a positive integer, got ${scope?.fps}`);
   }
-  if (typeof scope.startSeconds !== "number" || !(scope.startSeconds >= 0)) {
-    throw new TypeError(`scope.startSeconds must be a number >= 0, got ${scope.startSeconds}`);
+  if (!Number.isFinite(scope.startSeconds) || scope.startSeconds < 0) {
+    throw new TypeError(`scope.startSeconds must be a finite number >= 0, got ${scope.startSeconds}`);
+  }
+  for (const [name, value] of Object.entries(scope.marks ?? {})) {
+    if (!Number.isFinite(value)) throw new TypeError(`scope.marks["${name}"] must be a finite number of seconds, got ${JSON.stringify(value)}`);
   }
 }
 
@@ -108,10 +114,14 @@ export function resolveCue(cue, scope) {
   const inTake = timeInTake(cue, scope.timing, scope.marks);
   if (inTake.problem) return inTake;
   const offset = typeof cue === "object" ? cue.offset ?? 0 : 0;
-  const seconds = scope.startSeconds + inTake.seconds + offset;
-  if (seconds < 0) {
+  let seconds = scope.startSeconds + inTake.seconds + offset;
+  if (!Number.isFinite(seconds * scope.fps)) {
+    return problem("invalid-cue", `${JSON.stringify(cue)} resolves to a time no frame can hold`);
+  }
+  if (seconds < -FLOAT_EPSILON) {
     return problem("before-start", `resolves to ${seconds.toFixed(3)} s, before the start of the episode`);
   }
+  if (seconds < 0) seconds = 0; // zero up to rounding, and never -0
   return { frame: Math.round(seconds * scope.fps), seconds };
 }
 
