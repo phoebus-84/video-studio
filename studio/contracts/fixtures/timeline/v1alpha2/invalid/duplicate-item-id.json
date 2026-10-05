@@ -1,0 +1,11 @@
+{
+  "expect": "duplicate-id",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/1/items/1/id",
+      "value": "painting-1"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "expect": "z-on-audio",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/tracks/4/z",
+      "value": 5
+    }
+  ]
+}

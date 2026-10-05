@@ -1,0 +1,16 @@
+{
+  "expect": "bad-duck",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/tracks/3/duck",
+      "value": {
+        "under": [
+          "voice"
+        ],
+        "gain": 0.5
+      }
+    }
+  ]
+}

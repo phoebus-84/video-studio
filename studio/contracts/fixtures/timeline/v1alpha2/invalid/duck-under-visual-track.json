@@ -1,0 +1,13 @@
+{
+  "expect": "bad-duck",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/tracks/5/duck/under",
+      "value": [
+        "verses"
+      ]
+    }
+  ]
+}

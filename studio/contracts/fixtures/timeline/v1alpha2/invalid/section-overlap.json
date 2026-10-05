@@ -1,0 +1,11 @@
+{
+  "expect": "section-overlap",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/sections/1/from",
+      "value": 100
+    }
+  ]
+}
