@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { specEpisode } from "./spec-episode.js";
+import { specEpisode } from "@studio/episode/testing";
 
 /**
  * A spec-driven episode rendered for real (avg-jao.2): poetry-short@1.0.0

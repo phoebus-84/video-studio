@@ -43,6 +43,7 @@ The product. Depends on `packages/`. All studio-specific integration lives here.
 |---|---|
 | [contracts](./studio/contracts) | Canonical schemas, vocabulary, bindings |
 | [series](./studio/series) | Series compilers: episode spec and narration → edit timeline |
+| [episode](./studio/episode) | An episode on disk, produced: timeline built or compiled, checked, rendered |
 | [runtime](./studio/runtime) | Snapshots, leases, staleness, journal, policy |
 | [pipelines](./studio/pipelines) | Built-in pipeline manifests |
 | [agent](./studio/agent) | The Pi executive-producer package |

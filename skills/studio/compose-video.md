@@ -1,6 +1,6 @@
 ---
 name: compose-video
-version: "0.4.0"
+version: "0.5.0"
 description: Compose the final video through the episode's edit timeline, rendered with Remotion
 inputs:
   - name: illustrations
@@ -58,6 +58,11 @@ Profiles: `youtube-1920x1080` (default, −15 LUFS) and `vertical-1080x1920`
 (9:16, −14 LUFS, safe zone clear of the platforms' interface).
 
 ## Episodes with a spec
+
+A spec is created with `pva_init_spec` (a draft pinned to an exact template
+release, never replacing an existing spec) and filled with the
+`fill-episode-spec` skill. In the `series-production` pipeline the timeline,
+check and render stages run the same code as the tools below.
 
 An episode with an `episode-spec.json` is pinned to a series template release
 (ADR-0037), and its timeline is **compiled** by the compiler that release names

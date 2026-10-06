@@ -1,0 +1,28 @@
+# A series-local pipeline (ADR-0001): a poetry-short series inherits the
+# series-production family and replaces one stage by id. Real series keep
+# theirs in the library, under the series' pipelines/ folder.
+pipeline:
+  id: poetry-short
+  version: "1.0.0"
+  description: "A short vertical poem: series-production, with the poem's recital as its one take"
+  extends:
+    pipeline: series-production
+    version: "1.0.0"
+  stages:
+    - id: takes
+      name: "Recital Take"
+      type: editorial
+      description: "One take of the whole poem, recited, as the unit \"narration\" of takes.json; its word timing by forced alignment"
+      inputs:
+        - contract: episode-spec.json
+          version: "1.0.0"
+      outputs:
+        - contract: takes.json
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - spec

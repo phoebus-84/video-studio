@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { checkEpisode, compileEpisode, isSpecDriven, loadEpisode } from "../src/series-compile.js";
-import { editSpec, sha256, specEpisode } from "./spec-episode.js";
+import { editSpec, sha256, specEpisode } from "../src/testing.js";
 
 /**
  * compileEpisode (avg-jao.2): everything a series compiler needs, read from

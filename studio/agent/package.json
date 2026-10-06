@@ -67,6 +67,6 @@
     "@av/codex-image": "workspace:*",
     "@av/fal-media": "workspace:*",
     "@studio/contracts": "workspace:*",
-    "@studio/series": "workspace:*"
+    "@studio/episode": "workspace:*"
   }
 }

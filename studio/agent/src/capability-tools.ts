@@ -43,9 +43,13 @@ import {
   validateNarrationManifest,
   writeNarrationManifest,
   type NarrationSegmentInput,
-} from "./narration-manifest.js";
-import { EDIT_TIMELINE_PATH } from "./edit-timeline-builder.js";
-import { decideEditTimeline, renderEpisode, writeEditTimeline, type Validation } from "./episode-render.js";
+  decideEditTimeline,
+  EDIT_TIMELINE_PATH,
+  initEpisodeSpec,
+  renderEpisode,
+  writeEditTimeline,
+  type Validation,
+} from "@studio/episode";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
@@ -898,6 +902,40 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   const profileParam = Type.Optional(Type.String({
     description: "Output profile id: youtube-1920x1080 (default) or vertical-1080x1920. An episode with episode-spec.json renders its template's profile.",
   }));
+
+  pi.registerTool({
+    name: "pva_init_spec",
+    label: "Create Episode Spec",
+    description: "Create the episode's episode-spec.json as a draft pinned to an exact release of its series' template (templates/<id>/<version>/): every value the editor must supply is __FILL__, and the reply lists them. Never replaces an existing spec. Fill it with the fill-episode-spec skill, then run pva_check_episode.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      template: Type.String({ description: "Template id, as in the series' templates/ folder" }),
+      version: Type.String({ description: "Exact release version, x.y.z (no ranges, no latest)" }),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+      const result = await withFileMutationQueue(join(dir, "episode-spec.json"), async () =>
+        initEpisodeSpec(dir, { episodeRef, template: { id: params.template, version: params.version } }));
+      if (!result.ok) {
+        return {
+          content: [{ type: "text" as const, text: ["❌ No spec written", ...result.problems.map((p) => `  - ${p.code} at ${p.path}: ${p.message}`)].join("\n") }],
+          details: { problems: result.problems } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+      const pin = result.spec.template;
+      const lines = [
+        `✅ ${result.path}: a draft pinned to ${pin.id}@${pin.version} (${pin.hash})`,
+        `${result.placeholders.length} value(s) to fill:`,
+        ...result.placeholders.map((p) => `  - ${p}`),
+        "Read the release's FORMAT.md and fill them with the fill-episode-spec skill; then pva_check_episode.",
+      ];
+      return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
+    },
+  });
 
   pi.registerTool({
     name: "pva_build_timeline",

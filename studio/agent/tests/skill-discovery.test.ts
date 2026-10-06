@@ -18,6 +18,19 @@ it("discovers and loads the optional Resolve handoff production skill", async ()
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+it("discovers the fill-episode-spec skill the series-production pipeline names", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fill-spec-skill-"));
+  try {
+    const builtInPath = fileURLToPath(new URL("../../../skills/studio/", import.meta.url));
+    const catalog = await discoverSkills({ libraryRoot: root, builtInPath });
+    expect(catalog.list({ source: "built-in" }).find(s => s.id === "fill-episode-spec")?.description).toContain("template release");
+    const skill = await catalog.load("fill-episode-spec");
+    expect(skill).toContain("pva_init_spec");
+    expect(skill).toContain("pva_check_episode");
+    expect(skill).toContain("Never change a value the schema fixes");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("discovers composed flat/folder skills and scopes layout-2 series overrides", async () => {
   const root = await mkdtemp(join(tmpdir(), "skills-discovery-"));
   try {
