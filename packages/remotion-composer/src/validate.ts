@@ -27,6 +27,22 @@ export function validateTimeline(doc: unknown): {ok: true; timeline: EditTimelin
       path: '$.profile',
     });
   }
+  // The contracts' profile-safe-zone rule, re-checked: kits must have room to draw.
+  const zone = profile.safeZone;
+  if (zone.top + zone.bottom >= profile.height) {
+    problems.push({
+      code: 'invalid-timeline',
+      message: `profile "${profile.id}": safe zone top ${zone.top} + bottom ${zone.bottom} leaves nothing of height ${profile.height}`,
+      path: '$.profile.safeZone',
+    });
+  }
+  if (zone.left + zone.right >= profile.width) {
+    problems.push({
+      code: 'invalid-timeline',
+      message: `profile "${profile.id}": safe zone left ${zone.left} + right ${zone.right} leaves nothing of width ${profile.width}`,
+      path: '$.profile.safeZone',
+    });
+  }
   timeline.tracks.forEach((track, ti) =>
     track.items.forEach((item, ii) => {
       if (isAudioItem(item)) return;

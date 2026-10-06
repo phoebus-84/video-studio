@@ -25,7 +25,8 @@ loudness — taken from the contracts' catalog
 catalog, only the timeline. Kits receive the profile in `context.profile`.
 
 Kits in this version: `still@1.0.0`, `clip@1.0.0`, `captions@1.0.0`, and
-`captions@1.1.0`, which keeps its text inside the profile's safe zone. A
+`captions@1.1.0`, which keeps its text inside the profile's safe zone and cuts
+text that does not fit at the zone's edge (keep captions short). A
 timeline gets exactly the version it names; `listKits(profileIds)` gives each
 version's description, layer, examples and a preview per profile
 (`previews/<name>@<version>.<profile>.png`).

@@ -26,6 +26,18 @@ describe('validateTimeline', () => {
     assert.match(result.ok ? '' : result.problems[0]!.message, /resolution 1080x1920 is not profile "youtube-1920x1080" \(1920x1080\)/);
   });
 
+  it('refuses a safe zone that leaves nothing to draw in, as the contracts do', () => {
+    const doc = clone(fixture('vertical-short.json'));
+    doc.profile.safeZone.left = 1000;
+    doc.profile.safeZone.top = 1600;
+    assert.deepEqual(problems(doc), [['invalid-timeline', '$.profile.safeZone'], ['invalid-timeline', '$.profile.safeZone']]);
+    const result = validateTimeline(doc);
+    assert.deepEqual(result.ok ? [] : result.problems.map((p) => p.message), [
+      'profile "vertical-1080x1920": safe zone top 1600 + bottom 380 leaves nothing of height 1920',
+      'profile "vertical-1080x1920": safe zone left 1000 + right 140 leaves nothing of width 1080',
+    ]);
+  });
+
   it('refuses a timeline without a profile', () => {
     const doc = clone(fixture('explainer.json'));
     delete doc.profile;
@@ -60,7 +72,7 @@ describe('validateTimeline', () => {
     const ids = outputProfiles().map((p) => p.id);
     assert.deepEqual(listKits(ids).map((k) => [k.name, k.version, k.layer, k.examples]), [
       ['captions', '1.0.0', 'fill', ['bottom', 'top']],
-      ['captions', '1.1.0', 'overlay', ['bottom', 'top', 'center', 'long']],
+      ['captions', '1.1.0', 'overlay', ['bottom', 'top', 'center', 'long', 'overflowing']],
       ['clip', '1.0.0', 'fill', ['plays']],
       ['still', '1.0.0', 'fill', ['cover', 'contain']],
     ]);

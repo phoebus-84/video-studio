@@ -1,5 +1,6 @@
 // captions@1.1.0 — released: never edit this file; add captions/<next>.tsx instead.
-// Same props as 1.0.0; the text block now stays inside the profile's safe zone.
+// Same props as 1.0.0; the text block now stays inside the profile's safe zone,
+// and text that does not fit in it is cut at the zone's edge.
 import React from 'react';
 import {AbsoluteFill} from 'remotion';
 import {z} from 'zod';
@@ -22,6 +23,9 @@ const Captions: KitVersion['component'] = ({props, context}) => {
           borderRadius: '0.25em',
           textAlign: 'center',
           maxWidth: '100%',
+          // Never past the zone: text that does not fit is cut at its edge.
+          maxHeight: '100%',
+          overflow: 'hidden',
           boxSizing: 'border-box',
           overflowWrap: 'break-word',
         }}
@@ -35,7 +39,7 @@ const Captions: KitVersion['component'] = ({props, context}) => {
 export const kit: KitVersion = {
   name: 'captions',
   version: '1.1.0',
-  description: "A block of text inside the output profile's safe zone, at its top, centre or bottom, on a translucent plate.",
+  description: "A block of text inside the output profile's safe zone, at its top, centre or bottom, on a translucent plate; text that does not fit is cut at the zone's edge.",
   layer: 'overlay',
   props: z.object({
     text: z.string().min(1),
@@ -53,6 +57,12 @@ export const kit: KitVersion = {
     {
       id: 'long',
       props: {text: 'E cielo e terra si mostrò qual era: la terra ansante, livida, in sussulto; il cielo ingombro, tragico, disfatto.'},
+      durationInFrames: 30,
+      frame: 0,
+    },
+    {
+      id: 'overflowing',
+      props: {text: 'Più testo di quanto la zona sicura possa contenere. '.repeat(12).trim(), position: 'center', fontSize: 160},
       durationInFrames: 30,
       frame: 0,
     },
