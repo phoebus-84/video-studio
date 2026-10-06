@@ -136,6 +136,7 @@
         "@av/blender": "workspace:*",
         "@av/codex-image": "workspace:*",
         "@av/fal-media": "workspace:*",
+        "@av/remotion-composer": "workspace:*",
         "@av/terminal-recorder": "workspace:*",
         "@av/video-composer": "workspace:*",
         "@studio/contracts": "workspace:*",
