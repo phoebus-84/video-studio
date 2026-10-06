@@ -94,8 +94,8 @@ Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_appr
 
 Production: `pva_generate_image`, `pva_synthesize_speech`,
 `pva_synthesize_nonverbal_audio`, `pva_render_graphics`,
-`pva_render_terminal`, `pva_render_vector_animation`, `pva_build_timeline`,
-`pva_check_episode`, `pva_compose_video`, `pva_compose_multitrack_video`,
+`pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
+`pva_build_timeline`, `pva_check_episode`, `pva_compose_video`, `pva_compose_multitrack_video`,
 `pva_probe_media`
 
 A tool whose capability is not ready will fail rather than silently degrade.

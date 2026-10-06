@@ -1,0 +1,112 @@
+// ---------------------------------------------------------------------------
+// A new episode's spec, drafted from its series' template release (avg-jao.4)
+// ---------------------------------------------------------------------------
+// The first stage of the series-production pipeline. The draft is pinned to
+// the exact release the caller names (ADR-0037: no "latest", no ranges) and
+// keeps every __FILL__ marker for the editor; nothing is invented. An
+// existing spec is never replaced.
+// ---------------------------------------------------------------------------
+
+import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve, sep, basename } from "node:path";
+import { EPISODE_SPEC_PATH, SERIES_TEMPLATE_MANIFEST, seriesTemplatePath } from "@studio/contracts/src/layout.mjs";
+import {
+  instantiateEpisodeSpec,
+  placeholderPaths,
+  SERIES_TEMPLATE_FILES,
+  validateTemplateBundle,
+  type EpisodeSpec,
+} from "@studio/contracts/src/series-templates.mjs";
+
+export interface SpecInitProblem {
+  code: string;
+  message: string;
+  path: string;
+}
+
+export type SpecInitResult =
+  | {
+    ok: true;
+    /** episode-spec.json, relative to the episode. */
+    path: string;
+    spec: EpisodeSpec;
+    /** JSON paths of every __FILL__ the editor must replace. */
+    placeholders: string[];
+  }
+  | { ok: false; problems: SpecInitProblem[] };
+
+const EXACT = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+const fail = (code: string, path: string, message: string): SpecInitResult => ({ ok: false, problems: [{ code, path, message }] });
+
+/** Write a draft episode-spec.json pinned to `template` (exact id and version). */
+export function initEpisodeSpec(
+  episodeDir: string,
+  options: {
+    episodeRef: { channel: string; series: string; episode: string };
+    template: { id: string; version: string };
+  },
+): SpecInitResult {
+  const dir = resolve(episodeDir);
+  const target = join(dir, EPISODE_SPEC_PATH);
+  if (existsSync(target)) {
+    return fail("spec-exists", EPISODE_SPEC_PATH, `${EPISODE_SPEC_PATH} already exists: edit it, never replace it`);
+  }
+  const { id, version } = options.template;
+  if (!EXACT.test(version)) {
+    return fail("bad-version", "template.version", `"${version}" is not an exact x.y.z release: no ranges, no latest`);
+  }
+
+  const seriesDir = dirname(dirname(dir));
+  let releaseDir: string;
+  try {
+    releaseDir = seriesTemplatePath(dirname(dirname(dirname(seriesDir))), basename(dirname(dirname(seriesDir))), basename(seriesDir), id, version);
+  } catch (error) {
+    return fail("bad-version", "template", (error as Error).message);
+  }
+  const releaseKey = relative(dir, releaseDir).split(sep).join("/");
+  if (!existsSync(join(releaseDir, SERIES_TEMPLATE_MANIFEST))) {
+    return fail("missing-template", releaseKey, `the release ${id}@${version} is not in this series (${releaseKey})`);
+  }
+
+  // Exact UTF-8 bytes, from files that stay inside the series.
+  const root = realpathSync(seriesDir);
+  const read = (name: string): string | SpecInitResult => {
+    const file = join(releaseDir, name);
+    if (!existsSync(file)) return fail("missing-template", `${releaseKey}/${name}`, `${releaseKey}/${name} is missing`);
+    const real = realpathSync(file);
+    if (!real.startsWith(root + sep) || !statSync(real).isFile()) {
+      return fail("path-escape", `${releaseKey}/${name}`, `${releaseKey}/${name} is not a file inside the series`);
+    }
+    return readFileSync(real, "utf-8");
+  };
+  const texts: Record<string, string> = {};
+  for (const name of [SERIES_TEMPLATE_MANIFEST, ...Object.values(SERIES_TEMPLATE_FILES)]) {
+    const text = read(name);
+    if (typeof text !== "string") return text;
+    texts[name] = text;
+  }
+  const { [SERIES_TEMPLATE_MANIFEST]: manifest, ...files } = texts;
+  const bundle = { manifest: manifest!, files };
+  const problems = validateTemplateBundle(bundle);
+  if (problems.length > 0) {
+    return { ok: false, problems: problems.map((p) => ({ code: "bad-template", message: `${p.code}: ${p.message}`, path: `${releaseKey}/${SERIES_TEMPLATE_MANIFEST}#${p.path}` })) };
+  }
+
+  const spec = instantiateEpisodeSpec(bundle, options.episodeRef);
+  // Written whole beside its name, then linked into place: a link never
+  // replaces an existing file, so a spec that appeared meanwhile survives.
+  const temp = `${target}.${process.pid}.tmp`;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(temp, `${JSON.stringify(spec, null, 2)}\n`, "utf-8");
+  try {
+    linkSync(temp, target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return fail("spec-exists", EPISODE_SPEC_PATH, `${EPISODE_SPEC_PATH} already exists: edit it, never replace it`);
+    }
+    throw error;
+  } finally {
+    rmSync(temp, { force: true });
+  }
+  return { ok: true, path: EPISODE_SPEC_PATH, spec, placeholders: placeholderPaths(spec.data, "$.data") };
+}
