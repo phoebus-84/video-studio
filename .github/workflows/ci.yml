@@ -74,6 +74,7 @@ jobs:
           - packages/terminal-recorder
           - packages/infographics
           - packages/video-composer
+          - packages/remotion-composer
           - studio/contracts
           - studio/runtime
           - studio/pipelines
