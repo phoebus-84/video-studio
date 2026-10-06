@@ -63,6 +63,12 @@ export function approveReference(input: {
     return refuse("bad-proposal", `the proposal is not JSON: ${(error as Error).message}`);
   }
 
+  // The episode the operator names is the episode the proposal is about.
+  const named = proposal.episodeRef ?? {};
+  if (named.channel !== ref.channel || named.series !== ref.series || named.episode !== ref.episode || proposal.id !== referenceId) {
+    return refuse("bad-proposal", `the proposal is ${proposal.id} of ${named.channel}/${named.series}/${named.episode}, not ${referenceId} of ${ref.channel}/${ref.series}/${ref.episode}`);
+  }
+
   // What is approved is exactly what was proposed.
   const changed = ["spec", "timeline", "render", "report"].filter((field) => {
     const file = join(episodeDir, String(proposal[field]?.path));

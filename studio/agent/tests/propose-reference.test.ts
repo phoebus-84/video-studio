@@ -52,7 +52,7 @@ describe("pva_propose_reference", () => {
     expect(text).toMatch(/^✅ proposed morning-v1 for sample\/poetry \(template poetry-short@1\.0\.0\)/);
     expect(text).toContain("  - reviews/references/morning-v1/proposal.json");
     expect(text).toContain("Only a person can make it a reference");
-    expect(text).toContain("  vpr reference approve sample/poetry/morning morning-v1");
+    expect(text).toContain(`  vpr reference approve sample/poetry/morning morning-v1 --library ${root}`);
     const proposal = JSON.parse(readFileSync(at("reviews/references/morning-v1/proposal.json"), "utf-8"));
     expect(proposal.approval).toBeUndefined();
     expect(existsSync(join(root, REF.channel, "series", REF.series, "templates/poetry-short/references/morning-v1.json"))).toBe(false);

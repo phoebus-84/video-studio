@@ -141,6 +141,12 @@ describe("verifySeriesReference", () => {
     assert.deepEqual(codes(verify()), ["not-an-approval"]);
   });
 
+  it("proposal-mismatch: a descriptor changed anywhere the approval's proposal hash covers, metadata included", () => {
+    const reference = makeReference();
+    writeDescriptor({ ...reference, metadata: { proposedAt: reference.metadata.proposedAt, approvedFor: "something else" } });
+    assert.deepEqual(codes(verify()), ["proposal-mismatch"]);
+  });
+
   it("withdrawn: a signed withdrawal of this exact descriptor", () => {
     const reference = makeReference();
     const withdrawal = signReceipt(buildReferenceWithdrawal({ reference, descriptorHash: sha256(readFileSync(descriptorPath())), reason: "the voice was replaced" }), KEY);

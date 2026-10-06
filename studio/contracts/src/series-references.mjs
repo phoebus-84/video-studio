@@ -114,7 +114,18 @@ export function verifySeriesReference({ seriesDir, templateId, referenceId, key,
       `the receipt is a ${approval.origin} ${approval.decision} of "${approval.stageId}" for ${approval.episode}, not a human approval of this reference`)], reference);
   }
 
+  // The approval commits to the whole proposal (planHash): nothing in the
+  // descriptor — metadata included — changed after the operator signed.
+  const { approval: _signed, ...proposal } = reference;
+  if (approval.binding?.planHash !== proposalHash(proposal)) {
+    return verdict("invalid", [issue("proposal-mismatch", `${at}#$.approval.binding.planHash`,
+      "the descriptor is not the proposal the operator approved")], reference);
+  }
+
   // 3. A withdrawal, if any: valid → withdrawn; forged → invalid, never ignored.
+  // A withdrawal file deleted by someone who can write the library is not
+  // detectable here: that is the same-user boundary of every file on disk
+  // (avg-qr4.8), and why the library is backed up.
   const withdrawalPath = join(refsDir, `${referenceId}.withdrawal.json`);
   if (existsSync(withdrawalPath)) {
     const wat = `templates/${templateId}/references/${referenceId}.withdrawal.json`;

@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { EPISODE_SPEC_PATH } from "@studio/contracts/src/layout.mjs";
 import { REFERENCE_SNAPSHOT_DIR, type ReferenceProposal } from "@studio/contracts/src/series-references.mjs";
@@ -45,7 +45,13 @@ export function proposeReference(
   if (!isSpecDriven(episodeDir)) return fail("no-spec", EPISODE_SPEC_PATH, "only an episode with a spec can be a series reference");
 
   const snapshotDir = `${REFERENCE_SNAPSHOT_DIR}/${referenceId}`;
-  const spec = JSON.parse(readFileSync(join(episodeDir, EPISODE_SPEC_PATH), "utf-8"));
+  // A spec-driven episode's spec: its pin is checked by the loader below.
+  let spec: { template: { id: string; version: string; hash: string } };
+  try {
+    spec = JSON.parse(readFileSync(join(episodeDir, EPISODE_SPEC_PATH), "utf-8"));
+  } catch (error) {
+    return fail("bad-spec", EPISODE_SPEC_PATH, `${EPISODE_SPEC_PATH} is not JSON: ${(error as Error).message}`);
+  }
   const promoted = join(dirname(dirname(episodeDir)), "templates", String(spec?.template?.id), "references", `${referenceId}.json`);
   if (existsSync(join(episodeDir, snapshotDir)) || existsSync(promoted)) {
     return fail("reference-exists", snapshotDir, `the reference id "${referenceId}" is already proposed or promoted in this series: choose another`);
@@ -78,14 +84,19 @@ export function proposeReference(
   }
 
   // The spec frozen must be the one that timeline was compiled from.
-  const timelineDoc = JSON.parse(timelineBytes.toString("utf-8"));
+  let timelineDoc: { derivedFrom?: { spec?: { hash?: string } } } & Record<string, unknown>;
+  try {
+    timelineDoc = JSON.parse(timelineBytes.toString("utf-8"));
+  } catch (error) {
+    return fail("bad-timeline", EDIT_TIMELINE_PATH, `${EDIT_TIMELINE_PATH} is not JSON: ${(error as Error).message}`);
+  }
   if (timelineDoc?.derivedFrom?.spec?.hash !== sha256(readFileSync(join(episodeDir, EPISODE_SPEC_PATH)))) {
     return fail("spec-changed", EPISODE_SPEC_PATH,
       `${EPISODE_SPEC_PATH} changed after ${EDIT_TIMELINE_PATH} was compiled: render the episode again before proposing it`);
   }
 
   // A reference is the series' standard: it cannot break the series' rules.
-  const checked = checkEpisode(episodeDir, { episodeRef, timeline: timelineDoc });
+  const checked = checkEpisode(episodeDir, { episodeRef, timeline: timelineDoc as never });
   if (!checked.ok) return { ok: false, problems: checked.problems };
   const errors = checked.findings.filter((f) => f.severity === "error");
   if (errors.length > 0) {
@@ -99,22 +110,29 @@ export function proposeReference(
   } catch {
     return fail("reference-exists", snapshotDir, `the reference id "${referenceId}" was just proposed by someone else`);
   }
-  copyFileSync(join(episodeDir, EPISODE_SPEC_PATH), join(episodeDir, snapshotDir, "episode-spec.json"));
-  copyFileSync(join(episodeDir, EDIT_TIMELINE_PATH), join(episodeDir, snapshotDir, "edit-timeline.json"));
-  const hashOf = (relative: string) => sha256(readFileSync(join(episodeDir, relative)));
-  const proposal: ReferenceProposal = {
-    apiVersion: "studio.video/v1alpha1",
-    kind: "SeriesReference",
-    id: referenceId,
-    episodeRef: { channel: episodeRef.channel, series: episodeRef.series, episode: episodeRef.episode },
-    template: { id: spec.template.id, version: spec.template.version, hash: spec.template.hash },
-    spec: { path: `${snapshotDir}/episode-spec.json`, hash: hashOf(`${snapshotDir}/episode-spec.json`) },
-    timeline: { path: `${snapshotDir}/edit-timeline.json`, hash: hashOf(`${snapshotDir}/edit-timeline.json`) },
-    render: { path: renderPath, hash: hashOf(renderPath) },
-    report: { path: reportPath, hash: hashOf(reportPath) },
-    metadata: { proposedAt: new Date().toISOString() },
-  };
-  writeFileSync(join(episodeDir, snapshotDir, "proposal.json"), `${JSON.stringify(proposal, null, 2)}\n`, { flag: "wx" });
+  // Freezing fails whole or not at all: a half-made snapshot would block the id.
+  let proposal: ReferenceProposal;
+  try {
+    copyFileSync(join(episodeDir, EPISODE_SPEC_PATH), join(episodeDir, snapshotDir, "episode-spec.json"));
+    copyFileSync(join(episodeDir, EDIT_TIMELINE_PATH), join(episodeDir, snapshotDir, "edit-timeline.json"));
+    const hashOf = (relative: string) => sha256(readFileSync(join(episodeDir, relative)));
+    proposal = {
+      apiVersion: "studio.video/v1alpha1",
+      kind: "SeriesReference",
+      id: referenceId,
+      episodeRef: { channel: episodeRef.channel, series: episodeRef.series, episode: episodeRef.episode },
+      template: { id: spec.template.id, version: spec.template.version, hash: spec.template.hash },
+      spec: { path: `${snapshotDir}/episode-spec.json`, hash: hashOf(`${snapshotDir}/episode-spec.json`) },
+      timeline: { path: `${snapshotDir}/edit-timeline.json`, hash: hashOf(`${snapshotDir}/edit-timeline.json`) },
+      render: { path: renderPath, hash: hashOf(renderPath) },
+      report: { path: reportPath, hash: hashOf(reportPath) },
+      metadata: { proposedAt: new Date().toISOString() },
+    };
+    writeFileSync(join(episodeDir, snapshotDir, "proposal.json"), `${JSON.stringify(proposal, null, 2)}\n`, { flag: "wx" });
+  } catch (error) {
+    rmSync(join(episodeDir, snapshotDir), { recursive: true, force: true });
+    throw error;
+  }
   return {
     ok: true,
     proposal,

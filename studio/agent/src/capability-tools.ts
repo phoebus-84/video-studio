@@ -966,7 +966,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         ...result.paths.map((p) => `  - ${p}`),
         `render: ${proposal.render.path}`,
         "Only a person can make it a reference. Ask them to run:",
-        `  vpr reference approve ${params.channel}/${params.series}/${params.episode} ${proposal.id}`,
+        `  vpr reference approve ${params.channel}/${params.series}/${params.episode} ${proposal.id} --library ${LIBRARY_ROOT}`,
       ];
       return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
     },

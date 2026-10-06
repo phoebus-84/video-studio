@@ -79,6 +79,12 @@ describe("proposeReference", () => {
     expect(existsSync(at("reviews/references/evening-v1"))).toBe(false);
   });
 
+  it("bad-spec: a spec that is not JSON is a problem, not an exception", () => {
+    rendered();
+    writeFileSync(at("episode-spec.json"), "{ half an edit");
+    expect(codes(proposeReference(dir(), { episodeRef: REF, referenceId: "morning-v1" }))).toEqual(["bad-spec"]);
+  });
+
   it("bad-id, no-spec, no-render", () => {
     expect(codes(proposeReference(dir(), { episodeRef: REF, referenceId: "Morning V1" }))).toEqual(["bad-id"]);
     expect(codes(proposeReference(dir(), { episodeRef: REF, referenceId: "morning-v1" }))).toEqual(["no-render"]);

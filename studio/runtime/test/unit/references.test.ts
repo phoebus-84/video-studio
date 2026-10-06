@@ -74,6 +74,14 @@ describe("approveReference", () => {
     expect(existsSync(descriptor())).toBe(false);
   });
 
+  it("bad-proposal: a proposal naming another episode than the one approved", () => {
+    const proposal = propose();
+    writeFileSync(at("reviews/references/morning-v1/proposal.json"), JSON.stringify({ ...proposal, episodeRef: { ...REF, episode: "evening" } }));
+    const out = approveReference({ libraryRoot: root, ref: REF, referenceId: "morning-v1", key: KEY });
+    expect(out.ok ? null : out.code).toBe("bad-proposal");
+    expect(existsSync(descriptor())).toBe(false);
+  });
+
   it("no-proposal", () => {
     const out = approveReference({ libraryRoot: root, ref: REF, referenceId: "morning-v1", key: KEY });
     expect(out.ok ? null : out.code).toBe("no-proposal");

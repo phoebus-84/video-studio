@@ -41,7 +41,8 @@ with it. You can only **propose** one; a person approves it.
    used, an episode whose spec or timeline changed since the render, and one
    that breaks the series' rules — say why, and what to do.
 3. Tell the person what was frozen, and the command only they can run:
-   `vpr reference approve <channel>/<series>/<episode> <id>`
+   `vpr reference approve <channel>/<series>/<episode> <id> --library <library>`
+   (the tool's reply gives it in full)
    (with `--dry-run` first if they want to see the descriptor).
 
 ## Never

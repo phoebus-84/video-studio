@@ -181,7 +181,8 @@ cannot be inferred from `validateSeriesReference() === []`.
 - **Approve** (the operator only, `vpr reference approve`): the proposed files
   are re-hashed (what is approved is exactly what was proposed); the approval
   is a `GateReview` of stage `reference-review` whose `planHash` is the
-  proposal's hash, signed with the operator key; the descriptor is verified in
+  proposal's hash (checked on every verify, so no field of the descriptor —
+  metadata included — can change after signing), signed with the operator key; the descriptor is verified in
   full before it is written, then created exclusively — never rewritten.
 - **Verify** (`verifySeriesReference`, `vpr reference verify | list`): the
   descriptor and its identity, the signature, a withdrawal, the files inside
@@ -192,7 +193,12 @@ cannot be inferred from `validateSeriesReference() === []`.
 - **Withdraw** (the operator only, `vpr reference withdraw --reason`): a
   signed, exclusive `<id>.withdrawal.json` bound to the descriptor's hash;
   the descriptor and its evidence stay. A forged withdrawal makes the
-  reference `invalid`, never quietly withdrawn.
+  reference `invalid`, never quietly withdrawn. "Append-only" is what the
+  studio does, not what the filesystem enforces: anyone who can write the
+  library can delete a withdrawal (or any file), and a deleted withdrawal
+  cannot be detected from inside the library. That is the same-user boundary
+  of every operator file (`avg-qr4.8`, OS isolation); until then the library
+  is backed up.
 
 The record of a reference is its signed descriptor and withdrawal, not the
 episode's journal: review events there are written only by the execution

@@ -74,6 +74,8 @@ order, stopping at the first failing step:
    `referenceId`, its `template.id` equals `templateId`, its
    `episodeRef.series` and `.channel` are the series' (`reference-identity`).
 2. **Signature** — with no `key`, the state is `unverifiable`. Otherwise
+   the approval's `binding.planHash` must be the hash of the descriptor
+   without its approval (`proposal-mismatch`), and
    `verifyReceipt(approval, key)` (`bad-signature`), and the approval is
    `origin: "human"`, `decision: "approved"`, `stageId: "reference-review"`,
    `episode` = `"<channel>/<series>/<episode>"` of the descriptor
@@ -84,7 +86,9 @@ order, stopping at the first failing step:
    `binding.inputs` (`[{ path: "<ref-id>.json", sha256 }]`). Valid → state
    `withdrawn` (the verdict carries it; no further checks). Invalid →
    `invalid` with `bad-withdrawal`: a forged withdrawal must not quietly
-   disable a reference, nor be ignored.
+   disable a reference, nor be ignored. A *deleted* withdrawal cannot be
+   detected from inside the library: like every operator file, it is bounded
+   by the same-user boundary (`avg-qr4.8`) and the library's backups.
 4. **Files** — the source episode is `episodes/<episode>` of the series. Each
    of `spec`, `timeline`, `render`, `report` must exist (`missing-file`),
    resolve (realpath) inside the source episode (`path-escape`), be a file,
@@ -149,7 +153,8 @@ a person can approve. Nothing in the agent names the operator key (the
 The key is resolved as `vpr approve` resolves it.
 
 - **`approve <ch>/<series>/<ep> <ref-id> [--note "…"] [--dry-run] [--json]`**:
-  reads `proposal.json`; re-hashes every file it names (`proposal-changed`
+  reads `proposal.json`; refuses one whose `id` or `episodeRef` is not the
+  command line's (`bad-proposal`); re-hashes every file it names (`proposal-changed`
   when any differs: what is approved is exactly what was proposed); refuses
   when `templates/<tid>/references/<ref-id>.json` exists
   (`reference-exists`); no key → refuses (`no-operator-key`). Builds the
