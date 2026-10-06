@@ -59,3 +59,37 @@ export interface SeriesCompiler {
   description: string;
   compile(input: CompileInput): CompileResult;
 }
+/** What a series validator checks: the compile input, the timeline to render and the compiled reference. */
+export interface ValidateInput extends CompileInput {
+  /** The timeline about to be rendered: stored (possibly hand-edited) or fresh. */
+  timeline: EditTimeline;
+  /** What the release's compiler makes of the same inputs: the reference. */
+  compiled: EditTimeline;
+}
+
+/**
+ * One breach of a series rule. Paths $.tracks…, $.profile and
+ * $.durationInFrames point into `timeline`; $.data… into the spec.
+ */
+export interface Finding {
+  code: string;
+  severity: "error" | "warning";
+  path: string;
+  message: string;
+}
+
+export interface SeriesValidator {
+  /** ^[a-z0-9]+(-[a-z0-9]+)*$, as a SeriesTemplate's `validator.id`. */
+  id: string;
+  /** Exact x.y.z. */
+  version: string;
+  /** One sentence. */
+  description: string;
+  validate(input: ValidateInput): Finding[];
+}
+
+export interface CheckResult {
+  /** "<id>@<version>" of the validator that ran; null when the template names none. */
+  validator: string | null;
+  findings: Finding[];
+}
