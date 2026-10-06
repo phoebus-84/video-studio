@@ -1,0 +1,16 @@
+[
+  {
+    "id": "youtube-1920x1080",
+    "width": 1920,
+    "height": 1080,
+    "safeZone": { "top": 54, "right": 96, "bottom": 54, "left": 96 },
+    "loudness": { "integrated": -15, "truePeak": -1, "range": 11 }
+  },
+  {
+    "id": "vertical-1080x1920",
+    "width": 1080,
+    "height": 1920,
+    "safeZone": { "top": 120, "right": 140, "bottom": 380, "left": 60 },
+    "loudness": { "integrated": -14, "truePeak": -1, "range": 11 }
+  }
+]
