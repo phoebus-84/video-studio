@@ -785,7 +785,7 @@ Expected: PASS, 5 tests (`still@1.0.0 cover`, `still@1.0.0 contain`, `clip@1.0.0
 
 - [ ] **Step 3: Show it catches a blank frame**
 
-Temporarily change the `Example` component in `src/PreviewRoot.tsx` to return `<AbsoluteFill style={{backgroundColor: 'black'}} />` without the kit, re-run the render test: every example must fail with `rendered a blank frame`. Revert with `git checkout src/PreviewRoot.tsx` and re-run: PASS.
+Temporarily change the `Example` component in `src/PreviewRoot.tsx` to return a black `AbsoluteFill` without the kit, re-run the render test: every example must fail with `rendered a blank frame`. Revert with `git checkout src/PreviewRoot.tsx` and re-run: PASS.
 
 - [ ] **Step 4: Nothing left behind**
 
