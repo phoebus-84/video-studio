@@ -38,6 +38,14 @@ profiles were in place, and nothing in the studio used them.
 - `remotion-composer` is the default `video.compose` provider in every profile
   that composes the agent.
 
+**Note (`avg-jao.2`, ADR-0037).** The timeline now has two producers, chosen by
+the episode itself: an episode with an `episode-spec.json` is compiled by its
+series template's compiler (`@studio/series`), and its profile is the
+template's; one without is built as above. A spec that does not compile is an
+error — never a reason to fall back to the builder or to render the timeline
+it was meant to replace. Rebuilding on changed inputs and rendering hand
+edits as they stand work the same for both.
+
 ## Consequences
 
 Every delivered video can be traced to the exact timeline that produced it,

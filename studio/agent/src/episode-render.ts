@@ -22,6 +22,7 @@ import {
   type BuildProblem,
   type EditTimelineDoc,
 } from "./edit-timeline-builder.js";
+import { compileEpisode, isSpecDriven } from "./series-compile.js";
 
 const LABEL = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -67,8 +68,57 @@ function replaceTimeline(episodeDir: string, text: string): string | null {
   return backup;
 }
 
+/** How a spec-driven timeline was made; absent for the legacy builder's. */
+export interface CompiledBy {
+  /** "<id>@<version>" of the series compiler. */
+  compiler: string;
+  template: { id: string; version: string; hash: string };
+  revision: number;
+  /** The timeline rendered differs from what the compiler makes of the same inputs: a person edited it. */
+  editedByHand: boolean;
+}
+
+type Produced =
+  | { ok: true; timeline: EditTimelineDoc; warnings: string[]; compiledBy: CompiledBy | null }
+  | { ok: false; problems: BuildProblem[] };
+
+/**
+ * The episode's timeline as its material says it should be: compiled from
+ * episode-spec.json by the release's compiler when there is a spec, built by
+ * buildEditTimeline otherwise. A spec that does not compile is never
+ * replaced by the legacy builder's guess.
+ */
+function produceTimeline(episodeDir: string, options: BuildOptions): Produced {
+  if (!isSpecDriven(episodeDir)) {
+    const built = buildEditTimeline(episodeDir, options);
+    return built.ok ? { ...built, compiledBy: null } : built;
+  }
+  const compiled = compileEpisode(episodeDir, { episodeRef: options.episodeRef });
+  if (!compiled.ok) return compiled;
+  const fixed = compiled.timeline.profile.id;
+  if (options.profile !== undefined && options.profile !== fixed) {
+    return {
+      ok: false,
+      problems: [{
+        code: "profile-fixed-by-template",
+        path: "episode-spec.json#$.template",
+        message: `this episode's template ${compiled.template.id}@${compiled.template.version} renders ${fixed}, not ${options.profile}`,
+      }],
+    };
+  }
+  const { compiler, template, revision } = compiled;
+  return {
+    ok: true,
+    timeline: compiled.timeline as unknown as EditTimelineDoc,
+    warnings: compiled.warnings,
+    compiledBy: { compiler, template, revision, editedByHand: false },
+  };
+}
+
 export interface WrittenTimeline {
   timeline: EditTimelineDoc;
+  /** Set when a series compiler made it from episode-spec.json. */
+  compiledBy: CompiledBy | null;
   /** sha256 hex of the file as written. */
   hash: string;
   warnings: string[];
@@ -78,11 +128,11 @@ export interface WrittenTimeline {
 
 /** Build the timeline and write it to artifacts/edit-timeline.json. */
 export function writeEditTimeline(episodeDir: string, options: BuildOptions): WrittenTimeline {
-  const built = buildEditTimeline(episodeDir, options);
+  const built = produceTimeline(episodeDir, options);
   if (!built.ok) throw new TimelineBuildError(built.problems);
   const text = serialize(built.timeline);
   const backup = replaceTimeline(episodeDir, text);
-  return { timeline: built.timeline, hash: sha256(text), warnings: built.warnings, backup };
+  return { timeline: built.timeline, compiledBy: built.compiledBy, hash: sha256(text), warnings: built.warnings, backup };
 }
 
 export interface CurrentTimeline extends WrittenTimeline {
@@ -112,18 +162,25 @@ export function currentEditTimeline(episodeDir: string, options: BuildOptions): 
 
   const storedProfile: string | undefined = stored?.doc?.profile?.id;
   const profileChange = options.profile !== undefined && options.profile !== storedProfile;
-  // A stored profile outside the catalog (a hand edit) cannot be rebuilt;
-  // comparing inputs does not need it.
-  const profile = options.profile ?? (storedProfile && outputProfile(storedProfile) ? storedProfile : DEFAULT_PROFILE);
-  const fresh = buildEditTimeline(episodeDir, { ...options, profile });
+  // A spec-driven episode's profile is its template's. Otherwise a stored
+  // profile outside the catalog (a hand edit) cannot be rebuilt; comparing
+  // inputs does not need it.
+  const specDriven = isSpecDriven(episodeDir);
+  const profile = specDriven
+    ? options.profile
+    : options.profile ?? (storedProfile && outputProfile(storedProfile) ? storedProfile : DEFAULT_PROFILE);
+  const fresh = produceTimeline(episodeDir, { ...options, profile });
   const storedProblems = stored ? validateEditTimeline(stored.doc) : [];
 
   if (!fresh.ok) {
-    if (stored && !profileChange && storedProblems.length === 0) {
+    // A spec that no longer compiles is an edit to finish, not a reason to
+    // render the timeline it replaced.
+    if (stored && !specDriven && !profileChange && storedProblems.length === 0) {
       return {
         timeline: stored.doc,
         hash: sha256(stored.text),
         warnings: [`the episode could not be rebuilt (${describe(fresh.problems)}); rendering it as it stands`],
+        compiledBy: null,
         rebuilt: null,
         backup: null,
       };
@@ -149,11 +206,12 @@ export function currentEditTimeline(episodeDir: string, options: BuildOptions): 
     if (storedProblems.length > 0) {
       throw new TimelineBuildError(storedProblems, `${EDIT_TIMELINE_PATH} as it stands is not valid; fix the edit, or delete the file to rebuild`);
     }
-    return { timeline: stored.doc, hash: sha256(stored.text), warnings: fresh.warnings, rebuilt: null, backup: null };
+    const compiledBy = fresh.compiledBy && { ...fresh.compiledBy, editedByHand: stored.text !== serialize(fresh.timeline) };
+    return { timeline: stored.doc, compiledBy, hash: sha256(stored.text), warnings: fresh.warnings, rebuilt: null, backup: null };
   }
   const text = serialize(fresh.timeline);
   const backup = replaceTimeline(episodeDir, text);
-  return { timeline: fresh.timeline, hash: sha256(text), warnings: fresh.warnings, rebuilt: reason, backup };
+  return { timeline: fresh.timeline, compiledBy: fresh.compiledBy, hash: sha256(text), warnings: fresh.warnings, rebuilt: reason, backup };
 }
 
 export interface EpisodeRenderOptions extends BuildOptions {
@@ -169,6 +227,7 @@ export interface EpisodeRender {
   rebuilt: string | null;
   backup: string | null;
   warnings: string[];
+  compiledBy: CompiledBy | null;
   result: RenderResult;
 }
 
@@ -211,11 +270,21 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     renderId,
     createdAt: new Date().toISOString(),
     timeline: { path: EDIT_TIMELINE_PATH, hash: `sha256:${current.hash}` },
+    ...(current.compiledBy ? { compiledBy: current.compiledBy } : {}),
     ...(current.rebuilt ? { rebuilt: current.rebuilt } : {}),
     ...(current.warnings.length > 0 ? { warnings: current.warnings } : {}),
     render: { ...result, path: `${renderId}.mp4` },
   }));
   writeAtomically(join(outputDir, "current.json"), serialize({ renderId, path: `${renderId}.mp4` }));
 
-  return { renderId, outputPath, reportPath, rebuilt: current.rebuilt, backup: current.backup, warnings: current.warnings, result };
+  return {
+    renderId,
+    outputPath,
+    reportPath,
+    rebuilt: current.rebuilt,
+    backup: current.backup,
+    warnings: current.warnings,
+    compiledBy: current.compiledBy,
+    result,
+  };
 }

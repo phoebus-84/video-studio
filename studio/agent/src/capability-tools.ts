@@ -891,13 +891,13 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   // in artifacts/, rendered by @av/remotion-composer. No FFmpeg runs here.
 
   const profileParam = Type.Optional(Type.String({
-    description: "Output profile id: youtube-1920x1080 (default) or vertical-1080x1920",
+    description: "Output profile id: youtube-1920x1080 (default) or vertical-1080x1920. An episode with episode-spec.json renders its template's profile.",
   }));
 
   pi.registerTool({
     name: "pva_build_timeline",
     label: "Build Edit Timeline",
-    description: `Build the episode's edit timeline (${EDIT_TIMELINE_PATH}) from its scene images, timing and narration: the reviewable account of what pva_compose_video will render.`,
+    description: `Build the episode's edit timeline (${EDIT_TIMELINE_PATH}): compiled from episode-spec.json by its series template's compiler when the episode has a spec, otherwise from its scene images, timing and narration. The reviewable account of what pva_compose_video will render.`,
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -909,16 +909,21 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         const dir = episodeDir(params.channel, params.series, params.episode);
         const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
         // Queued with pva_compose_video, which may rebuild the same file.
-        const { timeline, warnings, backup } = await withFileMutationQueue(join(dir, "output", "current.json"), async () =>
+        const { timeline, warnings, backup, compiledBy } = await withFileMutationQueue(join(dir, "output", "current.json"), async () =>
           writeEditTimeline(dir, { episodeRef, ...(params.profile ? { profile: params.profile } : {}) }));
         const count = (id: string) => timeline.tracks.find((t) => t.id === id)?.items.length ?? 0;
+        // The picture track is the lowest visual one: "scenes" from the legacy builder, "panels" from a compiler.
+        const picture = timeline.tracks.filter((t) => t.type === "visual").sort((a, b) => Number(a.z) - Number(b.z))[0];
         const lines = [
-          `✅ ${EDIT_TIMELINE_PATH}: ${count("scenes")} scenes, ${count("captions")} captions, `
+          `✅ ${EDIT_TIMELINE_PATH}: ${picture?.items.length ?? 0} ${picture?.id ?? "scenes"}, ${count("captions")} captions, `
             + `${(timeline.durationInFrames / timeline.fps).toFixed(1)}s, ${timeline.profile.id}`,
+          ...(compiledBy
+            ? [`compiled by ${compiledBy.compiler} from episode-spec.json revision ${compiledBy.revision} (template ${compiledBy.template.id}@${compiledBy.template.version})`]
+            : []),
           ...(backup ? [`previous timeline kept as ${backup}`] : []),
           ...warnings.map((w) => `⚠️ ${w}`),
         ];
-        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { path: EDIT_TIMELINE_PATH, timeline, warnings } as Record<string, unknown> };
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { path: EDIT_TIMELINE_PATH, timeline, warnings, compiledBy } as Record<string, unknown> };
       } catch (err) {
         return {
           content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
@@ -955,6 +960,10 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           const lines = [
             `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}`,
             ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),
+            ...(render.compiledBy
+              ? [`compiled by ${render.compiledBy.compiler} from episode-spec.json revision ${render.compiledBy.revision}`
+                + (render.compiledBy.editedByHand ? ", then edited by hand" : "")]
+              : []),
             ...(render.backup ? [`previous timeline kept as ${render.backup}`] : []),
             ...render.warnings.map((w) => `⚠️ ${w}`),
           ];

@@ -136,6 +136,15 @@
       "requires": {},
       "docs": "docs/studio/contracts.md"
     },
+    "series": {
+      "path": "studio/series",
+      "kind": "node",
+      "standalone": false,
+      "summary": "Series compilers: a pinned episode spec and its measured narration, compiled into an edit timeline.",
+      "capabilities": [],
+      "requires": {},
+      "docs": "docs/studio/series.md"
+    },
     "runtime": {
       "path": "studio/runtime",
       "kind": "node",
@@ -215,6 +224,7 @@
         "video-composer",
         "remotion-composer",
         "contracts",
+        "series",
         "runtime",
         "pipelines",
         "agent",
@@ -245,6 +255,7 @@
         "video-composer",
         "remotion-composer",
         "contracts",
+        "series",
         "runtime",
         "pipelines",
         "agent",
@@ -272,6 +283,7 @@
         "video-composer",
         "remotion-composer",
         "contracts",
+        "series",
         "runtime",
         "pipelines",
         "agent"
@@ -288,7 +300,7 @@
     },
     "blender": {
       "summary": "Local 3D production with the agent and browser; no cloud image or MLX voice requirement.",
-      "components": ["blender", "video-composer", "remotion-composer", "contracts", "runtime", "pipelines", "agent", "adapters", "gateway", "web"],
+      "components": ["blender", "video-composer", "remotion-composer", "contracts", "series", "runtime", "pipelines", "agent", "adapters", "gateway", "web"],
       "skills": ["shared", "studio"],
       "defaultProviders": {
         "video.compose": "remotion-composer"

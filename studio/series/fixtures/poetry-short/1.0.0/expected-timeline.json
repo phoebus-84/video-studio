@@ -1,0 +1,249 @@
+{
+  "apiVersion": "studio.video/v1alpha2",
+  "kind": "EditTimeline",
+  "episodeRef": {
+    "channel": "sample",
+    "series": "poetry",
+    "episode": "morning"
+  },
+  "revision": 1,
+  "derivedFrom": {
+    "spec": {
+      "path": "episode-spec.json",
+      "hash": "sha256:a5171e7c4ffbfc2732901af9c6b0917ced58e1de48d8f5e19288dc7d2703b9ac",
+      "revision": 2
+    },
+    "compiler": {
+      "id": "poetry-short",
+      "version": "1.0.0"
+    }
+  },
+  "fps": 30,
+  "durationInFrames": 324,
+  "resolution": {
+    "width": 1080,
+    "height": 1920
+  },
+  "profile": {
+    "id": "vertical-1080x1920",
+    "width": 1080,
+    "height": 1920,
+    "safeZone": {
+      "top": 120,
+      "right": 140,
+      "bottom": 380,
+      "left": 60
+    },
+    "loudness": {
+      "integrated": -14,
+      "truePeak": -1,
+      "range": 11
+    }
+  },
+  "assets": {
+    "image-morning-room": {
+      "path": "assets/images/morning-room.png",
+      "hash": "sha256:9d0b10e4b440ac141e73db7cef2ea9eedd8dd1284510ea80cd7f3240f10993d0",
+      "kind": "image"
+    },
+    "image-teacup": {
+      "path": "assets/images/teacup.png",
+      "hash": "sha256:c42c4932f75fd441ac16156e42e224726d23e4ab6880b19565b9554310c1e571",
+      "kind": "image"
+    },
+    "image-cat": {
+      "path": "assets/images/cat.png",
+      "hash": "sha256:b94f5ce0690dbe021dcf4110f2c756483eee412ce056843451eb3b19c15547ad",
+      "kind": "image"
+    },
+    "narration-light": {
+      "path": "assets/takes/light.wav",
+      "hash": "sha256:a69eeae356fd13bacdea4d65fbbc9da2e66bc909acd908c7a3fd3464d69c277b",
+      "kind": "audio"
+    },
+    "narration-cup": {
+      "path": "assets/takes/cup.wav",
+      "hash": "sha256:30bb77872911c3f824ec9cd4930b675b330232560ee4d635c0b170cef80e185a",
+      "kind": "audio"
+    }
+  },
+  "tracks": [
+    {
+      "id": "panels",
+      "type": "visual",
+      "z": 0,
+      "items": [
+        {
+          "id": "panel-1",
+          "from": 0,
+          "duration": 103,
+          "kit": {
+            "name": "still",
+            "version": "1.0.0"
+          },
+          "props": {
+            "src": {
+              "$asset": "image-morning-room"
+            },
+            "fit": "cover"
+          },
+          "source": "panels[0]"
+        },
+        {
+          "id": "panel-2",
+          "from": 91,
+          "duration": 120,
+          "kit": {
+            "name": "still",
+            "version": "1.0.0"
+          },
+          "props": {
+            "src": {
+              "$asset": "image-teacup"
+            },
+            "fit": "cover"
+          },
+          "source": "panels[1]",
+          "transitionIn": {
+            "type": "crossfade",
+            "duration": 12
+          }
+        },
+        {
+          "id": "panel-3",
+          "from": 199,
+          "duration": 125,
+          "kit": {
+            "name": "still",
+            "version": "1.0.0"
+          },
+          "props": {
+            "src": {
+              "$asset": "image-cat"
+            },
+            "fit": "cover"
+          },
+          "source": "panels[2]",
+          "transitionIn": {
+            "type": "crossfade",
+            "duration": 12
+          }
+        }
+      ]
+    },
+    {
+      "id": "captions",
+      "type": "visual",
+      "z": 10,
+      "items": [
+        {
+          "id": "caption-1",
+          "from": 3,
+          "duration": 69,
+          "kit": {
+            "name": "captions",
+            "version": "1.1.0"
+          },
+          "props": {
+            "text": "Light falls across the quiet room.",
+            "position": "bottom",
+            "font": "Georgia"
+          },
+          "source": "narration"
+        },
+        {
+          "id": "caption-2",
+          "from": 95,
+          "duration": 67,
+          "kit": {
+            "name": "captions",
+            "version": "1.1.0"
+          },
+          "props": {
+            "text": "A cup of tea is cooling by the window.",
+            "position": "bottom",
+            "font": "Georgia"
+          },
+          "source": "narration"
+        },
+        {
+          "id": "caption-3",
+          "from": 201,
+          "duration": 72,
+          "kit": {
+            "name": "captions",
+            "version": "1.1.0"
+          },
+          "props": {
+            "text": "The cat has not moved since dawn.",
+            "position": "bottom",
+            "font": "Georgia"
+          },
+          "source": "narration"
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "type": "audio",
+      "items": [
+        {
+          "id": "voice-1",
+          "from": 0,
+          "duration": 78,
+          "asset": "narration-light",
+          "source": "narration"
+        },
+        {
+          "id": "voice-2",
+          "from": 93,
+          "duration": 74,
+          "asset": "narration-cup",
+          "source": "narration"
+        },
+        {
+          "id": "voice-3",
+          "from": 197,
+          "duration": 82,
+          "asset": "narration-cup",
+          "trimStart": 74,
+          "source": "narration"
+        }
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "poem",
+      "from": 0,
+      "duration": 324,
+      "source": "title",
+      "chapter": {
+        "title": "Morning"
+      }
+    }
+  ],
+  "metadata": {
+    "builtBy": "@studio/series poetry-short@1.0.0",
+    "template": {
+      "id": "poetry-short",
+      "version": "1.0.0",
+      "hash": "sha256:d7b61bc5cc5cfa118d5d269a5f5335643de7fa14d69f61585b712e0ee47bbb42"
+    },
+    "inputs": {
+      "../../templates/poetry-short/1.0.0/FORMAT.md": "sha256:b6455c0972ef9dde0d8e39e96461d70849706e6c8e5c52cf63caaec9c6b79e42",
+      "../../templates/poetry-short/1.0.0/episode-spec.schema.json": "sha256:356c89ed936486003281badbf54bd2e0898f9adfc229e8377c0d43fbbe0c4a26",
+      "../../templates/poetry-short/1.0.0/episode-spec.template.json": "sha256:782fe490f2cac6b747cf9b4b8629ddfbda6b9d87c3aa45b702fed1e0e4fcce26",
+      "../../templates/poetry-short/1.0.0/series-template.json": "sha256:d7b61bc5cc5cfa118d5d269a5f5335643de7fa14d69f61585b712e0ee47bbb42",
+      "artifacts/narration/takes.json": "sha256:2a1666766f9a0163c4803d7b5d7afb18c474fba30347d11a87982ca7b8848cce",
+      "artifacts/timing/cup.json": "sha256:dc6f6eb4fdeeaca2addef38f2bde65072c22880b1f26ae11de24ca64a7e45659",
+      "artifacts/timing/light.json": "sha256:939bd434a729dd6b8c4ac85a4566a724f0f34fede230f74adc4c2551b1ce880a",
+      "assets/images/cat.png": "sha256:b94f5ce0690dbe021dcf4110f2c756483eee412ce056843451eb3b19c15547ad",
+      "assets/images/morning-room.png": "sha256:9d0b10e4b440ac141e73db7cef2ea9eedd8dd1284510ea80cd7f3240f10993d0",
+      "assets/images/teacup.png": "sha256:c42c4932f75fd441ac16156e42e224726d23e4ab6880b19565b9554310c1e571",
+      "assets/takes/cup.wav": "sha256:30bb77872911c3f824ec9cd4930b675b330232560ee4d635c0b170cef80e185a",
+      "assets/takes/light.wav": "sha256:a69eeae356fd13bacdea4d65fbbc9da2e66bc909acd908c7a3fd3464d69c277b",
+      "episode-spec.json": "sha256:a5171e7c4ffbfc2732901af9c6b0917ced58e1de48d8f5e19288dc7d2703b9ac"
+    }
+  }
+}
