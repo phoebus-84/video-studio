@@ -125,8 +125,10 @@ export function renderLayoutSheet(options: LayoutSheetOptions): Promise<LayoutSh
 
 - Validates the timeline and verifies/stages the assets exactly as
   `renderTimeline` does (same `ComposerError` codes).
-- Refuses `picks` that are empty, more than 120, or have a frame outside
-  `[0, durationInFrames)` or not an integer: `ComposerError('bad-picks')`.
+- Refuses, before writing anything, `picks` that are empty, more than 120,
+  repeat a frame, or have a frame outside `[0, durationInFrames)` or not an
+  integer; a scale outside `(0, 1]`; a column count that is not a positive
+  integer: `ComposerError('bad-sheet')`.
 - Bundles once (both compositions are in `remotion-entry`), opens one
   browser, renders each pick of the `Timeline` composition with
   `renderStill` (`scale`, JPEG quality 80) into `frames/NNN.jpg`
@@ -140,16 +142,18 @@ export function renderLayoutSheet(options: LayoutSheetOptions): Promise<LayoutSh
   `sheet.jpg`.
 - Paths in the result are absolute; `path.relative` is the caller's
   business. Hashes are `sha256:<hex>` of the files written.
-- `kits`: each kit the timeline uses, with its `kits.lock.json` hash
-  (`kitLockHash(name, version)`, a new export reading the lock bundled with
-  the package).
+- `kits`: each kit the timeline uses, with its `kits.lock.json` hash —
+  `timelineKits(timeline)` (sorted by name then version; null for a kit the
+  lock does not know) over `kitLockHash(name, version)`, both new exports
+  reading the lock at the package root.
 - Temporary work (bundle, staging) is removed on success and on failure;
   `outDir` is left as far as it got — the caller writes into a temporary
   directory and swaps (below). Remotion failures become
   `ComposerError('sheet-failed')`.
-- CLI: `layout-sheet <timeline.json> <out-dir> --assets <dir> --times
-  <s,s,…> [--scale 0.25]` — times in seconds, labels `<t>s`; prints the
-  result as JSON.
+- CLI: a second bin, `layout-sheet` (`dist/sheet-cli.js`):
+  `layout-sheet <timeline.json> <out-dir> --assets <dir> --times <s,s,…>
+  [--scale 0.25] [--columns n]` — times in seconds, labels `<t>s`; prints the
+  result as JSON; exit 2 on a `ComposerError`.
 
 ### The episode's sheet — `@studio/episode`
 
@@ -169,7 +173,8 @@ export function layoutSheetStatus(episodeDir: string, options: {episodeRef: Epis
    of the timeline it shows, and `render` writes it.
 2. The rules: for a spec-driven episode, the pinned release's `sheet` field
    (via `loadEpisode`'s template); otherwise none. `rules` in the report is
-   `"<template id>@<version>"` or `"default"`.
+   `{source, instants}`: `source` is `"<template id>@<version>"` or
+   `"default"`, `instants` the rules applied (empty for none).
 3. `sheetInstants(timeline, rules)`, then `renderLayoutSheet` into
    `artifacts/.layout-sheet.<pid>.<n>.tmp/`.
 4. Write `sheet.json` into the temporary directory, then swap: an existing
@@ -184,7 +189,7 @@ export function layoutSheetStatus(episodeDir: string, options: {episodeRef: Epis
   "createdAt": "2026-10-06T…Z",
   "timeline": { "path": "artifacts/edit-timeline.json", "hash": "sha256:…" },
   "rebuilt": "spec changed",
-  "rules": "poetry-short@1.1.0",
+  "rules": { "source": "poetry-short@1.1.0", "instants": [{ "at": "start", "offsetSeconds": 2 }] },
   "scale": 0.25,
   "kits": [{ "name": "still", "version": "1.0.0", "hash": "sha256:…" }],
   "inputsHash": "sha256:…",
@@ -196,18 +201,20 @@ export function layoutSheetStatus(episodeDir: string, options: {episodeRef: Epis
 
 `rebuilt` is present only when the stored timeline would be replaced at
 render. `inputsHash` is `sha256` of the canonical JSON
-`{"kits":[…],"rules":…,"scale":…,"timeline":"sha256:…"}` (keys sorted, kits
-sorted by name then version). The timeline names every asset with its hash,
+`{"kits":[…],"rules":{…},"scale":…,"timeline":"sha256:…"}` (contracts'
+`canonicalJson`: keys sorted; kits sorted by name then version). The timeline names every asset with its hash,
 every kit with its version, and all timing in frames; with the kits' code
 hashes and the instants' rules, nothing else decides what the sheet shows.
 
 `layoutSheetStatus` reads only:
 
-- `{state: "missing"}` — no readable `sheet.json`, or its `sheet.jpg` hash no
-  longer matches the file (an edited image is not evidence).
+- `{state: "missing", reason}` — no readable `sheet.json`, or its `sheet.jpg`
+  is gone or its hash no longer matches the file (an edited image is not
+  evidence).
 - `{state: "stale", reasons: [...]}` — the inputs hash recomputed for the
   timeline a render would use differs; `reasons` name which parts changed
-  (`timeline changed`, `rules changed`, `kits changed`). A timeline that
+  (`the timeline changed`, `the kits changed`, `the sheet's rules changed`,
+  `the scale changed`). A timeline that
   cannot be decided (a broken spec) is `stale` with that problem as reason.
 - `{state: "current", inputsHash, sheetHash}`.
 
@@ -264,6 +271,7 @@ regenerated docs.
 | An asset's hash differs from the timeline | `ComposerError` from staging; previous sheet kept |
 | A rule's instant falls outside its section | warning in `sheet.json`, pick dropped |
 | Remotion fails mid-way | `ComposerError('sheet-failed')`; temporary directory removed |
+| Bad picks, scale or columns | `ComposerError('bad-sheet')`, before anything is written |
 | `sheet.jpg` edited after the fact | status `missing` |
 | Timeline, kits or rules changed after the sheet | status `stale` with reasons; `series-render` refuses |
 
@@ -279,7 +287,7 @@ regenerated docs.
 - `renderLayoutSheet` (composer, opt-in real render like the other render
   tests): the `explainer` fixture at three picks — files exist, JPEG size is
   the scaled resolution, the grid's size matches `columns`/`rows`, hashes
-  match the files; `bad-picks` for an empty list and an out-of-range frame
+  match the files; `bad-sheet` for every bad pick, scale and column count
   (no render needed).
 - `makeLayoutSheet` / `layoutSheetStatus` (`@studio/episode`, with the
   composer mocked for the swap and failure paths, one real render):
