@@ -39,7 +39,9 @@ narration manifest and knows nothing about specs, cues or templates.
 ### Workspace — `studio/series` (`@studio/series` 0.1.0)
 
 Depends on `@studio/contracts` and `@av/remotion-composer` (for
-`validateTimeline`), both `workspace:*`. TypeScript built with `tsc` to `dist/`
+`validateTimeline`), both `workspace:*`; exports `.` (from `dist/`) and
+`./fixtures/*` (so the agent's tests can build an episode from the golden
+fixture). TypeScript built with `tsc` to `dist/`
 (the agent consumes it there, like `@av/remotion-composer`), tests with
 `node --import tsx --test`; joins the root workspaces and
 `tools/build-required.mjs`. Imports nothing from `studio/agent` or
@@ -52,7 +54,8 @@ src/
   compile.ts                    compileSpec(input): dispatch + both timeline validators
   compilers/poetry-short/1.0.0.ts
   index.ts
-fixtures/poetry-short/1.0.0/    golden input and expected-timeline.json
+scripts/golden.ts               writes a new version's expected-timeline.json, never overwrites
+fixtures/poetry-short/1.0.0/    input.json (a whole CompileInput) and expected-timeline.json
 test/
 ```
 
@@ -153,10 +156,15 @@ voiceProfile, outputProfile }`.
 
 ### Loader — `compileEpisode(episodeDir, { episodeRef })` (`studio/agent/src/series-compile.ts`)
 
-The only code that touches files. Each step stops with problems carrying
-their path:
+The only code that touches files. Each step stops with problems located as
+`<file relative to the episode>#<JSON path>` (e.g.
+`episode-spec.json#$.data.panels[1].cue`,
+`artifacts/narration/takes.json#$.takes[1].audio.hash`); the compiler's own
+paths are mapped to the file they point into. `isSpecDriven(episodeDir)`
+tells whether `episode-spec.json` exists.
 
-1. Read `episode-spec.json` as bytes; not JSON: `bad-spec`.
+1. Read `episode-spec.json` as bytes; not JSON: `bad-spec`. Its
+   `episodeRef` must be this episode: `episode-mismatch`.
 2. The series directory from the episode's location; the release
    `seriesTemplatePath(…, spec.template.id, spec.template.version)`; absent:
    `missing-template`. Read the manifest and its three files as exact
@@ -167,11 +175,14 @@ their path:
 3. `artifacts/narration/takes.json`: absent `missing-narration`;
    `validateNarrationTakes`. For each take: its audio and its `timing` file
    exist and hash as declared (`hash-mismatch`), and the timing passes
-   `validateWordTiming(…, { audioHash })`. A take without `timing`:
-   `missing-timing`.
-4. Images: for each `panels[i].assetId`, exactly one of
-   `assets/images/<assetId>.{png,jpg,jpeg,webp}`; none is left to the
-   compiler (`missing-asset`), two or more is `ambiguous-asset`.
+   `validateWordTiming(…, { audioHash })` (`bad-timing` when not JSON). A
+   take without `timing`: `missing-timing`. A take path that is absolute or
+   climbs out: `path-escape`.
+4. Images: every `.png`, `.jpg`, `.jpeg`, `.webp` in `assets/images` (hidden
+   files and other files ignored) is offered as `image-<name>`; the compiler
+   decides which it needs, and reports a missing one (`missing-asset`). Two
+   files with one name is `ambiguous-asset`. The loader stays independent of
+   any spec's shape.
 5. Hash every file read into `inputs` (spec, manifest, three release files,
    `takes.json`, timings, audio, images).
 6. `compileSpec(input)`.
@@ -184,7 +195,8 @@ or `{ ok: false, problems }`. No file is written here.
 - **`pva_build_timeline`**: an episode with `episode-spec.json` goes through
   `compileEpisode`; without one, tk7.6's `buildEditTimeline` as today. A
   spec that fails is a tool error listing the problems — never a fallback to
-  the legacy builder. The reply adds the compiler, the template pin and the
+  the legacy builder. The picture count in the reply names the lowest visual
+  track (`2 scenes`, `3 panels`). The reply adds the compiler, the template pin and the
   spec revision. Writing stays atomic.
 - **`profile`**: for a spec-driven episode the template sets it; a
   different `profile` argument is the error `profile-fixed-by-template`, the
@@ -193,7 +205,12 @@ or `{ ok: false, problems }`. No file is written here.
   `metadata.inputs`, which for a spec-driven timeline lists the spec, the
   release files, `takes.json`, timings, audio and images. Editing the spec
   rebuilds and names it; a hand-edited timeline whose inputs did not change
-  renders as it is (ADR-0036).
+  renders as it is (ADR-0036). Unlike a legacy episode, a spec-driven one
+  whose spec no longer compiles is an error even when a valid timeline from
+  before is on disk: the spec is the editor's intent, and rendering the
+  timeline it replaced would ignore it.
+- The render report and both replies name the compiler, the template pin and
+  the spec revision (`compiledBy`).
 
 ### Docs
 
@@ -211,7 +228,7 @@ or `{ ok: false, problems }`. No file is written here.
 
 ## Testing
 
-- **`@studio/series`** (`node:test`):
+- **`@studio/series`** (`node:test`), also in the CI module matrix:
   - golden: `fixtures/poetry-short/1.0.0/` compiles to
     `expected-timeline.json` byte for byte (canonical JSON, two-space
     indent); the failure message says to add a new version;
@@ -222,17 +239,21 @@ or `{ ok: false, problems }`. No file is written here.
     `derivedFrom` and item `source` set;
   - problems: `narration-mismatch`, `cue-order`, an unknown word at
     `$.data.panels[1].cue`, `missing-asset`, `unknown-profile`,
-    `missing-unit`, `unknown-compiler` with the available list;
+    `missing-unit`, a `layoutUnit` problem with its path, `unknown-compiler`
+    with the available list; two panels sharing a picture;
   - the result passes both timeline validators; determinism (two runs equal).
 - **Loader** (vitest, temporary series and episodes built from the
   fixture): a complete episode compiles; `missing-template`; a release
   file edited in place; a spec still holding `__FILL__`; a missing timing;
   a timing for another audio hash; `ambiguous-asset`; a symlink leaving the
-  episode (`path-escape`).
+  episode and a take path climbing out (`path-escape`); a spec for another
+  episode; hidden and non-picture files ignored.
 - **Tools** (vitest, fake renderer as tk7.6): spec present → compiler, absent
   → legacy builder; a failing spec gives an error and writes nothing;
   `profile-fixed-by-template`; editing the spec rebuilds naming it; a
-  hand-edited spec-driven timeline is rendered, not overwritten.
+  hand-edited spec-driven timeline is rendered, not overwritten; a spec
+  that stops compiling is an error even with a valid older timeline; the
+  report records `compiledBy`.
 - **End to end** (`REMOTION_E2E=1`): the fixture episode with a real WAV
   renders 1080×1920 within ±1 LU of −14 LUFS, captions visible in a frame.
 - Root: `npm run check` (with `check-boundaries` and `build-required`),
