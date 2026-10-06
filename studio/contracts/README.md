@@ -53,6 +53,13 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
   bindings, **not** a signature/file trust check or approval operation.
 - `placeholderPaths(data)`: JSON paths of unresolved content.
 
+`src/series-references.mjs` (`avg-jao.6`) is where a descriptor becomes a
+verdict: `verifySeriesReference({seriesDir, templateId, referenceId, key})`
+reads the descriptor, its signature, a withdrawal, the files, the pinned
+release and the provenance, and answers `trusted`, `withdrawn`, `invalid` or
+`unverifiable`; `buildReferenceApproval` and `buildReferenceWithdrawal` build
+the receipts the operator's CLI signs. It reads files and never writes them.
+
 Validators return `{code, path, message}[]`. Instantiation throws on invalid
 bundles or episode identities. Bundle validity alone does not prove its unfilled
 defaults can form a valid episode: validate a filled example before release.

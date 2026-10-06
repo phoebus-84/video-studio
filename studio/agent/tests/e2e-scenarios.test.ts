@@ -172,7 +172,7 @@ describe("Package release checks", () => {
       "pva_budget_status", "pva_journal",
       "pva_generate_image", "pva_synthesize_speech", "pva_synthesize_nonverbal_audio",
       "pva_render_graphics", "pva_render_terminal", "pva_render_vector_animation",
-      "pva_init_spec", "pva_build_timeline", "pva_check_episode", "pva_compose_video", "pva_compose_multitrack_video", "pva_probe_media", "pva_capability_status",
+      "pva_init_spec", "pva_propose_reference", "pva_build_timeline", "pva_check_episode", "pva_compose_video", "pva_compose_multitrack_video", "pva_probe_media", "pva_capability_status",
       "pva_list_skills", "pva_load_skill", "pva_gather_context",
       "pva_rpc_health",
     ];

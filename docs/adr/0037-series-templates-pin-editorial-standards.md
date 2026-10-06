@@ -9,7 +9,9 @@ golden output, with `poetry-short@1.0.0` the first; the agent's
 `compileEpisode` loads and checks a spec-driven episode, and
 `pva_build_timeline`/`pva_compose_video` use it whenever an episode has an
 `episode-spec.json`. Series validators are implemented beside the compilers
-(`avg-jao.3`); golden-reference verification and promotion are `avg-jao.6`.
+(`avg-jao.3`). Golden references are proposed by Pi (`pva_propose_reference`),
+approved, verified and withdrawn by the operator (`vpr reference`), and
+verified by `verifySeriesReference` (`avg-jao.6`).
 
 ## Context
 
@@ -167,10 +169,42 @@ use, the runtime must:
    does not rewrite a golden snapshot. Withdrawing a reference is an explicit
    operator action, never replacement of its historical record.
 
-This issue defines and tests descriptor shape/bindings, **not** a promotion
-command, trust decision, filesystem loader, revocation mechanism or QA gate.
-The integration must implement those checks before treating a descriptor as
-a trusted golden; it cannot infer trust from `validateSeriesReference() === []`.
+`avg-jao.1` defined and tested the descriptor's shape and bindings; trust
+cannot be inferred from `validateSeriesReference() === []`.
+
+**How the studio does it (`avg-jao.6`).**
+
+- **Propose** (Pi or a person, `pva_propose_reference`): the episode's current
+  render, the timeline it was made from and the spec that timeline was
+  compiled from — with no series-rule errors — are frozen in
+  `reviews/references/<id>/` with an unsigned `proposal.json`.
+- **Approve** (the operator only, `vpr reference approve`): the proposed files
+  are re-hashed (what is approved is exactly what was proposed); the approval
+  is a `GateReview` of stage `reference-review` whose `planHash` is the
+  proposal's hash (checked on every verify, so no field of the descriptor —
+  metadata included — can change after signing), signed with the operator key; the descriptor is verified in
+  full before it is written, then created exclusively — never rewritten.
+- **Verify** (`verifySeriesReference`, `vpr reference verify | list`): the
+  descriptor and its identity, the signature, a withdrawal, the files inside
+  the source episode, the frozen spec against its pinned release, and the
+  provenance from spec to timeline to render — in that order. The verdict is
+  `trusted`, `withdrawn`, `invalid` (with the first failing check) or
+  `unverifiable` (no key).
+- **Withdraw** (the operator only, `vpr reference withdraw --reason`): a
+  signed, exclusive `<id>.withdrawal.json` bound to the descriptor's hash;
+  the descriptor and its evidence stay. A forged withdrawal makes the
+  reference `invalid`, never quietly withdrawn. "Append-only" is what the
+  studio does, not what the filesystem enforces: anyone who can write the
+  library can delete a withdrawal (or any file), and a deleted withdrawal
+  cannot be detected from inside the library. That is the same-user boundary
+  of every operator file (`avg-qr4.8`, OS isolation); until then the library
+  is backed up.
+
+The record of a reference is its signed descriptor and withdrawal, not the
+episode's journal: review events there are written only by the execution
+service for pipeline stages (avg-qr4.3), and a reference is not a stage.
+Approval and promotion are one command, so an approval cannot be superseded
+before it is promoted; afterwards only a signed withdrawal ends a reference.
 
 ## Consequences and follow-ups
 

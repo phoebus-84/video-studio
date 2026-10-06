@@ -46,6 +46,7 @@ import {
   decideEditTimeline,
   EDIT_TIMELINE_PATH,
   initEpisodeSpec,
+  proposeReference,
   renderEpisode,
   writeEditTimeline,
   type Validation,
@@ -932,6 +933,40 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         `${result.placeholders.length} value(s) to fill:`,
         ...result.placeholders.map((p) => `  - ${p}`),
         "Read the release's FORMAT.md and fill them with the fill-episode-spec skill; then pva_check_episode.",
+      ];
+      return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
+    },
+  });
+
+  pi.registerTool({
+    name: "pva_propose_reference",
+    label: "Propose Series Reference",
+    description: "Propose the episode's current render as one of its series' golden references: freezes its spec and timeline into reviews/references/<id>/ and writes the proposal. Only the operator can approve it (vpr reference approve); nothing here signs. Use it only when the person says this episode is exemplary of the series.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      referenceId: Type.String({ description: "Lowercase kebab-case id, new in the series, e.g. san-martino-v1" }),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+      const result = await withFileMutationQueue(join(dir, "output", "current.json"), async () =>
+        proposeReference(dir, { episodeRef, referenceId: params.referenceId }));
+      if (!result.ok) {
+        return {
+          content: [{ type: "text" as const, text: ["❌ Nothing proposed", ...result.problems.map((p) => `  - ${p.code} at ${p.path}: ${p.message}`)].join("\n") }],
+          details: { problems: result.problems } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+      const { proposal } = result;
+      const lines = [
+        `✅ proposed ${proposal.id} for ${params.channel}/${params.series} (template ${proposal.template.id}@${proposal.template.version})`,
+        ...result.paths.map((p) => `  - ${p}`),
+        `render: ${proposal.render.path}`,
+        "Only a person can make it a reference. Ask them to run:",
+        `  vpr reference approve ${params.channel}/${params.series}/${params.episode} ${proposal.id} --library ${LIBRARY_ROOT}`,
       ];
       return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
     },

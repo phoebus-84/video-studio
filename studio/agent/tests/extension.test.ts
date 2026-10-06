@@ -129,7 +129,7 @@ describe("extensions/index.ts — tool registration", () => {
   });
 
   it("registers the expected suite of production tools", () => {
-    expect(mockPi.tools.length).toBe(45);
+    expect(mockPi.tools.length).toBe(46);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "pva_blender_create_scene",
@@ -163,6 +163,7 @@ describe("extensions/index.ts — tool registration", () => {
       "pva_plan_rerun",
       "pva_poly_haven",
       "pva_probe_media",
+      "pva_propose_reference",
       "pva_render_graphics",
       "pva_render_terminal",
       "pva_render_vector_animation",
