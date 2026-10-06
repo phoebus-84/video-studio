@@ -2,7 +2,7 @@
 // call. These moved with the code from the gateway's dispatcher tests.
 
 import { afterEach, describe, expect, it } from "vitest";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { STUDIO_ADAPTERS } from "../src/index.js";
 import type { StageAdapter } from "../src/index.js";
@@ -81,5 +81,19 @@ describe("render-qa", () => {
     expect(report.verdict).toBe("fail");
     expect(report.summary).toMatch(/No render found/);
     expect(report.checks).toEqual([]);
+  });
+
+  it("does not take a render still being written for one", async () => {
+    // pva_compose_video writes output/.<render-id>.partial.mp4 and renames it
+    // only when complete (ADR-0036); a QA run meanwhile must not examine it.
+    const dir = await episodeDir();
+    await mkdir(join(dir, "output"), { recursive: true });
+    await writeFile(join(dir, "output", ".render-1-abcdef12.partial.mp4"), "half a video");
+
+    const [file] = await byId("render-qa").perform(ctx(dir));
+    const report = JSON.parse(await readFile(file!, "utf-8"));
+
+    expect(report.verdict).toBe("fail");
+    expect(report.summary).toMatch(/No render found/);
   });
 });

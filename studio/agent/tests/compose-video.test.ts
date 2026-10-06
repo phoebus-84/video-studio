@@ -1,159 +1,259 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 /**
- * The composer selected scene images with `/^s\d+\.jpg$/` and held every one of
- * them for a flat ten seconds. An episode drawn as PNG rendered nothing at all;
- * an episode of eleven scenes rendered them in the order s1, s10, s11, s2 …;
- * and every scene sat on screen for ten seconds regardless of the line it
- * carries, with `-shortest` cutting off whatever did not fit.
- *
- * These run real FFmpeg, because the defect is in what FFmpeg is asked to do.
+ * pva_build_timeline and pva_compose_video (avg-tk7.6, ADR-0036). The render
+ * itself is @av/remotion-composer's and has its own tests; here it is a fake
+ * that writes a small file, or fails when asked, so these tests pin what the
+ * studio decides: which timeline is rendered, and where the render goes.
+ * Real renders are in compose-video.e2e.test.ts.
  */
-const hasFfmpeg = spawnSync("ffmpeg", ["-version"], { encoding: "utf-8" }).status === 0;
 
-describe.skipIf(!hasFfmpeg)("composing an episode video", () => {
-  let root: string;
-  let previousRoot: string | undefined;
+const renders: Array<{ timeline: any; outputPath: string }> = [];
+let failNext: Error | null = null;
 
-  const CHANNEL = "video-storici";
-  const SERIES = "roma-pills";
-  const EPISODE = "giulio-cesare";
+vi.mock("@av/remotion-composer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@av/remotion-composer")>();
+  return {
+    ...actual,
+    renderTimeline: async (options: { timeline: any; outputPath: string }) => {
+      renders.push({ timeline: options.timeline, outputPath: options.outputPath });
+      mkdirSync(dirname(options.outputPath), { recursive: true });
+      writeFileSync(options.outputPath, "fake mp4");
+      if (failNext) {
+        const error = failNext;
+        failNext = null;
+        throw error;
+      }
+      return {
+        path: options.outputPath,
+        durationSeconds: options.timeline.durationInFrames / options.timeline.fps,
+        sizeBytes: 8,
+        hash: `sha256:${"0".repeat(64)}`,
+        kits: [{ name: "still", version: "1.0.0" }],
+        profile: options.timeline.profile.id,
+        loudness: null,
+      };
+    },
+  };
+});
 
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "pva-compose-"));
-    previousRoot = process.env.AVG_LIBRARY_ROOT;
-    process.env.AVG_LIBRARY_ROOT = root;
-  });
+const CHANNEL = "video-storici";
+const SERIES = "roma-pills";
+const EPISODE = "giulio-cesare";
 
-  afterEach(() => {
-    if (previousRoot === undefined) delete process.env.AVG_LIBRARY_ROOT;
-    else process.env.AVG_LIBRARY_ROOT = previousRoot;
-    rmSync(root, { recursive: true, force: true });
-  });
+let root: string;
+let previousRoot: string | undefined;
 
-  const episodeDir = () => join(root, CHANNEL, "series", SERIES, "episodes", EPISODE);
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), "pva-compose-"));
+  previousRoot = process.env.AVG_LIBRARY_ROOT;
+  process.env.AVG_LIBRARY_ROOT = root;
+  renders.length = 0;
+  failNext = null;
+});
 
-  /** A solid-colour PNG, drawn by FFmpeg so the test needs no fixtures. */
-  function png(path: string, colour: string): void {
-    const result = spawnSync("ffmpeg", [
-      "-y", "-f", "lavfi", "-i", `color=c=${colour}:s=640x360`, "-frames:v", "1", path,
-    ], { encoding: "utf-8" });
-    if (result.status !== 0) throw new Error(result.stderr);
-  }
+afterEach(() => {
+  if (previousRoot === undefined) delete process.env.AVG_LIBRARY_ROOT;
+  else process.env.AVG_LIBRARY_ROOT = previousRoot;
+  rmSync(root, { recursive: true, force: true });
+});
 
-  async function compose(outputName = "final.mp4") {
-    const { registerCapabilityTools } = await import("../src/capability-tools.js");
-    const tools = new Map<string, { execute: (...a: unknown[]) => Promise<any> }>();
-    registerCapabilityTools({
-      registerTool: (t: { name: string }) => tools.set(t.name, t as never),
-    } as never);
-    return tools.get("pva_compose_video")!.execute(
-      "call-1", { channel: CHANNEL, series: SERIES, episode: EPISODE, outputName },
-      undefined, undefined, undefined,
-    );
-  }
+const episodeDir = () => join(root, CHANNEL, "series", SERIES, "episodes", EPISODE);
+const at = (relative: string) => join(episodeDir(), relative);
 
-  function durationOf(path: string): number {
-    const probe = spawnSync("ffprobe", [
-      "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", path,
-    ], { encoding: "utf-8" });
-    return Number(probe.stdout.trim());
-  }
+function file(relative: string, content: string): void {
+  mkdirSync(dirname(at(relative)), { recursive: true });
+  writeFileSync(at(relative), content);
+}
 
-  it("renders an episode whose images are PNG", async () => {
-    const dir = episodeDir();
-    mkdirSync(join(dir, "assets", "images"), { recursive: true });
-    png(join(dir, "assets", "images", "s1.png"), "red");
-    png(join(dir, "assets", "images", "s2.png"), "blue");
+function episode(): void {
+  file("assets/images/s1.png", "red");
+  file("assets/images/s2.png", "blue");
+  file("artifacts/timing.json", JSON.stringify({ scenes: [{ sceneId: "s1", durationSeconds: 2 }, { sceneId: "s2", durationSeconds: 3 }] }));
+}
 
-    const result = await compose();
+async function tool(name: string, params: Record<string, unknown> = {}) {
+  const { registerCapabilityTools } = await import("../src/capability-tools.js");
+  const tools = new Map<string, { execute: (...a: unknown[]) => Promise<any> }>();
+  registerCapabilityTools({ registerTool: (t: { name: string }) => tools.set(t.name, t as never) } as never);
+  return tools.get(name)!.execute("call-1", { channel: CHANNEL, series: SERIES, episode: EPISODE, ...params }, undefined, undefined, undefined);
+}
 
+const readJson = (relative: string) => JSON.parse(readFileSync(at(relative), "utf-8"));
+const sha256 = (relative: string) => `sha256:${createHash("sha256").update(readFileSync(at(relative))).digest("hex")}`;
+
+describe("pva_build_timeline", () => {
+  it("writes the episode's edit timeline and says what is in it", async () => {
+    episode();
+    const result = await tool("pva_build_timeline");
     expect(result.isError).toBeUndefined();
-    expect(existsSync(join(dir, "artifacts", "final.mp4"))).toBe(true);
+    expect(result.content[0].text).toMatch(/artifacts\/edit-timeline\.json: 2 scenes, 0 captions, 5\.0s, youtube-1920x1080/);
+    expect(readJson("artifacts/edit-timeline.json")).toMatchObject({ apiVersion: "studio.video/v1alpha2", durationInFrames: 150 });
+    expect(readdirSync(at("artifacts")).filter((f) => f.includes(".tmp"))).toEqual([]);
   });
 
-  it("gives each scene the time its timing document allots, not a flat ten seconds", async () => {
-    const dir = episodeDir();
-    mkdirSync(join(dir, "assets", "images"), { recursive: true });
-    for (const [id, colour] of [["s1", "red"], ["s2", "blue"], ["s3", "green"]]) {
-      png(join(dir, "assets", "images", `${id}.png`), colour!);
-    }
-    mkdirSync(join(dir, "artifacts"), { recursive: true });
-    writeFileSync(join(dir, "artifacts", "timing.json"), JSON.stringify({
-      scenes: [
-        { sceneId: "s1", durationSeconds: 2 },
-        { sceneId: "s2", durationSeconds: 3 },
-        { sceneId: "s3", durationSeconds: 1 },
-      ],
-    }));
+  it("says what is wrong instead of writing a timeline", async () => {
+    file("assets/images/opening-shot.png", "red");
+    const result = await tool("pva_build_timeline");
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/no-scenes/);
+    expect(existsSync(at("artifacts/edit-timeline.json"))).toBe(false);
+  });
+});
 
-    await compose();
+describe("pva_compose_video", () => {
+  it("builds a missing timeline, renders it to output/<render-id>.mp4 with a report, and moves current.json last", async () => {
+    episode();
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toMatch(/timeline rebuilt: there was no timeline yet/);
 
-    // Six seconds of narrated scenes, not thirty seconds of slideshow.
-    const duration = durationOf(join(dir, "artifacts", "final.mp4"));
-    expect(duration).toBeGreaterThan(5.5);
-    expect(duration).toBeLessThan(6.6);
+    const current = readJson("output/current.json");
+    expect(current.renderId).toMatch(/^render-\d+-[a-f0-9]{8}$/);
+    expect(current.path).toBe(`${current.renderId}.mp4`);
+    expect(existsSync(at(`output/${current.path}`))).toBe(true);
+    const report = readJson(`output/${current.renderId}.report.json`);
+    expect(report.timeline).toEqual({ path: "artifacts/edit-timeline.json", hash: sha256("artifacts/edit-timeline.json") });
+    expect(report.render).toMatchObject({ path: current.path, profile: "youtube-1920x1080" });
+    expect(current.renderId.endsWith(report.timeline.hash.slice(7, 15))).toBe(true);
+    expect(readdirSync(at("output")).filter((f) => f.includes("partial"))).toEqual([]);
   });
 
-  it("says what is wrong when the images are not named like scenes", async () => {
-    const dir = episodeDir();
-    mkdirSync(join(dir, "assets", "images"), { recursive: true });
-    png(join(dir, "assets", "images", "opening-shot.png"), "red");
+  it("renders the timeline as it stands when nothing changed", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const before = sha256("artifacts/edit-timeline.json");
+    const result = await tool("pva_compose_video");
+    expect(result.content[0].text).toMatch(/rendered artifacts\/edit-timeline\.json as it stands/);
+    expect(sha256("artifacts/edit-timeline.json")).toBe(before);
+  });
 
-    const result = await compose();
+  it("renders a hand-edited timeline without overwriting it", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const edited = readJson("artifacts/edit-timeline.json");
+    edited.tracks[0].items[0].props.fit = "cover";
+    writeFileSync(at("artifacts/edit-timeline.json"), JSON.stringify(edited));
+    await tool("pva_compose_video");
+    expect(renders[0]!.timeline.tracks[0].items[0].props.fit).toBe("cover");
+    expect(readJson("artifacts/edit-timeline.json").tracks[0].items[0].props.fit).toBe("cover");
+  });
+
+  it("refuses a hand edit the contracts reject, says so, and leaves the edit alone", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const edited = readJson("artifacts/edit-timeline.json");
+    edited.tracks[0].items[1].from -= 40; // now overlaps the first scene
+    writeFileSync(at("artifacts/edit-timeline.json"), JSON.stringify(edited));
+    const before = sha256("artifacts/edit-timeline.json");
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/artifacts\/edit-timeline\.json as it stands is not valid/);
+    expect(result.content[0].text).toMatch(/overlap|bad-crossfade/);
+    expect(renders).toHaveLength(0);
+    expect(sha256("artifacts/edit-timeline.json")).toBe(before);
+  });
+
+  it("refuses a timeline that is not JSON instead of rebuilding over it", async () => {
+    episode();
+    file("artifacts/edit-timeline.json", "{ half an edit");
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/is not JSON/);
+    expect(readFileSync(at("artifacts/edit-timeline.json"), "utf-8")).toBe("{ half an edit");
+  });
+
+  it("keeps a copy of a hand-edited timeline before rebuilding over it, and names the copy", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const edited = readJson("artifacts/edit-timeline.json");
+    edited.tracks[0].items[0].props.fit = "cover";
+    writeFileSync(at("artifacts/edit-timeline.json"), JSON.stringify(edited));
+    const editedHash = sha256("artifacts/edit-timeline.json");
+    file("assets/images/s2.png", "green");
+
+    const result = await tool("pva_compose_video");
+    const backup = /previous timeline kept as (artifacts\/edit-timeline\.[a-f0-9]{8}\.bak\.json)/.exec(result.content[0].text)?.[1];
+    expect(backup).toBeDefined();
+    expect(sha256(backup!)).toBe(editedHash);
+
+    const again = await tool("pva_build_timeline");
+    expect(again.content[0].text).not.toMatch(/previous timeline kept/); // nothing differs, nothing to keep
+  });
+
+  it("renders a valid stored timeline even when the episode can no longer be rebuilt, with a warning", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const edited = readJson("artifacts/edit-timeline.json");
+    edited.profile.id = "house-style"; // a profile outside the catalog
+    writeFileSync(at("artifacts/edit-timeline.json"), JSON.stringify(edited));
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toMatch(/rendered artifacts\/edit-timeline\.json as it stands/);
+    expect(renders[0]!.timeline.profile.id).toBe("house-style");
+
+    // A narration WAV that cannot be read: the episode cannot be rebuilt, but
+    // the stored timeline (which does not use it) is still valid and renders.
+    file("artifacts/narration/narration-full.wav", "not a wav");
+    const unbuildable = await tool("pva_compose_video");
+    expect(unbuildable.isError).toBeUndefined();
+    expect(unbuildable.content[0].text).toMatch(/could not be rebuilt.*bad-narration.*rendering it as it stands/);
+    expect(renders[1]!.timeline.profile.id).toBe("house-style");
+  });
+
+  it("rebuilds when the episode's material changed, and names what changed", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    file("assets/images/s2.png", "green");
+    file("assets/images/s3.png", "white");
+    const result = await tool("pva_compose_video");
+    expect(result.content[0].text).toMatch(/timeline rebuilt: assets\/images\/s2\.png changed, assets\/images\/s3\.png added/);
+    expect(renders[0]!.timeline.tracks[0].items).toHaveLength(3);
+  });
+
+  it("rebuilds for another profile, and keeps the timeline's profile when none is asked for", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const vertical = await tool("pva_compose_video", { profile: "vertical-1080x1920" });
+    expect(vertical.content[0].text).toMatch(/the profile changed from youtube-1920x1080 to vertical-1080x1920/);
+    expect(renders[0]!.timeline.resolution).toEqual({ width: 1080, height: 1920 });
+    file("assets/images/s2.png", "green");
+    await tool("pva_compose_video");
+    expect(renders[1]!.timeline.profile.id).toBe("vertical-1080x1920");
+  });
+
+  it("leaves output/ and current.json as they were when the render fails, and passes the composer's code on", async () => {
+    episode();
+    await tool("pva_compose_video", { label: "first" });
+    const current = readFileSync(at("output/current.json"), "utf-8");
+    const filesBefore = readdirSync(at("output")).sort();
+
+    const { ComposerError } = await import("@av/remotion-composer");
+    failNext = new ComposerError("render-failed", "Remotion could not render the timeline: boom");
+    const result = await tool("pva_compose_video", { label: "second" });
 
     expect(result.isError).toBe(true);
-    // "No scene images found" over a directory holding an image is a puzzle;
-    // saying the files are there but misnamed is an instruction.
-    expect(result.content[0].text).toContain("1 file(s) are there");
+    expect(result.content[0].text).toMatch(/^❌ render-failed: Remotion could not render the timeline: boom/);
+    expect(readFileSync(at("output/current.json"), "utf-8")).toBe(current);
+    expect(readdirSync(at("output")).sort()).toEqual(filesBefore);
   });
 
-  it("plays the scenes in order once the episode passes nine", async () => {
-    // A lexicographic sort renders s1, s10, s2 — so the tenth scene plays
-    // second. Reading the frames back is the only way to see it.
-    const dir = episodeDir();
-    mkdirSync(join(dir, "assets", "images"), { recursive: true });
-    png(join(dir, "assets", "images", "s1.png"), "red");
-    png(join(dir, "assets", "images", "s2.png"), "lime");
-    png(join(dir, "assets", "images", "s10.png"), "blue");
-    mkdirSync(join(dir, "artifacts"), { recursive: true });
-    writeFileSync(join(dir, "artifacts", "timing.json"), JSON.stringify({
-      scenes: ["s1", "s2", "s10"].map((sceneId) => ({ sceneId, durationSeconds: 1 })),
-    }));
-
-    await compose();
-
-    /** The dominant channel of the frame shown at `seconds`. */
-    function channelAt(seconds: number): "r" | "g" | "b" {
-      const probe = spawnSync("ffmpeg", [
-        "-v", "quiet", "-ss", String(seconds), "-i", join(dir, "artifacts", "final.mp4"),
-        "-frames:v", "1", "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
-      ], { encoding: "buffer" });
-      const [r, g, b] = probe.stdout;
-      if (r! >= g! && r! >= b!) return "r";
-      return g! >= b! ? "g" : "b";
-    }
-
-    expect([channelAt(0.5), channelAt(1.5), channelAt(2.5)]).toEqual(["r", "g", "b"]);
+  it("refuses a label that is not kebab-case, before rendering", async () => {
+    episode();
+    const result = await tool("pva_compose_video", { label: "Final Cut" });
+    expect(result.isError).toBe(true);
+    expect(renders).toHaveLength(0);
   });
 
-  it("includes a scene numbered s4a rather than dropping it", async () => {
-    const dir = episodeDir();
-    mkdirSync(join(dir, "assets", "images"), { recursive: true });
-    for (const id of ["s4", "s4a"]) png(join(dir, "assets", "images", `${id}.png`), "red");
-    mkdirSync(join(dir, "artifacts"), { recursive: true });
-    writeFileSync(join(dir, "artifacts", "timing.json"), JSON.stringify({
-      scenes: [{ sceneId: "s4", durationSeconds: 2 }, { sceneId: "s4a", durationSeconds: 2 }],
-    }));
-
-    await compose();
-
-    const duration = durationOf(join(dir, "artifacts", "final.mp4"));
-    // Both scenes present: two seconds each, not one scene's worth.
-    expect(duration).toBeGreaterThan(3.5);
+  it("refuses an episode without scene images and lists why", async () => {
+    file("assets/images/opening-shot.png", "red");
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/no-scenes/);
+    expect(existsSync(at("output"))).toBe(false);
   });
-}, 60_000);
+});

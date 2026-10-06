@@ -7,6 +7,7 @@
 | Node ≥ 22 | everything | |
 | Bun | dependency installation | the workspace lockfile is a `bun.lock` |
 | FFmpeg + ffprobe | `video.compose`, `media.probe`, `graphics.animate` | `brew install ffmpeg` |
+| Headless Chrome | `video.compose` (Remotion renders in it) | nothing to install: Remotion downloads `chrome-headless-shell` into `node_modules/.remotion` on the first render; `npm run doctor` says whether it is there |
 | ImageMagick | vector animation in the agent | `brew install imagemagick` |
 | Python 3 | `packages/voice` (MLX speech) | Apple Silicon for MLX acceleration |
 | Blender 4.2–4.x or 5.2.x LTS | `scene.create`, `scene.render` | 5.2.1 live tested; bundled Python; set `BLENDER_BIN` if needed |

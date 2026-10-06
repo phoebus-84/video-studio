@@ -129,24 +129,3 @@ export function resolveSceneFrames(episodeDir: string): SceneFrame[] {
     };
   });
 }
-
-/**
- * An ffmpeg concat demuxer script holding each frame for its own duration.
- *
- * The final entry is repeated without a duration: the demuxer applies a
- * `duration` to the transition into the *next* entry, so the last image is
- * dropped to a single frame without it.
- */
-export function concatScript(frames: Array<{ path: string; durationSeconds: number }>): string {
-  if (frames.length === 0) throw new Error("No frames to concatenate");
-  const lines: string[] = [];
-  for (const frame of frames) {
-    // Single quotes are the demuxer's own escaping; a path containing one would
-    // otherwise end the argument early.
-    const quoted = frame.path.replace(/'/g, "'\\''");
-    lines.push(`file '${quoted}'`);
-    lines.push(`duration ${frame.durationSeconds.toFixed(6)}`);
-  }
-  lines.push(`file '${frames[frames.length - 1]!.path.replace(/'/g, "'\\''")}'`);
-  return `${lines.join("\n")}\n`;
-}

@@ -5,7 +5,6 @@ import { join } from "node:path";
 import {
   listSceneImages,
   resolveSceneFrames,
-  concatScript,
   DEFAULT_SCENE_SECONDS,
 } from "../src/scene-images.js";
 
@@ -131,33 +130,6 @@ describe("scene images", () => {
       }));
       expect(resolveSceneFrames(dir).map((f) => f.durationSeconds))
         .toEqual([4, DEFAULT_SCENE_SECONDS]);
-    });
-  });
-
-  describe("concat script", () => {
-    it("repeats the final entry so the last scene is not one frame long", () => {
-      // The demuxer applies `duration` to the transition into the next entry,
-      // so without a repeat the closing image flashes past.
-      const script = concatScript([
-        { path: "/e/frame001.png", durationSeconds: 2 },
-        { path: "/e/frame002.png", durationSeconds: 3 },
-      ]);
-      expect(script.trimEnd().split("\n")).toEqual([
-        "file '/e/frame001.png'",
-        "duration 2.000000",
-        "file '/e/frame002.png'",
-        "duration 3.000000",
-        "file '/e/frame002.png'",
-      ]);
-    });
-
-    it("escapes a quote in a path instead of ending the argument early", () => {
-      const script = concatScript([{ path: "/e/it's.png", durationSeconds: 1 }]);
-      expect(script).toContain("file '/e/it'\\''s.png'");
-    });
-
-    it("refuses to build an empty script", () => {
-      expect(() => concatScript([])).toThrow("No frames");
     });
   });
 });

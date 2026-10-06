@@ -20,7 +20,7 @@ import { spawnSync } from "node:child_process";
 const ROOT = resolve(import.meta.dirname, "..");
 
 /** Workspaces whose `exports` resolve into `dist/`. */
-const REQUIRED = ["packages/fal-media", "packages/video-composer", "studio/runtime", "studio/adapters"];
+const REQUIRED = ["packages/fal-media", "packages/video-composer", "packages/remotion-composer", "studio/runtime", "studio/adapters"];
 
 /**
  * Nothing must depend on a `dist/` that install does not build.

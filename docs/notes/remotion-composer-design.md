@@ -1,6 +1,10 @@
 # Remotion composes the typed edit timeline
 
-Design, 2026-08-29. Status: approved, not yet implemented.
+Design, 2026-08-29. Status: approved; M1 and M2 done (2026-10-06: `avg-tk7.1`,
+`avg-tk7.2`, `avg-tk7.6`), M3's registry and previews done (`avg-tk7.3`). What
+renders episodes now is described in
+[ADR-0036](../adr/0036-the-studio-renders-episodes-through-the-edit-timeline);
+the sections below describe the state before it.
 
 ## Why
 
@@ -223,7 +227,9 @@ M1 also measures render speed on a real episode (see Risks).
 
 **M2 — cut the studio over.** Timeline construction replaces
 `composeEpisodeVideo()`, which is deleted. `defaultProviders` flips for the
-`full` profile. New ADR superseding 0009.
+`full` profile. New ADR superseding 0009. *Done in `avg-tk7.6`: ADR-0036, the
+flip in every profile that composes the agent, and `artifacts/edit-timeline.json`
+as the reviewable artifact.*
 
 **M3 — the kit extension mechanism.** Kit authoring contract, registry
 versioning, a `remotion-studio` preview entry point for the agent, docs page.

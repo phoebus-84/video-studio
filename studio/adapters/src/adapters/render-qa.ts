@@ -33,7 +33,8 @@ async function findRender(episodeDir: string): Promise<string | null> {
   const candidates: Array<{ file: string; mtimeMs: number }> = [];
   try {
     const outDir = path.join(episodeDir, "output");
-    for (const name of (await fs.readdir(outDir)).filter((f) => f.endsWith(".mp4"))) {
+    // Hidden names are renders still being written (.<id>.partial.mp4).
+    for (const name of (await fs.readdir(outDir)).filter((f) => f.endsWith(".mp4") && !f.startsWith("."))) {
       const file = path.join(outDir, name);
       candidates.push({ file, mtimeMs: (await fs.stat(file)).mtimeMs });
     }
