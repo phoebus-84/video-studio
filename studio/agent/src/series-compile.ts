@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { compileSpec, type CompileAsset, type CompileProblem, type EditTimeline } from "@studio/series";
+import { checkSeries, compileSpec, type CompileAsset, type CompileInput, type CompileProblem, type EditTimeline, type Finding } from "@studio/series";
 import { EPISODE_SPEC_PATH, SERIES_TEMPLATE_MANIFEST, seriesTemplatePath } from "@studio/contracts/src/layout.mjs";
 import { validateNarrationTakes } from "@studio/contracts/src/narration-takes.mjs";
 import { SERIES_TEMPLATE_FILES, validateEpisodeSpec, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
@@ -40,6 +40,26 @@ export type EpisodeCompileResult =
   }
   | { ok: false; problems: SeriesCompileProblem[] };
 
+/** A series rule broken by the timeline about to be rendered, located like a problem. */
+export interface SeriesFinding extends SeriesCompileProblem {
+  severity: "error" | "warning";
+}
+
+export type EpisodeLoadResult =
+  | { ok: true; input: CompileInput; releaseKey: string }
+  | { ok: false; problems: SeriesCompileProblem[] };
+
+export type EpisodeCheckResult =
+  | {
+    ok: true;
+    /** What the release's compiler makes of the episode: the reference. */
+    compiled: EditTimeline;
+    /** "<id>@<version>" of the validator that ran; null when the template names none. */
+    validator: string | null;
+    findings: SeriesFinding[];
+  }
+  | { ok: false; problems: SeriesCompileProblem[] };
+
 /** Does this episode have a spec, and so a compiler instead of the legacy builder? */
 export function isSpecDriven(episodeDir: string): boolean {
   return existsSync(join(episodeDir, EPISODE_SPEC_PATH));
@@ -58,23 +78,65 @@ const at = (file: string, problems: { code: string; message: string; path?: stri
 const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
 /**
- * Compile the episode's spec. Reads files only; writes nothing. Every file
- * read is in the timeline's `metadata.inputs` with its hash, keyed by its
- * path relative to the episode (release files as ../../templates/…).
+ * Read, check and hash everything the episode's compiler needs. Reads files
+ * only; writes nothing. Every file read is in `input.inputs` with its hash,
+ * keyed by its path relative to the episode (release files as ../../templates/…).
  */
-export function compileEpisode(
+export function loadEpisode(
   episodeDir: string,
   options: { episodeRef: { channel: string; series: string; episode: string } },
-): EpisodeCompileResult {
+): EpisodeLoadResult {
   try {
-    return compile(resolve(episodeDir), options.episodeRef);
+    return load(resolve(episodeDir), options.episodeRef);
   } catch (error) {
     if (error instanceof Stop) return { ok: false, problems: error.problems };
     throw error;
   }
 }
 
-function compile(episodeDir: string, episodeRef: { channel: string; series: string; episode: string }): EpisodeCompileResult {
+/** Compile the episode's spec with its release's compiler. Writes nothing. */
+export function compileEpisode(
+  episodeDir: string,
+  options: { episodeRef: { channel: string; series: string; episode: string } },
+): EpisodeCompileResult {
+  const loaded = loadEpisode(episodeDir, options);
+  if (!loaded.ok) return loaded;
+  const { input, releaseKey } = loaded;
+  const result = compileSpec(input);
+  if (!result.ok) return { ok: false, problems: result.problems.map((p) => locate(p, releaseKey)) };
+  return {
+    ok: true,
+    timeline: result.timeline,
+    warnings: result.warnings,
+    compiler: `${input.template.compiler.id}@${input.template.compiler.version}`,
+    template: { ...input.spec.template },
+    revision: input.spec.revision,
+  };
+}
+
+/**
+ * The series rules on the timeline about to be rendered (by default, the
+ * one the compiler makes). Writes nothing.
+ */
+export function checkEpisode(
+  episodeDir: string,
+  options: { episodeRef: { channel: string; series: string; episode: string }; timeline?: EditTimeline },
+): EpisodeCheckResult {
+  const loaded = loadEpisode(episodeDir, options);
+  if (!loaded.ok) return loaded;
+  const { input, releaseKey } = loaded;
+  const result = compileSpec(input);
+  if (!result.ok) return { ok: false, problems: result.problems.map((p) => locate(p, releaseKey)) };
+  const checked = checkSeries({ ...input, compiled: result.timeline, timeline: options.timeline ?? result.timeline });
+  return {
+    ok: true,
+    compiled: result.timeline,
+    validator: checked.validator,
+    findings: checked.findings.map((f: Finding) => ({ ...locate(f, releaseKey), severity: f.severity })),
+  };
+}
+
+function load(episodeDir: string, episodeRef: { channel: string; series: string; episode: string }): EpisodeLoadResult {
   const seriesDir = dirname(dirname(episodeDir));
   const inputs: Record<string, string> = {};
 
@@ -192,26 +254,18 @@ function compile(episodeDir: string, episodeRef: { channel: string; series: stri
     assets[id] = { path, hash: inputs[path]!, kind: "image" };
   }
 
-  // ── Compile ───────────────────────────────────────────────────────────────
-  const result = compileSpec({ spec, template, narration, timings, assets, inputs });
-  if (!result.ok) return { ok: false, problems: result.problems.map((p) => locate(p, releaseKey)) };
-  return {
-    ok: true,
-    timeline: result.timeline,
-    warnings: result.warnings,
-    compiler: `${template.compiler.id}@${template.compiler.version}`,
-    template: { ...spec.template },
-    revision: spec.revision,
-  };
+  return { ok: true, input: { spec, template, narration, timings, assets, inputs }, releaseKey };
 }
 
-/** A compiler's paths point into its input; name the file each one is in. */
+const IN_TIMELINE = /^\$\.(tracks|profile|durationInFrames|resolution|assets|sections)\b/;
+
+/** A compiler's or validator's paths point into its input; name the file each one is in. */
 function locate(problem: CompileProblem, releaseKey: string): SeriesCompileProblem {
   const { path } = problem;
   const file = path.startsWith("$.data") || path.startsWith("$.episodeRef") ? EPISODE_SPEC_PATH
     : path.startsWith("$.units") || path.startsWith("$.takes") ? NARRATION_TAKES_PATH
     : path.startsWith("$.template") ? `${releaseKey}/${SERIES_TEMPLATE_MANIFEST}`
-    : problem.code.startsWith("timeline:") ? "artifacts/edit-timeline.json"
+    : problem.code.startsWith("timeline:") || IN_TIMELINE.test(path) ? "artifacts/edit-timeline.json"
     : null;
   const inFile = path.startsWith("$.template") ? path.replace(/^\$\.template/, "$") : path;
   return { code: problem.code, message: problem.message, path: file ? `${file}#${inFile}` : path };
