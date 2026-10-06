@@ -22,7 +22,7 @@ else result.problems;           // [{ code, message, path }], paths into the inp
 
 Compilers are **pure**: they read no file, ask no clock and keep no state.
 Everything arrives already read, checked and hashed — in the studio, by
-`compileEpisode` in `studio/agent/src/series-compile.ts`, which also decides
+`compileEpisode` in `@studio/episode` (`studio/episode/src/series-compile.ts`), which also decides
 the asset ids (`image-<name>` for `assets/images/<name>.<ext>`,
 `narration-<take>` for each take's audio). A timeline the validators refuse
 comes back with problem codes prefixed `timeline:` — a compiler bug, not bad

@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted. `studio/agent/src/edit-timeline-builder.ts` and
-`studio/agent/src/episode-render.ts`; tools `pva_build_timeline` and
+Accepted. `studio/episode/src/edit-timeline-builder.ts` and
+`studio/episode/src/episode-render.ts` (`@studio/episode`, moved from the
+agent by `avg-jao.4`); tools `pva_build_timeline` and
 `pva_compose_video`; renderer `@av/remotion-composer`. Completes what ADR-0009
 and ADR-0034 required.
 

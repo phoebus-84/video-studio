@@ -936,6 +936,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
     },
   });
+
   pi.registerTool({
     name: "pva_build_timeline",
     label: "Build Edit Timeline",

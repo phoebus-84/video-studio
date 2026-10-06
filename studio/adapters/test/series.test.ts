@@ -146,12 +146,30 @@ describe("series-render", () => {
     expect(JSON.parse(readFileSync(at("output/current.json"), "utf-8")).path).toBe(written[0]!.split("/").pop());
   });
 
+  it("refuses a timeline changed since it was checked, until the check runs again", async () => {
+    await seriesTimeline.perform(ctx());
+    await seriesCheck.perform(ctx());
+    // A change the rules allow (the teacup arrives 10 frames later), made after the review.
+    const timeline = JSON.parse(readFileSync(at("artifacts/edit-timeline.json"), "utf-8"));
+    timeline.tracks[0].items[0].duration = 113;
+    timeline.tracks[0].items[1].from = 101;
+    timeline.tracks[0].items[1].duration = 110;
+    writeFileSync(at("artifacts/edit-timeline.json"), `${JSON.stringify(timeline, null, 2)}\n`);
+    await expect(seriesRender.perform(ctx())).rejects.toThrow(/changed since it was checked: run the check stage again/);
+    expect(renders).toHaveLength(0);
+    await seriesCheck.perform(ctx());
+    await seriesRender.perform(ctx());
+    expect(renders).toHaveLength(1);
+  });
+
   it("refuses a timeline that breaks the series' rules, writing no output", async () => {
     await seriesTimeline.perform(ctx());
     await seriesCheck.perform(ctx());
     const timeline = JSON.parse(readFileSync(at("artifacts/edit-timeline.json"), "utf-8"));
     timeline.tracks[1].items[0].props.text = "Light falls across the room.";
     writeFileSync(at("artifacts/edit-timeline.json"), `${JSON.stringify(timeline, null, 2)}\n`);
+    // Checked again (and refused): the render then refuses on the rules themselves.
+    await expect(seriesCheck.perform(ctx())).rejects.toThrow(/refuse this timeline/);
     await expect(seriesRender.perform(ctx())).rejects.toThrow(/series rules/);
     expect(renders).toHaveLength(0);
     expect(existsSync(at("output"))).toBe(false);

@@ -35,6 +35,8 @@ export type SpecInitResult =
   }
   | { ok: false; problems: SpecInitProblem[] };
 
+/** What a filesystem without hard links answers to link(2). */
+const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]);
 const EXACT = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 const fail = (code: string, path: string, message: string): SpecInitResult => ({ ok: false, problems: [{ code, path, message }] });
 
@@ -95,16 +97,27 @@ export function initEpisodeSpec(
   const spec = instantiateEpisodeSpec(bundle, options.episodeRef);
   // Written whole beside its name, then linked into place: a link never
   // replaces an existing file, so a spec that appeared meanwhile survives.
+  const text = `${JSON.stringify(spec, null, 2)}\n`;
   const temp = `${target}.${process.pid}.tmp`;
+  const exists = () => fail("spec-exists", EPISODE_SPEC_PATH, `${EPISODE_SPEC_PATH} already exists: edit it, never replace it`);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(temp, `${JSON.stringify(spec, null, 2)}\n`, "utf-8");
   try {
-    linkSync(temp, target);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      return fail("spec-exists", EPISODE_SPEC_PATH, `${EPISODE_SPEC_PATH} already exists: edit it, never replace it`);
+    writeFileSync(temp, text, "utf-8");
+    try {
+      linkSync(temp, target);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") return exists();
+      if (!NO_HARD_LINKS.has(code ?? "")) throw error;
+      // A filesystem without hard links (exFAT, some network mounts): create
+      // the file exclusively instead — it still never replaces one.
+      try {
+        writeFileSync(target, text, { encoding: "utf-8", flag: "wx" });
+      } catch (second) {
+        if ((second as NodeJS.ErrnoException).code === "EEXIST") return exists();
+        throw second;
+      }
     }
-    throw error;
   } finally {
     rmSync(temp, { force: true });
   }

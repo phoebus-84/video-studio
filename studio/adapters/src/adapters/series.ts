@@ -7,7 +7,7 @@
 // release names; nothing here chooses them.
 // ---------------------------------------------------------------------------
 
-import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   decideEditTimeline,
@@ -109,8 +109,26 @@ export const seriesRender: StageAdapter = {
   requires: { system: ["ffmpeg"] },
   async perform(ctx) {
     requireSpec(ctx);
-    if (!existsSync(join(ctx.episodeDir, SERIES_CHECK_PATH))) {
+    const reportPath = join(ctx.episodeDir, SERIES_CHECK_PATH);
+    if (!existsSync(reportPath)) {
       throw new Error(`${SERIES_CHECK_PATH} is missing: run the check stage`);
+    }
+    // What a person reviewed is the timeline the report names: render that
+    // one, or none — a later edit, even one the rules allow, goes back to review.
+    let checked: unknown;
+    try {
+      checked = (JSON.parse(readFileSync(reportPath, "utf-8")) as { timeline?: { hash?: unknown } }).timeline?.hash;
+    } catch {
+      checked = undefined;
+    }
+    let current: string;
+    try {
+      current = `sha256:${decideEditTimeline(ctx.episodeDir, { episodeRef: ctx.ref }).hash}`;
+    } catch (error) {
+      return failWith(ctx, error);
+    }
+    if (checked !== current) {
+      throw new Error(`the timeline changed since it was checked: run the check stage again (${SERIES_CHECK_PATH})`);
     }
     try {
       const render = await renderEpisode(ctx.episodeDir, { episodeRef: ctx.ref });
