@@ -19,12 +19,13 @@ library/
             ├── settings.yaml
             ├── visual-bible/           # series knowledge
             ├── skills/
-            ├── templates/
+            ├── templates/              # <id>/<version>/ + <id>/references/ (ADR-0037)
             ├── sources/
             ├── pipelines/
             └── episodes/               # explicit container
                 └── episode-slug/
                     ├── episode.yaml
+                    ├── episode-spec.json       # optional editorial spec, pinned series template
                     ├── pipeline.snapshot.yaml
                     ├── source/                 # source/pins/<id>.json: pinned shared material
                     ├── artifacts/
@@ -72,11 +73,32 @@ system defaults -> channel -> series -> episode
 
 The resolved values, provider bindings, contract versions, pipeline definition, and relevant skill identities are frozen in `pipeline.snapshot.yaml`.
 
+## Series template releases
+
+[ADR-0037](adr/0037-series-templates-pin-editorial-standards.md) defines
+`templates/<id>/<version>/series-template.json`, which pins the release's
+`FORMAT.md`, `episode-spec.schema.json` and `episode-spec.template.json`.
+The standard and procedure live together in that `FORMAT.md`; content slots
+use `__FILL__`. Versions are immutable and explicitly selected, never
+implicitly upgraded.
+
+An optional editorial `episode-spec.json` records its template ID, exact
+version and manifest hash. It is separate from workspace identity/settings
+in `episode.yaml`. Drafts can contain placeholders; compilation cannot.
+Approved golden descriptors live separately at
+`templates/<id>/references/<reference-id>.json`, pinning frozen review
+snapshots and immutable output media, not today's episode or current pointer.
+
+This is the contract for forthcoming series compilers. Existing episode
+initialization and composition do not yet create or consume it. Path helpers
+are `seriesTemplatePath` and `seriesReferencePath` in `layout.mjs`;
+`EPISODE_SPEC_PATH` names the editorial file.
+
 ## File ownership
 
 - Markdown with YAML frontmatter: human and agent editorial content.
 - YAML: declarative configuration, scenes, and timeline.
-- JSON: generated manifests, reports, and current pointers.
+- JSON: typed editorial episode specs and template data, generated manifests, reports, and current pointers.
 - JSONL: append-only events and review history.
 - Media: immutable attempt files named with stable IDs, never `final-final-2`.
 

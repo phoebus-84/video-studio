@@ -71,6 +71,10 @@ export const SERIES_KNOWLEDGE = Object.freeze([
 /** Marker directory identifying a directory as a workspace of some kind. */
 export const WORKSPACE_DIR = ".workspace";
 
+/** Editorial inputs for series compilers (ADR-0037). */
+export const EPISODE_SPEC_PATH = "episode-spec.json";
+export const SERIES_TEMPLATE_MANIFEST = "series-template.json";
+
 // ── Path builders ───────────────────────────────────────────────────────────
 
 /** `<root>/<channel>` */
@@ -96,6 +100,21 @@ export function episodesContainerPath(root, channel, series) {
 /** `<root>/<channel>/series/<series>/episodes/<episode>` */
 export function episodePath(root, channel, series, episode) {
   return join(episodesContainerPath(root, channel, series), episode);
+}
+
+/** Exact versioned series-template directory; never resolves "latest". */
+export function seriesTemplatePath(root, channel, series, id, version) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new RangeError("Invalid template id");
+  if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version)) throw new RangeError("An exact template version is required");
+  return join(seriesPath(root, channel, series), "templates", id, version);
+}
+
+/** References are append-only records alongside releases, never inside a frozen version. */
+export function seriesReferencePath(root, channel, series, templateId, referenceId) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(templateId) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(referenceId)) {
+    throw new RangeError("Invalid template or reference id");
+  }
+  return join(seriesPath(root, channel, series), "templates", templateId, "references", `${referenceId}.json`);
 }
 
 /** Path to a channel source: shared material episodes pin, never copy (ADR-0035). */

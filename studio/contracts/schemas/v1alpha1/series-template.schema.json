@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/series-template.schema.json",
+  "title": "Versioned series templates, episode specs and golden references (ADR-0037)",
+  "$defs": {
+    "TemplateVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "An exact released version, never a range, tag or latest."
+    },
+    "SeriesComponentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "version": { "$ref": "#/$defs/TemplateVersion" }
+      },
+      "description": "A reviewed repository registry entry, not executable code, a module path or a URL."
+    },
+    "TemplatePin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "hash"],
+      "properties": {
+        "id": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "version": { "$ref": "#/$defs/TemplateVersion" },
+        "hash": { "$ref": "identity.schema.json#/$defs/ContentHash" }
+      },
+      "description": "Hash of the exact UTF-8 series-template.json bytes; the manifest pins every other release file."
+    },
+    "SeriesEpisodeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "series", "episode"],
+      "properties": {
+        "channel": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "series": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "episode": { "$ref": "identity.schema.json#/$defs/Slug" }
+      }
+    },
+    "SeriesFileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash"],
+      "properties": {
+        "path": { "$ref": "identity.schema.json#/$defs/PortableRelativePath" },
+        "hash": { "$ref": "identity.schema.json#/$defs/ContentHash" }
+      }
+    },
+    "SeriesTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "id", "version", "compiler", "files"],
+      "properties": {
+        "apiVersion": { "const": "studio.video/v1alpha1" },
+        "kind": { "const": "SeriesTemplate" },
+        "id": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "version": { "$ref": "#/$defs/TemplateVersion" },
+        "compiler": { "$ref": "#/$defs/SeriesComponentRef" },
+        "validator": { "$ref": "#/$defs/SeriesComponentRef" },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "template", "standard"],
+          "properties": {
+            "schema": { "$ref": "#/$defs/SeriesFileRef" },
+            "template": { "$ref": "#/$defs/SeriesFileRef" },
+            "standard": { "$ref": "#/$defs/SeriesFileRef" }
+          }
+        },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "EpisodeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "episodeRef", "revision", "template", "data"],
+      "properties": {
+        "apiVersion": { "const": "studio.video/v1alpha1" },
+        "kind": { "const": "EpisodeSpec" },
+        "episodeRef": { "$ref": "#/$defs/SeriesEpisodeRef" },
+        "revision": { "$ref": "identity.schema.json#/$defs/RevisionNumber" },
+        "template": { "$ref": "#/$defs/TemplatePin" },
+        "data": {
+          "type": "object",
+          "description": "Editable series-specific data, checked against the pinned series schema. Drafts may contain __FILL__; compilation must reject them."
+        },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "SeriesReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "id", "episodeRef", "template", "spec", "timeline", "render", "report", "approval"],
+      "properties": {
+        "apiVersion": { "const": "studio.video/v1alpha1" },
+        "kind": { "const": "SeriesReference" },
+        "id": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "episodeRef": { "$ref": "#/$defs/SeriesEpisodeRef" },
+        "template": { "$ref": "#/$defs/TemplatePin" },
+        "spec": { "$ref": "#/$defs/SeriesFileRef" },
+        "timeline": { "$ref": "#/$defs/SeriesFileRef" },
+        "render": { "$ref": "#/$defs/SeriesFileRef" },
+        "report": { "$ref": "#/$defs/SeriesFileRef" },
+        "approval": {
+          "$ref": "https://video.studio/schemas/v1alpha1/gate-review.schema.json#/$defs/GateReview",
+          "description": "Preserved human approval receipt bound to these exact artifacts. Shape is not proof: the runtime must verify its signature and the files before trusting a reference."
+        },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    }
+  }
+}
