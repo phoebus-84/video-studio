@@ -95,6 +95,7 @@ Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_appr
 Production: `pva_generate_image`, `pva_synthesize_speech`,
 `pva_synthesize_nonverbal_audio`, `pva_render_graphics`,
 `pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
+`pva_propose_reference`,
 `pva_build_timeline`, `pva_check_episode`, `pva_compose_video`, `pva_compose_multitrack_video`,
 `pva_probe_media`
 
@@ -263,6 +264,21 @@ new completion becomes the take, which is how it always worked.
 **`vpr takes`** lists the candidates of each stage, or of one stage. For each it
 shows which one is selected, who selected it, and whether the files on disk
 still match it. The last of these is reported as `drifted`.
+
+**`vpr reference`** manages a series' golden references (ADR-0037). Pi can
+only propose one (`pva_propose_reference`, which freezes the episode's spec,
+timeline and render in `reviews/references/<id>/`); the operator approves it,
+signed with the operator key, and can later withdraw it. `verify` exits 0 only
+for a trusted reference.
+
+```bash
+node studio/runtime/dist/src/cli.js reference approve my-channel/my-series/ep001 ep001-v1 \
+  --note "the series' standard" --library "$PWD/library"
+node studio/runtime/dist/src/cli.js reference verify my-channel/my-series my-template ep001-v1 --library "$PWD/library"
+node studio/runtime/dist/src/cli.js reference list my-channel/my-series --library "$PWD/library" --json
+node studio/runtime/dist/src/cli.js reference withdraw my-channel/my-series my-template ep001-v1 \
+  --reason "the recital was re-recorded" --library "$PWD/library"
+```
 
 **`vpr select`** puts an earlier candidate back in place. The gateway offers
 the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`

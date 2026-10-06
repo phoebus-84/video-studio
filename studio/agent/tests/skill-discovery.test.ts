@@ -31,6 +31,19 @@ it("discovers the fill-episode-spec skill the series-production pipeline names",
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+it("discovers the propose-reference skill: Pi proposes, a person approves", async () => {
+  const root = await mkdtemp(join(tmpdir(), "propose-reference-skill-"));
+  try {
+    const builtInPath = fileURLToPath(new URL("../../../skills/studio/", import.meta.url));
+    const catalog = await discoverSkills({ libraryRoot: root, builtInPath });
+    expect(catalog.list({ source: "built-in" }).find(s => s.id === "propose-reference")?.description).toContain("golden references");
+    const skill = await catalog.load("propose-reference");
+    expect(skill).toContain("pva_propose_reference");
+    expect(skill).toContain("vpr reference approve");
+    expect(skill).toContain("Never approve, sign");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("discovers composed flat/folder skills and scopes layout-2 series overrides", async () => {
   const root = await mkdtemp(join(tmpdir(), "skills-discovery-"));
   try {
