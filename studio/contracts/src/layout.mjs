@@ -117,6 +117,11 @@ export function seriesReferencePath(root, channel, series, templateId, reference
   return join(seriesPath(root, channel, series), "templates", templateId, "references", `${referenceId}.json`);
 }
 
+/** A reference's withdrawal: beside its descriptor, append-only like it (avg-jao.6). */
+export function seriesReferenceWithdrawalPath(root, channel, series, templateId, referenceId) {
+  return seriesReferencePath(root, channel, series, templateId, referenceId).replace(/\.json$/, ".withdrawal.json");
+}
+
 /** Path to a channel source: shared material episodes pin, never copy (ADR-0035). */
 export function sourcePath(root, channel, name) {
   return join(channelPath(root, channel), "sources", name);

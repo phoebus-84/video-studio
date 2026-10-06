@@ -19,6 +19,7 @@ export declare function episodesContainerPath(root: string, channel: string, ser
 export declare function episodePath(root: string, channel: string, series: string, episode: string): string;
 export declare function seriesTemplatePath(root: string, channel: string, series: string, id: string, version: string): string;
 export declare function seriesReferencePath(root: string, channel: string, series: string, templateId: string, referenceId: string): string;
+export declare function seriesReferenceWithdrawalPath(root: string, channel: string, series: string, templateId: string, referenceId: string): string;
 export declare function sourcePath(root: string, channel: string, name: string): string;
 export declare function workspacePath(
   root: string,
