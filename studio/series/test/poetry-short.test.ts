@@ -156,6 +156,13 @@ test("cue-order: a panel cued before the one it follows", () => {
   assert.deepEqual(problems(compileSpec(input)).map((p) => [p.code, p.path]), [["cue-order", "$.data.panels[2].cue"]]);
 });
 
+test("cue-after-end: a cue past the narration and the hold, from input the template schema did not check", () => {
+  const input = load();
+  input.spec.data.holdSeconds = 0;
+  input.spec.data.panels[2].cue = { take: "end", offset: 5 };
+  assert.deepEqual(problems(compileSpec(input)).map((p) => [p.code, p.path]), [["cue-after-end", "$.data.panels[2].cue"]]);
+});
+
 test("two panels may show the same picture", () => {
   const input = load();
   input.spec.data.panels[2].assetId = "morning-room";

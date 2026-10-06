@@ -960,7 +960,10 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           const lines = [
             `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}`,
             ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),
-            ...(render.compiledBy ? [`compiled by ${render.compiledBy.compiler} from episode-spec.json revision ${render.compiledBy.revision}`] : []),
+            ...(render.compiledBy
+              ? [`compiled by ${render.compiledBy.compiler} from episode-spec.json revision ${render.compiledBy.revision}`
+                + (render.compiledBy.editedByHand ? ", then edited by hand" : "")]
+              : []),
             ...(render.backup ? [`previous timeline kept as ${render.backup}`] : []),
             ...render.warnings.map((w) => `⚠️ ${w}`),
           ];

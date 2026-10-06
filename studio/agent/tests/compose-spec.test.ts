@@ -105,6 +105,7 @@ describe("pva_compose_video on a spec-driven episode", () => {
     const current = readJson("output/current.json");
     const report = readJson(`output/${current.renderId}.report.json`);
     expect(report.compiledBy).toEqual({
+      editedByHand: false,
       compiler: "poetry-short@1.0.0",
       template: readJson("episode-spec.json").template,
       revision: 2,
@@ -137,6 +138,9 @@ describe("pva_compose_video on a spec-driven episode", () => {
     const result = await tool("pva_compose_video");
     expect(result.isError).toBeFalsy();
     expect(result.content[0].text).toMatch(/rendered artifacts\/edit-timeline\.json as it stands/);
+    expect(result.content[0].text).toMatch(/compiled by poetry-short@1\.0\.0 from episode-spec\.json revision 2, then edited by hand/);
+    const current = readJson("output/current.json");
+    expect(readJson(`output/${current.renderId}.report.json`).compiledBy.editedByHand).toBe(true);
     expect(renders.at(-1)!.timeline.tracks.find((t: any) => t.id === "captions").items[0].props.text).toBe("Light falls across the room.");
     expect(readFileSync(at("artifacts/edit-timeline.json"), "utf-8")).toBe(edited);
   });

@@ -74,6 +74,8 @@ export interface CompiledBy {
   compiler: string;
   template: { id: string; version: string; hash: string };
   revision: number;
+  /** The timeline rendered differs from what the compiler makes of the same inputs: a person edited it. */
+  editedByHand: boolean;
 }
 
 type Produced =
@@ -109,7 +111,7 @@ function produceTimeline(episodeDir: string, options: BuildOptions): Produced {
     ok: true,
     timeline: compiled.timeline as unknown as EditTimelineDoc,
     warnings: compiled.warnings,
-    compiledBy: { compiler, template, revision },
+    compiledBy: { compiler, template, revision, editedByHand: false },
   };
 }
 
@@ -204,7 +206,8 @@ export function currentEditTimeline(episodeDir: string, options: BuildOptions): 
     if (storedProblems.length > 0) {
       throw new TimelineBuildError(storedProblems, `${EDIT_TIMELINE_PATH} as it stands is not valid; fix the edit, or delete the file to rebuild`);
     }
-    return { timeline: stored.doc, compiledBy: fresh.compiledBy, hash: sha256(stored.text), warnings: fresh.warnings, rebuilt: null, backup: null };
+    const compiledBy = fresh.compiledBy && { ...fresh.compiledBy, editedByHand: stored.text !== serialize(fresh.timeline) };
+    return { timeline: stored.doc, compiledBy, hash: sha256(stored.text), warnings: fresh.warnings, rebuilt: null, backup: null };
   }
   const text = serialize(fresh.timeline);
   const backup = replaceTimeline(episodeDir, text);

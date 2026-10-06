@@ -124,11 +124,15 @@ voiceProfile, outputProfile }`.
   round(at × 30), `duration` = round(duration × 30), `trimStart` =
   round(from × 30) (omitted when 0), asset `narration-<take>`, item `source`
   `narration`. `layoutUnit` problems are returned with their paths.
-- **Duration:** `durationInFrames` = ceil((unit duration + `holdSeconds`) × 30).
+- **Duration:** `durationInFrames` = ceil((unit duration + `holdSeconds`) × 30),
+  computed with a 10⁻⁶ tolerance so 7.5 s is 225 frames, not 226, and never
+  less than the end of the last voice item.
 - **Panels:** every `panels[i].cue` is resolved by `resolveCues` against the
   unit's timing (`startSeconds` 0, fps 30); its problems carry the path
   `$.data.panels[i].cue`. Cue frames must be strictly increasing:
-  `cue-order` (path of the first offending cue). Panel i covers
+  `cue-order` (path of the first offending cue). A panel cued at or after
+  the end of the video is `cue-after-end` — unreachable with this template's
+  word-only cues, but a compiler does not re-validate its input. Panel i covers
   [cue_i, cue_{i+1}); the first panel starts at frame 0 whatever its cue
   (the cue must still resolve); the last runs to the end. Each panel is a
   `still@1.0.0` item on visual track `panels` (z 0), props
@@ -164,7 +168,8 @@ paths are mapped to the file they point into. `isSpecDriven(episodeDir)`
 tells whether `episode-spec.json` exists.
 
 1. Read `episode-spec.json` as bytes; not JSON: `bad-spec`. Its
-   `episodeRef` must be this episode: `episode-mismatch`.
+   `episodeRef` must be this episode, field by field: `episode-mismatch`,
+   reported before the template is looked up.
 2. The series directory from the episode's location; the release
    `seriesTemplatePath(…, spec.template.id, spec.template.version)`; absent:
    `missing-template`. Read the manifest and its three files as exact
@@ -176,6 +181,7 @@ tells whether `episode-spec.json` exists.
    `validateNarrationTakes`. For each take: its audio and its `timing` file
    exist and hash as declared (`hash-mismatch`), and the timing passes
    `validateWordTiming(…, { audioHash })` (`bad-timing` when not JSON). A
+   path that names a directory is `not-a-file`. A
    take without `timing`: `missing-timing`. A take path that is absolute or
    climbs out: `path-escape`.
 4. Images: every `.png`, `.jpg`, `.jpeg`, `.webp` in `assets/images` (hidden
@@ -210,7 +216,9 @@ or `{ ok: false, problems }`. No file is written here.
   before is on disk: the spec is the editor's intent, and rendering the
   timeline it replaced would ignore it.
 - The render report and both replies name the compiler, the template pin and
-  the spec revision (`compiledBy`).
+  the spec revision (`compiledBy`); when the timeline rendered as it stands
+  differs from what the compiler makes of the same inputs, `editedByHand` is
+  true and the reply says "then edited by hand".
 
 ### Docs
 

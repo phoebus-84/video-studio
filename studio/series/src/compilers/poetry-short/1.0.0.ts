@@ -117,6 +117,21 @@ function compile(input: CompileInput): CompileResult {
   // A hair under the next frame is that frame: 7.5 s × 30 is 225, not 226.
   const durationInFrames = Math.max(1, voiceEnd, Math.ceil((layout.durationSeconds + data.holdSeconds) * FPS - 1e-6));
 
+  // This template's schema allows only words as cues, and a word is said
+  // before the voice ends; but a compiler does not re-validate its input, and
+  // a panel starting after the end must not reach the validators as a bug.
+  const late = cueFrames.findIndex((frame, i) => i > 0 && frame >= durationInFrames);
+  if (late !== -1) {
+    return {
+      ok: false,
+      problems: [{
+        code: "cue-after-end",
+        path: `$.data.panels[${late}].cue`,
+        message: `panel ${late + 1} would start at frame ${cueFrames[late]}, at or after the end of the video (${durationInFrames} frames)`,
+      }],
+    };
+  }
+
   // ── Panels ────────────────────────────────────────────────────────────────
   // The first panel opens the video whatever its cue; the last holds to the end.
   const bounds = [0, ...cueFrames.slice(1), durationInFrames];

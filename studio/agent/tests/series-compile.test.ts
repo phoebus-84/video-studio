@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appendFileSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { compileEpisode, isSpecDriven } from "../src/series-compile.js";
@@ -87,6 +87,28 @@ describe("compileEpisode", () => {
   it("refuses a spec that belongs to another episode", () => {
     editSpec(dir(), (spec) => { spec.episodeRef.episode = "evening"; });
     expect(problemsOf()).toEqual([["episode-mismatch", "episode-spec.json#$.episodeRef"]]);
+  });
+
+  it("accepts the spec's episodeRef whatever the order of its keys", () => {
+    editSpec(dir(), (spec) => { spec.episodeRef = { episode: REF.episode, series: REF.series, channel: REF.channel }; });
+    expect(compileEpisode(dir(), { episodeRef: REF }).ok).toBe(true);
+  });
+
+  it("reports a spec for another episode before looking for its template", () => {
+    editSpec(dir(), (spec) => { spec.episodeRef.episode = "evening"; spec.template.version = "9.9.9"; });
+    expect(problemsOf()).toEqual([["episode-mismatch", "episode-spec.json#$.episodeRef"]]);
+  });
+
+  it("not-a-file: a take whose audio path names a directory", () => {
+    const takes = JSON.parse(readFileSync(at("artifacts/narration/takes.json"), "utf-8"));
+    takes.takes[0].audio.path = "assets/takes";
+    writeFileSync(at("artifacts/narration/takes.json"), JSON.stringify(takes));
+    expect(problemsOf()).toEqual([["not-a-file", "assets/takes"]]);
+  });
+
+  it("ignores a directory in assets/images even when its name looks like a picture", () => {
+    mkdirSync(at("assets/images/extra.png"));
+    expect(compileEpisode(dir(), { episodeRef: REF }).ok).toBe(true);
   });
 
   it("missing-narration: no takes.json yet", () => {

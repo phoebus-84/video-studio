@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { compileSpec, type CompileAsset, type CompileProblem, type EditTimeline } from "@studio/series";
 import { EPISODE_SPEC_PATH, SERIES_TEMPLATE_MANIFEST, seriesTemplatePath } from "@studio/contracts/src/layout.mjs";
@@ -87,6 +87,7 @@ function compile(episodeDir: string, episodeRef: { channel: string; series: stri
     if (real !== root && !real.startsWith(root + sep)) {
       stop("path-escape", key, `${key} leads outside ${within === episodeDir ? "the episode" : "the series"} (${real})`);
     }
+    if (!statSync(real).isFile()) stop("not-a-file", key, `${key} is not a file`);
     const bytes = readFileSync(real);
     inputs[key] = sha256(bytes);
     return bytes;
@@ -103,6 +104,14 @@ function compile(episodeDir: string, episodeRef: { channel: string; series: stri
     spec = JSON.parse(specBytes.toString("utf-8"));
   } catch (error) {
     return stop("bad-spec", EPISODE_SPEC_PATH, `${EPISODE_SPEC_PATH} is not JSON: ${(error as Error).message}`);
+  }
+  // Checked before anything else is read: a spec copied from another episode
+  // is the problem to report, whatever else is wrong with it.
+  const owner = spec?.episodeRef;
+  if (owner && typeof owner === "object"
+    && (owner.channel !== episodeRef.channel || owner.series !== episodeRef.series || owner.episode !== episodeRef.episode)) {
+    stop("episode-mismatch", `${EPISODE_SPEC_PATH}#$.episodeRef`,
+      `the spec belongs to ${owner.channel}/${owner.series}/${owner.episode}, not ${episodeRef.channel}/${episodeRef.series}/${episodeRef.episode}`);
   }
   const pin = spec?.template;
   let releaseDir: string;
@@ -124,10 +133,6 @@ function compile(episodeDir: string, episodeRef: { channel: string; series: stri
   if (bundleProblems.length > 0) throw new Stop(at(`${releaseKey}/${SERIES_TEMPLATE_MANIFEST}`, bundleProblems));
   const specProblems = validateEpisodeSpec(spec, bundle);
   if (specProblems.length > 0) throw new Stop(at(EPISODE_SPEC_PATH, specProblems));
-  if (JSON.stringify(spec.episodeRef) !== JSON.stringify({ channel: episodeRef.channel, series: episodeRef.series, episode: episodeRef.episode })) {
-    stop("episode-mismatch", `${EPISODE_SPEC_PATH}#$.episodeRef`,
-      `the spec belongs to ${spec.episodeRef.channel}/${spec.episodeRef.series}/${spec.episodeRef.episode}, not this episode`);
-  }
   const template = JSON.parse(bundle.manifest);
 
   // ── Narration takes and their timing ──────────────────────────────────────
@@ -174,7 +179,10 @@ function compile(episodeDir: string, episodeRef: { channel: string; series: stri
   // says which it needs. Two files with one name is a choice nobody made.
   const imagesDir = join(episodeDir, "assets", "images");
   const images = existsSync(imagesDir)
-    ? readdirSync(imagesDir).filter((f) => !f.startsWith(".") && IMAGE_EXTENSIONS.includes(extname(f).toLowerCase())).sort()
+    ? readdirSync(imagesDir, { withFileTypes: true })
+      .filter((e) => !e.isDirectory() && !e.name.startsWith(".") && IMAGE_EXTENSIONS.includes(extname(e.name).toLowerCase()))
+      .map((e) => e.name)
+      .sort()
     : [];
   for (const file of images) {
     const id = `image-${file.slice(0, -extname(file).length)}`;
