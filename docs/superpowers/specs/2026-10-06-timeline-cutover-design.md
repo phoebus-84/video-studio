@@ -34,7 +34,7 @@ place; nothing in the studio uses them.
 
 ### Building the timeline — `buildEditTimeline` (`studio/agent/src/edit-timeline-builder.ts`)
 
-`buildEditTimeline(episodeDir, { profile }) → { ok: true, timeline } | { ok: false, problems }`,
+`buildEditTimeline(episodeDir, { episodeRef, profile }) → { ok: true, timeline, warnings } | { ok: false, problems }`,
 pure apart from reading files. It decides nothing today's path does not
 already decide.
 
@@ -56,13 +56,19 @@ already decide.
   - with a narration manifest (`artifacts/narration/narration-manifest.json`):
     its final WAV (`canonicalNarrationPath`) on track `voice` from frame 0;
   - otherwise `artifacts/narration/narration-full.wav` if present;
+  - otherwise, with a canonical manifest that has no final WAV, its entries'
+    WAVs in order, after `leadInSilenceSeconds`, each followed by its
+    `pauseAfterMs`;
   - otherwise the scene WAVs (`s1.wav`, `s4a.wav`, … as the old fallback
     matched them) one after another on `voice`, in natural order, each for
     its measured length (ffprobe) — the old concatenation, without writing a
     file; a deprecation warning, as today;
   - otherwise no audio track (the composer adds silence).
-- **Captions:** when the manifest validates, its `captions` through
-  `narrationCompositionInput`; track `captions` (visual, z 10): one
+- **Captions:** when the manifest validates (the agent's
+  `validateNarrationManifest`; the agent writes `narration-manifest/v1`, which
+  `@av/video-composer`'s `narrationCompositionInput` — `schemaVersion 0.1.0`
+  only — does not accept), its `captions` (`startSeconds`, `endSeconds`,
+  `text`, already on the final WAV's clock); track `captions` (visual, z 10): one
   `captions@1.1.0` item per cue, `position: "bottom"`. A manifest that names
   a final WAV but does not validate gives narration without captions and a
   warning (as `canonicalNarrationPath` already warns).
@@ -71,6 +77,9 @@ already decide.
 - **Assets:** every file in `assets`, path relative to the episode, `hash`
   its sha256, `kind` `image` or `audio`; ids `scene-<id>`, `narration`,
   `narration-<id>`.
+- **Problems:** `no-scenes`, `unknown-profile`, `bad-manifest` (not JSON),
+  `missing-narration` (the manifest names a final WAV that is not there),
+  plus whatever the two validators report.
 - **Profile:** a catalog id (`@studio/contracts` `outputProfile`), default
   `youtube-1920x1080`; the whole profile is copied in and `resolution` set
   from it. An unknown id is the problem `unknown-profile`. Reading the
@@ -126,7 +135,9 @@ and `naturalSegmentOrder` stay; `concatScript` goes if nothing else uses it.
   `packages/remotion-composer` joins `REQUIRED` in `tools/build-required.mjs`
   (it is consumed through `dist/`).
 - `compose.config.json`: every profile that composes both providers sets
-  `defaultProviders["video.compose"] = "remotion-composer"`.
+  `defaultProviders["video.compose"] = "remotion-composer"`; the `blender`
+  profile, which composes the agent with `video-composer` only, gains
+  `remotion-composer` and the same default.
 - Headless Chrome: Remotion downloads it on the first render;
   `docs/install.md` and `npm run doctor` say so.
 
