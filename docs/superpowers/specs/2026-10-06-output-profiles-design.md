@@ -93,10 +93,17 @@ change.
 `OutputProfileRef` keeps its shape `{ id, width, height, frameRate }`; `id`
 becomes one of the catalog ids, and `width`/`height` must equal that
 profile's (checked in `workspace-semantics.mjs`, code
-`output-profile-mismatch`). `youtube-1080p-30` becomes `youtube-1920x1080`
-in the schema, fixtures, bindings and runtime defaults — no settings file
-outside the repository uses it. `frameRate` stays (the timeline's `fps`
-comes from it). `@studio/contracts` 0.6.0 → 0.7.0.
+`output-profile.mismatch`, following that module's dotted codes).
+`youtube-1080p-30` becomes `youtube-1920x1080` in the schema, fixtures and
+bindings — no settings file outside the repository uses it. `frameRate`
+stays (the timeline's `fps` comes from it). `@studio/contracts` 0.6.0 →
+0.7.0.
+
+The runtime's settings resolver (`studio/runtime/src/settings/`) has its own,
+older `OutputProfileRef` — `{ profileId: "youtube-1080p", version: "^1" }` —
+which already disagrees with the contract. Reconciling it touches the
+runtime's downgrade policy and belongs with the series compiler that reads
+the profile (`avg-jao`); it is filed as its own bug, not changed here.
 
 ### Composer — `@av/remotion-composer` 0.2.0 → 0.3.0
 
@@ -138,9 +145,11 @@ comes from it). `@studio/contracts` 0.6.0 → 0.7.0.
     `captions@1.1.0 long in vertical-1080x1920: 46 px below the safe zone`.
 - Previews: one per profile, `previews/<name>@<version>.<profile-id>.png`
   (640×360 and 360×640), rendered by `npm run kits:previews` from the same
-  catalog file. The three existing previews are renamed. `listKits()`
-  returns `previews: { "<profile-id>": path }` instead of `preview`. The safe
-  zone is not drawn on previews.
+  catalog file. The three existing previews are renamed. `listKits(profileIds)`
+  returns `previews: { "<profile-id>": path }` for the profiles the caller
+  names (the package cannot know the catalog) instead of `preview`, and each
+  version's `layer` (`overlay` or `fill`). The safe zone is not drawn on
+  previews.
 
 ## Testing
 
@@ -151,7 +160,7 @@ comes from it). `@studio/contracts` 0.6.0 → 0.7.0.
   timeline, `vertical-1080x1920` for 1080×1920, honours an explicit profile,
   and refuses another size; workspace settings accept both ids and refuse an
   unknown id or a mismatched size; TS bindings regenerated.
-- Runtime: the settings tests pass with the renamed default.
+- Runtime: unchanged; its tests keep passing.
 - Composer: `invalid-timeline` on a resolution/profile mismatch; metadata
   test covers `captions@1.1.0` (lock updated); the render test covers every
   example in both profiles and the safe-zone check. Checked once by hand: a
