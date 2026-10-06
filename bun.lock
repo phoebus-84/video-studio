@@ -120,6 +120,7 @@
       "dependencies": {
         "@av/video-composer": "workspace:*",
         "@studio/contracts": "workspace:*",
+        "@studio/episode": "workspace:*",
         "@studio/runtime": "workspace:*",
       },
       "devDependencies": {

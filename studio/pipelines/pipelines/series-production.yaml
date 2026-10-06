@@ -1,0 +1,135 @@
+# The series-production family (avg-jao.4, ADR-0037). One manifest for every
+# series with a template: the compiler and the validator are the ones the
+# episode's pinned release names, never the pipeline's. Stages that depend on
+# work not done yet (source, take synthesis and verification, alignment, the
+# layout sheet, the render audit, the delivery package) are inserted by their
+# own issues as new versions of this manifest. A series extends it and
+# replaces stages by id (ADR-0001).
+pipeline:
+  id: series-production
+  version: "1.0.0"
+  description: "A series episode from its template: the spec, its pictures and narration takes, the timeline its template's compiler makes, the series rules checked, the render."
+  capabilities:
+    - id: video.compose
+      version: "1.0.0"
+  stages:
+    - id: spec
+      name: "Episode Spec"
+      type: editorial
+      description: "Draft the episode's spec from its series' template release (pva_init_spec) and fill every placeholder"
+      inputs: []
+      outputs:
+        - contract: episode-spec.json
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+      skills:
+        - skill: fill-episode-spec
+          version: "0.1.0"
+      depends_on: []
+
+    - id: pictures
+      name: "Pictures"
+      type: editorial
+      description: "Provide every picture the spec names, as assets/images/<assetId>.<png|jpg|jpeg|webp>"
+      inputs:
+        - contract: episode-spec.json
+          version: "1.0.0"
+      outputs:
+        - contract: images/
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - spec
+
+    - id: takes
+      name: "Narration Takes"
+      type: editorial
+      description: "Provide the narration takes (artifacts/narration/takes.json) and each take's word timing; the takes must say the spec's narration"
+      inputs:
+        - contract: episode-spec.json
+          version: "1.0.0"
+      outputs:
+        - contract: takes.json
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 2
+      skills: []
+      depends_on:
+        - spec
+
+    - id: timeline
+      name: "Edit Timeline"
+      type: editorial
+      description: "Compile the edit timeline with the compiler the spec's template release names"
+      inputs:
+        - contract: episode-spec.json
+          version: "1.0.0"
+        - contract: images/
+          version: "1.0.0"
+        - contract: takes.json
+          version: "1.0.0"
+      outputs:
+        - contract: edit-timeline.json
+          version: "1.0.0"
+      gates:
+        autopilot: true
+        review: none
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - spec
+        - pictures
+        - takes
+
+    - id: check
+      name: "Series Check"
+      type: editorial
+      description: "Check the timeline that would be rendered against the series' rules; a person reviews it before a render is spent"
+      inputs:
+        - contract: edit-timeline.json
+          version: "1.0.0"
+      outputs:
+        - contract: series-check.json
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills: []
+      depends_on:
+        - timeline
+
+    - id: render
+      name: "Render"
+      type: capability
+      description: "Render the checked timeline to output/<render-id>.mp4 and move output/current.json"
+      capability: video.compose
+      inputs:
+        - contract: edit-timeline.json
+          version: "1.0.0"
+        - contract: series-check.json
+          version: "1.0.0"
+      outputs:
+        - contract: output.mp4
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+        budget:
+          wall_time: "15m"
+          tokens: 0
+      skills:
+        - skill: compose-video
+          version: "0.5.0"
+      depends_on:
+        - check

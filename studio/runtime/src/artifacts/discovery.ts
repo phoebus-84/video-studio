@@ -15,6 +15,13 @@ const LEGACY_PATHS: Record<string, string> = {
   "qa-report.json": "artifacts/qa-report.json",
 };
 
+/** Series-production contracts (avg-jao.4) that do not live under artifacts/. */
+const SERIES_PATHS: Record<string, string> = {
+  "episode-spec.json": "episode-spec.json",
+  "takes.json": "artifacts/narration/takes.json",
+  "images/": "assets/images",
+};
+
 const CAPABILITY_PATHS: Record<string, string[]> = {
   "animated-visuals.mp4": ["assets/animation/visuals.mp4"],
   "final-video.mp4": ["output/current.json"],
@@ -50,6 +57,7 @@ export function artifactExists(episodeDir: string, label: string): boolean {
   const directoryArtifact = label.endsWith("/");
   const candidates = new Set<string>();
   if (LEGACY_PATHS[label]) candidates.add(LEGACY_PATHS[label]);
+  if (SERIES_PATHS[label]) candidates.add(SERIES_PATHS[label]);
   for (const candidate of CAPABILITY_PATHS[label] ?? []) candidates.add(candidate);
   candidates.add(`artifacts/${label}`);
   candidates.add(`assets/${label}`);

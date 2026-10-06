@@ -34,6 +34,21 @@ describe("artifact discovery", () => {
     expect(artifactExists(root, "final-video.mp4")).toBe(true);
   });
 
+  it("finds a series episode's spec, takes and pictures where the series stages put them", async () => {
+    const root = await workspace();
+    expect(artifactExists(root, "episode-spec.json")).toBe(false);
+    expect(artifactExists(root, "takes.json")).toBe(false);
+    expect(artifactExists(root, "images/")).toBe(false);
+    await writeFile(path.join(root, "episode-spec.json"), "{}\n");
+    await mkdir(path.join(root, "artifacts", "narration"), { recursive: true });
+    await writeFile(path.join(root, "artifacts", "narration", "takes.json"), "{}\n");
+    await mkdir(path.join(root, "assets", "images"), { recursive: true });
+    await writeFile(path.join(root, "assets", "images", "cat.png"), "image");
+    expect(artifactExists(root, "episode-spec.json")).toBe(true);
+    expect(artifactExists(root, "takes.json")).toBe(true);
+    expect(artifactExists(root, "images/")).toBe(true);
+  });
+
   it("rejects a traversal pointer", async () => {
     const root = await workspace();
     await writeFile(path.join(root, "output", "current.json"), JSON.stringify({ path: "../outside.mp4" }));
