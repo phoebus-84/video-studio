@@ -10,7 +10,7 @@
 | Tier | **reusable** — usable outside this project |
 | Capabilities | `video.compose` |
 | Requires | `ffmpeg` on PATH |
-| In profiles | `full`, `studio`, `headless`, `render` |
+| In profiles | `full`, `studio`, `headless`, `blender`, `render` |
 
 ## Using it outside this project
 

@@ -43,6 +43,19 @@ function probe(bin, args = ["--version"]) {
   }
 }
 
+/**
+ * Remotion's headless Chrome, which the Remotion composer renders with. It is
+ * not a system binary: Remotion downloads it into node_modules/.remotion of
+ * the package that first renders, so its absence only means no render ran yet.
+ */
+function headlessChrome() {
+  for (const dir of ["node_modules", "packages/remotion-composer/node_modules", "studio/agent/node_modules"]) {
+    const version = join(ROOT, dir, ".remotion", "chrome-headless-shell", "VERSION");
+    if (existsSync(version)) return `chrome-headless-shell ${readFileSync(version, "utf-8").trim()}`;
+  }
+  return null;
+}
+
 const checks = [
   { name: "node", detail: probe("node"), required: true },
   { name: "bun", detail: probe("bun"), required: true },
@@ -50,6 +63,12 @@ const checks = [
   { name: "ffprobe", detail: probe("ffprobe", ["-version"]), required: false },
   { name: "python3", detail: probe("python3"), required: false },
   { name: "blender", detail: probe("blender"), required: false },
+  {
+    name: "chrome",
+    detail: headlessChrome(),
+    required: false,
+    missing: "not downloaded yet: Remotion fetches it on the first render (video.compose)",
+  },
 ];
 
 console.log(`\nProfile: ${composed.profile}\n`);
@@ -58,7 +77,7 @@ let fatal = 0;
 for (const c of checks) {
   if (c.detail) console.log(`  ✓ ${c.name.padEnd(10)} ${c.detail}`);
   else {
-    console.log(`  ${c.required ? "✗" : "!"} ${c.name.padEnd(10)} not found`);
+    console.log(`  ${c.required ? "✗" : "!"} ${c.name.padEnd(10)} ${c.missing ?? "not found"}`);
     if (c.required) fatal++;
   }
 }

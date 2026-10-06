@@ -229,7 +229,7 @@
       "defaultProviders": {
         "image.generate": "fal-media",
         "image.edit": "fal-media",
-        "video.compose": "video-composer"
+        "video.compose": "remotion-composer"
       },
       "$comment": "image.generate has two providers. fal-media is the default because it is metered per image and predictable; codex-image bills against a ChatGPT plan and is selected per series with `image.provider: openai-codex` in pipeline.yaml."
     },
@@ -259,7 +259,7 @@
       "defaultProviders": {
         "image.generate": "fal-media",
         "image.edit": "fal-media",
-        "video.compose": "video-composer"
+        "video.compose": "remotion-composer"
       }
     },
     "headless": {
@@ -283,13 +283,16 @@
       "defaultProviders": {
         "image.generate": "fal-media",
         "image.edit": "fal-media",
-        "video.compose": "video-composer"
+        "video.compose": "remotion-composer"
       }
     },
     "blender": {
       "summary": "Local 3D production with the agent and browser; no cloud image or MLX voice requirement.",
-      "components": ["blender", "video-composer", "contracts", "runtime", "pipelines", "agent", "adapters", "gateway", "web"],
-      "skills": ["shared", "studio"]
+      "components": ["blender", "video-composer", "remotion-composer", "contracts", "runtime", "pipelines", "agent", "adapters", "gateway", "web"],
+      "skills": ["shared", "studio"],
+      "defaultProviders": {
+        "video.compose": "remotion-composer"
+      }
     },
     "voice": {
       "summary": "Only the standalone voice tool. No studio, no pipelines.",
@@ -310,7 +313,7 @@
         "shared"
       ],
       "defaultProviders": {
-        "video.compose": "video-composer"
+        "video.compose": "remotion-composer"
       }
     }
   },
