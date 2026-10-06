@@ -1,13 +1,10 @@
 // What a kit version is (avg-tk7.3). A kit is a named, versioned React
 // component with a zod schema for its props, a description, and examples
-// that the one-frame tests and the previews render.
+// that the one-frame tests and the previews render. Types only: a version
+// file must not share runtime code, or a change here would alter old versions.
 
 import type React from 'react';
 import type {ZodTypeAny} from 'zod';
-import {z} from 'zod';
-
-/** A `{ "$asset": "<id>" }` reference, as a timeline writes it. */
-export const AssetRef = z.object({$asset: z.string().min(1)}).strict();
 
 /** What a kit component receives besides its props (which arrive with $asset resolved to URLs). */
 export interface KitContext {

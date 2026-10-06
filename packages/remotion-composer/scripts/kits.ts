@@ -3,7 +3,7 @@
 
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
-import {mkdtemp, rm} from 'node:fs/promises';
+import {copyFile, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -38,13 +38,19 @@ async function previews() {
   const work = await mkdtemp(path.join(tmpdir(), 'kit-previews-'));
   try {
     const serveUrl = await bundlePreviews(path.join(work, 'bundle'));
+    // Render all first, then copy: a failure halfway leaves previews/ as it was.
+    const rendered: [string, string][] = [];
     for (const kit of KIT_VERSIONS) {
       const example = kit.examples[0]!;
       const id = previewCompositionId(kit.name, kit.version, example.id);
       const composition = await selectComposition({serveUrl, id, inputProps: {}});
-      const output = path.join(root, 'previews', `${kit.name}@${kit.version}.png`);
-      await renderStill({composition, serveUrl, output, frame: example.frame, scale: 1 / 3, imageFormat: 'png', overwrite: true});
-      console.log(`rendered ${path.relative(root, output)}`);
+      const file = `${kit.name}@${kit.version}.png`;
+      await renderStill({composition, serveUrl, output: path.join(work, file), frame: example.frame, scale: 1 / 3, imageFormat: 'png'});
+      rendered.push([path.join(work, file), path.join(root, 'previews', file)]);
+    }
+    for (const [from, to] of rendered) {
+      await copyFile(from, to);
+      console.log(`rendered ${path.relative(root, to)}`);
     }
   } finally {
     await rm(work, {recursive: true, force: true});

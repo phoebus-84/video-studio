@@ -98,6 +98,12 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # The kit lock test compares kits.lock.json with main's: released kit
+      # versions must stay locked and unchanged.
+      - name: fetch main for the kit lock
+        if: matrix.module == 'packages/remotion-composer'
+        run: git fetch --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+
       - name: typecheck
         working-directory: ${{ matrix.module }}
         run: npm run --if-present typecheck

@@ -7,13 +7,50 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';
+import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import ts from 'typescript';
 import {KIT_VERSIONS} from '../src/kits/index.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = (name: string, version: string) => path.join(root, 'src/kits', name, `${version}.tsx`);
 const lock = JSON.parse(readFileSync(path.join(root, 'kits.lock.json'), 'utf8')) as Record<string, string>;
 const ALLOWED_IMPORTS = new Set(['react', 'remotion', 'zod', '../types.js']);
+/** The branch whose lock a change must keep: every entry there stays, unchanged. */
+const LOCK_BASE = process.env.KITS_LOCK_BASE ?? 'origin/main';
+
+/**
+ * Every module a file reaches: import/export declarations, `import x =
+ * require()`, dynamic `import()` and `require()`. `../types.js` may only be
+ * reached for types, so nothing shared at runtime can change an old version.
+ */
+function moduleProblems(file: string): string[] {
+  const sf = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const problems: string[] = [];
+  const check = (spec: string, typeOnly: boolean) => {
+    if (!ALLOWED_IMPORTS.has(spec)) problems.push(`imports ${spec}: only ${[...ALLOWED_IMPORTS].join(', ')} are allowed`);
+    else if (spec === '../types.js' && !typeOnly) problems.push('imports values from ../types.js: only types may come from there (use import type)');
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      const clause = node.importClause;
+      const bindings = clause?.namedBindings;
+      const typeOnly = !!clause && (clause.isTypeOnly || (!clause.name && !!bindings && ts.isNamedImports(bindings) && bindings.elements.every((e) => e.isTypeOnly)));
+      check(node.moduleSpecifier.text, typeOnly);
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      check(node.moduleSpecifier.text, node.isTypeOnly);
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      const expr = node.moduleReference.expression;
+      check(ts.isStringLiteral(expr) ? expr.text : '<computed>', node.isTypeOnly);
+    } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
+      const arg = node.arguments[0];
+      check(arg && ts.isStringLiteral(arg) ? arg.text : '<computed>', false);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return problems;
+}
 
 describe('kit versions', () => {
   for (const kit of KIT_VERSIONS) {
@@ -41,8 +78,7 @@ describe('kit versions', () => {
       it('lives in its own self-contained file', () => {
         const file = source(kit.name, kit.version);
         assert.ok(existsSync(file), `${path.relative(root, file)} must hold ${id}`);
-        const imports = [...readFileSync(file, 'utf8').matchAll(/(?:from|import)\s+['"]([^'"]+)['"]/g)].map((m) => m[1]!);
-        for (const spec of imports) assert.ok(ALLOWED_IMPORTS.has(spec), `${id} imports ${spec}: only ${[...ALLOWED_IMPORTS].join(', ')} are allowed`);
+        assert.deepEqual(moduleProblems(file), [], id);
       });
 
       it('is frozen by kits.lock.json', () => {
@@ -56,6 +92,20 @@ describe('kit versions', () => {
       });
     });
   }
+
+  it('registers each version once', () => {
+    const ids = KIT_VERSIONS.map((k) => `${k.name}@${k.version}`);
+    assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+  });
+
+  it(`keeps every version locked on ${LOCK_BASE}, unchanged`, (t) => {
+    const base = spawnSync('git', ['show', `${LOCK_BASE}:packages/remotion-composer/kits.lock.json`], {cwd: root, encoding: 'utf8'});
+    if (base.status !== 0) return t.skip(`no kits.lock.json on ${LOCK_BASE}`);
+    const released = JSON.parse(base.stdout) as Record<string, string>;
+    for (const [id, hash] of Object.entries(released)) {
+      assert.equal(lock[id], hash, `${id} was released on ${LOCK_BASE}: its lock entry and file must not change or go away`);
+    }
+  });
 
   it('locks no version the registry does not have, and keeps no version file out of the registry', () => {
     const registered = new Set(KIT_VERSIONS.map((k) => `${k.name}@${k.version}`));

@@ -2,7 +2,10 @@
 import React from 'react';
 import {AbsoluteFill, Freeze, OffthreadVideo, useCurrentFrame} from 'remotion';
 import {z} from 'zod';
-import {AssetRef, type KitVersion} from '../types.js';
+import type {KitVersion} from '../types.js';
+
+/** A `{ "$asset": "<id>" }` reference, as a timeline writes it. */
+const AssetRef = z.object({$asset: z.string().min(1)}).strict();
 
 /** A video filling the frame, muted (its sound belongs on an audio track); its last frame holds when the item outlasts it. */
 const Clip: KitVersion['component'] = ({props, context}) => {

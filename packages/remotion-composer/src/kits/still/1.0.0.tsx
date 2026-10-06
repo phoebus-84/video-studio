@@ -2,7 +2,10 @@
 import React from 'react';
 import {AbsoluteFill, Img} from 'remotion';
 import {z} from 'zod';
-import {AssetRef, type KitVersion} from '../types.js';
+import type {KitVersion} from '../types.js';
+
+/** A `{ "$asset": "<id>" }` reference, as a timeline writes it. */
+const AssetRef = z.object({$asset: z.string().min(1)}).strict();
 
 const Still: KitVersion['component'] = ({props}) => {
   const src = props.src as string;

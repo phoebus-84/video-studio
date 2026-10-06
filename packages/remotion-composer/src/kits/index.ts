@@ -8,7 +8,6 @@ import {kit as clip100} from './clip/1.0.0.js';
 import {kit as captions100} from './captions/1.0.0.js';
 
 export type {KitContext, KitExample, KitVersion} from './types.js';
-export {AssetRef} from './types.js';
 
 /** Every released kit version. Adding a version: import it here, then `npm run kits:lock`. */
 export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([still100, clip100, captions100]);

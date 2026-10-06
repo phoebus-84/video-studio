@@ -12,16 +12,18 @@ import {renderStill, selectComposition} from '@remotion/renderer';
 import {KIT_VERSIONS, previewCompositionId} from '../src/kits/index.js';
 import {bundlePreviews} from '../src/preview-bundle.js';
 
-/** Luma range of an image: max − min, from ffprobe's signalstats. */
+/** Luma range of an image: max − min, from ffmpeg's signalstats. */
 function lumaRange(file: string): number {
-  const r = spawnSync('ffprobe', ['-v', 'error', '-f', 'lavfi', '-i', `movie=${file},signalstats`,
-    '-show_entries', 'frame_tags=lavfi.signalstats.YMIN,lavfi.signalstats.YMAX', '-of', 'json'], {encoding: 'utf8'});
-  const tags = (JSON.parse(r.stdout) as {frames: {tags: Record<string, string>}[]}).frames[0]!.tags;
-  return Number(tags['lavfi.signalstats.YMAX']) - Number(tags['lavfi.signalstats.YMIN']);
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'signalstats,metadata=print:file=-', '-f', 'null', '-'], {encoding: 'utf8'});
+  const value = (key: string) => Number(new RegExp(`lavfi\\.signalstats\\.${key}=(\\d+)`).exec(r.stdout)?.[1]);
+  const range = value('YMAX') - value('YMIN');
+  assert.ok(r.status === 0 && Number.isFinite(range), `signalstats failed on ${file}: ${r.stderr}`);
+  return range;
 }
 
 function size(file: string): [number, number] {
   const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', file], {encoding: 'utf8'});
+  assert.equal(r.status, 0, `ffprobe failed on ${file}: ${r.stderr}`);
   const [w, h] = r.stdout.trim().split(',').map(Number);
   return [w!, h!];
 }
