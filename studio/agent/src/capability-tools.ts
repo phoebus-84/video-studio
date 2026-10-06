@@ -39,13 +39,13 @@ import {
   assembleNarrationSegments,
   buildNarrationManifest,
   findFinalWav,
-  naturalSegmentOrder,
   silenceFromLegacyManifest,
   validateNarrationManifest,
   writeNarrationManifest,
   type NarrationSegmentInput,
 } from "./narration-manifest.js";
-import { concatScript, resolveSceneFrames } from "./scene-images.js";
+import { EDIT_TIMELINE_PATH } from "./edit-timeline-builder.js";
+import { renderEpisode, writeEditTimeline } from "./episode-render.js";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
@@ -196,7 +196,7 @@ async function synthesizeSpeech(text: string, voice: string, speed: number, inst
   return { audioPath: body.result.wav_path, durationSec: body.result.duration_sec };
 }
 
-// ── FFmpeg composition ─────────────────────────────────────────────────────
+// ── Narration ──────────────────────────────────────────────────────────────
 
 export function canonicalNarrationPath(episodeDir: string): string | null {
   const manifestPath = join(episodeDir, "artifacts", "narration", "narration-manifest.json");
@@ -222,131 +222,6 @@ export function canonicalNarrationPath(episodeDir: string): string | null {
     );
   }
   return resolved;
-}
-
-async function composeEpisodeVideo(
-  episodeDir: string,
-  outputPath: string,
-): Promise<{ outputPath: string; durationSec: number; fileSize: number }> {
-  const { execSync } = await import("node:child_process");
-  const scenesDir = join(episodeDir, "assets", "images");
-  let narrationFile = join(episodeDir, "artifacts", "narration", "narration-full.wav");
-  const narrationManifestPath = join(episodeDir, "artifacts", "narration", "narration-manifest.json");
-  narrationFile = canonicalNarrationPath(episodeDir) ?? narrationFile;
-
-  const { execSync: es } = await import("node:child_process");
-
-  // The scenes to render, each with the time it is on screen. Selecting them
-  // used to be `filter(f => f.match(/^s\d+\.jpg$/)).sort()`, which found no
-  // images at all in an episode drawn as PNG, dropped any scene numbered `s4a`,
-  // and ordered `s10` between `s1` and `s2`.
-  const frames = resolveSceneFrames(episodeDir);
-  if (frames.length === 0) {
-    const present = existsSync(scenesDir)
-      ? (await import("node:fs")).readdirSync(scenesDir).length
-      : 0;
-    throw new Error(
-      present > 0
-        ? `No scene images found in assets/images: ${present} file(s) are there, but none are named like a scene (s1.png, s4a.jpg, …)`
-        : "No scene images found in assets/images",
-    );
-  }
-
-  // Concatenate scene narration files if present
-  const narrationDir = join(episodeDir, "artifacts", "narration");
-  if (!existsSync(narrationManifestPath) && existsSync(narrationDir) && !existsSync(narrationFile)) {
-    console.warn("DEPRECATED: composing narration by scene WAV filenames; write narration-manifest.json");
-    // Same defect as the images: `^s\d+\.wav$` silently drops the narration for
-    // a scene numbered `s4a`, leaving the audio shorter than the picture.
-    const wavFiles = (await import("node:fs")).readdirSync(narrationDir)
-      .filter(f => /^(?:s|scene-?)\d+[a-z]?\.wav$/i.test(f))
-      .sort((a, b) => naturalSegmentOrder(a.replace(/\.wav$/i, ""), b.replace(/\.wav$/i, "")));
-    if (wavFiles.length > 0) {
-      const concatList = join(episodeDir, "artifacts", "narration", "concat.txt");
-      const listContent = wavFiles.map(f => `file '${join(narrationDir, f)}'`).join("\n");
-      (await import("node:fs")).writeFileSync(concatList, listContent);
-      es(`ffmpeg -y -f concat -safe 0 -i "${concatList}" -c copy "${narrationFile}" 2>/dev/null`);
-    }
-  }
-
-  // Normalise every scene to one frame size, whatever it was drawn at.
-  const frameDir = join(episodeDir, "artifacts", "frames");
-  mkdirSync(frameDir, { recursive: true });
-
-  // Run through spawnSync rather than a shell string: these paths come from
-  // the episode directory, and a filename holding a quote would otherwise be
-  // pasted straight into a command line.
-  const ffmpeg = (args: string[]): void => {
-    const result = spawnSync("ffmpeg", args, { encoding: "utf-8" });
-    if (result.status !== 0) {
-      throw new Error(`FFmpeg failed: ${(result.stderr || result.stdout || "").trim().slice(-800)}`);
-    }
-  };
-
-  const normalized: Array<{ path: string; durationSeconds: number }> = [];
-  for (const [index, frame] of frames.entries()) {
-    const src = join(scenesDir, frame.file);
-    const dst = join(frameDir, `frame${String(index + 1).padStart(3, "0")}.png`);
-    if (!existsSync(dst)) {
-      ffmpeg([
-        "-y", "-i", src,
-        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
-        "-frames:v", "1", dst,
-      ]);
-    }
-    normalized.push({ path: dst, durationSeconds: frame.durationSeconds });
-  }
-
-  // A concat script rather than a fixed framerate: `-framerate 1/10` holds
-  // every scene for ten seconds whatever its narration says, so the picture
-  // and the audio drift apart and `-shortest` amputates whichever ends first.
-  const concatPath = join(frameDir, "frames.concat.txt");
-  (await import("node:fs")).writeFileSync(concatPath, concatScript(normalized));
-
-  const args = [
-    "-y",
-    "-f", "concat",
-    "-safe", "0",
-    "-i", concatPath,
-  ];
-
-  // The concat script repeats its final entry so the closing scene is not one
-  // frame long, and that repeat is then held for a further beat of its own.
-  // Capping the output at the scenes' own total trims it back off.
-  const sceneTotalSeconds = normalized.reduce((total, f) => total + f.durationSeconds, 0);
-
-  if (existsSync(narrationFile)) {
-    args.push("-i", narrationFile);
-  }
-
-  args.push(
-    "-t", sceneTotalSeconds.toFixed(6),
-    "-vf", "fps=30,format=yuv420p",
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-    "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-  );
-
-  if (existsSync(narrationFile)) {
-    args.push("-c:a", "aac", "-b:a", "128k", "-shortest");
-  }
-
-  args.push(outputPath);
-  ffmpeg(args);
-
-  // Probe duration
-  const probeOut = es(
-    `ffprobe -v quiet -show_entries format=duration,size -of default=noprint_wrappers=1 "${outputPath}"`,
-    { encoding: "utf-8" },
-  ).toString();
-  const durMatch = probeOut.match(/duration=([\d.]+)/);
-  const sizeMatch = probeOut.match(/size=(\d+)/);
-  const fileSize = existsSync(outputPath) ? (await import("node:fs")).statSync(outputPath).size : 0;
-
-  return {
-    outputPath,
-    durationSec: durMatch ? parseFloat(durMatch[1]!) : 0,
-    fileSize,
-  };
 }
 
 // ── Tools ───────────────────────────────────────────────────────────────────
@@ -1011,35 +886,82 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     },
   });
 
-  // --- Tool: pva_compose_video (via FFmpeg) -------------------------------
+  // --- Tools: pva_build_timeline and pva_compose_video (ADR-0036) ---------
+  // The episode is composed through its edit timeline: a reviewable document
+  // in artifacts/, rendered by @av/remotion-composer. No FFmpeg runs here.
+
+  const profileParam = Type.Optional(Type.String({
+    description: "Output profile id: youtube-1920x1080 (default) or vertical-1080x1920",
+  }));
 
   pi.registerTool({
-    name: "pva_compose_video",
-    label: "Compose Video",
-    description: "Compose the final MP4 from scene images and narration audio using FFmpeg.",
+    name: "pva_build_timeline",
+    label: "Build Edit Timeline",
+    description: `Build the episode's edit timeline (${EDIT_TIMELINE_PATH}) from its scene images, timing and narration: the reviewable account of what pva_compose_video will render.`,
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
       episode: Type.String({ description: "Episode slug" }),
-      outputName: Type.Optional(Type.String({ default: "final.mp4", description: "Output filename" })),
+      profile: profileParam,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    async execute(_toolCallId, params) {
       try {
         const dir = episodeDir(params.channel, params.series, params.episode);
-        const outPath = join(dir, "artifacts", params.outputName ?? "final.mp4");
-        mkdirSync(join(dir, "artifacts"), { recursive: true });
-
-        const result = await composeEpisodeVideo(dir, outPath);
-
-        const mb = (result.fileSize / 1024 / 1024).toFixed(1);
-        return {
-          content: [{ type: "text" as const, text: `✅ ${params.outputName ?? "final.mp4"} — ${result.durationSec.toFixed(1)}s, ${mb}MB` }],
-          details: result,
-        };
+        const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+        const { timeline, warnings } = writeEditTimeline(dir, { episodeRef, ...(params.profile ? { profile: params.profile } : {}) });
+        const count = (id: string) => timeline.tracks.find((t) => t.id === id)?.items.length ?? 0;
+        const lines = [
+          `✅ ${EDIT_TIMELINE_PATH}: ${count("scenes")} scenes, ${count("captions")} captions, `
+            + `${(timeline.durationInFrames / timeline.fps).toFixed(1)}s, ${timeline.profile.id}`,
+          ...warnings.map((w) => `⚠️ ${w}`),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { path: EDIT_TIMELINE_PATH, timeline, warnings } as Record<string, unknown> };
       } catch (err) {
         return {
           content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
-          details: {},
+          details: {} as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "pva_compose_video",
+    label: "Compose Video",
+    description: `Render the episode's edit timeline (${EDIT_TIMELINE_PATH}) with Remotion to output/<render-id>.mp4 and move output/current.json. Rebuilds the timeline first when it is missing, when the episode's material changed, or when another profile is asked for; otherwise renders it as it stands, hand edits included.`,
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      profile: profileParam,
+      label: Type.Optional(Type.String({ default: "render", description: "Lowercase kebab-case render label" })),
+    }),
+    async execute(_toolCallId, params, signal) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+      try {
+        return await withFileMutationQueue(join(dir, "output", "current.json"), async () => {
+          if (signal?.aborted) throw new Error("cancelled");
+          const render = await renderEpisode(dir, {
+            episodeRef,
+            ...(params.profile ? { profile: params.profile } : {}),
+            ...(params.label ? { label: params.label } : {}),
+          });
+          const mb = (render.result.sizeBytes / 1024 / 1024).toFixed(1);
+          const lines = [
+            `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}`,
+            ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),
+            ...render.warnings.map((w) => `⚠️ ${w}`),
+          ];
+          return { content: [{ type: "text" as const, text: lines.join("\n") }], details: render as unknown as Record<string, unknown> };
+        });
+      } catch (err) {
+        const e = err as { message?: string; code?: string; problems?: Array<{ code: string; message: string; path?: string }> };
+        const problems = (e.problems ?? []).map((p) => `  - ${p.code}${p.path ? ` at ${p.path}` : ""}: ${p.message}`);
+        return {
+          content: [{ type: "text" as const, text: [`❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}`, ...problems].join("\n") }],
+          details: { code: e.code ?? null, problems: e.problems ?? [] } as Record<string, unknown>,
           isError: true as unknown as boolean,
         };
       }

@@ -79,9 +79,10 @@ export function registerSlashCommands(pi: ExtensionAPI): void {
       ctx.ui.notify(`${preview ? "Preview" : "Full"} render: ${path}`, "info");
       pi.sendUserMessage(
         `Compose the video for episode ${path}. ` +
-        `Use pva_compose_video to trigger composition with FFmpeg. ` +
+        `Use pva_compose_video: it renders the episode's edit timeline (artifacts/edit-timeline.json) with Remotion, ` +
+        `rebuilding it first if the episode's material changed. ` +
         `${preview ? "Use preview/rough quality settings." : "Use full production quality."} ` +
-        `After composition, report the output path, file size, and duration.`
+        `After composition, report the output path, file size, duration and whether the timeline was rebuilt.`
       );
     },
   });
