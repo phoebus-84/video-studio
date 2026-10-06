@@ -22,7 +22,6 @@ const CAPTION_CHARACTERS = 42;
 const ALLOWED: Record<string, "visual" | "audio"> = { panels: "visual", captions: "visual", voice: "audio" };
 
 interface PoetryShortData {
-  narration: string;
   panels: { assetId: string }[];
   style: { captionKit: { name: string; version: string } };
 }
@@ -72,6 +71,10 @@ function validate(input: ValidateInput): Finding[] {
     error("profile-changed", "$.profile", `the profile is ${timeline.profile.id}; this template renders ${compiled.profile.id}`);
   }
 
+  if (timeline.fps !== compiled.fps) {
+    error("fps-changed", "$.fps", `the timeline plays at ${timeline.fps} fps; this template renders ${compiled.fps}`);
+  }
+
   const frames = timeline.durationInFrames;
   if (frames < MIN_FRAMES || frames > MAX_FRAMES) {
     error("duration-range", "$.durationInFrames",
@@ -87,6 +90,13 @@ function validate(input: ValidateInput): Finding[] {
   tracks.forEach((track: Track, i) => {
     if (track.hidden || track.muted) {
       error("hidden-track", `$.tracks[${i}]`, `track "${track.id}" is ${track.hidden ? "hidden" : "muted"}: every track of this format plays`);
+    }
+  });
+
+  tracks.forEach((track: Track, i) => {
+    const reference = compiled.tracks.find((t) => t.id === track.id);
+    if (reference && (track.z ?? null) !== (reference.z ?? null)) {
+      error("stacking-changed", `$.tracks[${i}].z`, `track "${track.id}" is stacked at ${track.z ?? "none"}; this format stacks it at ${reference.z ?? "none"}`);
     }
   });
 
@@ -131,9 +141,27 @@ function validate(input: ValidateInput): Finding[] {
     });
   }
 
-  const said = collapse([...captions].sort((a, b) => a.from - b.from).map((c) => String(c.props?.text ?? "")).join(" "));
-  if (captionsAt !== -1 && said !== collapse(data.narration)) {
-    error("text-not-voice", `$.tracks[${captionsAt}]`, `the captions say "${said}", not the narration: change the spec and the takes, not the captions`);
+  // Every picture and every take is the compiler's: a file swapped or added
+  // by hand changes what is seen or heard without the spec saying so.
+  const ids = [...new Set([...Object.keys(timeline.assets), ...Object.keys(compiled.assets)])];
+  for (const id of ids) {
+    const have = timeline.assets[id];
+    const want = compiled.assets[id];
+    if (canonical(have) !== canonical(want)) {
+      error("asset-changed", `$.assets[${JSON.stringify(id)}]`,
+        !want ? `"${id}" is not one of the episode's files: pictures and takes come from the spec and the takes`
+          : !have ? `"${id}" was removed`
+            : `"${id}" now points at ${have.path} (${have.hash}), not the file the compiler used`);
+    }
+  }
+
+  // The captions' words are the ones the compiler captioned from the voice
+  // (it drops a caption too short to show); a hand edit may split them, not change them.
+  const text = (items: Item[]) => collapse([...items].sort((a, b) => a.from - b.from).map((c) => String(c.props?.text ?? "")).join(" "));
+  const said = text(captions);
+  const voiced = text((compiled.tracks.find((t) => t.id === "captions")?.items ?? []) as Item[]);
+  if (captionsAt !== -1 && said !== voiced) {
+    error("text-not-voice", `$.tracks[${captionsAt}]`, `the captions say "${said}", not the voice ("${voiced}"): change the spec and the takes, not the captions`);
   }
 
   const shown = new Set(panels.map((item) => item.props?.src?.$asset));

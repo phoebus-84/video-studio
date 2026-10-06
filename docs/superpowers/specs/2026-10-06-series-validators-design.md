@@ -110,13 +110,16 @@ Checked on `timeline`, with `compiled` as the reference. 30 fps.
 | Code | Rule | Path |
 |---|---|---|
 | `profile-changed` | `timeline.profile` deep-equals `compiled.profile` | `$.profile` |
+| `fps-changed` | `timeline.fps` equals `compiled.fps` | `$.fps` |
 | `duration-range` | 300 ≤ `durationInFrames` ≤ 1800 (10–60 s) | `$.durationInFrames` |
 | `extra-track` | track ids are exactly `panels` (visual), `captions` (visual, optional when the narration has no words) and `voice` (audio); any other track | `$.tracks[i]` |
 | `hidden-track` | no track `hidden` or `muted` | `$.tracks[i]` |
+| `stacking-changed` | a track present in `compiled` keeps its `z` | `$.tracks[i].z` |
 | `forbidden-kit` | `panels` items use `still@1.0.0`; `captions` items use `data.style.captionKit` | `$.tracks[i].items[j].kit` |
 | `forbidden-transition` | a visual item has no `transitionOut`; its `transitionIn`, if any, is `{ type: "crossfade", duration: 12 }` | `$.tracks[i].items[j]` |
 | `altered-voice` | the `voice` items equal `compiled`'s in number and, item by item, in `from`, `duration`, `asset`, `trimStart` (absent = 0), with no `gain`, `fadeIn`, `fadeOut`, `transitionIn`, `transitionOut` | `$.tracks[i].items[j]` (or `$.tracks[i]` for a count difference) |
-| `text-not-voice` | the `captions` items' `props.text`, in `from` order, joined by spaces and whitespace-collapsed, equal `data.narration` collapsed | `$.tracks[i]` |
+| `asset-changed` | `timeline.assets` equal `compiled.assets`, id by id (no file swapped, added or removed by hand) | `$.assets["<id>"]` |
+| `text-not-voice` | the `captions` items' `props.text`, in `from` order, joined by spaces and whitespace-collapsed, equal `compiled`'s captions joined the same way (what the compiler captioned from the voice: it drops a caption shorter than a frame) | `$.tracks[i]` |
 | `missing-picture` | every `data.panels[k].assetId` is shown by at least one `panels` item (`props.src.$asset` = `image-<assetId>`) | `$.data.panels[k]` |
 | `uncovered-frames` | the union of `panels` items covers every frame in [0, `durationInFrames`) | `$.tracks[i]`, message names the first uncovered frame |
 

@@ -136,6 +136,26 @@
         { "path": "$.tracks[1].items[1]", "value": null }
       ],
       "expect": [{ "code": "caption-long", "severity": "warning", "path": "$.tracks[1].items[0]" }]
+    },
+    {
+      "name": "a take's audio swapped for another file",
+      "set": [{ "path": "$.assets[\"narration-cup\"].hash", "value": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }],
+      "expect": [{ "code": "asset-changed", "severity": "error", "path": "$.assets[\"narration-cup\"]" }]
+    },
+    {
+      "name": "a picture added that the spec does not name",
+      "set": [{ "path": "$.assets[\"image-dog\"]", "value": { "path": "assets/images/dog.png", "hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "kind": "image" } }],
+      "expect": [{ "code": "asset-changed", "severity": "error", "path": "$.assets[\"image-dog\"]" }]
+    },
+    {
+      "name": "played at 60 fps",
+      "set": [{ "path": "$.fps", "value": 60 }],
+      "expect": [{ "code": "fps-changed", "severity": "error", "path": "$.fps" }]
+    },
+    {
+      "name": "the pictures stacked above the captions",
+      "set": [{ "path": "$.tracks[0].z", "value": 20 }],
+      "expect": [{ "code": "stacking-changed", "severity": "error", "path": "$.tracks[0].z" }]
     }
   ]
 }

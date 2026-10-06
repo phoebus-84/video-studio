@@ -40,3 +40,13 @@ test("checking is deterministic and does not change its input", () => {
 test("the untouched compiled timeline passes poetry-short@1.0.0", () => {
   assert.deepEqual(checkSeries(load()), { validator: "poetry-short@1.0.0", findings: [] });
 });
+
+test("text-not-voice compares with what the compiler captioned, not the raw narration", () => {
+  // A caption group shorter than a frame is dropped by the compiler: the
+  // untouched compiled timeline must still pass.
+  const input = load();
+  const captions = (t: { tracks: { id: string; items: unknown[] }[] }) => t.tracks.find((x) => x.id === "captions")!;
+  captions(input.compiled as never).items.splice(0, 1);
+  captions(input.timeline as never).items.splice(0, 1);
+  assert.deepEqual(checkSeries(input).findings, []);
+});

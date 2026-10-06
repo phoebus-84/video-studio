@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { editSpec, specEpisode } from "./spec-episode.js";
+import { editSpec, sha256, specEpisode } from "./spec-episode.js";
 
 /**
  * pva_build_timeline and pva_compose_video on an episode with an
@@ -248,6 +248,30 @@ describe("series rules (poetry-short@1.0.0) on a spec-driven episode", () => {
     expect(text).toMatch(/^the timeline would be recompiled: episode-spec\.json changed/);
     expect(text).toMatch(/duration-range at artifacts\/edit-timeline\.json#\$\.durationInFrames/);
     expect(snapshot()).toEqual(before);
+  });
+
+  it("pva_check_episode shows the warnings pva_compose_video would show", async () => {
+    rmSync(at("episode-spec.json"));
+    writeFileSync(at("assets/images/s1.png"), "a legacy scene");
+    await tool("pva_build_timeline");
+    rmSync(at("assets/images/s1.png"));
+    const result = await tool("pva_check_episode");
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toMatch(/⚠️ the episode could not be rebuilt \(no-scenes/);
+  });
+
+  it("a template naming a validator the studio does not have is refused, and says so", async () => {
+    const release = join(root, REF.channel, "series", REF.series, "templates/poetry-short/1.0.0/series-template.json");
+    const manifest = JSON.parse(readFileSync(release, "utf-8"));
+    manifest.validator.version = "9.9.9";
+    const text = `${JSON.stringify(manifest, null, 2)}\n`;
+    writeFileSync(release, text);
+    editSpec(dir(), (spec) => { spec.template.hash = sha256(text); });
+    const result = await tool("pva_build_timeline");
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/the template names a validator this studio does not have/);
+    expect(result.content[0].text).toMatch(/unknown-validator at \.\.\/\.\.\/templates\/poetry-short\/1\.0\.0\/series-template\.json#\$\.validator/);
+    expect(existsSync(at("artifacts/edit-timeline.json"))).toBe(false);
   });
 
   it("pva_check_episode on an episode without a spec: no series rules", async () => {

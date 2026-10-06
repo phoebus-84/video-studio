@@ -1,8 +1,9 @@
-// Set a value at a JSON path such as $.tracks[1].items[0].props.text.
+// Set a value at a JSON path such as $.tracks[1].items[0].props.text or $.assets["image-cat"].path.
 // `null` deletes: the key from an object, the element from an array.
 
 export function setPath(doc: unknown, path: string, value: unknown): void {
-  const keys = [...path.slice(1).matchAll(/\.([A-Za-z_$][\w$]*)|\[(\d+)\]/g)].map((m) => (m[1] !== undefined ? m[1] : Number(m[2])));
+  const keys = [...path.slice(1).matchAll(/\.([A-Za-z_$][\w$]*)|\[(\d+)\]|\["([^"]+)"\]/g)]
+    .map((m) => (m[1] !== undefined ? m[1] : m[3] !== undefined ? m[3] : Number(m[2])));
   if (!path.startsWith("$") || keys.length === 0) throw new Error(`not a JSON path: ${path}`);
   let at: any = doc;
   for (const key of keys.slice(0, -1)) {

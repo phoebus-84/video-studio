@@ -57,6 +57,16 @@ export class SeriesRulesError extends TimelineBuildError {
 
 const errorsOf = (validation: Validation | null) => validation?.findings.filter((f) => f.severity === "error") ?? [];
 
+/** What to do about a refusal: the edit, the spec and takes, or the studio itself. */
+function hintFor(errors: SeriesFinding[], storedAsItStands: boolean): string {
+  if (errors.some((f) => f.code === "unknown-validator")) {
+    return ": the template names a validator this studio does not have — update the studio, or pin a release it knows";
+  }
+  return storedAsItStands
+    ? `: fix the edit in ${EDIT_TIMELINE_PATH}, or delete it to recompile from the spec`
+    : ": change the spec or the takes";
+}
+
 const sha256 = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
 const serialize = (timeline: unknown) => `${JSON.stringify(timeline, null, 2)}\n`;
 
@@ -166,7 +176,7 @@ export function writeEditTimeline(episodeDir: string, options: BuildOptions): Wr
   if (!built.ok) throw new TimelineBuildError(built.problems);
   const validation = validate(episodeDir, options, built.timeline);
   const errors = errorsOf(validation);
-  if (errors.length > 0) throw new SeriesRulesError(validation!.validator, errors, ": change the spec or the takes");
+  if (errors.length > 0) throw new SeriesRulesError(validation!.validator, errors, hintFor(errors, false));
   const text = serialize(built.timeline);
   const backup = replaceTimeline(episodeDir, text);
   return { timeline: built.timeline, compiledBy: built.compiledBy, validation, hash: sha256(text), warnings: built.warnings, backup };
@@ -327,9 +337,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   // Refused before anything is written: not even a rebuilt timeline.
   const errors = errorsOf(decision.validation);
   if (errors.length > 0) {
-    throw new SeriesRulesError(decision.validation!.validator, errors, decision.rebuilt === null
-      ? `: fix the edit in ${EDIT_TIMELINE_PATH}, or delete it to recompile from the spec`
-      : ": change the spec or the takes");
+    throw new SeriesRulesError(decision.validation!.validator, errors, hintFor(errors, decision.rebuilt === null));
   }
   const current = applyDecision(episodeDir, decision);
 

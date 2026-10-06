@@ -59,6 +59,7 @@ export interface SeriesCompiler {
   description: string;
   compile(input: CompileInput): CompileResult;
 }
+
 /** What a series validator checks: the compile input, the timeline to render and the compiled reference. */
 export interface ValidateInput extends CompileInput {
   /** The timeline about to be rendered: stored (possibly hand-edited) or fresh. */

@@ -49,7 +49,7 @@ const { validator, findings } = checkSeries({ ...input, timeline, compiled });
 
 | Validator | Rules |
 |---|---|
-| `poetry-short@1.0.0` | Errors: a track missing, `profile-changed`, `duration-range` (10–60 s), `extra-track`, `hidden-track`, `forbidden-kit`, `forbidden-transition` (only a 12-frame crossfade in), `altered-voice` (takes never cut, moved or reworked), `text-not-voice` (the captions say exactly the narration), `missing-picture`, `uncovered-frames`. Warnings: `panel-flash` (under 1 s), `panel-long` (over 7 s), `caption-long` (over 42 characters). |
+| `poetry-short@1.0.0` | Errors: a track missing, `profile-changed`, `fps-changed`, `duration-range` (10–60 s), `extra-track`, `hidden-track`, `stacking-changed`, `forbidden-kit`, `forbidden-transition` (only a 12-frame crossfade in), `altered-voice` (takes never cut, moved or reworked), `asset-changed` (no picture or take swapped, added or removed by hand), `text-not-voice` (the captions say exactly what the compiler captioned from the voice), `missing-picture`, `uncovered-frames`. Warnings: `panel-flash` (under 1 s), `panel-long` (over 7 s), `caption-long` (over 42 characters). |
 
 Like compilers, validators are pure, one file per version
 (`src/validators/<id>/<version>.ts`, registered in `src/validators.ts`, the

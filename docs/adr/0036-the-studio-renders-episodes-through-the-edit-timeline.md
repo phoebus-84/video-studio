@@ -46,6 +46,11 @@ error — never a reason to fall back to the builder or to render the timeline
 it was meant to replace. Rebuilding on changed inputs and rendering hand
 edits as they stand work the same for both.
 
+**Note (`avg-jao.3`, ADR-0037).** For a spec-driven episode a hand edit is
+rendered as it stands only within its series' rules: the template's
+validator checks whatever is about to be rendered, and an error refuses the
+render before anything is written.
+
 ## Consequences
 
 Every delivered video can be traced to the exact timeline that produced it,

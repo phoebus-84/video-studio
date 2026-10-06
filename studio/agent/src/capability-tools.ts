@@ -1021,6 +1021,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
               ? `❌ ${errors} error(s) against ${validation.validator}: pva_compose_video would refuse it`
               : `✅ ${validation.validator}: no errors`,
           ...findings.map((f) => `  ${findingLine(f)}`),
+          ...decision.warnings.map((w) => `⚠️ ${w}`),
         ];
         return {
           content: [{ type: "text" as const, text: lines.join("\n") }],

@@ -89,7 +89,8 @@ recompiled and why) and lists every finding, writing nothing.
 - A hand edit may change what the series allows — when a picture changes, how
   captions are split. It may not touch the voice, the captions' words, the
   profile, the kits or the effects: tell the person to change the spec or the
-  takes instead, or to delete `artifacts/edit-timeline.json` to recompile.
+  takes instead, or to delete `artifacts/edit-timeline.json` to recompile —
+  deleting keeps no copy of the edit, so say so before suggesting it.
 - **Warnings** (a picture flashing or held over 7 s, a long caption) do not
   block; they are in the reply and the render report's `validation`. Mention
   them to the person.
