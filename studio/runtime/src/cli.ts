@@ -29,6 +29,9 @@ import { releaseSpend } from "@studio/contracts/src/budget.mjs";
 import type { SourceRef } from "@studio/contracts/src/source-pins.mjs";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
 import { resolveCliCredential } from "./execution/principal.js";
+import { approveReference, listReferences, withdrawReference } from "./references.js";
+import { verifySeriesReference } from "@studio/contracts/src/series-references.mjs";
+import { seriesPath } from "@studio/contracts/src/layout.mjs";
 import type { RerunMode } from "./rerun/index.js";
 import { err, ok } from "./result.js";
 import type { Result } from "./result.js";
@@ -751,6 +754,120 @@ async function cmdReject(ctx: CliContext, args: string[]): Promise<number> {
   return cmdReview(ctx, args, "rejected");
 }
 
+// ── reference (avg-jao.6) ───────────────────────────────────────────────────
+
+/**
+ * `vpr reference approve | withdraw | verify | list`: golden references
+ * (ADR-0037). Approving and withdrawing sign with the operator key, resolved
+ * as `vpr approve` resolves it; Pi only ever proposes.
+ */
+async function cmdReference(ctx: CliContext, args: string[]): Promise<number> {
+  const usage =
+    "Usage: vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | " +
+    "vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | " +
+    "vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--library <path>] [--json]";
+  const libraryRoot = libraryFrom(args);
+  const [sub, target, a, b] = positionalArgs(args);
+  if (!libraryRoot) {
+    emit(ctx, { error: "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
+    return EX_USAGE;
+  }
+  const seriesOf = (value: string | undefined) => {
+    const parts = (value ?? "").split("/");
+    return parts.length === 2 && parts.every(Boolean) ? { channel: parts[0]!, series: parts[1]! } : null;
+  };
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+  const key = credential.operatorKey;
+  const refused = (out: { code: string; message: string; problems?: unknown[] }) => {
+    emit(ctx, { error: out.message, code: out.code, ...(out.problems ? { problems: out.problems } : {}) });
+    return EX_RUNTIME;
+  };
+
+  if (sub === "approve") {
+    const ref = target ? parsePath(target) : null;
+    if (!ref || !a) {
+      emit(ctx, { error: usage });
+      return EX_USAGE;
+    }
+    const note = flagValue(args, "--note");
+    const out = approveReference({ libraryRoot, ref, referenceId: a, key, dryRun: ctx.dryRun, ...(note !== undefined ? { note } : {}) });
+    if (!out.ok) return refused(out);
+    const { path, descriptor, written } = out.value;
+    emit(ctx, {
+      message: written
+        ? `${a} is now a reference of ${ref.channel}/${ref.series}: ${path}`
+        : `[DRY RUN] ${a} would become a reference of ${ref.channel}/${ref.series}: ${path}`,
+      path,
+      descriptor,
+      dryRun: !written,
+    });
+    return EX_OK;
+  }
+
+  if (sub === "withdraw") {
+    const series = seriesOf(target);
+    const reason = flagValue(args, "--reason");
+    if (!series || !a || !b || !reason) {
+      emit(ctx, { error: usage });
+      return EX_USAGE;
+    }
+    if (ctx.dryRun) {
+      emit(ctx, { message: `[DRY RUN] Would withdraw ${a}/${b} of ${target}`, dryRun: true });
+      return EX_OK;
+    }
+    const out = withdrawReference({ libraryRoot, ...series, templateId: a, referenceId: b, key, reason });
+    if (!out.ok) return refused(out);
+    emit(ctx, { message: `${b} is withdrawn: ${out.value.path}`, path: out.value.path, withdrawal: out.value.withdrawal });
+    return EX_OK;
+  }
+
+  if (sub === "verify") {
+    const series = seriesOf(target);
+    if (!series || !a || !b) {
+      emit(ctx, { error: usage });
+      return EX_USAGE;
+    }
+    const verdict = verifySeriesReference({ seriesDir: seriesPath(libraryRoot, series.channel, series.series), templateId: a, referenceId: b, key });
+    emit(ctx, {
+      message: `${a}/${b}: ${verdict.state}${verdict.problems[0] ? ` — ${verdict.problems[0].code} at ${verdict.problems[0].path}: ${verdict.problems[0].message}` : ""}`,
+      state: verdict.state,
+      problems: verdict.problems,
+      ...(verdict.withdrawal ? { withdrawal: verdict.withdrawal } : {}),
+    });
+    return verdict.state === "trusted" ? EX_OK : EX_RUNTIME;
+  }
+
+  if (sub === "list") {
+    const series = seriesOf(target);
+    if (!series) {
+      emit(ctx, { error: usage });
+      return EX_USAGE;
+    }
+    const references = listReferences({ libraryRoot, ...series, key }).map(({ templateId, referenceId, verdict }) => ({
+      templateId,
+      referenceId,
+      state: verdict.state,
+      ...(verdict.problems[0] ? { problem: verdict.problems[0] } : {}),
+    }));
+    emit(ctx, {
+      message: references.length === 0
+        ? `${target} has no references`
+        : references.map((r) => `${r.templateId}/${r.referenceId}: ${r.state}${r.problem ? ` (${r.problem.code})` : ""}`).join("\n"),
+      references,
+    });
+    return EX_OK;
+  }
+
+  emit(ctx, { error: usage });
+  return EX_USAGE;
+}
+
 // ── takes / select (avg-qr4.6) ──────────────────────────────────────────────
 
 async function cmdTakes(ctx: CliContext, args: string[]): Promise<number> {
@@ -1029,6 +1146,8 @@ const VALUE_FLAGS = new Set([
   "--mode", "--stages",
   // `pin`'s (avg-7zp.5).
   "--source", "--used-by", "--path",
+  // `reference`'s (avg-jao.6), and the notes `approve`, `reject` and `budget` take.
+  "--note", "--reason",
 ]);
 
 /**
@@ -1366,6 +1485,7 @@ const COMMANDS: Record<string, CliCommand> = {
   reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },
   pin: { name: "pin", description: "Pin shared material (a channel source or another episode), verify it, or renew it to accept a new version", usage: "vpr pin add <channel>/<series>/<episode> <id> --source channel:<name>|episode:<series>/<episode> --used-by <stage>[,<stage>...] [--path <p>]... | vpr pin verify <channel>/<series>/<episode> | vpr pin renew <channel>/<series>/<episode> <id> [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr pin add dentro-i-versi/long/il-lampo poesia --source channel:il-lampo --used-by narration", "vpr pin verify dentro-i-versi/long/il-lampo", "vpr pin renew dentro-i-versi/long/il-lampo poesia"], run: cmdPin },
   budget: { name: "budget", description: "Show the episode's spend ledger; the operator can release an open reservation", usage: "vpr budget <channel>/<series>/<episode> [release <reservation-id> [--note <why>]] [--json] [--dry-run]", examples: ["vpr budget my-channel/my-series/ep001", "vpr budget my-channel/my-series/ep001 release rsv_01J9Z… --note 'fal dashboard shows no charge'"], run: cmdBudget },
+  reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve dentro-i-versi/short/san-martino san-martino-v1 --dry-run", "vpr reference verify dentro-i-versi/short short-room san-martino-v1", "vpr reference withdraw dentro-i-versi/short short-room san-martino-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },
