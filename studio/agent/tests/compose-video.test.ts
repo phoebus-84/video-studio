@@ -12,15 +12,15 @@ import { dirname, join } from "node:path";
  * Real renders are in compose-video.e2e.test.ts.
  */
 
-const renders: Array<{ timeline: any; outputPath: string }> = [];
+const renders: Array<{ timeline: any; outputPath: string; cacheDir?: string }> = [];
 let failNext: Error | null = null;
 
 vi.mock("@av/remotion-composer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@av/remotion-composer")>();
   return {
     ...actual,
-    renderTimeline: async (options: { timeline: any; outputPath: string }) => {
-      renders.push({ timeline: options.timeline, outputPath: options.outputPath });
+    renderTimeline: async (options: { timeline: any; outputPath: string; cacheDir?: string }) => {
+      renders.push({ timeline: options.timeline, outputPath: options.outputPath, cacheDir: options.cacheDir });
       mkdirSync(dirname(options.outputPath), { recursive: true });
       writeFileSync(options.outputPath, "fake mp4");
       if (failNext) {
@@ -36,6 +36,7 @@ vi.mock("@av/remotion-composer", async (importOriginal) => {
         kits: [{ name: "still", version: "1.0.0" }],
         profile: options.timeline.profile.id,
         loudness: null,
+        cache: { wholeVideoReused: false, segmentsReused: 0, segmentsRendered: 5, totalSegments: 5, warnings: [] },
       };
     },
   };
@@ -118,7 +119,8 @@ describe("pva_compose_video", () => {
     expect(existsSync(at(`output/${current.path}`))).toBe(true);
     const report = readJson(`output/${current.renderId}.report.json`);
     expect(report.timeline).toEqual({ path: "artifacts/edit-timeline.json", hash: sha256("artifacts/edit-timeline.json") });
-    expect(report.render).toMatchObject({ path: current.path, profile: "youtube-1920x1080" });
+    expect(report.render).toMatchObject({ path: current.path, profile: "youtube-1920x1080", cache: { segmentsRendered: 5 } });
+    expect(renders[0]!.cacheDir).toBe(at(".cache/remotion"));
     expect(current.renderId.endsWith(report.timeline.hash.slice(7, 15))).toBe(true);
     expect(readdirSync(at("output")).filter((f) => f.includes("partial"))).toEqual([]);
   });

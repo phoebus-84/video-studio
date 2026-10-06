@@ -14,6 +14,8 @@ import {normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './lou
 import {isAudioItem} from './schema.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
+import {renderWithCache} from './cached-render.js';
+import type {CacheReport} from './render-cache.js';
 
 export interface RenderTimelineOptions {
   /** A studio.video/v1alpha2 EditTimeline that already passed validateEditTimeline. */
@@ -22,6 +24,8 @@ export interface RenderTimelineOptions {
   assetRoot: string;
   outputPath: string;
   concurrency?: number;
+  /** Opt in to disposable one-second video segments and whole-video reuse. */
+  cacheDir?: string;
   onProgress?: (progress: number) => void;
   /** Overrides the timeline's `profile.loudness`. */
   loudness?: LoudnessTarget;
@@ -36,6 +40,8 @@ export interface RenderResult {
   /** The id of the output profile the timeline rendered to. */
   profile: string;
   loudness: LoudnessResult | null;
+  /** Present only when cacheDir was supplied. */
+  cache?: CacheReport;
 }
 
 export async function renderTimeline(options: RenderTimelineOptions): Promise<RenderResult> {
@@ -63,13 +69,19 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     await mkdir(path.dirname(output), {recursive: true});
     // Without audio there is nothing to normalise: render straight to the output
     // (no cross-filesystem rename). With audio, loudness writes the output.
-    const rendered = hasAudio ? path.join(work, 'render.mp4') : output;
+    const rendered = hasAudio ? path.join(work, options.cacheDir ? 'render.mkv' : 'render.mp4') : output;
+    let cache: CacheReport | undefined;
     try {
       // The bundle — which copies the staged public directory — lives in the work
       // directory, so it is removed with it, on success and on failure.
       const serveUrl = await bundle({entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle')});
       const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps});
-      await renderMedia({
+      if (options.cacheDir) {
+        cache = await renderWithCache({
+          composition, serveUrl, inputProps, cacheDir: path.resolve(options.cacheDir),
+          work, output: rendered, hasAudio, concurrency: options.concurrency, onProgress: options.onProgress,
+        });
+      } else await renderMedia({
         composition, serveUrl, inputProps,
         codec: 'h264', audioCodec: 'aac', enforceAudioTrack: true,
         outputLocation: rendered,
@@ -101,6 +113,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       kits,
       profile: timeline.profile.id,
       loudness,
+      ...(cache ? {cache} : {}),
     };
   } finally {
     await staged.cleanup();

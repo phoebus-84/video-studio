@@ -196,6 +196,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     result = await renderTimeline({
       timeline: current.timeline,
       assetRoot: episodeDir,
+      cacheDir: join(episodeDir, ".cache", "remotion"),
       outputPath: partialPath,
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     });

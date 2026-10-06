@@ -68,6 +68,7 @@ const result = await renderTimeline({
   timeline,            // a studio.video/v1alpha2 EditTimeline
   assetRoot,           // the directory asset paths are relative to
   outputPath: 'out.mp4',
+  cacheDir: '.cache/remotion', // optional; omit for the original full-render path
 });
 ```
 
@@ -76,11 +77,48 @@ Failures throw `ComposerError` with a `code` (`invalid-timeline`,
 `render-failed`, `loudness-failed`) and, for validation, `problems` with JSON
 paths.
 
+## Partial render cache
+
+With `cacheDir`, the composer keeps **silent, independently encoded one-second
+H.264 segments**, plus their concatenated video. A short last segment retains
+its exact frame count. The studio opts in at `<episode>/.cache/remotion`;
+the package knows only the caller's directory.
+
+- Narration/music edits (bytes, timing, gain, fades, ducking, mute) reuse the
+  whole video. Audio is mixed afresh by Remotion to a lossless WAV, muxed with
+  copied video, then normalised to the requested loudness. No picture is encoded.
+- Visual changes invalidate only seconds intersecting the changed items. Both
+  sides of crossfades, captions and overlays participate. Original frame ranges
+  are rendered against the full timeline, preserving clip and animation clocks.
+- Keys include referenced asset hashes, item props/kit versions, drawing order,
+  frame range, fps, duration, profile, video lengths, bundled code, node-side
+  renderer code, dependency versions, Chrome binary, FFmpeg version and encoding
+  settings. Global changes invalidate conservatively. Revision numbers, source
+  pointers and editorial metadata are not visual inputs.
+- Every declared source asset is still hash-verified **before cache lookup**.
+  Cache entries are copied and digest-checked before reuse; incomplete or corrupt
+  entries miss. Writes use unique temporary files and atomic renames. Only
+  complete video segments/assemblies are published; a later audio or delivery
+  failure may leave valid video to reuse on retry. Cache I/O failures fall back to rendering and
+  appear in `result.cache.warnings`.
+- `result.cache` reports `wholeVideoReused`, `segmentsReused`,
+  `segmentsRendered`, `totalSegments` and warnings (also in studio render reports).
+  A whole-video hit reports zero segment reads/renders.
+
+The cache is disposable, machine-local working data, not a delivery artifact.
+Delete its directory to reclaim space or force a clean render; there is no
+automatic eviction. Clear it after changing system fonts. Cold cached renders
+pay per-segment encoding overhead; the uncached path remains available by
+omitting `cacheDir`. Both paths produce the same frames/timing, not necessarily
+identical lossy H.264 bytes. Bundling, asset verification and loudness still run
+on a warm cache. Kits must remain deterministic and use declared assets; no
+network or wall-clock inputs.
+
 ## CLI
 
 ```bash
 npm run build --workspace @av/remotion-composer
-node packages/remotion-composer/dist/cli.js timeline.json out.mp4 --assets <episode-dir>
+node packages/remotion-composer/dist/cli.js timeline.json out.mp4 --assets <episode-dir> --cache <cache-dir>
 ```
 
 ## Tests
@@ -88,7 +126,7 @@ node packages/remotion-composer/dist/cli.js timeline.json out.mp4 --assets <epis
 ```bash
 npm test --workspace @av/remotion-composer                     # schema, kits, volume, assets, one frame per kit example and profile
 npm run build --workspace @av/remotion-composer && \
-  REMOTION_E2E=1 npm test --workspace @av/remotion-composer    # also three real renders (16:9, audio, 9:16)
+  REMOTION_E2E=1 npm test --workspace @av/remotion-composer    # also real renders and cache recovery/reuse checks
 ```
 
 The first render downloads Remotion's headless Chrome.

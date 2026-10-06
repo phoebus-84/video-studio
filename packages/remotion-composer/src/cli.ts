@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// render-timeline <timeline.json> <out.mp4> --assets <dir> [--concurrency <n>]
+// render-timeline <timeline.json> <out.mp4> --assets <dir> [--concurrency <n>] [--cache <dir>]
 
 import {readFile} from 'node:fs/promises';
 import {ComposerError, renderTimeline} from './index.js';
@@ -9,11 +9,11 @@ const flag = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const positional = args.filter((a, i) => !a.startsWith('--') && !['--assets', '--concurrency'].includes(args[i - 1] ?? ''));
+const positional = args.filter((a, i) => !a.startsWith('--') && !['--assets', '--concurrency', '--cache'].includes(args[i - 1] ?? ''));
 const [timelinePath, outputPath] = positional;
 const assetRoot = flag('--assets');
 if (!timelinePath || !outputPath || !assetRoot) {
-  console.error('Usage: render-timeline <timeline.json> <out.mp4> --assets <dir> [--concurrency <n>]');
+  console.error('Usage: render-timeline <timeline.json> <out.mp4> --assets <dir> [--concurrency <n>] [--cache <dir>]');
   process.exit(1);
 }
 
@@ -22,6 +22,7 @@ try {
   const concurrency = flag('--concurrency');
   const result = await renderTimeline({
     timeline, assetRoot, outputPath,
+    ...(flag('--cache') ? {cacheDir: flag('--cache')} : {}),
     ...(concurrency ? {concurrency: Number(concurrency)} : {}),
     onProgress: (p) => process.stderr.write(`\rrendering ${Math.round(p * 100)}%`),
   });
