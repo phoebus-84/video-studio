@@ -185,7 +185,9 @@ a trusted golden; it cannot infer trust from `validateSeriesReference() === []`.
 - `avg-jao.3` owns the series validators and the check that blocks rendering;
   `avg-jao.6` owns reference trust/promotion integration; blocking the layout
   sheet comes with the sheet (`avg-3th.1`).
-- `avg-jao.4` owns pipeline wiring; `avg-jao.5` owns identical-instant visual
+- `avg-jao.4` owns pipeline wiring: the `series-production` family (spec,
+  pictures, takes, timeline, check, render), its stage adapters and
+  `pva_init_spec`; `avg-jao.5` owns identical-instant visual
   comparisons. Real channel templates and approved reference media belong to
   `avg-dcf`, not contract fixtures. No CreativeStudio runtime or production
   content is copied into this repository.

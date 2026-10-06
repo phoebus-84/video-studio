@@ -70,6 +70,45 @@ end to end. Do not interpret a declared gate as proof that direct tool calls are
 mechanically blocked. See the [harness review](harness-review.md) for evidence and
 priority fixes before unattended execution.
 
+## The series-production family
+
+`series-production` (`studio/pipelines/pipelines/series-production.yaml`) is
+one pipeline for every series with a template (ADR-0037): the compiler and the
+validator are the ones the episode's pinned release names, never the
+pipeline's.
+
+| Stage | Performed by | Gate |
+|---|---|---|
+| `spec` → `episode-spec.json` | Pi: `pva_init_spec`, then the `fill-episode-spec` skill | human |
+| `pictures` → `images/` | the person or Pi: every picture the spec names, in `assets/images` | human |
+| `takes` → `takes.json` | the person or Pi: the narration takes and their word timing | human |
+| `timeline` → `edit-timeline.json` | adapter `series-timeline` (the release's compiler) | — |
+| `check` → `series-check.json` | adapter `series-check` (the release's validator); errors fail it | human |
+| `render` → `output.mp4` | adapter `series-render` (`video.compose`, Remotion) | human |
+
+A series extends it and replaces stages by id (ADR-0001). The example
+`studio/pipelines/fixtures/valid/series-local/poetry-short.yaml` keeps every
+stage and replaces `takes` with the poem's recital:
+
+```yaml
+pipeline:
+  id: poetry-short
+  version: "1.0.0"
+  extends:
+    pipeline: series-production
+    version: "1.0.0"
+  stages:
+    - id: takes
+      name: "Recital Take"
+      # same contracts as the base stage; the poem's own instructions
+```
+
+Stages that depend on unfinished work arrive as new versions of the base:
+take synthesis, alignment and verification (`avg-8hs.*`) turn `takes` into
+capability stages; the layout sheet (`avg-3th.1`) goes between `check` and
+`render`; the render audit (`avg-3th.3`) and the delivery package
+(`avg-3th.5`) follow `render`.
+
 ## Adding a workflow
 
 1. Reuse provider-neutral capabilities and typed media outputs.
