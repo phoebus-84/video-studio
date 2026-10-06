@@ -43,9 +43,12 @@ import {
   validateNarrationManifest,
   writeNarrationManifest,
   type NarrationSegmentInput,
-} from "./narration-manifest.js";
-import { EDIT_TIMELINE_PATH } from "./edit-timeline-builder.js";
-import { decideEditTimeline, renderEpisode, writeEditTimeline, type Validation } from "./episode-render.js";
+  decideEditTimeline,
+  EDIT_TIMELINE_PATH,
+  renderEpisode,
+  writeEditTimeline,
+  type Validation,
+} from "@studio/episode";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 

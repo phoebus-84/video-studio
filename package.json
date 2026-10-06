@@ -19,6 +19,7 @@
     "packages/remotion-composer",
     "studio/contracts",
     "studio/series",
+    "studio/episode",
     "studio/runtime",
     "studio/pipelines",
     "studio/adapters",

@@ -37,6 +37,7 @@ narrate episodes is the studio's business, not the tool's.
 |---|---|
 | `studio/contracts` | Canonical schemas, vocabulary, bindings |
 | `studio/series` | Series compilers: episode spec and narration → edit timeline |
+| `studio/episode` | An episode on disk, produced: timeline built or compiled, checked, rendered |
 | `studio/runtime` | Snapshots, leases, staleness, journal, policy |
 | `studio/pipelines` | Built-in pipeline manifests |
 | `studio/agent` | The Pi executive-producer package |

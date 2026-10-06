@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { editSpec, sha256, specEpisode } from "./spec-episode.js";
+import { editSpec, sha256, specEpisode } from "@studio/episode/testing";
 
 /**
  * pva_build_timeline and pva_compose_video on an episode with an
