@@ -180,6 +180,67 @@ describe("buildEditTimeline", () => {
     expect(buildEditTimeline(dir, { episodeRef: REF, profile: "square" })).toMatchObject({ ok: false, problems: [{ code: "unknown-profile" }] });
   });
 
+  it("keeps captions in order and never overlapping: trims each at the next, drops what is left empty, and says so", () => {
+    scenes({ s1: 2, s2: 2 });
+    wav("artifacts/narration/final.wav", 4);
+    file("artifacts/narration/narration-manifest.json", JSON.stringify({
+      schemaVersion: "narration-manifest/v1",
+      entries: [{ segmentId: "s1", wav: { path: "artifacts/narration/final.wav", durationSeconds: 4 } }],
+      finalWav: { path: "artifacts/narration/final.wav" },
+      captions: [
+        { index: 3, startSeconds: 2, endSeconds: 3.5, text: "overlaps the next" },
+        { index: 1, startSeconds: 1, endSeconds: 1.016, text: "too short to survive" },
+        { index: 2, startSeconds: 1.016, endSeconds: 1.9, text: "starts in the same frame" },
+        { index: 4, startSeconds: 3, endSeconds: 4, text: "the last word" },
+        { index: 5, startSeconds: 4.5, endSeconds: 5, text: "after the end" },
+        { index: 6, startSeconds: 4.6, endSeconds: 5, text: "also after the end" },
+      ],
+    }));
+    const result = build();
+    expect(track(result.timeline, "captions").map((it) => [it.props.text, it.from, it.duration])).toEqual([
+      ["starts in the same frame", 30, 27],
+      ["overlaps the next", 60, 30],
+      ["the last word", 90, 30],
+    ]);
+    expect(result.warnings.join(" ")).toMatch(/3 caption\(s\) dropped/);
+  });
+
+  it("gives a scene shorter than a frame one frame rather than failing", () => {
+    scenes({ s1: 1, s2: 0.01, s3: 1 });
+    const { timeline } = build();
+    // Absolute times are kept: the third scene still ends at 2.01 s, frame 60.
+    expect(track(timeline, "scenes").map((it) => [it.from, it.duration])).toEqual([[0, 30], [30, 1], [31, 29]]);
+  });
+
+  it("reads the final WAV the way the rest of the studio does: final_wav, and absolute paths inside the episode", () => {
+    scenes({ s1: 1 });
+    wav("artifacts/narration/mastered.wav", 2);
+    file("artifacts/narration/narration-manifest.json", JSON.stringify({
+      schemaVersion: "narration-manifest/v1",
+      entries: [{ segmentId: "s1", wav: { path: "artifacts/narration/mastered.wav", durationSeconds: 2 } }],
+      final_wav: { path: join(dir, "artifacts/narration/mastered.wav") },
+    }));
+    const { timeline } = build();
+    expect(timeline.assets.narration).toMatchObject({ path: "artifacts/narration/mastered.wav" });
+    expect(timeline.durationInFrames).toBe(60);
+  });
+
+  it("reports an unreadable WAV and a vanished file as problems, not as crashes", () => {
+    scenes({ s1: 1 });
+    file("artifacts/narration/narration-full.wav", "not a wav");
+    expect(buildEditTimeline(dir, { episodeRef: REF })).toMatchObject({
+      ok: false, problems: [{ code: "bad-narration", path: "artifacts/narration/narration-full.wav" }],
+    });
+    rmSync(join(dir, "artifacts/narration/narration-full.wav"));
+    file("artifacts/narration/narration-manifest.json", JSON.stringify({
+      schemaVersion: "narration-manifest/v1",
+      entries: [{ segmentId: "s1", wav: { path: "artifacts/narration/gone.wav", durationSeconds: 1 } }],
+    }));
+    expect(buildEditTimeline(dir, { episodeRef: REF })).toMatchObject({
+      ok: false, problems: [{ code: "missing-asset", path: "artifacts/narration/gone.wav" }],
+    });
+  });
+
   it("refuses a manifest whose final WAV is missing", () => {
     scenes({ s1: 1 });
     file("artifacts/narration/narration-manifest.json", JSON.stringify({

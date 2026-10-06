@@ -908,11 +908,14 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       try {
         const dir = episodeDir(params.channel, params.series, params.episode);
         const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
-        const { timeline, warnings } = writeEditTimeline(dir, { episodeRef, ...(params.profile ? { profile: params.profile } : {}) });
+        // Queued with pva_compose_video, which may rebuild the same file.
+        const { timeline, warnings, backup } = await withFileMutationQueue(join(dir, "output", "current.json"), async () =>
+          writeEditTimeline(dir, { episodeRef, ...(params.profile ? { profile: params.profile } : {}) }));
         const count = (id: string) => timeline.tracks.find((t) => t.id === id)?.items.length ?? 0;
         const lines = [
           `✅ ${EDIT_TIMELINE_PATH}: ${count("scenes")} scenes, ${count("captions")} captions, `
             + `${(timeline.durationInFrames / timeline.fps).toFixed(1)}s, ${timeline.profile.id}`,
+          ...(backup ? [`previous timeline kept as ${backup}`] : []),
           ...warnings.map((w) => `⚠️ ${w}`),
         ];
         return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { path: EDIT_TIMELINE_PATH, timeline, warnings } as Record<string, unknown> };
@@ -952,6 +955,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           const lines = [
             `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}`,
             ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),
+            ...(render.backup ? [`previous timeline kept as ${render.backup}`] : []),
             ...render.warnings.map((w) => `⚠️ ${w}`),
           ];
           return { content: [{ type: "text" as const, text: lines.join("\n") }], details: render as unknown as Record<string, unknown> };

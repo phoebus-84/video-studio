@@ -42,13 +42,17 @@ running FFmpeg: the timeline is a document you can read, review and edit, and
 
 1. `pva_build_timeline` writes `artifacts/edit-timeline.json` from the
    episode's material and says how many scenes and captions it has, how long
-   it is, and which output profile it uses. Use it to show the person the plan
-   before spending a render on it.
+   it is, and which output profile it uses. Use it for a first timeline to
+   show the person before spending a render on it — not to "refresh" one a
+   person edited: it replaces the file (keeping a different previous one as
+   `artifacts/edit-timeline.<hash>.bak.json`, and saying so).
 2. `pva_compose_video` renders it. It rebuilds the timeline first when there
    is none, when a file it was built from changed, appeared or disappeared, or
-   when you ask for another `profile` — and says why. Otherwise it renders the
-   timeline **as it stands**, including a hand edit made on the web or on
-   disk: never rebuild over a person's edit to "refresh" it.
+   when you ask for another `profile` — and says why, and where it kept the
+   previous one. Otherwise it renders the timeline **as it stands**, including
+   a hand edit made on the web or on disk. A hand edit the contracts reject,
+   or a file that is not JSON, is refused with the reasons and left untouched:
+   tell the person what to fix.
 
 Profiles: `youtube-1920x1080` (default, −15 LUFS) and `vertical-1080x1920`
 (9:16, −14 LUFS, safe zone clear of the platforms' interface).

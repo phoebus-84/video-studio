@@ -14,7 +14,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { validateTimeline } from "@av/remotion-composer";
 import { validateEditTimeline } from "@studio/contracts/src/edit-timeline.mjs";
 import { outputProfile } from "@studio/contracts/src/output-profiles.mjs";
@@ -81,6 +81,22 @@ interface AudioSpan {
  * timeline still describes the episode.
  */
 export function buildEditTimeline(episodeDir: string, options: BuildOptions): BuildResult {
+  try {
+    return build(episodeDir, options);
+  } catch (error) {
+    if (error instanceof Problem) return { ok: false, problems: [error.problem] };
+    throw error;
+  }
+}
+
+/** A file the build needs could not be read: reported as a problem, not a crash. */
+class Problem extends Error {
+  constructor(readonly problem: BuildProblem) {
+    super(problem.message);
+  }
+}
+
+function build(episodeDir: string, options: BuildOptions): BuildResult {
   const profileId = options.profile ?? DEFAULT_PROFILE;
   const profile = outputProfile(profileId);
   if (!profile) {
@@ -89,7 +105,12 @@ export function buildEditTimeline(episodeDir: string, options: BuildOptions): Bu
 
   const inputs: Record<string, string> = {};
   const read = (relative: string): Buffer => {
-    const bytes = readFileSync(join(episodeDir, relative));
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(join(episodeDir, relative));
+    } catch (error) {
+      throw new Problem({ code: "missing-asset", path: relative, message: `${relative} cannot be read: ${(error as Error).message}` });
+    }
     inputs[relative] = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     return bytes;
   };
@@ -119,10 +140,20 @@ export function buildEditTimeline(episodeDir: string, options: BuildOptions): Bu
   const audio: AudioSpan[] = [];
   const wavSeconds = (relative: string) => {
     read(relative);
-    return readWavFacts(join(episodeDir, relative), relative).durationSeconds;
+    try {
+      return readWavFacts(join(episodeDir, relative), relative).durationSeconds;
+    } catch (error) {
+      throw new Problem({ code: "bad-narration", path: relative, message: (error as Error).message });
+    }
   };
-  const finalWav = manifest?.finalWav?.path;
+  // As canonicalNarrationPath reads it: either spelling, and an absolute path
+  // inside the episode is recorded relative to it.
+  const named = manifest?.finalWav?.path ?? manifest?.final_wav?.path;
+  const finalWav = typeof named === "string" && isAbsolute(named) ? relative(episodeDir, named) : named;
   if (typeof finalWav === "string" && finalWav.length > 0) {
+    if (finalWav.startsWith("..") || isAbsolute(finalWav)) {
+      return { ok: false, problems: [{ code: "missing-narration", message: `the manifest's final WAV is outside the episode: ${named}` }] };
+    }
     if (!existsSync(join(episodeDir, finalWav))) {
       return { ok: false, problems: [{ code: "missing-narration", message: `the manifest's final WAV is missing: ${finalWav}` }] };
     }
@@ -164,7 +195,8 @@ export function buildEditTimeline(episodeDir: string, options: BuildOptions): Bu
   let seconds = 0;
   for (const scene of scenes) {
     seconds += scene.durationSeconds;
-    bounds.push(frames(seconds));
+    // A scene shorter than half a frame still gets one.
+    bounds.push(Math.max(frames(seconds), bounds[bounds.length - 1]! + 1));
   }
   const audioEnd = Math.max(0, ...audio.map((a) => frames(a.startSeconds + a.durationSeconds)));
   const durationInFrames = Math.max(bounds[bounds.length - 1]!, audioEnd, 1);
@@ -195,20 +227,29 @@ export function buildEditTimeline(episodeDir: string, options: BuildOptions): Bu
 
   const tracks: EditTimelineDoc["tracks"] = [{ id: "scenes", type: "visual", z: 0, items: sceneItems }];
 
+  // Captions in time order, each ending no later than the next begins: a
+  // caption generator's cues may overlap or be shorter than a frame, and one
+  // such cue must not make the whole episode unrenderable.
   const captions = manifest && manifestProblems.length === 0 && Array.isArray(manifest.captions) ? manifest.captions : [];
-  const captionItems = (captions as Array<Record<string, any>>)
+  const cues = (captions as Array<Record<string, any>>)
     .filter((c) => typeof c.text === "string" && c.text.trim() && Number(c.endSeconds) > Number(c.startSeconds))
-    .map((c, i) => {
-      const from = Math.min(frames(Number(c.startSeconds)), durationInFrames - 1);
-      const end = Math.min(Math.max(frames(Number(c.endSeconds)), from + 1), durationInFrames);
-      return {
-        id: `caption-${i + 1}`,
-        from,
-        duration: end - from,
-        kit: { name: "captions", version: "1.1.0" },
-        props: { text: String(c.text).trim(), position: "bottom" },
-      };
+    .map((c) => ({ text: String(c.text).trim(), from: frames(Number(c.startSeconds)), end: frames(Number(c.endSeconds)) }))
+    .sort((a, b) => a.from - b.from);
+  const captionItems: Array<Record<string, unknown>> = [];
+  cues.forEach((cue, i) => {
+    const end = Math.min(cue.end, cues[i + 1]?.from ?? Infinity, durationInFrames);
+    if (end <= cue.from) return;
+    captionItems.push({
+      id: `caption-${captionItems.length + 1}`,
+      from: cue.from,
+      duration: end - cue.from,
+      kit: { name: "captions", version: "1.1.0" },
+      props: { text: cue.text, position: "bottom" },
     });
+  });
+  if (captionItems.length < cues.length) {
+    warnings.push(`${cues.length - captionItems.length} caption(s) dropped: shorter than a frame once the next one starts, or after the end`);
+  }
   if (captionItems.length > 0) tracks.push({ id: "captions", type: "visual", z: 10, items: captionItems });
 
   if (audio.length > 0) {

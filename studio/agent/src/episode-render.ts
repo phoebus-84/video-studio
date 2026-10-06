@@ -9,9 +9,11 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { renderTimeline, type RenderResult } from "@av/remotion-composer";
+import { validateEditTimeline } from "@studio/contracts/src/edit-timeline.mjs";
+import { outputProfile } from "@studio/contracts/src/output-profiles.mjs";
 import {
   buildEditTimeline,
   DEFAULT_PROFILE,
@@ -23,10 +25,12 @@ import {
 
 const LABEL = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-/** The builder refused the episode; `problems` say why. */
+const describe = (problems: BuildProblem[]) => problems.map((p) => `${p.code}${p.path ? ` at ${p.path}` : ""}: ${p.message}`).join("; ");
+
+/** The timeline cannot be built or used; `problems` say why. */
 export class TimelineBuildError extends Error {
-  constructor(readonly problems: BuildProblem[]) {
-    super(`the edit timeline cannot be built: ${problems.map((p) => `${p.code}${p.path ? ` at ${p.path}` : ""}: ${p.message}`).join("; ")}`);
+  constructor(readonly problems: BuildProblem[], lead = "the edit timeline cannot be built") {
+    super(`${lead}: ${describe(problems)}`);
     this.name = "TimelineBuildError";
   }
 }
@@ -34,12 +38,33 @@ export class TimelineBuildError extends Error {
 const sha256 = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
 const serialize = (timeline: unknown) => `${JSON.stringify(timeline, null, 2)}\n`;
 
+let temporaries = 0;
+
 /** Write through a temporary file, so no reader ever sees half a document. */
 function writeAtomically(path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.tmp`;
+  const temp = `${path}.${process.pid}.${temporaries++}.tmp`;
   writeFileSync(temp, text, "utf-8");
   renameSync(temp, path);
+}
+
+/**
+ * Write a new timeline. A different one already there — possibly a person's
+ * edit — is kept first as artifacts/edit-timeline.<hash8>.bak.json, whose path
+ * is returned so the caller can say where it went.
+ */
+function replaceTimeline(episodeDir: string, text: string): string | null {
+  const path = join(episodeDir, EDIT_TIMELINE_PATH);
+  let backup: string | null = null;
+  if (existsSync(path)) {
+    const previous = readFileSync(path);
+    if (!previous.equals(Buffer.from(text, "utf-8"))) {
+      backup = EDIT_TIMELINE_PATH.replace(/\.json$/, `.${sha256(previous).slice(0, 8)}.bak.json`);
+      copyFileSync(path, join(episodeDir, backup));
+    }
+  }
+  writeAtomically(path, text);
+  return backup;
 }
 
 export interface WrittenTimeline {
@@ -47,6 +72,8 @@ export interface WrittenTimeline {
   /** sha256 hex of the file as written. */
   hash: string;
   warnings: string[];
+  /** Where a different previous timeline was kept, if one was replaced. */
+  backup: string | null;
 }
 
 /** Build the timeline and write it to artifacts/edit-timeline.json. */
@@ -54,8 +81,8 @@ export function writeEditTimeline(episodeDir: string, options: BuildOptions): Wr
   const built = buildEditTimeline(episodeDir, options);
   if (!built.ok) throw new TimelineBuildError(built.problems);
   const text = serialize(built.timeline);
-  writeAtomically(join(episodeDir, EDIT_TIMELINE_PATH), text);
-  return { timeline: built.timeline, hash: sha256(text), warnings: built.warnings };
+  const backup = replaceTimeline(episodeDir, text);
+  return { timeline: built.timeline, hash: sha256(text), warnings: built.warnings, backup };
 }
 
 export interface CurrentTimeline extends WrittenTimeline {
@@ -70,26 +97,44 @@ export interface CurrentTimeline extends WrittenTimeline {
 export function currentEditTimeline(episodeDir: string, options: BuildOptions): CurrentTimeline {
   const path = join(episodeDir, EDIT_TIMELINE_PATH);
   let stored: { text: string; doc: any } | null = null;
-  let unreadable: string | null = null;
   if (existsSync(path)) {
     const text = readFileSync(path, "utf-8");
     try {
       stored = { text, doc: JSON.parse(text) };
     } catch (error) {
-      unreadable = `${EDIT_TIMELINE_PATH} is not JSON (${(error as Error).message})`;
+      // Possibly a person's edit, half done: never rebuild over it.
+      throw new TimelineBuildError(
+        [{ code: "bad-timeline", path: EDIT_TIMELINE_PATH, message: `not JSON (${(error as Error).message}); fix it, or delete it to rebuild` }],
+        `${EDIT_TIMELINE_PATH} is not JSON`,
+      );
     }
   }
 
-  const profile = options.profile ?? stored?.doc?.profile?.id ?? DEFAULT_PROFILE;
+  const storedProfile: string | undefined = stored?.doc?.profile?.id;
+  const profileChange = options.profile !== undefined && options.profile !== storedProfile;
+  // A stored profile outside the catalog (a hand edit) cannot be rebuilt;
+  // comparing inputs does not need it.
+  const profile = options.profile ?? (storedProfile && outputProfile(storedProfile) ? storedProfile : DEFAULT_PROFILE);
   const fresh = buildEditTimeline(episodeDir, { ...options, profile });
-  if (!fresh.ok) throw new TimelineBuildError(fresh.problems);
+  const storedProblems = stored ? validateEditTimeline(stored.doc) : [];
 
-  let reason: string | null = unreadable;
-  if (!stored && !reason) reason = "there was no timeline yet";
-  if (stored && !reason && stored.doc?.profile?.id !== profile) {
-    reason = `the profile changed from ${stored.doc?.profile?.id ?? "none"} to ${profile}`;
+  if (!fresh.ok) {
+    if (stored && !profileChange && storedProblems.length === 0) {
+      return {
+        timeline: stored.doc,
+        hash: sha256(stored.text),
+        warnings: [`the episode could not be rebuilt (${describe(fresh.problems)}); rendering it as it stands`],
+        rebuilt: null,
+        backup: null,
+      };
+    }
+    throw new TimelineBuildError(fresh.problems);
   }
-  if (stored && !reason) {
+
+  let reason: string | null = null;
+  if (!stored) reason = "there was no timeline yet";
+  else if (profileChange) reason = `the profile changed from ${storedProfile ?? "none"} to ${options.profile}`;
+  else {
     const before: Record<string, string> = stored.doc?.metadata?.inputs ?? {};
     const after = fresh.timeline.metadata.inputs;
     const changes = [
@@ -101,11 +146,14 @@ export function currentEditTimeline(episodeDir: string, options: BuildOptions): 
   }
 
   if (reason === null && stored) {
-    return { timeline: stored.doc, hash: sha256(stored.text), warnings: fresh.warnings, rebuilt: null };
+    if (storedProblems.length > 0) {
+      throw new TimelineBuildError(storedProblems, `${EDIT_TIMELINE_PATH} as it stands is not valid; fix the edit, or delete the file to rebuild`);
+    }
+    return { timeline: stored.doc, hash: sha256(stored.text), warnings: fresh.warnings, rebuilt: null, backup: null };
   }
   const text = serialize(fresh.timeline);
-  writeAtomically(path, text);
-  return { timeline: fresh.timeline, hash: sha256(text), warnings: fresh.warnings, rebuilt: reason };
+  const backup = replaceTimeline(episodeDir, text);
+  return { timeline: fresh.timeline, hash: sha256(text), warnings: fresh.warnings, rebuilt: reason, backup };
 }
 
 export interface EpisodeRenderOptions extends BuildOptions {
@@ -119,6 +167,7 @@ export interface EpisodeRender {
   outputPath: string;
   reportPath: string;
   rebuilt: string | null;
+  backup: string | null;
   warnings: string[];
   result: RenderResult;
 }
@@ -167,5 +216,5 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   }));
   writeAtomically(join(outputDir, "current.json"), serialize({ renderId, path: `${renderId}.mp4` }));
 
-  return { renderId, outputPath, reportPath, rebuilt: current.rebuilt, warnings: current.warnings, result };
+  return { renderId, outputPath, reportPath, rebuilt: current.rebuilt, backup: current.backup, warnings: current.warnings, result };
 }

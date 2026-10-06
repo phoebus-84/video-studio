@@ -143,6 +143,68 @@ describe("pva_compose_video", () => {
     expect(readJson("artifacts/edit-timeline.json").tracks[0].items[0].props.fit).toBe("cover");
   });
 
+  it("refuses a hand edit the contracts reject, says so, and leaves the edit alone", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const edited = readJson("artifacts/edit-timeline.json");
+    edited.tracks[0].items[1].from -= 40; // now overlaps the first scene
+    writeFileSync(at("artifacts/edit-timeline.json"), JSON.stringify(edited));
+    const before = sha256("artifacts/edit-timeline.json");
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/artifacts\/edit-timeline\.json as it stands is not valid/);
+    expect(result.content[0].text).toMatch(/overlap|bad-crossfade/);
+    expect(renders).toHaveLength(0);
+    expect(sha256("artifacts/edit-timeline.json")).toBe(before);
+  });
+
+  it("refuses a timeline that is not JSON instead of rebuilding over it", async () => {
+    episode();
+    file("artifacts/edit-timeline.json", "{ half an edit");
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/is not JSON/);
+    expect(readFileSync(at("artifacts/edit-timeline.json"), "utf-8")).toBe("{ half an edit");
+  });
+
+  it("keeps a copy of a hand-edited timeline before rebuilding over it, and names the copy", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const edited = readJson("artifacts/edit-timeline.json");
+    edited.tracks[0].items[0].props.fit = "cover";
+    writeFileSync(at("artifacts/edit-timeline.json"), JSON.stringify(edited));
+    const editedHash = sha256("artifacts/edit-timeline.json");
+    file("assets/images/s2.png", "green");
+
+    const result = await tool("pva_compose_video");
+    const backup = /previous timeline kept as (artifacts\/edit-timeline\.[a-f0-9]{8}\.bak\.json)/.exec(result.content[0].text)?.[1];
+    expect(backup).toBeDefined();
+    expect(sha256(backup!)).toBe(editedHash);
+
+    const again = await tool("pva_build_timeline");
+    expect(again.content[0].text).not.toMatch(/previous timeline kept/); // nothing differs, nothing to keep
+  });
+
+  it("renders a valid stored timeline even when the episode can no longer be rebuilt, with a warning", async () => {
+    episode();
+    await tool("pva_build_timeline");
+    const edited = readJson("artifacts/edit-timeline.json");
+    edited.profile.id = "house-style"; // a profile outside the catalog
+    writeFileSync(at("artifacts/edit-timeline.json"), JSON.stringify(edited));
+    const result = await tool("pva_compose_video");
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toMatch(/rendered artifacts\/edit-timeline\.json as it stands/);
+    expect(renders[0]!.timeline.profile.id).toBe("house-style");
+
+    // A narration WAV that cannot be read: the episode cannot be rebuilt, but
+    // the stored timeline (which does not use it) is still valid and renders.
+    file("artifacts/narration/narration-full.wav", "not a wav");
+    const unbuildable = await tool("pva_compose_video");
+    expect(unbuildable.isError).toBeUndefined();
+    expect(unbuildable.content[0].text).toMatch(/could not be rebuilt.*bad-narration.*rendering it as it stands/);
+    expect(renders[1]!.timeline.profile.id).toBe("house-style");
+  });
+
   it("rebuilds when the episode's material changed, and names what changed", async () => {
     episode();
     await tool("pva_build_timeline");
