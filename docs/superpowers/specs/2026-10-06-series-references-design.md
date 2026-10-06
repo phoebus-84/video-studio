@@ -60,7 +60,8 @@ interface ReferenceVerdict {
   problems: { code: string; message: string; path: string }[]; // empty when trusted
   withdrawal?: GateReview;             // when withdrawn
 }
-verifySeriesReference({ seriesDir, templateId, referenceId, key }): ReferenceVerdict
+verifySeriesReference({ seriesDir, templateId, referenceId, key, descriptor? }): ReferenceVerdict
+// descriptor: the descriptor's text, verified in place of the file (what approve checks before writing)
 buildReferenceApproval({ reference, at? }): GateReview      // unsigned; the caller signs
 buildReferenceWithdrawal({ reference, descriptorHash, reason, at? }): GateReview // unsigned
 ```
@@ -121,8 +122,13 @@ episode, bare hex), `episode` slug, `checks: []`, `note`. It is built through
   (`report.timeline.hash`): it must equal the hash of
   `artifacts/edit-timeline.json` now (`timeline-changed` — render again or
   restore the timeline).
+- The timeline's `derivedFrom.spec.hash` must equal the hash of
+  `episode-spec.json` now (`spec-changed` — the spec was edited after the
+  timeline was compiled: render again first). Otherwise the frozen spec would
+  not be the one the frozen timeline came from.
 - `checkEpisode` on that timeline: no error findings (`series-rules`, with the
-  findings).
+  findings); a spec or release that no longer compiles returns its own
+  problems.
 - Copies `episode-spec.json` and `artifacts/edit-timeline.json` into
   `reviews/references/<id>/`, then writes `proposal.json`: a `SeriesReference`
   without `approval` — `id`, `episodeRef`, `template` (the spec's pin), `spec`,
@@ -149,17 +155,18 @@ The key is resolved as `vpr approve` resolves it.
   (`reference-exists`); no key → refuses (`no-operator-key`). Builds the
   approval, signs it (`signReceipt`), assembles the descriptor (the proposal
   as it is, `metadata` included, plus `approval`), runs
-  `verifySeriesReference` on it **before** writing (from a temporary file in
-  the same directory) and refuses on any problem; then appends an
-  `approval-granted` event carrying the signed review to the episode's
-  journal (the gate records' own event) and creates the descriptor with an
-  exclusive create. `--dry-run` prints the descriptor and the verdict and
-  writes nothing.
+  `verifySeriesReference` on its text **before** writing (`descriptor`
+  parameter) and refuses on any problem (`not-trusted`, with the problems);
+  then creates the descriptor with an exclusive create. `--dry-run` prints
+  the descriptor and the verdict and writes nothing. No journal event is
+  written: review events in an episode's journal are written only by
+  `ExecutionService.review`, for pipeline stages (avg-qr4.3), and a reference
+  is not a stage — the signed descriptor (and withdrawal) is its record.
 - **`withdraw <ch>/<series> <tid> <ref-id> --reason "…" [--json]`**: reason
   required; key required; the descriptor must exist; no withdrawal yet
   (`already-withdrawn`). Builds the withdrawal (binding the descriptor's
-  hash), signs it, appends an `approval-rejected` event to the source
-  episode's journal, creates `<ref-id>.withdrawal.json` exclusively.
+  hash), signs it, creates `<ref-id>.withdrawal.json` exclusively (no journal
+  event, as for approve).
 - **`verify <ch>/<series> <tid> <ref-id> [--json]`**: prints the verdict;
   exit 0 when `trusted`, 1 otherwise.
 - **`list <ch>/<series> [--json]`**: every `templates/*/references/*.json`
@@ -197,10 +204,11 @@ descriptor, or propose an episode with series-rule errors.
 - **Episode** (vitest, `@studio/episode/testing` episode, fake render files and
   report): `proposeReference` freezes the snapshots and writes a proposal with
   matching hashes; refuses `no-spec`, `no-render`, `timeline-changed`,
-  `series-rules`, `reference-exists` (proposed and promoted), `bad-id`;
+  `spec-changed`, `series-rules`, `reference-exists` (proposed and promoted),
+  `bad-id`, a release edited in place;
   writes nothing outside `reviews/references/<id>/`.
-- **Runtime CLI** (vitest, temporary library, key file): `approve` promotes,
-  journals `approval-granted`, and `verify` then says `trusted`; refuses
+- **Runtime CLI** (vitest, temporary library, key file): `approve` promotes
+  and `verify` then says `trusted`; a headless caller is never the operator; refuses
   `proposal-changed`, `reference-exists` (descriptor byte-identical),
   `no-operator-key`; `--dry-run` writes nothing; `withdraw` writes the signed
   withdrawal, `verify` says `withdrawn`, a second withdrawal is refused;
