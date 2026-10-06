@@ -66,6 +66,7 @@
     "ws": "^8.21.1",
     "@av/codex-image": "workspace:*",
     "@av/fal-media": "workspace:*",
-    "@studio/contracts": "workspace:*"
+    "@studio/contracts": "workspace:*",
+    "@studio/series": "workspace:*"
   }
 }
