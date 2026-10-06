@@ -11,6 +11,9 @@ Canonical definitions are in [`schemas/v1alpha1/workspace.schema.json`](../schem
 | `series.md` frontmatter | `SeriesProfile` | Recurring format and channel relationship |
 | series `settings.yaml` | `SeriesSettings` | Series-level inheritance inputs |
 | `episode.yaml` | `EpisodeMetadata` | Episode identity, source references, episode settings, and optional path to the current pointer |
+| `templates/<id>/<version>/series-template.json` (series) | `SeriesTemplate` | Immutable standard, data schema/default hashes and reviewed compiler/validator references (ADR-0037) |
+| `episode-spec.json` (episode) | `EpisodeSpec` | Editable series data pinned to an exact template manifest; unfilled drafts cannot compile |
+| `templates/<id>/references/<reference-id>.json` (series) | `SeriesReference` | Golden snapshot and media hashes with preserved human approval evidence; shape alone is not trust |
 | `source/source.yaml` | `RepositorySourceSnapshot` or `TextSourceSnapshot` | Immutable input evidence and license status |
 | `voice-profiles/*.md` frontmatter | `VoiceProfileMetadata` | Revisioned voice intent, never raw voice secrets or embeddings |
 | `visual-bible.md` frontmatter | `VisualBibleMetadata` | Revisioned series art-direction identity |

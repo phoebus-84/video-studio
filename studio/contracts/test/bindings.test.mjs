@@ -16,7 +16,7 @@ describe("TypeScript bindings", () => {
     const expected = [
       "asset", "capability-binding", "edit-timeline", "editorial-artifact",
       "error-envelope", "identity", "journal-event", "pipeline-manifest",
-      "narration", "provider-job", "review-thread", "vocabulary", "workspace",
+      "narration", "provider-job", "review-thread", "vocabulary", "workspace", "series-template",
     ];
     for (const name of expected) {
       assert.ok(existsSync(resolve(bindingsDir, `${name}.ts`)), `Missing binding: ${name}.ts`);
@@ -95,6 +95,15 @@ describe("TypeScript bindings", () => {
   it("generates the cue grammar as a union", () => {
     const content = readBinding("cue");
     assert.ok(content.includes("export type Cue = WordPattern | number | WordCue | LineCue | TakeCue | MarkCue;"));
+  });
+
+  it("generates series templates, pinned episode specs and golden references", () => {
+    const content = readBinding("series-template");
+    for (const name of ["SeriesTemplate", "TemplatePin", "EpisodeSpec", "SeriesReference"]) {
+      assert.ok(content.includes(`export interface ${name} {`));
+    }
+    assert.ok(content.includes("approval: GateReview;"));
+    assert.ok(content.includes('from "./gate-review"'));
   });
 
   it("generates the narration takes contract", () => {

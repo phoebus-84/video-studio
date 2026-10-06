@@ -1,0 +1,20 @@
+{
+  "title": "__FILL__",
+  "narration": "__FILL__",
+  "holdSeconds": "__FILL__",
+  "panels": [
+    {
+      "assetId": "__FILL__",
+      "cue": "__FILL__"
+    }
+  ],
+  "style": {
+    "fontFamily": "Georgia",
+    "captionKit": {
+      "name": "captions",
+      "version": "1.1.0"
+    },
+    "voiceProfile": "narrator-v1",
+    "outputProfile": "vertical-1080x1920"
+  }
+}

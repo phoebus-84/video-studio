@@ -28,12 +28,46 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
 | `cue.schema.json` | When something happens in terms of the voice: a whole word (or `*` prefix), seconds, or a word / line / take / mark object with `at` and `offset`; resolved to an absolute frame, never by fallback, by `src/cues.mjs` |
 | `narration-takes.schema.json` | Every accepted voice take of an episode, from any tool (text as written, `spokenText` exactly as the tool received it, voice provenance, its word timing), and what each unit plays: takes in order with pauses and declared scene pauses; laid out and mapped from the Qwen narration manifest by `src/narration-takes.mjs` |
 | `source-pin.schema.json` | An episode's pin on shared material — a channel source (`<channel>/sources/<name>`) or another episode of the channel — with an inventory (hash, size, mtime per file); verified cheaply by `src/source-pins.mjs` (ADR-0035) |
+| `series-template.schema.json` | Immutable series-template releases, pinned editable episode specs, and hash-backed golden reference descriptors with human approval evidence (ADR-0037); pure helpers in `src/series-templates.mjs` |
 | `review-thread.schema.json` | Anchored review conversations with comments |
 | `provider-job.schema.json` | Tracked provider invocations with cost and idempotency |
 | `error-envelope.schema.json` | Cross-process error envelope with typed codes |
 | `capability-binding.schema.json` | Concrete provider binding records (frozen in pipeline snapshots) |
 | `editorial-artifact.schema.json` | Editorial artifacts (brief, script, tape, etc.) |
 | `asset.schema.json` | Media asset metadata |
+
+## Series templates
+
+`src/series-templates.mjs` exports:
+
+- `validateSeriesTemplate(manifest)`: closed manifest shape and canonical filenames.
+- `validateTemplateBundle({manifest, files})`: exact UTF-8 manifest text and a
+  filename → UTF-8 text map; verifies every file hash and compiles the self-contained
+  Draft 2020-12 data schema. No filesystem access or schema downloads.
+- `instantiateEpisodeSpec(bundle, episodeRef)`: a fresh revision-1 draft,
+  pinned to the manifest's hash, with `__FILL__` markers retained. No writes.
+- `validateEpisodeSpec(spec, bundle)`: compile-ready validation: exact pin,
+  no remaining placeholders (even embedded in text), and the series data schema.
+  No coercion, default insertion or field removal.
+- `validateSeriesReference(reference)`: descriptor shape and approval artifact
+  bindings, **not** a signature/file trust check or approval operation.
+- `placeholderPaths(data)`: JSON paths of unresolved content.
+
+Validators return `{code, path, message}[]`. Instantiation throws on invalid
+bundles or episode identities. Bundle validity alone does not prove its unfilled
+defaults can form a valid episode: validate a filled example before release.
+
+The three release files are `FORMAT.md`, `episode-spec.schema.json` and
+`episode-spec.template.json`; the last contains the series data object, not
+an envelope. The manifest names reviewed, versioned compiler/validator registry
+entries, never executable workspace paths. Canonical storage paths come from
+`src/layout.mjs`.
+
+See [ADR-0037](../../docs/adr/0037-series-templates-pin-editorial-standards.md)
+for release, approval, snapshot and integration rules. The fixture in
+`fixtures/series-template/example/` is deliberately synthetic: it does not
+represent an approved production, registered compiler or available media.
+Runtime compiler/promotion integration is not implemented by these helpers.
 
 ## Vocabulary
 

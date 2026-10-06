@@ -1,0 +1,69 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "SeriesReference",
+  "id": "morning-v1",
+  "episodeRef": {
+    "channel": "sample",
+    "series": "poetry",
+    "episode": "morning"
+  },
+  "template": {
+    "id": "poetry-short",
+    "version": "1.0.0",
+    "hash": "sha256:d7b61bc5cc5cfa118d5d269a5f5335643de7fa14d69f61585b712e0ee47bbb42"
+  },
+  "spec": {
+    "path": "reviews/references/morning-v1/episode-spec.json",
+    "hash": "sha256:b78f505956a76b8330e2a0cc14be8a2774313c28c4d9e21458694e167780cbfd"
+  },
+  "timeline": {
+    "path": "reviews/references/morning-v1/edit-timeline.json",
+    "hash": "sha256:03aa75e567385ff4cf72f3de9767a3beab95ed5a3daf4bb8a97bad33a25d1071"
+  },
+  "render": {
+    "path": "output/render-1-abc12345.mp4",
+    "hash": "sha256:b391c25f082013a2ff1aee3d1ff5fbe7c732c1857bf243bd8009f62db063f493"
+  },
+  "report": {
+    "path": "output/render-1-abc12345.report.json",
+    "hash": "sha256:f2fb755e9ca13d8d478c29a4304333407a8d10f490d470b88072b6117f91c708"
+  },
+  "metadata": {
+    "synthetic": true,
+    "note": "Contract fixture only; no approved production or delivered media. Signature uses a public test key."
+  },
+  "approval": {
+    "stageId": "reference-review",
+    "decision": "approved",
+    "origin": "human",
+    "actor": "human",
+    "at": "2026-10-06T00:00:00.000Z",
+    "binding": {
+      "planHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "inputs": [
+        {
+          "path": "reviews/references/morning-v1/episode-spec.json",
+          "sha256": "b78f505956a76b8330e2a0cc14be8a2774313c28c4d9e21458694e167780cbfd"
+        },
+        {
+          "path": "reviews/references/morning-v1/edit-timeline.json",
+          "sha256": "03aa75e567385ff4cf72f3de9767a3beab95ed5a3daf4bb8a97bad33a25d1071"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "output/render-1-abc12345.mp4",
+          "sha256": "b391c25f082013a2ff1aee3d1ff5fbe7c732c1857bf243bd8009f62db063f493"
+        },
+        {
+          "path": "output/render-1-abc12345.report.json",
+          "sha256": "f2fb755e9ca13d8d478c29a4304333407a8d10f490d470b88072b6117f91c708"
+        }
+      ]
+    },
+    "checks": [],
+    "episode": "sample/poetry/morning",
+    "note": "Synthetic test approval, not production evidence",
+    "signature": "013e83d2ae3e797058e3f622f14ff56780e9cf20f464d4aed2db735c9ad448de"
+  }
+}

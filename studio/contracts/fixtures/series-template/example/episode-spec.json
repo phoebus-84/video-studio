@@ -1,0 +1,35 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "EpisodeSpec",
+  "episodeRef": {
+    "channel": "sample",
+    "series": "poetry",
+    "episode": "morning"
+  },
+  "revision": 1,
+  "template": {
+    "id": "poetry-short",
+    "version": "1.0.0",
+    "hash": "sha256:d7b61bc5cc5cfa118d5d269a5f5335643de7fa14d69f61585b712e0ee47bbb42"
+  },
+  "data": {
+    "title": "Morning",
+    "narration": "Light falls across the quiet room.",
+    "holdSeconds": 1.5,
+    "panels": [
+      {
+        "assetId": "morning-room",
+        "cue": "Light"
+      }
+    ],
+    "style": {
+      "fontFamily": "Georgia",
+      "captionKit": {
+        "name": "captions",
+        "version": "1.1.0"
+      },
+      "voiceProfile": "narrator-v1",
+      "outputProfile": "vertical-1080x1920"
+    }
+  }
+}
