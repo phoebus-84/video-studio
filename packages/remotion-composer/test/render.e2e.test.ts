@@ -2,7 +2,7 @@
 // Chrome (Remotion downloads it the first time): only with REMOTION_E2E=1,
 // against the build in dist/ (run `npm run build` first).
 
-import {describe, it} from 'node:test';
+import {after, before, describe, it} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {readdirSync} from 'node:fs';
@@ -30,6 +30,20 @@ const measure = (file: string) => {
 };
 
 describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to render'}, () => {
+  let sandbox: string;
+  const previousTmpdir = process.env.TMPDIR;
+  before(async () => {
+    // Test files run in separate processes, but share the OS temp directory.
+    // Count only THIS process's render leftovers, not concurrent kit/cache tests.
+    sandbox = await mkdtemp(path.join(tmpdir(), 'composer-e2e-sandbox-'));
+    process.env.TMPDIR = sandbox;
+  });
+  after(async () => {
+    if (previousTmpdir === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previousTmpdir;
+    await rm(sandbox, {recursive: true, force: true});
+  });
+
   it('renders the migrated explainer at 1920x1080, 30 fps, 765 frames, with an audio track', async () => {
     const {renderTimeline} = await import('../dist/index.js');
     const root = await mkdtemp(path.join(tmpdir(), 'composer-e2e-'));
@@ -88,7 +102,7 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
       ],
     };
     const out = path.join(root, 'out.mp4');
-    const result = await renderTimeline({timeline, assetRoot: root, outputPath: out});
+    const result = await renderTimeline({timeline, assetRoot: root, outputPath: out, cacheDir: path.join(root, 'cache')});
     assert.ok(result.loudness);
     const measured = measure(out);
     assert.ok(Math.abs(Number(measured.input_i) + 15) <= 1, `integrated ${measured.input_i}`);
