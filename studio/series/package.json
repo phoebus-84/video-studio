@@ -1,0 +1,37 @@
+{
+  "name": "@studio/series",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Series compilers: a pinned episode spec and its measured narration, compiled into an edit timeline (ADR-0037)",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./fixtures/*": "./fixtures/*"
+  },
+  "files": [
+    "dist/",
+    "fixtures/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@av/remotion-composer": "workspace:*",
+    "@studio/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0"
+  }
+}

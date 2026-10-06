@@ -18,6 +18,7 @@
     "packages/video-composer",
     "packages/remotion-composer",
     "studio/contracts",
+    "studio/series",
     "studio/runtime",
     "studio/pipelines",
     "studio/adapters",
