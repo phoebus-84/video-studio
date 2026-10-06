@@ -34,6 +34,31 @@ input.
 |---|---|
 | `poetry-short@1.0.0` | A vertical poem: pictures changing on cued words (`still@1.0.0`, `fit: cover`, 12-frame crossfades centred on each cue), the `narration` unit of `takes.json` on the voice track, captions grouped from the measured words (at `. ! ? ; :` and before 42 characters), `holdSeconds` of picture after the voice, the title as the chapter of one section. |
 
+## Validators
+
+A template release may also name a **validator**: the series' mechanical
+rules, checked on the timeline about to be rendered — hand edits included —
+against what the compiler makes of the same inputs.
+
+```ts
+import { checkSeries } from "@studio/series";
+
+const { validator, findings } = checkSeries({ ...input, timeline, compiled });
+// findings: [{ code, severity: "error" | "warning", path, message }]
+```
+
+| Validator | Rules |
+|---|---|
+| `poetry-short@1.0.0` | Errors: a track missing, `profile-changed`, `fps-changed`, `duration-range` (10–60 s), `extra-track`, `hidden-track`, `stacking-changed`, `forbidden-kit`, `forbidden-transition` (only a 12-frame crossfade in), `altered-voice` (takes never cut, moved or reworked), `asset-changed` (no picture or take swapped, added or removed by hand), `text-not-voice` (the captions say exactly what the compiler captioned from the voice), `missing-picture`, `uncovered-frames`. Warnings: `panel-flash` (under 1 s), `panel-long` (over 7 s), `caption-long` (over 42 characters). |
+
+Like compilers, validators are pure, one file per version
+(`src/validators/<id>/<version>.ts`, registered in `src/validators.ts`, the
+same import rule), and frozen: `fixtures/validators/<id>/<version>/cases.json`
+lists edits of a compiler fixture's golden timeline (`set`, and `setInput`
+for the compile input) with the exact findings — code, severity, path, in
+order. `test/validators-golden.test.ts` holds every version to them; a new
+rule is a new version, never a changed case.
+
 ## Adding a compiler or a version
 
 - One file per version: `src/compilers/<id>/<version>.ts`, exporting

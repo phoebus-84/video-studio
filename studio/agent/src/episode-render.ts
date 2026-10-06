@@ -22,7 +22,7 @@ import {
   type BuildProblem,
   type EditTimelineDoc,
 } from "./edit-timeline-builder.js";
-import { compileEpisode, isSpecDriven } from "./series-compile.js";
+import { checkEpisode, compileEpisode, isSpecDriven, type SeriesFinding } from "./series-compile.js";
 
 const LABEL = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -34,6 +34,37 @@ export class TimelineBuildError extends Error {
     super(`${lead}: ${describe(problems)}`);
     this.name = "TimelineBuildError";
   }
+}
+
+/** The series rules a spec-driven timeline was checked against, and what they found. */
+export interface Validation {
+  /** "<id>@<version>", or null when the template names no validator. */
+  validator: string | null;
+  findings: SeriesFinding[];
+}
+
+/**
+ * The timeline breaks its series' rules (avg-jao.3). `problems` are the
+ * error findings; nothing was written or rendered.
+ */
+export class SeriesRulesError extends TimelineBuildError {
+  readonly code = "series-rules";
+  constructor(readonly validator: string | null, errors: SeriesFinding[], hint = "") {
+    super(errors, `the series rules (${validator}) refuse this timeline${hint}`);
+    this.name = "SeriesRulesError";
+  }
+}
+
+const errorsOf = (validation: Validation | null) => validation?.findings.filter((f) => f.severity === "error") ?? [];
+
+/** What to do about a refusal: the edit, the spec and takes, or the studio itself. */
+function hintFor(errors: SeriesFinding[], storedAsItStands: boolean): string {
+  if (errors.some((f) => f.code === "unknown-validator")) {
+    return ": the template names a validator this studio does not have — update the studio, or pin a release it knows";
+  }
+  return storedAsItStands
+    ? `: fix the edit in ${EDIT_TIMELINE_PATH}, or delete it to recompile from the spec`
+    : ": change the spec or the takes";
 }
 
 const sha256 = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
@@ -119,6 +150,8 @@ export interface WrittenTimeline {
   timeline: EditTimelineDoc;
   /** Set when a series compiler made it from episode-spec.json. */
   compiledBy: CompiledBy | null;
+  /** The series rules it was checked against; null for an episode without a spec. */
+  validation: Validation | null;
   /** sha256 hex of the file as written. */
   hash: string;
   warnings: string[];
@@ -126,25 +159,50 @@ export interface WrittenTimeline {
   backup: string | null;
 }
 
-/** Build the timeline and write it to artifacts/edit-timeline.json. */
+/** Check a spec-driven episode's timeline against its series rules; null for the others. */
+function validate(episodeDir: string, options: BuildOptions, timeline: EditTimelineDoc): Validation | null {
+  if (!isSpecDriven(episodeDir)) return null;
+  const checked = checkEpisode(episodeDir, { episodeRef: options.episodeRef, timeline: timeline as never });
+  if (!checked.ok) throw new TimelineBuildError(checked.problems);
+  return { validator: checked.validator, findings: checked.findings };
+}
+
+/**
+ * Build the timeline and write it to artifacts/edit-timeline.json — unless
+ * it breaks its series' rules, in which case nothing is written.
+ */
 export function writeEditTimeline(episodeDir: string, options: BuildOptions): WrittenTimeline {
   const built = produceTimeline(episodeDir, options);
   if (!built.ok) throw new TimelineBuildError(built.problems);
+  const validation = validate(episodeDir, options, built.timeline);
+  const errors = errorsOf(validation);
+  if (errors.length > 0) throw new SeriesRulesError(validation!.validator, errors, hintFor(errors, false));
   const text = serialize(built.timeline);
   const backup = replaceTimeline(episodeDir, text);
-  return { timeline: built.timeline, compiledBy: built.compiledBy, hash: sha256(text), warnings: built.warnings, backup };
+  return { timeline: built.timeline, compiledBy: built.compiledBy, validation, hash: sha256(text), warnings: built.warnings, backup };
 }
 
-export interface CurrentTimeline extends WrittenTimeline {
-  /** Why it was rebuilt, or null when the timeline on disk was used as it is. */
+/** Which timeline a render would use, and why — decided without writing anything. */
+export interface TimelineDecision {
+  timeline: EditTimelineDoc;
+  /** The timeline as it would be on disk. */
+  text: string;
+  /** sha256 hex of `text`. */
+  hash: string;
+  /** Why a fresh timeline replaces the stored one, or null when the stored one is used as it stands. */
   rebuilt: string | null;
+  compiledBy: CompiledBy | null;
+  validation: Validation | null;
+  warnings: string[];
 }
 
 /**
  * The timeline to render: the one on disk when it still describes the
  * episode's material and the profile asked for, otherwise a fresh one.
+ * Reads only. For a spec-driven episode the decision carries the series
+ * rules' findings on that timeline.
  */
-export function currentEditTimeline(episodeDir: string, options: BuildOptions): CurrentTimeline {
+export function decideEditTimeline(episodeDir: string, options: BuildOptions): TimelineDecision {
   const path = join(episodeDir, EDIT_TIMELINE_PATH);
   let stored: { text: string; doc: any } | null = null;
   if (existsSync(path)) {
@@ -178,11 +236,12 @@ export function currentEditTimeline(episodeDir: string, options: BuildOptions): 
     if (stored && !specDriven && !profileChange && storedProblems.length === 0) {
       return {
         timeline: stored.doc,
+        text: stored.text,
         hash: sha256(stored.text),
         warnings: [`the episode could not be rebuilt (${describe(fresh.problems)}); rendering it as it stands`],
         compiledBy: null,
+        validation: null,
         rebuilt: null,
-        backup: null,
       };
     }
     throw new TimelineBuildError(fresh.problems);
@@ -207,11 +266,43 @@ export function currentEditTimeline(episodeDir: string, options: BuildOptions): 
       throw new TimelineBuildError(storedProblems, `${EDIT_TIMELINE_PATH} as it stands is not valid; fix the edit, or delete the file to rebuild`);
     }
     const compiledBy = fresh.compiledBy && { ...fresh.compiledBy, editedByHand: stored.text !== serialize(fresh.timeline) };
-    return { timeline: stored.doc, compiledBy, hash: sha256(stored.text), warnings: fresh.warnings, rebuilt: null, backup: null };
+    return {
+      timeline: stored.doc,
+      text: stored.text,
+      hash: sha256(stored.text),
+      rebuilt: null,
+      compiledBy,
+      validation: validate(episodeDir, options, stored.doc),
+      warnings: fresh.warnings,
+    };
   }
   const text = serialize(fresh.timeline);
-  const backup = replaceTimeline(episodeDir, text);
-  return { timeline: fresh.timeline, compiledBy: fresh.compiledBy, hash: sha256(text), warnings: fresh.warnings, rebuilt: reason, backup };
+  return {
+    timeline: fresh.timeline,
+    text,
+    hash: sha256(text),
+    rebuilt: reason,
+    compiledBy: fresh.compiledBy,
+    validation: validate(episodeDir, options, fresh.timeline),
+    warnings: fresh.warnings,
+  };
+}
+
+export interface CurrentTimeline extends WrittenTimeline {
+  /** Why it was rebuilt, or null when the timeline on disk was used as it is. */
+  rebuilt: string | null;
+}
+
+/** Write what a decision rebuilt (keeping a different previous timeline as a backup). */
+function applyDecision(episodeDir: string, decision: TimelineDecision): CurrentTimeline {
+  const backup = decision.rebuilt !== null ? replaceTimeline(episodeDir, decision.text) : null;
+  const { timeline, hash, rebuilt, compiledBy, validation, warnings } = decision;
+  return { timeline, hash, rebuilt, compiledBy, validation, warnings, backup };
+}
+
+/** The timeline to render, rebuilt and written when its material changed (see decideEditTimeline). */
+export function currentEditTimeline(episodeDir: string, options: BuildOptions): CurrentTimeline {
+  return applyDecision(episodeDir, decideEditTimeline(episodeDir, options));
 }
 
 export interface EpisodeRenderOptions extends BuildOptions {
@@ -228,6 +319,7 @@ export interface EpisodeRender {
   backup: string | null;
   warnings: string[];
   compiledBy: CompiledBy | null;
+  validation: Validation | null;
   result: RenderResult;
 }
 
@@ -241,7 +333,13 @@ export interface EpisodeRender {
 export async function renderEpisode(episodeDir: string, options: EpisodeRenderOptions): Promise<EpisodeRender> {
   const label = options.label ?? "render";
   if (!LABEL.test(label)) throw new Error(`label "${label}" must be lowercase kebab-case`);
-  const current = currentEditTimeline(episodeDir, options);
+  const decision = decideEditTimeline(episodeDir, options);
+  // Refused before anything is written: not even a rebuilt timeline.
+  const errors = errorsOf(decision.validation);
+  if (errors.length > 0) {
+    throw new SeriesRulesError(decision.validation!.validator, errors, hintFor(errors, decision.rebuilt === null));
+  }
+  const current = applyDecision(episodeDir, decision);
 
   const outputDir = join(episodeDir, "output");
   mkdirSync(outputDir, { recursive: true });
@@ -271,6 +369,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     createdAt: new Date().toISOString(),
     timeline: { path: EDIT_TIMELINE_PATH, hash: `sha256:${current.hash}` },
     ...(current.compiledBy ? { compiledBy: current.compiledBy } : {}),
+    ...(current.validation ? { validation: current.validation } : {}),
     ...(current.rebuilt ? { rebuilt: current.rebuilt } : {}),
     ...(current.warnings.length > 0 ? { warnings: current.warnings } : {}),
     render: { ...result, path: `${renderId}.mp4` },
@@ -285,6 +384,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     backup: current.backup,
     warnings: current.warnings,
     compiledBy: current.compiledBy,
+    validation: current.validation,
     result,
   };
 }

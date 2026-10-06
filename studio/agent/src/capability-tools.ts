@@ -45,7 +45,7 @@ import {
   type NarrationSegmentInput,
 } from "./narration-manifest.js";
 import { EDIT_TIMELINE_PATH } from "./edit-timeline-builder.js";
-import { renderEpisode, writeEditTimeline } from "./episode-render.js";
+import { decideEditTimeline, renderEpisode, writeEditTimeline, type Validation } from "./episode-render.js";
 
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
@@ -890,6 +890,11 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   // The episode is composed through its edit timeline: a reviewable document
   // in artifacts/, rendered by @av/remotion-composer. No FFmpeg runs here.
 
+  /** A series rule's finding, one line: "⚠️ panel-long at artifacts/edit-timeline.json#…: …". */
+  const findingLine = (f: Validation["findings"][number]) => `${f.severity === "error" ? "❌" : "⚠️"} ${f.code} at ${f.path}: ${f.message}`;
+  const seriesWarnings = (validation: Validation | null) =>
+    (validation?.findings ?? []).filter((f) => f.severity === "warning").map(findingLine);
+
   const profileParam = Type.Optional(Type.String({
     description: "Output profile id: youtube-1920x1080 (default) or vertical-1080x1920. An episode with episode-spec.json renders its template's profile.",
   }));
@@ -909,7 +914,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         const dir = episodeDir(params.channel, params.series, params.episode);
         const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
         // Queued with pva_compose_video, which may rebuild the same file.
-        const { timeline, warnings, backup, compiledBy } = await withFileMutationQueue(join(dir, "output", "current.json"), async () =>
+        const { timeline, warnings, backup, compiledBy, validation } = await withFileMutationQueue(join(dir, "output", "current.json"), async () =>
           writeEditTimeline(dir, { episodeRef, ...(params.profile ? { profile: params.profile } : {}) }));
         const count = (id: string) => timeline.tracks.find((t) => t.id === id)?.items.length ?? 0;
         // The picture track is the lowest visual one: "scenes" from the legacy builder, "panels" from a compiler.
@@ -921,9 +926,14 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             ? [`compiled by ${compiledBy.compiler} from episode-spec.json revision ${compiledBy.revision} (template ${compiledBy.template.id}@${compiledBy.template.version})`]
             : []),
           ...(backup ? [`previous timeline kept as ${backup}`] : []),
+          ...(validation?.validator ? [`series rules ${validation.validator}: no errors`] : []),
+          ...seriesWarnings(validation),
           ...warnings.map((w) => `⚠️ ${w}`),
         ];
-        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { path: EDIT_TIMELINE_PATH, timeline, warnings, compiledBy } as Record<string, unknown> };
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: { path: EDIT_TIMELINE_PATH, timeline, warnings, compiledBy, validation } as Record<string, unknown>,
+        };
       } catch (err) {
         return {
           content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
@@ -965,6 +975,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
                 + (render.compiledBy.editedByHand ? ", then edited by hand" : "")]
               : []),
             ...(render.backup ? [`previous timeline kept as ${render.backup}`] : []),
+            ...seriesWarnings(render.validation),
             ...render.warnings.map((w) => `⚠️ ${w}`),
           ];
           return { content: [{ type: "text" as const, text: lines.join("\n") }], details: render as unknown as Record<string, unknown> };
@@ -975,6 +986,53 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: [`❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}`, ...problems].join("\n") }],
           details: { code: e.code ?? null, problems: e.problems ?? [] } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "pva_check_episode",
+    label: "Check Episode",
+    description: `Check what pva_compose_video would render against the episode's series rules, without writing or rendering anything: which timeline (${EDIT_TIMELINE_PATH} as it stands, or a recompiled one and why) and every finding, errors first. An episode without a spec, or whose template names no validator, has no series rules.`,
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      profile: profileParam,
+    }),
+    async execute(_toolCallId, params) {
+      try {
+        const dir = episodeDir(params.channel, params.series, params.episode);
+        const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+        // Reads only: not queued with the tools that write current.json.
+        const decision = decideEditTimeline(dir, { episodeRef, ...(params.profile ? { profile: params.profile } : {}) });
+        const validation = decision.validation;
+        const findings = [...(validation?.findings ?? [])].sort((a, b) => Number(a.severity === "warning") - Number(b.severity === "warning"));
+        const errors = findings.filter((f) => f.severity === "error").length;
+        const lines = [
+          decision.rebuilt === null
+            ? `${EDIT_TIMELINE_PATH} would be rendered as it stands`
+            : `the timeline would be recompiled: ${decision.rebuilt}`,
+          !validation?.validator
+            ? "no series rules for this episode"
+            : errors > 0
+              ? `❌ ${errors} error(s) against ${validation.validator}: pva_compose_video would refuse it`
+              : `✅ ${validation.validator}: no errors`,
+          ...findings.map((f) => `  ${findingLine(f)}`),
+          ...decision.warnings.map((w) => `⚠️ ${w}`),
+        ];
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: { rebuilt: decision.rebuilt, validation } as Record<string, unknown>,
+        };
+      } catch (err) {
+        const e = err as { message?: string; problems?: Array<{ code: string; message: string; path?: string }> };
+        const problems = (e.problems ?? []).map((p) => `  - ${p.code}${p.path ? ` at ${p.path}` : ""}: ${p.message}`);
+        return {
+          content: [{ type: "text" as const, text: [`❌ ${e.message ?? String(err)}`, ...problems].join("\n") }],
+          details: { problems: e.problems ?? [] } as Record<string, unknown>,
           isError: true as unknown as boolean,
         };
       }

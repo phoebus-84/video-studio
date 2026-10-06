@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { compileEpisode, isSpecDriven } from "../src/series-compile.js";
+import { checkEpisode, compileEpisode, isSpecDriven, loadEpisode } from "../src/series-compile.js";
 import { editSpec, sha256, specEpisode } from "./spec-episode.js";
 
 /**
@@ -181,5 +181,62 @@ describe("compileEpisode", () => {
   it("names the file a compiler problem is in", () => {
     editSpec(dir(), (spec) => { spec.data.panels[1].cue = "teapot"; });
     expect(problemsOf()).toEqual([["unknown-word", "episode-spec.json#$.data.panels[1].cue"]]);
+  });
+});
+
+describe("loadEpisode", () => {
+  it("gives the compile input without compiling, every file hashed", () => {
+    const loaded = loadEpisode(dir(), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    expect(loaded.releaseKey).toBe("../../templates/poetry-short/1.0.0");
+    expect(loaded.input.spec.revision).toBe(2);
+    expect(Object.keys(loaded.input.inputs)).toHaveLength(13);
+    expect(Object.keys(loaded.input.assets).sort()).toEqual(["image-cat", "image-morning-room", "image-teacup", "narration-cup", "narration-light"]);
+  });
+});
+
+describe("checkEpisode", () => {
+  it("finds nothing wrong with the compiled timeline of a complete episode", () => {
+    const result = checkEpisode(dir(), { episodeRef: REF });
+    if (!result.ok) throw new Error(JSON.stringify(result.problems));
+    expect(result.validator).toBe("poetry-short@1.0.0");
+    expect(result.findings).toEqual([]);
+    expect(result.compiled.durationInFrames).toBe(324);
+  });
+
+  it("checks the timeline it is given, against what the compiler makes", () => {
+    const compiled = compileEpisode(dir(), { episodeRef: REF });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.problems));
+    const timeline = structuredClone(compiled.timeline) as any;
+    timeline.tracks[1].items[0].props.text = "Light falls across the room.";
+    const result = checkEpisode(dir(), { episodeRef: REF, timeline });
+    if (!result.ok) throw new Error(JSON.stringify(result.problems));
+    expect(result.findings.map((f) => [f.code, f.severity, f.path])).toEqual([
+      ["text-not-voice", "error", "artifacts/edit-timeline.json#$.tracks[1]"],
+    ]);
+  });
+
+  it("finds a spec whose video is shorter than the series allows", () => {
+    editSpec(dir(), (spec) => { spec.data.holdSeconds = 0; });
+    const result = checkEpisode(dir(), { episodeRef: REF });
+    if (!result.ok) throw new Error(JSON.stringify(result.problems));
+    expect(result.findings.map((f) => [f.code, f.path])).toEqual([["duration-range", "artifacts/edit-timeline.json#$.durationInFrames"]]);
+  });
+
+  it("locates a finding about the spec in the spec", () => {
+    const compiled = compileEpisode(dir(), { episodeRef: REF });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.problems));
+    const timeline = structuredClone(compiled.timeline) as any;
+    timeline.tracks[0].items[2].props.src.$asset = "image-teacup";
+    const result = checkEpisode(dir(), { episodeRef: REF, timeline });
+    if (!result.ok) throw new Error(JSON.stringify(result.problems));
+    expect(result.findings.map((f) => [f.code, f.path])).toEqual([["missing-picture", "episode-spec.json#$.data.panels[2]"]]);
+  });
+
+  it("reports the loader's problems when the episode cannot be compiled", () => {
+    unlinkSync(at("artifacts/narration/takes.json"));
+    const result = checkEpisode(dir(), { episodeRef: REF });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.problems.map((p) => p.code)).toEqual(["missing-narration"]);
   });
 });

@@ -1,0 +1,161 @@
+{
+  "compiler": { "id": "poetry-short", "version": "1.0.0" },
+  "cases": [
+    {
+      "name": "the compiled timeline, untouched",
+      "set": [],
+      "expect": []
+    },
+    {
+      "name": "a picture change moved by 10 frames and a caption split at a word: within the rules",
+      "set": [
+        { "path": "$.tracks[0].items[0].duration", "value": 113 },
+        { "path": "$.tracks[0].items[1].from", "value": 101 },
+        { "path": "$.tracks[0].items[1].duration", "value": 110 },
+        { "path": "$.tracks[1].items[0].props.text", "value": "Light falls across" },
+        { "path": "$.tracks[1].items[0].duration", "value": 30 },
+        { "path": "$.tracks[1].items[3]", "value": { "id": "caption-4", "from": 33, "duration": 39, "kit": { "name": "captions", "version": "1.1.0" }, "props": { "text": "the quiet room.", "position": "bottom", "font": "Georgia" }, "source": "narration" } }
+      ],
+      "expect": []
+    },
+    {
+      "name": "a track removed",
+      "set": [{ "path": "$.tracks[2]", "value": null }],
+      "expect": [{ "code": "missing-track", "severity": "error", "path": "$.tracks" }]
+    },
+    {
+      "name": "the loudness of the profile changed",
+      "set": [{ "path": "$.profile.loudness.integrated", "value": -16 }],
+      "expect": [{ "code": "profile-changed", "severity": "error", "path": "$.profile" }]
+    },
+    {
+      "name": "no hold: 9.3 s, under 10 s",
+      "setInput": [{ "path": "$.spec.data.holdSeconds", "value": 0 }],
+      "set": [],
+      "expect": [{ "code": "duration-range", "severity": "error", "path": "$.durationInFrames" }]
+    },
+    {
+      "name": "a 60 s hold: over 60 s, and the last picture held",
+      "setInput": [{ "path": "$.spec.data.holdSeconds", "value": 60 }],
+      "set": [],
+      "expect": [
+        { "code": "duration-range", "severity": "error", "path": "$.durationInFrames" },
+        { "code": "panel-long", "severity": "warning", "path": "$.tracks[0].items[2]" }
+      ]
+    },
+    {
+      "name": "a music track added",
+      "set": [{ "path": "$.tracks[3]", "value": { "id": "music", "type": "audio", "items": [] } }],
+      "expect": [{ "code": "extra-track", "severity": "error", "path": "$.tracks[3]" }]
+    },
+    {
+      "name": "the captions hidden",
+      "set": [{ "path": "$.tracks[1].hidden", "value": true }],
+      "expect": [{ "code": "hidden-track", "severity": "error", "path": "$.tracks[1]" }]
+    },
+    {
+      "name": "the voice muted",
+      "set": [{ "path": "$.tracks[2].muted", "value": true }],
+      "expect": [{ "code": "hidden-track", "severity": "error", "path": "$.tracks[2]" }]
+    },
+    {
+      "name": "a panel played as a clip",
+      "set": [{ "path": "$.tracks[0].items[1].kit", "value": { "name": "clip", "version": "1.0.0" } }],
+      "expect": [{ "code": "forbidden-kit", "severity": "error", "path": "$.tracks[0].items[1].kit" }]
+    },
+    {
+      "name": "captions in another kit version",
+      "set": [{ "path": "$.tracks[1].items[0].kit", "value": { "name": "captions", "version": "1.0.0" } }],
+      "expect": [{ "code": "forbidden-kit", "severity": "error", "path": "$.tracks[1].items[0].kit" }]
+    },
+    {
+      "name": "a fade instead of a crossfade, and a caption fading out",
+      "set": [
+        { "path": "$.tracks[0].items[1].transitionIn", "value": { "type": "fade", "duration": 12 } },
+        { "path": "$.tracks[1].items[2].transitionOut", "value": { "type": "fade", "duration": 6 } }
+      ],
+      "expect": [
+        { "code": "forbidden-transition", "severity": "error", "path": "$.tracks[0].items[1]" },
+        { "code": "forbidden-transition", "severity": "error", "path": "$.tracks[1].items[2]" }
+      ]
+    },
+    {
+      "name": "a longer crossfade",
+      "set": [{ "path": "$.tracks[0].items[2].transitionIn.duration", "value": 24 }],
+      "expect": [{ "code": "forbidden-transition", "severity": "error", "path": "$.tracks[0].items[2]" }]
+    },
+    {
+      "name": "a take moved, another made louder",
+      "set": [
+        { "path": "$.tracks[2].items[0].from", "value": 3 },
+        { "path": "$.tracks[2].items[1].gain", "value": 1.5 }
+      ],
+      "expect": [
+        { "code": "altered-voice", "severity": "error", "path": "$.tracks[2].items[0]" },
+        { "code": "altered-voice", "severity": "error", "path": "$.tracks[2].items[1]" }
+      ]
+    },
+    {
+      "name": "the hold's second piece removed",
+      "set": [{ "path": "$.tracks[2].items[2]", "value": null }],
+      "expect": [{ "code": "altered-voice", "severity": "error", "path": "$.tracks[2]" }]
+    },
+    {
+      "name": "a caption rewritten by hand",
+      "set": [{ "path": "$.tracks[1].items[0].props.text", "value": "Light falls across the room." }],
+      "expect": [{ "code": "text-not-voice", "severity": "error", "path": "$.tracks[1]" }]
+    },
+    {
+      "name": "the cat never shown",
+      "set": [{ "path": "$.tracks[0].items[2].props.src.$asset", "value": "image-teacup" }],
+      "expect": [{ "code": "missing-picture", "severity": "error", "path": "$.data.panels[2]" }]
+    },
+    {
+      "name": "the last picture cut short",
+      "set": [{ "path": "$.tracks[0].items[2].duration", "value": 100 }],
+      "expect": [{ "code": "uncovered-frames", "severity": "error", "path": "$.tracks[0]" }]
+    },
+    {
+      "name": "a picture on screen for under a second",
+      "set": [
+        { "path": "$.tracks[0].items[0].duration", "value": 185 },
+        { "path": "$.tracks[0].items[1].from", "value": 180 },
+        { "path": "$.tracks[0].items[1].duration", "value": 25 }
+      ],
+      "expect": [{ "code": "panel-flash", "severity": "warning", "path": "$.tracks[0].items[1]" }]
+    },
+    {
+      "name": "the first picture held over 7 s",
+      "set": [{ "path": "$.tracks[0].items[0].duration", "value": 220 }],
+      "expect": [{ "code": "panel-long", "severity": "warning", "path": "$.tracks[0].items[0]" }]
+    },
+    {
+      "name": "two captions merged into one too long",
+      "set": [
+        { "path": "$.tracks[1].items[0].props.text", "value": "Light falls across the quiet room. A cup of tea is cooling by the window." },
+        { "path": "$.tracks[1].items[1]", "value": null }
+      ],
+      "expect": [{ "code": "caption-long", "severity": "warning", "path": "$.tracks[1].items[0]" }]
+    },
+    {
+      "name": "a take's audio swapped for another file",
+      "set": [{ "path": "$.assets[\"narration-cup\"].hash", "value": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }],
+      "expect": [{ "code": "asset-changed", "severity": "error", "path": "$.assets[\"narration-cup\"]" }]
+    },
+    {
+      "name": "a picture added that the spec does not name",
+      "set": [{ "path": "$.assets[\"image-dog\"]", "value": { "path": "assets/images/dog.png", "hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "kind": "image" } }],
+      "expect": [{ "code": "asset-changed", "severity": "error", "path": "$.assets[\"image-dog\"]" }]
+    },
+    {
+      "name": "played at 60 fps",
+      "set": [{ "path": "$.fps", "value": 60 }],
+      "expect": [{ "code": "fps-changed", "severity": "error", "path": "$.fps" }]
+    },
+    {
+      "name": "the pictures stacked above the captions",
+      "set": [{ "path": "$.tracks[0].z", "value": 20 }],
+      "expect": [{ "code": "stacking-changed", "severity": "error", "path": "$.tracks[0].z" }]
+    }
+  ]
+}
