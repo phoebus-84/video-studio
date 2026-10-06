@@ -1,0 +1,11 @@
+{
+  "expect": "profile-resolution-mismatch",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/resolution",
+      "value": { "width": 1080, "height": 1920 }
+    }
+  ]
+}

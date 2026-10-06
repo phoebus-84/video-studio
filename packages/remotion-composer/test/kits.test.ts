@@ -1,6 +1,6 @@
 // Every kit version keeps the registry's rules (avg-tk7.3): well-formed
 // metadata, examples its own schema accepts, self-contained source, a file
-// frozen by kits.lock.json, and a committed preview.
+// frozen by kits.lock.json, and a committed preview in every output profile.
 
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,8 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
-import {KIT_VERSIONS} from '../src/kits/index.js';
+import {KIT_VERSIONS, previewPath} from '../src/kits/index.js';
+import {outputProfiles} from './helpers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = (name: string, version: string) => path.join(root, 'src/kits', name, `${version}.tsx`);
@@ -87,11 +88,19 @@ describe('kit versions', () => {
         assert.equal(actual, lock[id], `${id} is released: restore its file and add ${kit.name}/<next version>.tsx instead`);
       });
 
-      it('has a committed preview', () => {
-        assert.ok(existsSync(path.join(root, 'previews', `${id}.png`)), `run npm run kits:previews`);
+      it('has a committed preview in every output profile', () => {
+        for (const profile of outputProfiles()) {
+          const file = previewPath(kit.name, kit.version, profile.id);
+          assert.ok(existsSync(path.join(root, file)), `${file} is missing: run npm run kits:previews`);
+        }
       });
     });
   }
+
+  it('keeps no preview that no version and profile has', () => {
+    const expected = new Set(KIT_VERSIONS.flatMap((k) => outputProfiles().map((p) => path.basename(previewPath(k.name, k.version, p.id)))));
+    assert.deepEqual(readdirSync(path.join(root, 'previews')).filter((f) => !expected.has(f)), []);
+  });
 
   it('registers each version once', () => {
     const ids = KIT_VERSIONS.map((k) => `${k.name}@${k.version}`);

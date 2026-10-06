@@ -3,11 +3,14 @@
 // bindings/ts/v1alpha2/edit-timeline.ts.
 
 import type { EditTimeline } from "../bindings/ts/v1alpha2/edit-timeline.ts";
+import type { OutputProfile } from "./output-profiles.d.mts";
 
 export declare const EDIT_TIMELINE_API_VERSION: "studio.video/v1alpha2";
 
 export type EditTimelineProblemCode =
   | "schema"
+  | "profile-resolution-mismatch"
+  | "profile-safe-zone"
   | "duplicate-id"
   | "out-of-range"
   | "missing-z"
@@ -35,11 +38,13 @@ export declare function validateEditTimeline(doc: unknown): EditTimelineProblem[
 export declare function jsonPath(pointer: string): string;
 
 /**
- * Convert a `studio.video/v1alpha1` timeline. Throws when a source asset has no
- * hash in `assetHashes`, when fps is not an integer, when `doc` is not v1alpha1,
- * or when the result would not pass `validateEditTimeline`.
+ * Convert a `studio.video/v1alpha1` timeline. Its profile is `options.profile`,
+ * otherwise the catalog profile of the timeline's resolution. Throws when a
+ * source asset has no hash in `assetHashes`, when fps is not an integer, when
+ * no profile fits, when `doc` is not v1alpha1, or when the result would not
+ * pass `validateEditTimeline`.
  */
 export declare function migrateEditTimelineV1alpha1(
   doc: unknown,
-  options?: { assetHashes?: Record<string, string> },
+  options?: { assetHashes?: Record<string, string>; profile?: OutputProfile },
 ): EditTimeline;

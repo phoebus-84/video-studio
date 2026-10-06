@@ -4,7 +4,7 @@
 
 import React from 'react';
 import {AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame} from 'remotion';
-import {resolveKit} from './kits/index.js';
+import {resolveKit, type KitProfile} from './kits/index.js';
 import type {AudioItem, EditTimeline, VisualItem} from './schema.js';
 import {isAudioItem} from './schema.js';
 import {itemVolume} from './volume.js';
@@ -31,7 +31,7 @@ export function resolveAssets(value: unknown, files: Record<string, string>): un
   return value;
 }
 
-const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; assetFrames: Record<string, number>}> = ({item, files, assetFrames}) => {
+const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; assetFrames: Record<string, number>; profile: KitProfile}> = ({item, files, assetFrames, profile}) => {
   const frame = useCurrentFrame();
   let opacity = 1;
   if (item.transitionIn) opacity = Math.min(opacity, Math.min(1, frame / item.transitionIn.duration));
@@ -42,7 +42,7 @@ const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; asse
   const byUrl = Object.fromEntries(Object.entries(assetFrames).map(([file, frames]) => [staticFile(file), frames]));
   return (
     <AbsoluteFill style={{opacity}}>
-      <Kit props={resolveAssets(item.props, files) as Record<string, unknown>} context={{assetFrames: byUrl}} />
+      <Kit props={resolveAssets(item.props, files) as Record<string, unknown>} context={{assetFrames: byUrl, profile}} />
     </AbsoluteFill>
   );
 };
@@ -51,7 +51,7 @@ export const Timeline: React.FC<TimelineProps> = ({timeline, files, assetFrames}
   <AbsoluteFill style={{backgroundColor: '#000000'}}>
     {visualLayers(timeline).map(({track, item}) => (
       <Sequence key={`${track.id}/${item.id}`} from={item.from} durationInFrames={item.duration}>
-        <ItemLayer item={item} files={files} assetFrames={assetFrames} />
+        <ItemLayer item={item} files={files} assetFrames={assetFrames} profile={timeline.profile} />
       </Sequence>
     ))}
     {timeline.tracks

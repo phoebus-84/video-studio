@@ -68,6 +68,24 @@ export const AssetSchema = z.object({
   kind: z.enum(['markdown', 'json', 'yaml', 'audio', 'video', 'image', 'captions', 'tape']),
 }).strict();
 
+/** A whole copy of the output profile the timeline renders to (avg-tk7.4). */
+export const OutputProfileSchema = z.object({
+  id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+  width: z.number().int().min(1).max(7680),
+  height: z.number().int().min(1).max(4320),
+  safeZone: z.object({
+    top: z.number().int().min(0),
+    right: z.number().int().min(0),
+    bottom: z.number().int().min(0),
+    left: z.number().int().min(0),
+  }).strict(),
+  loudness: z.object({
+    integrated: z.number().min(-70).max(-5),
+    truePeak: z.number().min(-9).max(0),
+    range: z.number().min(1).max(20),
+  }).strict(),
+}).strict();
+
 export const EditTimelineSchema = z.object({
   apiVersion: z.literal('studio.video/v1alpha2'),
   kind: z.literal('EditTimeline'),
@@ -80,6 +98,7 @@ export const EditTimelineSchema = z.object({
   fps: z.number().int().min(1),
   durationInFrames: frameCount,
   resolution: z.object({width: z.number().int().min(1).max(7680), height: z.number().int().min(1).max(4320)}).strict(),
+  profile: OutputProfileSchema,
   assets: z.record(localId, AssetSchema),
   tracks: z.array(TrackSchema).min(1),
   sections: z.array(z.object({
@@ -94,6 +113,7 @@ export const EditTimelineSchema = z.object({
 
 export type EditTimeline = z.infer<typeof EditTimelineSchema>;
 export type Track = z.infer<typeof TrackSchema>;
+export type OutputProfile = z.infer<typeof OutputProfileSchema>;
 export type VisualItem = z.infer<typeof VisualItemSchema>;
 export type AudioItem = z.infer<typeof AudioItemSchema>;
 

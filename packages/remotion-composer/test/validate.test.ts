@@ -2,7 +2,7 @@ import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
 import {listKits} from '../src/kits/index.js';
 import {validateTimeline} from '../src/validate.js';
-import {clone, fixture} from './helpers.js';
+import {clone, fixture, outputProfiles} from './helpers.js';
 
 const problems = (doc: unknown) => {
   const result = validateTimeline(doc);
@@ -12,6 +12,36 @@ const problems = (doc: unknown) => {
 describe('validateTimeline', () => {
   it('accepts the migrated explainer, which uses only still and captions', () => {
     assert.deepEqual(problems(fixture('explainer.json')), []);
+  });
+
+  it('accepts the 9:16 fixture, which uses captions@1.1.0', () => {
+    assert.deepEqual(problems(fixture('vertical-short.json')), []);
+  });
+
+  it('refuses a resolution that is not its profile\'s', () => {
+    const doc = clone(fixture('explainer.json'));
+    doc.resolution = {width: 1080, height: 1920};
+    assert.deepEqual(problems(doc), [['invalid-timeline', '$.profile']]);
+    const result = validateTimeline(doc);
+    assert.match(result.ok ? '' : result.problems[0]!.message, /resolution 1080x1920 is not profile "youtube-1920x1080" \(1920x1080\)/);
+  });
+
+  it('refuses a safe zone that leaves nothing to draw in, as the contracts do', () => {
+    const doc = clone(fixture('vertical-short.json'));
+    doc.profile.safeZone.left = 1000;
+    doc.profile.safeZone.top = 1600;
+    assert.deepEqual(problems(doc), [['invalid-timeline', '$.profile.safeZone'], ['invalid-timeline', '$.profile.safeZone']]);
+    const result = validateTimeline(doc);
+    assert.deepEqual(result.ok ? [] : result.problems.map((p) => p.message), [
+      'profile "vertical-1080x1920": safe zone top 1600 + bottom 380 leaves nothing of height 1920',
+      'profile "vertical-1080x1920": safe zone left 1000 + right 140 leaves nothing of width 1080',
+    ]);
+  });
+
+  it('refuses a timeline without a profile', () => {
+    const doc = clone(fixture('explainer.json'));
+    delete doc.profile;
+    assert.deepEqual(problems(doc), [['invalid-timeline', '$.profile']]);
   });
 
   it('refuses kits it does not have, by name or by version', () => {
@@ -39,11 +69,18 @@ describe('validateTimeline', () => {
   });
 
   it('lists every kit version with what the catalog needs', () => {
-    assert.deepEqual(listKits().map((k) => [k.name, k.version, k.examples, k.preview]), [
-      ['captions', '1.0.0', ['bottom', 'top'], 'previews/captions@1.0.0.png'],
-      ['clip', '1.0.0', ['plays'], 'previews/clip@1.0.0.png'],
-      ['still', '1.0.0', ['cover', 'contain'], 'previews/still@1.0.0.png'],
+    const ids = outputProfiles().map((p) => p.id);
+    assert.deepEqual(listKits(ids).map((k) => [k.name, k.version, k.layer, k.examples]), [
+      ['captions', '1.0.0', 'fill', ['bottom', 'top']],
+      ['captions', '1.1.0', 'overlay', ['bottom', 'top', 'center', 'long', 'overflowing']],
+      ['clip', '1.0.0', 'fill', ['plays']],
+      ['still', '1.0.0', 'fill', ['cover', 'contain']],
     ]);
+    assert.deepEqual(listKits(ids)[1]!.previews, {
+      'youtube-1920x1080': 'previews/captions@1.1.0.youtube-1920x1080.png',
+      'vertical-1080x1920': 'previews/captions@1.1.0.vertical-1080x1920.png',
+    });
+    assert.deepEqual(listKits()[0]!.previews, {});
     assert.ok(listKits().every((k) => k.description.length > 0));
   });
 });

@@ -6,11 +6,12 @@ import type {KitVersion} from './types.js';
 import {kit as still100} from './still/1.0.0.js';
 import {kit as clip100} from './clip/1.0.0.js';
 import {kit as captions100} from './captions/1.0.0.js';
+import {kit as captions110} from './captions/1.1.0.js';
 
-export type {KitContext, KitExample, KitVersion} from './types.js';
+export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 
 /** Every released kit version. Adding a version: import it here, then `npm run kits:lock`. */
-export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([still100, clip100, captions100]);
+export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([still100, clip100, captions100, captions110]);
 
 const key = (name: string, version: string) => `${name}@${version}`;
 const byKey = new Map(KIT_VERSIONS.map((k) => [key(k.name, k.version), k]));
@@ -26,24 +27,35 @@ export const kitVersions = (name: string): string[] =>
 export const previewCompositionId = (name: string, version: string, exampleId: string): string =>
   `${name}-${version.replace(/[.+]/g, '-')}-${exampleId}`;
 
+/** Where `npm run kits:previews` writes a version's preview in one output profile. */
+export const previewPath = (name: string, version: string, profileId: string): string =>
+  `previews/${name}@${version}.${profileId}.png`;
+
 export interface KitListing {
   name: string;
   version: string;
   description: string;
+  layer: 'overlay' | 'fill';
   examples: string[];
-  preview: string;
+  /** Output profile id → preview path, for the profiles asked for. */
+  previews: Record<string, string>;
 }
 
-/** Every version, sorted by name then version: what the catalog and the agent read. */
-export const listKits = (): KitListing[] =>
+/**
+ * Every version, sorted by name then version: what the catalog and the agent
+ * read. The caller names the output profiles (the catalog is the contracts',
+ * which this package does not import).
+ */
+export const listKits = (profileIds: readonly string[] = []): KitListing[] =>
   [...KIT_VERSIONS]
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : compareSemver(a.version, b.version)))
     .map((k) => ({
       name: k.name,
       version: k.version,
       description: k.description,
+      layer: k.layer ?? 'fill',
       examples: k.examples.map((e) => e.id),
-      preview: `previews/${k.name}@${k.version}.png`,
+      previews: Object.fromEntries(profileIds.map((id) => [id, previewPath(k.name, k.version, id)])),
     }));
 
 function compareSemver(a: string, b: string): number {

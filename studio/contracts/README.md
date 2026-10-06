@@ -23,7 +23,7 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
 | `pipeline-manifest.schema.json` | Pipeline definition with editorial/capability stage types |
 | `vocabulary.schema.json` | Canonical capability names and artifact kinds |
 | `journal-event.schema.json` | Append-only execution journal events |
-| `edit-timeline.schema.json` | Edit timeline. `v1alpha2/`: NLE tracks of kit instances and audio, sections with spec provenance, integer frames (ADR-0034), checked by `src/edit-timeline.mjs`. `v1alpha1/`: deprecated segment list |
+| `edit-timeline.schema.json` | Edit timeline. `v1alpha2/`: NLE tracks of kit instances and audio, sections with spec provenance, integer frames, and a copy of its output profile (size, safe zone, loudness; catalog in `src/output-profiles.json`) (ADR-0034), checked by `src/edit-timeline.mjs`. `v1alpha1/`: deprecated segment list |
 | `word-timing.schema.json` | When each word of one audio take is spoken, in seconds of that audio: written words with their spoken form where it differs, lines as word ranges, speech spans, lip-sync energy; provider-neutral; checked by `src/word-timing.mjs` |
 | `cue.schema.json` | When something happens in terms of the voice: a whole word (or `*` prefix), seconds, or a word / line / take / mark object with `at` and `offset`; resolved to an absolute frame, never by fallback, by `src/cues.mjs` |
 | `narration-takes.schema.json` | Every accepted voice take of an episode, from any tool (text as written, `spokenText` exactly as the tool received it, voice provenance, its word timing), and what each unit plays: takes in order with pauses and declared scene pauses; laid out and mapped from the Qwen narration manifest by `src/narration-takes.mjs` |

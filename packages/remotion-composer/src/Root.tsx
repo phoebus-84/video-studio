@@ -11,6 +11,11 @@ const preview: TimelineProps = {
     fps: 30,
     durationInFrames: 30,
     resolution: {width: 1920, height: 1080},
+    profile: {
+      id: 'preview', width: 1920, height: 1080,
+      safeZone: {top: 0, right: 0, bottom: 0, left: 0},
+      loudness: {integrated: -15, truePeak: -1, range: 11},
+    },
     assets: {},
     tracks: [{id: 'main', type: 'visual', z: 0, items: []}],
   },

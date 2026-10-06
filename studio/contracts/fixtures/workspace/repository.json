@@ -29,7 +29,7 @@
         "reservationRequired": true
       },
       "outputProfile": {
-        "id": "youtube-1080p-30",
+        "id": "youtube-1920x1080",
         "width": 1920,
         "height": 1080,
         "frameRate": 30
@@ -68,7 +68,7 @@
         "reservationRequired": true
       },
       "outputProfile": {
-        "id": "youtube-1080p-30",
+        "id": "youtube-1920x1080",
         "width": 1920,
         "height": 1080,
         "frameRate": 30
@@ -101,7 +101,7 @@
         "reservationRequired": true
       },
       "outputProfile": {
-        "id": "youtube-1080p-30",
+        "id": "youtube-1920x1080",
         "width": 1920,
         "height": 1080,
         "frameRate": 30

@@ -54,6 +54,7 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
     assert.equal(result.durationSeconds, 25.5);
     assert.equal(result.loudness, null);
     assert.deepEqual(result.kits, [{name: 'still', version: '1.0.0'}, {name: 'captions', version: '1.0.0'}]);
+    assert.equal(result.profile, 'youtube-1920x1080');
     assert.match(result.hash, /^sha256:[a-f0-9]{64}$/);
     await rm(root, {recursive: true, force: true});
   });
@@ -69,6 +70,12 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
       apiVersion: 'studio.video/v1alpha2', kind: 'EditTimeline',
       episodeRef: {channel: 'c', series: 's', episode: 'e'}, revision: 1,
       fps: 30, durationInFrames: 120, resolution: {width: 640, height: 360},
+      // A profile outside the catalog: the timeline carries everything the render needs.
+      profile: {
+        id: 'test-640x360', width: 640, height: 360,
+        safeZone: {top: 18, right: 32, bottom: 18, left: 32},
+        loudness: {integrated: -15, truePeak: -1, range: 11},
+      },
       assets: {
         bg: {path: 'assets/bg.png', hash: await sha256(path.join(root, 'assets/bg.png')), kind: 'image'},
         voice: {path: 'assets/voice.wav', hash: await sha256(path.join(root, 'assets/voice.wav')), kind: 'audio'},
@@ -85,6 +92,28 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
     assert.ok(result.loudness);
     const measured = measure(out);
     assert.ok(Math.abs(Number(measured.input_i) + 15) <= 1, `integrated ${measured.input_i}`);
+    assert.ok(Number(measured.input_tp) <= -1, `true peak ${measured.input_tp}`);
+    await rm(root, {recursive: true, force: true});
+  });
+
+  it('renders the 9:16 fixture at 1080x1920 and normalises to its profile, -14 LUFS', async () => {
+    const {renderTimeline} = await import('../dist/index.js');
+    const root = await mkdtemp(path.join(tmpdir(), 'composer-e2e-vertical-'));
+    const doc = clone(fixture('vertical-short.json'));
+    await mkdir(path.join(root, 'assets/images'), {recursive: true});
+    await mkdir(path.join(root, 'assets/takes'), {recursive: true});
+    ffmpeg(['-f', 'lavfi', '-i', 'gradients=s=1080x1920:c0=0x1b1f3b:c1=0x3b2f5b:seed=7', '-frames:v', '1', path.join(root, doc.assets.sky.path)]);
+    ffmpeg(['-f', 'lavfi', '-i', 'sine=frequency=330:duration=4', '-af', 'volume=0.3', '-ar', '48000', path.join(root, doc.assets.verse.path)]);
+    for (const asset of Object.values(doc.assets) as {path: string; hash: string}[]) asset.hash = await sha256(path.join(root, asset.path));
+    const out = path.join(root, 'out.mp4');
+    const result = await renderTimeline({timeline: doc, assetRoot: root, outputPath: out});
+    const video = probe(out).streams.find((s) => s.codec_type === 'video')!;
+    assert.deepEqual([video.width, video.height, Number(video.nb_frames)], [1080, 1920, 150]);
+    assert.equal(result.profile, 'vertical-1080x1920');
+    assert.deepEqual(result.kits, [{name: 'still', version: '1.0.0'}, {name: 'captions', version: '1.1.0'}]);
+    assert.ok(result.loudness);
+    const measured = measure(out);
+    assert.ok(Math.abs(Number(measured.input_i) + 14) <= 1, `integrated ${measured.input_i}`);
     assert.ok(Number(measured.input_tp) <= -1, `true peak ${measured.input_tp}`);
     await rm(root, {recursive: true, force: true});
   });

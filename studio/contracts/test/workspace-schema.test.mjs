@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { policyActionFields, validateWorkspaceSemantics } from "../src/workspace-semantics.mjs";
+import { OUTPUT_PROFILES } from "../src/output-profiles.mjs";
 
 const load = async (relative) => JSON.parse(await readFile(new URL(relative, import.meta.url), "utf8"));
 const [identity, workspace, fairyTale, repository] = await Promise.all([
@@ -47,6 +48,28 @@ test("semantics reject cross-resource and budget inconsistencies", () => {
   const invalidBudget = structuredClone(fairyTale);
   invalidBudget.episode.settings.budget.warnAtMicros = invalidBudget.episode.settings.budget.limitMicros + 1;
   assert.ok(validateWorkspaceSemantics(invalidBudget).some((error) => error.code === "budget.warning-exceeds-limit"));
+});
+
+test("settings choose an output profile of the catalog, at its size", () => {
+  const { validate } = createValidator();
+  const vertical = structuredClone(fairyTale);
+  vertical.seriesSettings.values.outputProfile = { id: "vertical-1080x1920", width: 1080, height: 1920, frameRate: 30 };
+  assert.equal(validate(vertical), true);
+  assert.deepEqual(validateWorkspaceSemantics(vertical), []);
+
+  const mismatched = structuredClone(vertical);
+  mismatched.seriesSettings.values.outputProfile.width = 1920;
+  assert.deepEqual(validateWorkspaceSemantics(mismatched).map((e) => [e.path, e.code]), [
+    ["/seriesSettings/outputProfile", "output-profile.mismatch"],
+  ]);
+
+  const unknown = structuredClone(fairyTale);
+  unknown.seriesSettings.values.outputProfile.id = "youtube-1080p-30";
+  assert.equal(validate(unknown), false);
+});
+
+test("the settings' profile ids are exactly the catalog's", () => {
+  assert.deepEqual(workspace.$defs.OutputProfileRef.properties.id.enum, OUTPUT_PROFILES.map((p) => p.id));
 });
 
 test("repository snapshots pin a full commit and prohibit repository execution", () => {

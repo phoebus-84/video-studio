@@ -9,8 +9,6 @@ export interface LoudnessTarget {
   range: number;
 }
 
-export const DEFAULT_LOUDNESS: LoudnessTarget = {integrated: -15, truePeak: -1, range: 11};
-
 export interface LoudnessResult {
   inputI: number;
   outputI: number;
@@ -36,7 +34,7 @@ function report(stderr: string): Record<string, string> {
 }
 
 export async function normalizeLoudness(
-  input: string, output: string, target: LoudnessTarget = DEFAULT_LOUDNESS, ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg',
+  input: string, output: string, target: LoudnessTarget, ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg',
 ): Promise<LoudnessResult> {
   const base = `I=${target.integrated}:TP=${target.truePeak}:LRA=${target.range}`;
   const measured = report(await run(ffmpeg, ['-hide_banner', '-i', input, '-af', `loudnorm=${base}:print_format=json`, '-f', 'null', '-']));

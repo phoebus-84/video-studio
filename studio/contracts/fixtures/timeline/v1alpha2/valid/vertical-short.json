@@ -1,0 +1,51 @@
+{
+  "apiVersion": "studio.video/v1alpha2",
+  "kind": "EditTimeline",
+  "episodeRef": {
+    "channel": "dentro-i-versi",
+    "series": "short",
+    "episode": "il-lampo"
+  },
+  "revision": 1,
+  "fps": 30,
+  "durationInFrames": 150,
+  "resolution": { "width": 1080, "height": 1920 },
+  "profile": {
+    "id": "vertical-1080x1920", "width": 1080, "height": 1920,
+    "safeZone": { "top": 120, "right": 140, "bottom": 380, "left": 60 },
+    "loudness": { "integrated": -14, "truePeak": -1, "range": 11 }
+  },
+  "assets": {
+    "sky": { "path": "assets/images/sky.png", "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "kind": "image" },
+    "verse": { "path": "assets/takes/verse.wav", "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "kind": "audio" }
+  },
+  "tracks": [
+    {
+      "id": "background",
+      "type": "visual",
+      "z": 0,
+      "items": [
+        { "id": "sky", "from": 0, "duration": 150, "kit": { "name": "still", "version": "1.0.0" }, "props": { "src": { "$asset": "sky" } } }
+      ]
+    },
+    {
+      "id": "text",
+      "type": "visual",
+      "z": 10,
+      "items": [
+        {
+          "id": "verse-1", "from": 15, "duration": 120,
+          "kit": { "name": "captions", "version": "1.1.0" },
+          "props": { "text": "Il lampo, che candisce alberi e muri", "position": "bottom" }
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "type": "audio",
+      "items": [
+        { "id": "verse", "from": 15, "duration": 120, "asset": "verse" }
+      ]
+    }
+  ]
+}

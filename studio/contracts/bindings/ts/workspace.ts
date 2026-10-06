@@ -46,9 +46,10 @@ export interface BudgetEnvelope {
 }
 
 export interface OutputProfileRef {
-  id: "youtube-1080p-30";
-  width: 1920;
-  height: 1080;
+  /** An id of the output profile catalog, src/output-profiles.json; width and height must be that profile's. */
+  id: "youtube-1920x1080" | "vertical-1080x1920";
+  width: number;
+  height: number;
   frameRate: 30;
 }
 
