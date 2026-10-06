@@ -50,3 +50,13 @@ a compiler writes the timeline, a reviewed kit library renders it. A new
 visual needs a new kit through the normal review path. v1alpha1 stays frozen
 for migration (`migrateEditTimelineV1alpha1`), and `packages/video-composer`
 keeps reading it until the cutover (`avg-tk7.6`).
+
+## Amendment — output profiles (avg-tk7.4, 2026-10-06)
+
+The output profile now travels inside the timeline: `profile` (required) is a
+whole copy of the profile the timeline renders to — id, size, safe zone and
+loudness target — taken from the catalog in
+`studio/contracts/src/output-profiles.json` by the series compiler. Loudness
+is still not a property of tracks or items; the post-render FFmpeg pass
+reads it from `profile.loudness`. A copy, not a reference, so a delivered
+episode re-renders as it was if the catalog changes.

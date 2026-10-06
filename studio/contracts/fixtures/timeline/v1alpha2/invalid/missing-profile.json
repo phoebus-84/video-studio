@@ -1,0 +1,10 @@
+{
+  "expect": "schema",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/profile"
+    }
+  ]
+}

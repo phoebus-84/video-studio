@@ -19,6 +19,7 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import schema from "../schemas/v1alpha2/edit-timeline.schema.json" with { type: "json" };
+import { OUTPUT_PROFILES, validateOutputProfile } from "./output-profiles.mjs";
 
 export const EDIT_TIMELINE_API_VERSION = "studio.video/v1alpha2";
 
@@ -72,6 +73,7 @@ export function validateEditTimeline(doc) {
     );
   }
   return [
+    ...checkProfile(doc),
     ...checkIds(doc),
     ...checkRanges(doc),
     ...checkTracks(doc),
@@ -80,6 +82,16 @@ export function validateEditTimeline(doc) {
     ...checkSections(doc),
     ...checkFades(doc),
   ];
+}
+
+function checkProfile(doc) {
+  const { profile, resolution } = doc;
+  const out = [];
+  if (profile.width !== resolution.width || profile.height !== resolution.height) {
+    out.push(issue("profile-resolution-mismatch", "$.profile",
+      `resolution ${resolution.width}x${resolution.height} is not profile "${profile.id}" (${profile.width}x${profile.height})`));
+  }
+  return [...out, ...validateOutputProfile(profile, "$.profile")];
 }
 
 function checkIds(doc) {
@@ -279,15 +291,22 @@ const CAPTION_PROPS = ["position", "font", "fontSize", "color", "backgroundColor
 
 /**
  * @param {object} doc a studio.video/v1alpha1 EditTimeline
- * @param {{assetHashes?: Record<string, string>}} options content hash per sourceAsset path
+ * @param {{assetHashes?: Record<string, string>, profile?: object}} options content hash per
+ *   sourceAsset path; the output profile, otherwise the catalog one of the timeline's size
  * @returns {object} a studio.video/v1alpha2 EditTimeline
  */
-export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
+export function migrateEditTimelineV1alpha1(doc, { assetHashes = {}, profile } = {}) {
   if (doc?.apiVersion !== "studio.video/v1alpha1" || doc?.kind !== "EditTimeline") {
     throw new TypeError("expected a studio.video/v1alpha1 EditTimeline");
   }
   if (!Number.isInteger(doc.fps)) {
     throw new RangeError(`fps ${doc.fps} is not an integer; v1alpha2 counts whole frames`);
+  }
+  const { width, height } = doc.resolution;
+  const chosen = profile ?? OUTPUT_PROFILES.find((p) => p.width === width && p.height === height);
+  if (!chosen) {
+    const sizes = OUTPUT_PROFILES.map((p) => `${p.id} ${p.width}x${p.height}`).join(", ");
+    throw new RangeError(`no output profile is ${width}x${height} (${sizes}); pass one in options.profile`);
   }
   const frames = (seconds) => Math.round(seconds * doc.fps);
   // Round absolute times, never a start and a length separately: two
@@ -364,6 +383,7 @@ export function migrateEditTimelineV1alpha1(doc, { assetHashes = {} } = {}) {
     fps: doc.fps,
     durationInFrames,
     resolution: doc.resolution,
+    profile: structuredClone(chosen),
     assets,
     tracks,
     metadata: { migratedFrom: "studio.video/v1alpha1" },

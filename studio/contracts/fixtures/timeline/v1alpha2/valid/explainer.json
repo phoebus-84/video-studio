@@ -13,6 +13,22 @@
     "width": 1920,
     "height": 1080
   },
+  "profile": {
+    "id": "youtube-1920x1080",
+    "width": 1920,
+    "height": 1080,
+    "safeZone": {
+      "top": 54,
+      "right": 96,
+      "bottom": 54,
+      "left": 96
+    },
+    "loudness": {
+      "integrated": -15,
+      "truePeak": -1,
+      "range": 11
+    }
+  },
   "assets": {
     "scene-01-woods": {
       "path": "assets/images/scene-01-woods.png",

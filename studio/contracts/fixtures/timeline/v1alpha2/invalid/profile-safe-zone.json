@@ -1,0 +1,11 @@
+{
+  "expect": "profile-safe-zone",
+  "base": "lesson-excerpt.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/profile/safeZone/top",
+      "value": 1026
+    }
+  ]
+}

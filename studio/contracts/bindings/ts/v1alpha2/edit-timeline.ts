@@ -25,6 +25,30 @@ export interface Resolution {
   height: number;
 }
 
+export interface SafeZone {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface LoudnessTarget {
+  /** Integrated loudness, LUFS. */
+  integrated: number;
+  /** True peak, dBTP. */
+  truePeak: number;
+  /** Loudness range, LU. */
+  range: number;
+}
+
+export interface OutputProfile {
+  id: string;
+  width: number;
+  height: number;
+  safeZone: SafeZone;
+  loudness: LoudnessTarget;
+}
+
 export interface DerivedFrom {
   spec: {
     path: string;
@@ -125,6 +149,7 @@ export interface EditTimeline {
   fps: number;
   durationInFrames: FrameCount;
   resolution: Resolution;
+  profile: OutputProfile;
   assets: Record<string, Asset>;
   tracks: Track[];
   sections?: Section[];

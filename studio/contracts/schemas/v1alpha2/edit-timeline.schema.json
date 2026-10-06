@@ -44,6 +44,41 @@
         "height": { "type": "integer", "minimum": 1, "maximum": 4320 }
       }
     },
+    "SafeZone": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pixels inset from each edge of the frame where kits keep text and graphics.",
+      "required": ["top", "right", "bottom", "left"],
+      "properties": {
+        "top": { "type": "integer", "minimum": 0 },
+        "right": { "type": "integer", "minimum": 0 },
+        "bottom": { "type": "integer", "minimum": 0 },
+        "left": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "LoudnessTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["integrated", "truePeak", "range"],
+      "properties": {
+        "integrated": { "type": "number", "minimum": -70, "maximum": -5, "description": "Integrated loudness, LUFS." },
+        "truePeak": { "type": "number", "minimum": -9, "maximum": 0, "description": "True peak, dBTP." },
+        "range": { "type": "number", "minimum": 1, "maximum": 20, "description": "Loudness range, LU." }
+      }
+    },
+    "OutputProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A whole copy of the output profile the timeline renders to (avg-tk7.4): its size, safe zone and loudness. The catalog is src/output-profiles.json; the timeline does not depend on it.",
+      "required": ["id", "width", "height", "safeZone", "loudness"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+        "width": { "type": "integer", "minimum": 1, "maximum": 7680 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 4320 },
+        "safeZone": { "$ref": "#/$defs/SafeZone" },
+        "loudness": { "$ref": "#/$defs/LoudnessTarget" }
+      }
+    },
     "DerivedFrom": {
       "type": "object",
       "additionalProperties": false,
@@ -201,7 +236,7 @@
     "EditTimeline": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["apiVersion", "kind", "episodeRef", "revision", "fps", "durationInFrames", "resolution", "assets", "tracks"],
+      "required": ["apiVersion", "kind", "episodeRef", "revision", "fps", "durationInFrames", "resolution", "profile", "assets", "tracks"],
       "properties": {
         "apiVersion": { "type": "string", "const": "studio.video/v1alpha2" },
         "kind": { "type": "string", "const": "EditTimeline" },
@@ -211,6 +246,7 @@
         "fps": { "type": "integer", "minimum": 1 },
         "durationInFrames": { "$ref": "#/$defs/FrameCount" },
         "resolution": { "$ref": "#/$defs/Resolution" },
+        "profile": { "$ref": "#/$defs/OutputProfile" },
         "assets": {
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/LocalId" },

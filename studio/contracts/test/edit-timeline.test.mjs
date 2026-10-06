@@ -10,6 +10,7 @@ import {
   validateEditTimeline,
 } from "../src/edit-timeline.mjs";
 import { applyPatch } from "../scripts/lib/json-patch.mjs";
+import { outputProfile } from "../src/output-profiles.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const v2 = resolve(root, "fixtures/timeline/v1alpha2");
@@ -39,6 +40,25 @@ describe("validateEditTimeline", () => {
     assert.ok(problems.length > 0);
     assert.ok(problems.every((p) => p.code === "schema"));
     assert.ok(problems.some((p) => p.path === "$.tracks[2].items[0].from"));
+  });
+
+  it("reports a resolution that is not its profile's, and a safe zone that leaves nothing", () => {
+    const doc = lesson();
+    doc.resolution = { width: 1280, height: 720 };
+    doc.profile.safeZone.left = 1900;
+    const problems = validateEditTimeline(doc);
+    assert.deepEqual(problems.map((p) => [p.code, p.path]), [
+      ["profile-resolution-mismatch", "$.profile"],
+      ["profile-safe-zone", "$.profile.safeZone"],
+    ]);
+    assert.match(problems[0].message, /resolution 1280x720 is not profile "youtube-1920x1080" \(1920x1080\)/);
+  });
+
+  it("accepts a profile that is not in the catalog", () => {
+    const doc = lesson();
+    doc.profile.id = "house-style";
+    doc.profile.loudness.integrated = -16;
+    assert.deepEqual(validateEditTimeline(doc), []);
   });
 
   it("collects every semantic problem, not just the first", () => {
@@ -137,6 +157,30 @@ describe("migrateEditTimelineV1alpha1", () => {
 
   it("refuses a fractional frame rate", () => {
     assert.throws(() => migrateEditTimelineV1alpha1({ ...basic(), fps: 29.97 }, { assetHashes: hashes }), /not an integer/);
+  });
+
+  it("gives a 1920x1080 timeline the 16:9 profile and a 1080x1920 one the 9:16 profile", () => {
+    assert.deepEqual(migrateEditTimelineV1alpha1(basic(), { assetHashes: hashes }).profile, outputProfile("youtube-1920x1080"));
+    const vertical = { ...basic(), resolution: { width: 1080, height: 1920 } };
+    const migrated = migrateEditTimelineV1alpha1(vertical, { assetHashes: hashes });
+    assert.deepEqual(migrated.profile, outputProfile("vertical-1080x1920"));
+    assert.deepEqual(validateEditTimeline(migrated), []);
+  });
+
+  it("uses the profile it is given, and refuses a size no profile has", () => {
+    const square = { ...basic(), resolution: { width: 1080, height: 1080 } };
+    assert.throws(
+      () => migrateEditTimelineV1alpha1(square, { assetHashes: hashes }),
+      /no output profile is 1080x1080 \(youtube-1920x1080 1920x1080, vertical-1080x1920 1080x1920\)/,
+    );
+    const profile = { id: "square-1080", width: 1080, height: 1080, safeZone: { top: 54, right: 54, bottom: 54, left: 54 }, loudness: { integrated: -14, truePeak: -1, range: 11 } };
+    assert.deepEqual(migrateEditTimelineV1alpha1(square, { assetHashes: hashes, profile }).profile, profile);
+  });
+
+  it("copies the catalog profile, so the timeline is free of the catalog", () => {
+    const migrated = migrateEditTimelineV1alpha1(basic(), { assetHashes: hashes });
+    migrated.profile.safeZone.top = 0;
+    assert.equal(outputProfile("youtube-1920x1080").safeZone.top, 54);
   });
 
   it("refuses anything but a v1alpha1 timeline", () => {
