@@ -1,6 +1,6 @@
 ---
 name: compose-video
-version: "0.3.0"
+version: "0.4.0"
 description: Compose the final video through the episode's edit timeline, rendered with Remotion
 inputs:
   - name: illustrations
@@ -75,6 +75,24 @@ compiler ran and from which spec revision.
 - Editing the spec, a take or a picture makes the next render recompile.
 - Never change a template release to make a spec compile: a release is
   immutable, and its hash check fails.
+
+### Series rules
+
+The template may name a **validator** (`poetry-short@1.0.0`, …) whose rules
+apply to whatever is rendered, hand edits included. Run `pva_check_episode`
+before rendering: it says which timeline would be rendered (as it stands, or
+recompiled and why) and lists every finding, writing nothing.
+
+- **Errors** refuse `pva_build_timeline` and `pva_compose_video`; nothing is
+  written or rendered. Each names the file and path to fix
+  (`artifacts/edit-timeline.json#$.tracks[1]`, `episode-spec.json#$.data.panels[2]`).
+- A hand edit may change what the series allows — when a picture changes, how
+  captions are split. It may not touch the voice, the captions' words, the
+  profile, the kits or the effects: tell the person to change the spec or the
+  takes instead, or to delete `artifacts/edit-timeline.json` to recompile.
+- **Warnings** (a picture flashing or held over 7 s, a long caption) do not
+  block; they are in the reply and the render report's `validation`. Mention
+  them to the person.
 
 ## What the timeline holds (episodes without a spec)
 

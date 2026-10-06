@@ -8,7 +8,8 @@ Accepted. The contract and pure validation helpers are implemented in
 golden output, with `poetry-short@1.0.0` the first; the agent's
 `compileEpisode` loads and checks a spec-driven episode, and
 `pva_build_timeline`/`pva_compose_video` use it whenever an episode has an
-`episode-spec.json`. Series-specific validator hooks are `avg-jao.3`.
+`episode-spec.json`. Series validators are implemented beside the compilers
+(`avg-jao.3`); golden-reference verification and promotion are `avg-jao.6`.
 
 ## Context
 
@@ -115,6 +116,25 @@ shared contract helper, is a new version. An episode with a spec is always
 compiled; it never falls back to ADR-0036's builder, whose hand-edit
 preservation applies to compiled timelines too.
 
+### Series validators check what is rendered
+
+`SeriesTemplate.validator` names a versioned, reviewed validator in
+`@studio/series`, registered and frozen like a compiler: each released
+version has golden cases (small edits of its compiler fixture's timeline with
+their exact findings), and a new rule is a new version. A validator is pure;
+it receives the compile input, the timeline about to be rendered and what the
+compiler makes of the same inputs, and returns findings (`error` or
+`warning`) located by JSON path.
+
+The rules apply to **whatever is rendered**, a hand-edited timeline included:
+a hand edit may change what the series allows (when a picture changes, how
+captions are split), never the format itself (the voice, the text, the
+profile, the effects). Errors refuse the build and the render before anything
+is written; warnings are reported and recorded in the render report.
+`pva_check_episode` runs the same check without writing anything — the gate
+the layout sheet (`avg-3th.1`) and the pipeline stages (`avg-jao.4`) will
+block on. A template that names no validator has no series rules.
+
 ### Golden references are evidence, not live pointers
 
 A `SeriesReference` records the source episode, the exact template pin,
@@ -162,8 +182,9 @@ a trusted golden; it cannot infer trust from `validateSeriesReference() === []`.
   code versions and media; hashes do not constitute a backup.
 - `avg-jao.2` owns loading/resolving the pinned release, compiler dispatch,
   workspace writes/staleness and the spec → timeline integration.
-- `avg-jao.3` owns series-specific mechanical checks, reference trust/promotion
-  integration and blocking the layout sheet on invalid inputs.
+- `avg-jao.3` owns the series validators and the check that blocks rendering;
+  `avg-jao.6` owns reference trust/promotion integration; blocking the layout
+  sheet comes with the sheet (`avg-3th.1`).
 - `avg-jao.4` owns pipeline wiring; `avg-jao.5` owns identical-instant visual
   comparisons. Real channel templates and approved reference media belong to
   `avg-dcf`, not contract fixtures. No CreativeStudio runtime or production
