@@ -1,15 +1,17 @@
 // npm run kits:lock      add new kit versions to kits.lock.json (never rewrites an entry)
-// npm run kits:previews  render previews/<name>@<version>.png (first example, 640x360)
+// npm run kits:previews  render previews/<name>@<version>.<profile>.png: the first
+//                        example in every output profile, at a third of its size
 
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
-import {copyFile, mkdtemp, rm} from 'node:fs/promises';
+import {copyFile, mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {renderStill, selectComposition} from '@remotion/renderer';
-import {KIT_VERSIONS, previewCompositionId} from '../src/kits/index.js';
+import {KIT_VERSIONS, previewCompositionId, previewPath} from '../src/kits/index.js';
 import {bundlePreviews} from '../src/preview-bundle.js';
+import {outputProfiles} from '../test/helpers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lockFile = path.join(root, 'kits.lock.json');
@@ -40,14 +42,19 @@ async function previews() {
     const serveUrl = await bundlePreviews(path.join(work, 'bundle'));
     // Render all first, then copy: a failure halfway leaves previews/ as it was.
     const rendered: [string, string][] = [];
-    for (const kit of KIT_VERSIONS) {
-      const example = kit.examples[0]!;
-      const id = previewCompositionId(kit.name, kit.version, example.id);
-      const composition = await selectComposition({serveUrl, id, inputProps: {}});
-      const file = `${kit.name}@${kit.version}.png`;
-      await renderStill({composition, serveUrl, output: path.join(work, file), frame: example.frame, scale: 1 / 3, imageFormat: 'png'});
-      rendered.push([path.join(work, file), path.join(root, 'previews', file)]);
+    for (const profile of outputProfiles()) {
+      for (const kit of KIT_VERSIONS) {
+        const example = kit.examples[0]!;
+        const id = previewCompositionId(kit.name, kit.version, example.id);
+        const inputProps = {profile};
+        const composition = await selectComposition({serveUrl, id, inputProps});
+        const file = previewPath(kit.name, kit.version, profile.id);
+        const temp = path.join(work, path.basename(file));
+        await renderStill({composition, serveUrl, inputProps, output: temp, frame: example.frame, scale: 1 / 3, imageFormat: 'png'});
+        rendered.push([temp, path.join(root, file)]);
+      }
     }
+    await mkdir(path.join(root, 'previews'), {recursive: true});
     for (const [from, to] of rendered) {
       await copyFile(from, to);
       console.log(`rendered ${path.relative(root, to)}`);

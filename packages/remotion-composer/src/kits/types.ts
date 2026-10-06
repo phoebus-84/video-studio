@@ -6,10 +6,20 @@
 import type React from 'react';
 import type {ZodTypeAny} from 'zod';
 
+/** The frame a kit draws into: the output profile's size and safe zone (avg-tk7.4). */
+export interface KitProfile {
+  id: string;
+  width: number;
+  height: number;
+  /** Pixels inset from each edge where overlay kits keep their text and graphics. */
+  safeZone: {top: number; right: number; bottom: number; left: number};
+}
+
 /** What a kit component receives besides its props (which arrive with $asset resolved to URLs). */
 export interface KitContext {
   /** Asset URL → how many frames that video lasts, for kits that freeze at its end. */
   assetFrames: Record<string, number>;
+  profile: KitProfile;
 }
 
 export interface KitExample {
@@ -28,6 +38,11 @@ export interface KitVersion {
   name: string;
   version: string;
   description: string;
+  /**
+   * "overlay": draws text or graphics over the picture, and must stay inside
+   * the profile's safe zone (checked on every example). Absent: fills the frame.
+   */
+  layer?: 'overlay';
   /** Validates props as a timeline writes them. */
   props: ZodTypeAny;
   component: React.FC<{props: Record<string, unknown>; context: KitContext}>;

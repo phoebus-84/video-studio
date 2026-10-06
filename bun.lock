@@ -76,7 +76,7 @@
     },
     "packages/remotion-composer": {
       "name": "@av/remotion-composer",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "bin": {
         "render-timeline": "./dist/cli.js"
       },

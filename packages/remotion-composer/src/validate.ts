@@ -19,6 +19,14 @@ export function validateTimeline(doc: unknown): {ok: true; timeline: EditTimelin
   }
   const timeline = parsed.data;
   const problems: ComposerProblem[] = [];
+  const {profile, resolution} = timeline;
+  if (profile.width !== resolution.width || profile.height !== resolution.height) {
+    problems.push({
+      code: 'invalid-timeline',
+      message: `resolution ${resolution.width}x${resolution.height} is not profile "${profile.id}" (${profile.width}x${profile.height})`,
+      path: '$.profile',
+    });
+  }
   timeline.tracks.forEach((track, ti) =>
     track.items.forEach((item, ii) => {
       if (isAudioItem(item)) return;

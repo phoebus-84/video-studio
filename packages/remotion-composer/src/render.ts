@@ -10,7 +10,7 @@ import {bundle} from '@remotion/bundler';
 import {renderMedia, selectComposition} from '@remotion/renderer';
 import {stageAssets, sha256} from './assets.js';
 import {ComposerError} from './errors.js';
-import {DEFAULT_LOUDNESS, normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './loudness.js';
+import {normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './loudness.js';
 import {isAudioItem} from './schema.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
@@ -23,6 +23,7 @@ export interface RenderTimelineOptions {
   outputPath: string;
   concurrency?: number;
   onProgress?: (progress: number) => void;
+  /** Overrides the timeline's `profile.loudness`. */
   loudness?: LoudnessTarget;
 }
 
@@ -32,6 +33,8 @@ export interface RenderResult {
   sizeBytes: number;
   hash: string;
   kits: {name: string; version: string}[];
+  /** The id of the output profile the timeline rendered to. */
+  profile: string;
   loudness: LoudnessResult | null;
 }
 
@@ -81,7 +84,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     let loudness: LoudnessResult | null = null;
     if (hasAudio) {
       try {
-        loudness = await normalizeLoudness(rendered, output, options.loudness ?? DEFAULT_LOUDNESS);
+        loudness = await normalizeLoudness(rendered, output, options.loudness ?? timeline.profile.loudness);
       } catch (e) {
         throw new ComposerError('loudness-failed', `loudness could not be normalised: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -96,6 +99,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       sizeBytes: (await stat(output)).size,
       hash: await sha256(output),
       kits,
+      profile: timeline.profile.id,
       loudness,
     };
   } finally {
