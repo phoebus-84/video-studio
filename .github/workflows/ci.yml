@@ -74,6 +74,7 @@ jobs:
           - packages/terminal-recorder
           - packages/infographics
           - packages/video-composer
+          - packages/remotion-composer
           - studio/contracts
           - studio/runtime
           - studio/pipelines
@@ -96,6 +97,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick
 
       - run: bun install --frozen-lockfile
+
+      # The kit lock test compares kits.lock.json with main's: released kit
+      # versions must stay locked and unchanged.
+      - name: fetch main for the kit lock
+        if: matrix.module == 'packages/remotion-composer'
+        run: git fetch --depth=1 origin +refs/heads/main:refs/remotes/origin/main
 
       - name: typecheck
         working-directory: ${{ matrix.module }}

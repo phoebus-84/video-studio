@@ -1,6 +1,6 @@
 {
   "name": "@av/remotion-composer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Renders a layered, kit-based edit timeline (studio.video/v1alpha2) with Remotion, then normalises loudness with FFmpeg",
@@ -17,7 +17,9 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "kits:lock": "node --import tsx scripts/kits.ts lock",
+    "kits:previews": "node --import tsx scripts/kits.ts previews"
   },
   "dependencies": {
     "@remotion/bundler": "4.0.505",
