@@ -1,3 +1,5 @@
+import { outputProfile } from "./output-profiles.mjs";
+
 const POLICY_ACTION_FIELDS = Object.freeze([
   "onPaidAction",
   "onBudgetExceeded",
@@ -54,6 +56,11 @@ export function validateWorkspaceSemantics(workspace) {
     }
     if (Number.isInteger(budget?.warnAtMicros) && Number.isInteger(budget?.limitMicros) && budget.warnAtMicros > budget.limitMicros) {
       add(`/${scope}/budget/warnAtMicros`, "budget.warning-exceeds-limit", "warnAtMicros must not exceed limitMicros");
+    }
+    const ref = settings?.outputProfile;
+    const profile = ref && outputProfile(ref.id);
+    if (profile && (ref.width !== profile.width || ref.height !== profile.height)) {
+      add(`/${scope}/outputProfile`, "output-profile.mismatch", `${ref.id} is ${profile.width}x${profile.height}, not ${ref.width}x${ref.height}`);
     }
   }
 

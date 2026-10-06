@@ -105,9 +105,9 @@
       "additionalProperties": false,
       "required": ["id", "width", "height", "frameRate"],
       "properties": {
-        "id": { "type": "string", "enum": ["youtube-1080p-30"] },
-        "width": { "type": "integer", "const": 1920 },
-        "height": { "type": "integer", "const": 1080 },
+        "id": { "type": "string", "enum": ["youtube-1920x1080", "vertical-1080x1920"], "description": "An id of the output profile catalog, src/output-profiles.json; width and height must be that profile's." },
+        "width": { "type": "integer", "minimum": 1, "maximum": 7680 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 4320 },
         "frameRate": { "type": "integer", "const": 30 }
       }
     },
