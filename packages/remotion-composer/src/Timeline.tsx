@@ -4,7 +4,7 @@
 
 import React from 'react';
 import {AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame} from 'remotion';
-import {KITS} from './kits/registry.js';
+import {resolveKit} from './kits/index.js';
 import type {AudioItem, EditTimeline, VisualItem} from './schema.js';
 import {isAudioItem} from './schema.js';
 import {itemVolume} from './volume.js';
@@ -36,7 +36,7 @@ const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; asse
   let opacity = 1;
   if (item.transitionIn) opacity = Math.min(opacity, Math.min(1, frame / item.transitionIn.duration));
   if (item.transitionOut) opacity = Math.min(opacity, Math.min(1, (item.duration - frame) / item.transitionOut.duration));
-  const kit = KITS[item.kit.name]!;
+  const kit = resolveKit(item.kit.name, item.kit.version)!;
   const Kit = kit.component;
   // Kits see URLs, so the frame counts are keyed by URL too.
   const byUrl = Object.fromEntries(Object.entries(assetFrames).map(([file, frames]) => [staticFile(file), frames]));

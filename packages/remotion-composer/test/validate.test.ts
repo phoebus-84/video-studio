@@ -1,6 +1,6 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {listKits} from '../src/kits/registry.js';
+import {listKits} from '../src/kits/index.js';
 import {validateTimeline} from '../src/validate.js';
 import {clone, fixture} from './helpers.js';
 
@@ -21,6 +21,8 @@ describe('validateTimeline', () => {
     const doc = clone(fixture('explainer.json'));
     doc.tracks[0].items[0].kit.version = '2.0.0';
     assert.deepEqual(problems(doc), [['unknown-kit', '$.tracks[0].items[0].kit']]);
+    const result = validateTimeline(doc);
+    assert.match(result.ok ? '' : result.problems[0]!.message, /still@2\.0\.0: available still@1\.0\.0/);
   });
 
   it('refuses props a kit does not accept, at the offending field', () => {
@@ -36,11 +38,12 @@ describe('validateTimeline', () => {
     assert.deepEqual(problems({kind: 'EditTimeline'}).map(([code]) => code)[0], 'invalid-timeline');
   });
 
-  it('lists its three kits', () => {
-    assert.deepEqual(listKits(), [
-      {name: 'still', version: '1.0.0'},
-      {name: 'clip', version: '1.0.0'},
-      {name: 'captions', version: '1.0.0'},
+  it('lists every kit version with what the catalog needs', () => {
+    assert.deepEqual(listKits().map((k) => [k.name, k.version, k.examples, k.preview]), [
+      ['captions', '1.0.0', ['bottom', 'top'], 'previews/captions@1.0.0.png'],
+      ['clip', '1.0.0', ['plays'], 'previews/clip@1.0.0.png'],
+      ['still', '1.0.0', ['cover', 'contain'], 'previews/still@1.0.0.png'],
     ]);
+    assert.ok(listKits().every((k) => k.description.length > 0));
   });
 });

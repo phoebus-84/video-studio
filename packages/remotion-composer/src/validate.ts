@@ -4,7 +4,7 @@
 // validateEditTimeline, which the caller runs first (ADR-0034).
 
 import type {ZodIssue} from 'zod';
-import {KITS} from './kits/registry.js';
+import {kitVersions, resolveKit} from './kits/index.js';
 import {EditTimelineSchema, isAudioItem, type EditTimeline} from './schema.js';
 import type {ComposerProblem} from './errors.js';
 
@@ -23,9 +23,10 @@ export function validateTimeline(doc: unknown): {ok: true; timeline: EditTimelin
     track.items.forEach((item, ii) => {
       if (isAudioItem(item)) return;
       const p = `$.tracks[${ti}].items[${ii}]`;
-      const kit = KITS[item.kit.name];
-      if (!kit || kit.version !== item.kit.version) {
-        const known = kit ? `${item.kit.name} is ${kit.version} here` : `no kit "${item.kit.name}"`;
+      const kit = resolveKit(item.kit.name, item.kit.version);
+      if (!kit) {
+        const versions = kitVersions(item.kit.name);
+        const known = versions.length > 0 ? `available ${versions.map((v) => `${item.kit.name}@${v}`).join(', ')}` : `no kit "${item.kit.name}"`;
         problems.push({code: 'unknown-kit', message: `${item.kit.name}@${item.kit.version}: ${known}`, path: `${p}.kit`});
         return;
       }
