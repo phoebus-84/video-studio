@@ -2,10 +2,13 @@
 
 ## Status
 
-Proposed for review with `avg-jao.1`. The contract and pure validation helpers
-are implemented in `studio/contracts`. Compiler integration is `avg-jao.2`;
-series-specific validator hooks are `avg-jao.3`. This does not change what
-`pva_compose_video` currently renders.
+Accepted. The contract and pure validation helpers are implemented in
+`studio/contracts` (`avg-jao.1`). The compiler seat is `@studio/series`
+(`avg-jao.2`): a registry of versioned, pure compilers, each frozen by a
+golden output, with `poetry-short@1.0.0` the first; the agent's
+`compileEpisode` loads and checks a spec-driven episode, and
+`pva_build_timeline`/`pva_compose_video` use it whenever an episode has an
+`episode-spec.json`. Series-specific validator hooks are `avg-jao.3`.
 
 ## Context
 
@@ -103,9 +106,14 @@ satisfy the data schema. There is no permissive "render despite placeholders"
 mode. Instantiation and validation are pure and never write workspace files.
 
 The compiler consumes the spec plus measured timing/source pins and produces
-the existing typed timeline with spec/compiler provenance (ADR-0034). Until
-`avg-jao.2` switches the consumer, ADR-0036's current timeline construction
-and hand-edit preservation remain untouched.
+the existing typed timeline with spec/compiler provenance (ADR-0034):
+`derivedFrom` names the spec's hash and revision and the compiler's id and
+version, and `metadata.inputs` the hash of every file read. A released
+compiler version is frozen by its golden output — a fixture must compile to
+a byte-identical timeline — so a change in behaviour, even one coming from a
+shared contract helper, is a new version. An episode with a spec is always
+compiled; it never falls back to ADR-0036's builder, whose hand-edit
+preservation applies to compiled timelines too.
 
 ### Golden references are evidence, not live pointers
 

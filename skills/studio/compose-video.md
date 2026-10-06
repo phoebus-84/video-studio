@@ -1,6 +1,6 @@
 ---
 name: compose-video
-version: "0.2.0"
+version: "0.3.0"
 description: Compose the final video through the episode's edit timeline, rendered with Remotion
 inputs:
   - name: illustrations
@@ -57,7 +57,26 @@ running FFmpeg: the timeline is a document you can read, review and edit, and
 Profiles: `youtube-1920x1080` (default, −15 LUFS) and `vertical-1080x1920`
 (9:16, −14 LUFS, safe zone clear of the platforms' interface).
 
-## What the timeline holds
+## Episodes with a spec
+
+An episode with an `episode-spec.json` is pinned to a series template release
+(ADR-0037), and its timeline is **compiled** by the compiler that release names
+(`poetry-short@1.0.0`, …) from the spec, `artifacts/narration/takes.json` and
+each take's word timing — not assembled from scene images. Both tools say which
+compiler ran and from which spec revision.
+
+- The profile is the template's: asking for another is refused
+  (`profile-fixed-by-template`).
+- A problem is reported with the file and JSON path to fix
+  (`episode-spec.json#$.data.panels[1].cue`, `artifacts/narration/takes.json#…`).
+  Tell the person what to change in the spec or the takes; there is no
+  fallback to scene images, and no render of an older timeline while the
+  spec does not compile.
+- Editing the spec, a take or a picture makes the next render recompile.
+- Never change a template release to make a spec compile: a release is
+  immutable, and its hash check fails.
+
+## What the timeline holds (episodes without a spec)
 
 - **Scenes** in reading order (`s1, s2, s4a, s10`), each for its length from
   `timing.json`, else its narration, else 10 s; `still@1.0.0`, letterboxed
