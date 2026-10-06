@@ -7,3 +7,4 @@ export * from "./edit-timeline-builder.js";
 export * from "./series-compile.js";
 export * from "./episode-render.js";
 export * from "./spec-init.js";
+export * from "./references.js";
