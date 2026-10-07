@@ -36,4 +36,5 @@ export interface ChannelTheme {
 export declare const themeReleasePath: (id: string, version: string) => string;
 export declare const THEME_FILE: "theme.json";
 export declare const BUNDLED_FONTS: Readonly<Record<"Anton" | "Fraunces" | "Inter", readonly string[]>>;
+export declare const ROLE_FACES: Readonly<{ display: readonly string[]; serif: readonly string[]; sans: readonly string[] }>;
 export declare function validateChannelTheme(doc: unknown): { code: string; path: string; message: string }[];

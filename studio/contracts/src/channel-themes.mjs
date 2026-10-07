@@ -21,6 +21,13 @@ export const BUNDLED_FONTS = Object.freeze({
   Inter: Object.freeze(["200 normal", "300 normal", "400 normal", "600 normal"]),
 });
 
+/** The faces channel-neutral kits draw each font role with: a role's family must have them. */
+export const ROLE_FACES = Object.freeze({
+  display: Object.freeze(["400 normal"]),
+  serif: Object.freeze(["400 italic"]),
+  sans: Object.freeze(["400 normal", "600 normal"]),
+});
+
 /** Room geometry is drawn in 1920×1080 image coordinates. */
 const FRAME = { w: 1920, h: 1080 };
 
@@ -42,6 +49,11 @@ export function validateChannelTheme(doc) {
     const family = doc.look.fonts[role];
     if (!BUNDLED_FONTS[family]) {
       problems.push(issue("unknown-font", `$.look.fonts.${role}`, `${family} is not bundled (${Object.keys(BUNDLED_FONTS).join(", ")})`));
+      continue;
+    }
+    const missing = ROLE_FACES[role].filter((face) => !BUNDLED_FONTS[family].includes(face));
+    if (missing.length > 0) {
+      problems.push(issue("missing-face", `$.look.fonts.${role}`, `${family} has no ${missing.join(", ")}, which the kits draw the ${role} role with`));
     }
   }
   const onFrame = ([x, y]) => x >= 0 && x <= FRAME.w && y >= 0 && y <= FRAME.h;

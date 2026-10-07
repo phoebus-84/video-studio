@@ -99,6 +99,7 @@ export interface Character {
 
 export interface Sky {
   poly: Polygon;
+  /** Seconds between strikes; a bolt lasts 1.6 s. */
   period?: number;
   seed?: number;
   scale?: number;

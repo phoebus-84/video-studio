@@ -362,7 +362,8 @@
         },
         "period": {
           "type": "number",
-          "exclusiveMinimum": 0
+          "minimum": 1.6,
+          "description": "Seconds between strikes; a bolt lasts 1.6 s."
         },
         "seed": {
           "type": "integer",
@@ -489,6 +490,10 @@
         },
         "rooms": {
           "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._]*$",
+            "description": "A room is offered as the asset theme-<name> (and its clip as theme-<name>-monitor): letters, digits, dots, underscores."
+          },
           "additionalProperties": {
             "$ref": "#/$defs/Room"
           }

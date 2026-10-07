@@ -40,6 +40,25 @@ describe("validateChannelTheme (ADR-0040)", () => {
     assert.deepEqual(codes(doc).map(([c]) => c), ["schema", "schema"]);
   });
 
+  it("refuses a role whose family lacks the faces the kits draw it with", () => {
+    const doc = theme();
+    doc.look.fonts.serif = "Anton";
+    doc.look.fonts.sans = "Fraunces";
+    assert.deepEqual(codes(doc), [
+      ["missing-face", "$.look.fonts.serif"],
+      ["missing-face", "$.look.fonts.sans"],
+    ]);
+  });
+
+  it("refuses a room whose name cannot name an asset, and a storm faster than a bolt lasts", () => {
+    const doc = theme();
+    doc.rooms["sala grande"] = doc.rooms.hall;
+    assert.deepEqual([...new Set(codes(doc).map(([c]) => c))], ["schema"]);
+    const fast = theme();
+    fast.rooms.hall.sky[0].period = 1;
+    assert.deepEqual(codes(fast).map(([c]) => c), ["schema"]);
+  });
+
   it("refuses room geometry off the 1920×1080 frame", () => {
     const doc = theme();
     doc.rooms.hall.sky[0].poly[1] = [2200, 262];
