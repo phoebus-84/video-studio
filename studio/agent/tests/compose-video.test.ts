@@ -118,7 +118,12 @@ describe("pva_compose_video", () => {
     expect(current.path).toBe(`${current.renderId}.mp4`);
     expect(existsSync(at(`output/${current.path}`))).toBe(true);
     const report = readJson(`output/${current.renderId}.report.json`);
-    expect(report.timeline).toEqual({ path: "artifacts/edit-timeline.json", hash: sha256("artifacts/edit-timeline.json") });
+    expect(report.timeline).toEqual({
+      path: "artifacts/edit-timeline.json",
+      hash: sha256("artifacts/edit-timeline.json"),
+      snapshot: `${current.renderId}.timeline.json`,
+    });
+    expect(sha256(`output/${current.renderId}.timeline.json`)).toBe(report.timeline.hash);
     expect(report.render).toMatchObject({ path: current.path, profile: "youtube-1920x1080", cache: { segmentsRendered: 5 } });
     expect(renders[0]!.cacheDir).toBe(at(".cache/remotion"));
     expect(current.renderId.endsWith(report.timeline.hash.slice(7, 15))).toBe(true);
