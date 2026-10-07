@@ -87,6 +87,7 @@ describe('validateTimeline', () => {
       ['lower-third', '1.0.0', 'overlay'],
       ['still', '1.0.0', 'fill'],
       ['title-chip', '1.0.0', 'overlay'],
+      ['verse-plate', '1.0.0', 'overlay'],
     ]);
     const captions = listKits(ids).find((k) => k.name === 'captions' && k.version === '1.1.0')!;
     assert.deepEqual(captions.examples, ['bottom', 'top', 'center', 'long', 'overflowing']);
