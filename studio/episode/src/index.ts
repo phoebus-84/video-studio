@@ -12,3 +12,4 @@ export * from "./sheet-instants.js";
 export * from "./layout-sheet.js";
 export * from "./version-diff.js";
 export * from "./version-compare.js";
+export * from "./speech-align.js";
