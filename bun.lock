@@ -186,6 +186,7 @@
       "name": "@studio/episode",
       "version": "0.1.0",
       "dependencies": {
+        "@av/elevenlabs": "workspace:*",
         "@av/remotion-composer": "workspace:*",
         "@studio/contracts": "workspace:*",
         "@studio/series": "workspace:*",
