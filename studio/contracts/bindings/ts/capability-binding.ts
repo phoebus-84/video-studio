@@ -11,7 +11,7 @@ export type BindingDecision = "pi" | "user" | "default";
 export interface CapabilityBinding {
   apiVersion: "studio.video/v1alpha1";
   kind: "CapabilityBinding";
-  capability: "image.generate" | "image.edit" | "speech.synthesize" | "graphics.render" | "terminal.record" | "video.compose" | "media.probe";
+  capability: "image.generate" | "image.edit" | "speech.synthesize" | "speech.align" | "graphics.render" | "terminal.record" | "video.compose" | "media.probe";
   /** Provider identifier (e.g. 'fal-ai', 'qwen-tts', 'studio-graphics-renderer'). */
   provider: string;
   adapter: unknown;

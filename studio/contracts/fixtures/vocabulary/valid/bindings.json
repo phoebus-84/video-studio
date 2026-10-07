@@ -16,6 +16,11 @@
       "model": "qwen-tts-v1"
     },
     {
+      "capability": "speech.align",
+      "provider": "qwen-local",
+      "model": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit"
+    },
+    {
       "capability": "graphics.render",
       "provider": "studio-graphics-renderer",
       "model": "v1"

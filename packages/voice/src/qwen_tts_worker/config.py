@@ -67,6 +67,11 @@ class Settings(BaseSettings):
         description="Synthesis provider mode. 'fake' is an explicit CI-only mode; live failures never fall back to it.",
     )
 
+    align_model: str = Field(
+        default="mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
+        description="Forced-alignment model for POST /align (avg-8hs.2), loaded on first use.",
+    )
+
     model_idle_timeout_seconds: float | None = Field(
         default=None,
         ge=1.0,

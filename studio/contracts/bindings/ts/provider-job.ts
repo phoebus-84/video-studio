@@ -22,7 +22,7 @@ export interface ProviderJob {
   apiVersion: "studio.video/v1alpha1";
   kind: "ProviderJob";
   id: string;
-  capability: "image.generate" | "image.edit" | "speech.synthesize" | "graphics.render" | "terminal.record" | "video.compose" | "media.probe";
+  capability: "image.generate" | "image.edit" | "speech.synthesize" | "speech.align" | "graphics.render" | "terminal.record" | "video.compose" | "media.probe";
   provider: string;
   profile: string;
   /** Provider-side request identifier. Persisted before polling so the job survives restarts. */

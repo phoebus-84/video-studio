@@ -41,6 +41,8 @@ export interface PaidCall {
   model: string;
   /** What the call is for, in a few words: "image s3", "clip shot-2". */
   purpose: string;
+  /** A price that is not fal's: the provider's own profile (ElevenLabs, avg-8hs.2). */
+  estimate?: { estimate: Money; priced: boolean; profile: string };
 }
 
 /** What a fal model costs per call, from its profile — or that nobody knows. */
@@ -70,7 +72,7 @@ export async function paidCall<T>(
   const ref = { channel: target.channel, series: target.series, episode: target.episode };
   const dir = episodePath(target.libraryRoot, ref.channel, ref.series, ref.episode);
   const { envelope } = await resolveBudgetEnvelope(target.libraryRoot, ref, (text) => loadYaml(text));
-  const { estimate, priced, profile } = falEstimate(call.model);
+  const { estimate, priced, profile } = call.estimate ?? falEstimate(call.model);
   return withSpend(dir, {
     episode: ref, actor: "pi",
     capability: call.capability, provider: call.provider, profile, purpose: call.purpose,

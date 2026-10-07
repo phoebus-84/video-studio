@@ -6,7 +6,7 @@ its `episode-spec.json` by its series template's compiler — checked against it
 series' rules, shown on a layout sheet and rendered with `@av/remotion-composer`.
 
 The agent's tools (`pva_init_spec`, `pva_build_timeline`, `pva_check_episode`,
-`pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, the narration tools) and the `series-production` stage
+`pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, `pva_align_take`, the narration tools) and the `series-production` stage
 adapters both call this package, so a tool and a stage never disagree.
 
 ## What it offers
@@ -23,6 +23,8 @@ adapters both call this package, so a tool and a stage never disagree.
 | `sheet-instants.ts` | `sheetInstants`: the frames a layout sheet shows, from the timeline and the release's `sheet` rules (pure) |
 | `layout-sheet.ts` | `makeLayoutSheet`, `layoutSheetStatus`: `artifacts/layout-sheet/`, and whether it still shows what a render would use |
 | `version-diff.ts` | `alignInstants`, `measure`, `judge`: which frames two versions compare, how different they are, the verdict (pure) |
+| `speech-align.ts` | `mapToText`, `snapToSilences`, `measureSilences`: a provider's words made into a take's words (ADR-0038) |
+| `take-align.ts` | `alignTake`: a take's WordTiming by forced alignment, local or ElevenLabs, written beside it and named in `takes.json` |
 | `version-compare.ts` | `compareVersions`: two renders, or a render and a golden reference, decoded with ffmpeg at the same instants, into `reviews/compare/<old>--<new>/` |
 
 `@studio/episode/testing` exports `specEpisode`, `editSpec` and `sha256`: a

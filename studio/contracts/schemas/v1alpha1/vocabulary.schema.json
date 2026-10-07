@@ -10,6 +10,7 @@
         "image.generate",
         "image.edit",
         "speech.synthesize",
+        "speech.align",
         "graphics.render",
         "graphics.animate",
         "scene.create",

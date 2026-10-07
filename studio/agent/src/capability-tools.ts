@@ -29,6 +29,7 @@ import {
 import { CodexImageClient } from "@av/codex-image";
 import { createFalClient, getProfile, FalHttpError, FalValidationError } from "@av/fal-media";
 import { paidCall, providerCost, type SpendCall } from "./spend.js";
+import { SpendRefused, toMicros } from "@studio/contracts/src/budget.mjs";
 import {
   CODEX_PROVIDER,
   DEFAULT_FAL_MODEL,
@@ -45,6 +46,9 @@ import {
   type NarrationSegmentInput,
   decideEditTimeline,
   EDIT_TIMELINE_PATH,
+  alignTake,
+  AlignError,
+  elevenLabsAlignmentUsd,
   compareVersions,
   initEpisodeSpec,
   makeLayoutSheet,
@@ -1204,6 +1208,75 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     },
   });
 
+  pi.registerTool({
+    name: "pva_align_take",
+    label: "Align Take",
+    description: "Measure a narration take's word timing (speech.align): when each word of its written text is said in its audio, by forced alignment, written beside the take and named in artifacts/narration/takes.json — what the series compiler reads. Local Qwen3-ForcedAligner in the voice worker by default (free); provider \"elevenlabs\" only when the person asks for it (paid, through the spend ledger). Never switches provider on its own.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      take: Type.String({ description: "The take's id in takes.json" }),
+      provider: Type.Optional(Type.Union([Type.Literal("qwen-local"), Type.Literal("elevenlabs")], { description: "Default qwen-local" })),
+      language: Type.Optional(Type.String({ description: "ISO 639-1 code (it, en…) when the take does not give one" })),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const provider = params.provider ?? "qwen-local";
+      try {
+        const apiKey = process.env.ELEVENLABS_API_KEY;
+        const result = await alignTake(dir, {
+          take: params.take,
+          provider,
+          ...(params.language ? { language: params.language } : {}),
+          workerUrl: process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL,
+          ...(provider === "elevenlabs" && apiKey ? {
+            elevenlabs: {
+              apiKey,
+              // Through the episode's spend ledger (avg-91o), at the profile's price per minute.
+              pay: <T>(minutes: number, call: () => Promise<T>) => paidCall(
+                { libraryRoot: LIBRARY_ROOT, channel: params.channel, series: params.series, episode: params.episode },
+                {
+                  capability: "speech.align", provider: "elevenlabs", model: "forced-alignment", purpose: `align ${params.take}`,
+                  estimate: {
+                    estimate: { currency: "USD", micros: toMicros(elevenLabsAlignmentUsd(minutes)) },
+                    priced: true,
+                    profile: "elevenlabs-forced-alignment",
+                  },
+                },
+                async (spend) => {
+                  spend.sending();
+                  try {
+                    return { value: await call() };
+                  } catch (e) {
+                    // Refused before any processing: nothing was billed.
+                    if (e instanceof AlignError && ["auth", "quota", "rate-limited", "bad-request", "unreachable"].includes(e.code)) spend.refused();
+                    throw e;
+                  }
+                },
+              ),
+            },
+          } : {}),
+        });
+        const { timing } = result;
+        const lines = [
+          `✅ ${params.take}: ${timing.words.length} words, ${provider} (${(timing.alignment as { model: string }).model}) → ${result.path}`,
+          ...(result.pauses.length > 0 ? [`pauses over 0.35 s inside the speech: ${result.pauses.map((p) => `${p.toFixed(2)}s`).join(", ")}`] : []),
+          ...(result.unmapped.length > 0 ? [`⚠️ not placed by the aligner (given the gap around them): ${result.unmapped.join(" ")}`] : []),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
+      } catch (err) {
+        const e = err as { message?: string; code?: string; name?: string };
+        const code = e instanceof SpendRefused ? "budget" : e.code;
+        return {
+          content: [{ type: "text" as const, text: `❌ ${code ? `${code}: ` : ""}${e.message ?? String(err)}` }],
+          details: { code: code ?? null } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
   // --- Tool: pva_render_terminal (via VHS) -----------------------------
 
   pi.registerTool({
@@ -1421,6 +1494,18 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       } catch {
         caps["text-to-speech"] = { available: false, detail: "TTS worker not reachable" };
       }
+
+      // speech.align (avg-8hs.2): the worker's aligner, and ElevenLabs when its key is set
+      try {
+        const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
+        const aligner = await (await fetch(`${ttsUrl}/align`)).json() as { model?: string; loaded?: boolean };
+        caps["speech-align-local"] = { available: true, detail: `${aligner.model ?? "aligner"}${aligner.loaded ? " (loaded)" : " (loads on first use)"}` };
+      } catch {
+        caps["speech-align-local"] = { available: false, detail: "voice worker not reachable" };
+      }
+      caps["speech-align-elevenlabs"] = process.env.ELEVENLABS_API_KEY
+        ? { available: true, detail: "ELEVENLABS_API_KEY set" }
+        : { available: false, detail: "ELEVENLABS_API_KEY not set" };
 
       // FFmpeg
       try {

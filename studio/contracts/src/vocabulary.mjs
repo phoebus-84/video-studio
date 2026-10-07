@@ -10,6 +10,8 @@ export const CAPABILITIES = Object.freeze([
   "image.generate",
   "image.edit",
   "speech.synthesize",
+  // Word timing from audio and the text it says (avg-8hs.2): forced alignment.
+  "speech.align",
   "graphics.render",
   // Motion graphics rendered frame-accurately, as distinct from a still
   // graphic: a different provider, different outputs, and a stage should be

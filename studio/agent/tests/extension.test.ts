@@ -129,9 +129,10 @@ describe("extensions/index.ts — tool registration", () => {
   });
 
   it("registers the expected suite of production tools", () => {
-    expect(mockPi.tools.length).toBe(48);
+    expect(mockPi.tools.length).toBe(49);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "pva_align_take",
       "pva_blender_create_scene",
       "pva_blender_probe",
       "pva_blender_render",

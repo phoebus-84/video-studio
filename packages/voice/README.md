@@ -6,6 +6,8 @@ Persistent local Qwen3-TTS service optimized for Apple Silicon through MLX.
 
 Model discovery/download state, load and unload lifecycle, one reusable model cache, voice profiles, synthesis job queue, progress, cancellation, segment outputs, health/resource diagnostics, and canonical WAV metadata.
 
+It also aligns: `POST /align` returns when each word of a known text is said in an audio file, with Qwen3-ForcedAligner (`QTW_ALIGN_MODEL`, default `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`, downloaded and loaded on first use). See [the API contract](docs/API.md#forced-alignment).
+
 ## Design correction over the prototype
 
 The worker does not spawn and reload Python for every Pi tool call. A typed local API keeps models warm and makes narration jobs resumable and observable. Audio transcoding and final mixing remain FFmpeg composer responsibilities.
@@ -35,6 +37,7 @@ API docs: `http://127.0.0.1:8000/docs`. For a private per-user LaunchAgent, diag
 ```bash
 pytest
 pytest --cov=src/qwen_tts_worker --cov-report=term-missing
+QTW_ALIGN_LIVE=1 pytest tests/test_alignment.py   # also a real alignment (macOS `say` speaks Italian)
 ```
 
 ## Documentation
