@@ -22,6 +22,8 @@ export interface RenderTimelineOptions {
   timeline: unknown;
   /** The directory asset paths are relative to (the episode). */
   assetRoot: string;
+  /** Folders outside assetRoot that assets may also come from (a channel's theme releases, ADR-0040). */
+  sharedRoots?: string[];
   outputPath: string;
   concurrency?: number;
   /** Opt in to disposable one-second video segments and whole-video reuse. */
@@ -51,7 +53,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     throw new ComposerError(code, `the timeline cannot be rendered: ${checked.problems.map((p) => `${p.code} at ${p.path}`).join('; ')}`, checked.problems);
   }
   const timeline = checked.timeline;
-  const staging = await stageAssets(timeline, options.assetRoot);
+  const staging = await stageAssets(timeline, options.assetRoot, options.sharedRoots);
   if (!staging.ok) {
     throw new ComposerError(staging.problems[0]!.code, `assets are not what the timeline says: ${staging.problems.map((p) => p.message).join('; ')}`, staging.problems);
   }
