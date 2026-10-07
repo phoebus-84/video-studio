@@ -109,6 +109,24 @@ describe("loadEpisode with a pinned theme", () => {
     expect(problemsOf()).toEqual([["path-escape", "../../../../themes/sample/1.0.0/rooms/hall.png"]]);
   });
 
+  it("path-escape: a room image that is a link into another release of the channel's themes", () => {
+    const other = join(channel(), "themes", "sample", "0.9.0", "rooms");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "hall.png"), "an older hall");
+    unlinkSync(join(themeDir(), "rooms", "hall.png"));
+    symlinkSync(join(other, "hall.png"), join(themeDir(), "rooms", "hall.png"));
+    pinTheme();
+    expect(problemsOf()).toEqual([["path-escape", "../../../../themes/sample/1.0.0/rooms/hall.png"]]);
+  });
+
+  it("theme-mismatch: a theme.json whose id or version is not the release it sits in", () => {
+    const theme = JSON.parse(readFileSync(join(themeDir(), "theme.json"), "utf-8"));
+    theme.version = "1.0.1";
+    writeFileSync(join(themeDir(), "theme.json"), JSON.stringify(theme));
+    pinTheme();
+    expect(problemsOf()).toEqual([["theme-mismatch", "../../../../themes/sample/1.0.0/theme.json#$.version"]]);
+  });
+
   it("missing-asset: a room image the theme names is not there", () => {
     unlinkSync(join(themeDir(), "rooms", "hall.png"));
     pinTheme();
@@ -117,10 +135,11 @@ describe("loadEpisode with a pinned theme", () => {
 });
 
 describe("sharedRootsOf", () => {
-  it("lets a render take assets from the channel's themes, and from nowhere else", () => {
-    expect(sharedRootsOf(dir())).toEqual([join(channel(), "themes")]);
-    rmSync(join(channel(), "themes"), { recursive: true });
+  it("lets a render take assets from the theme release the episode's release pins, and from nowhere else", () => {
+    // no theme pinned: nothing outside the episode
     expect(sharedRootsOf(dir())).toEqual([]);
+    pinTheme();
+    expect(sharedRootsOf(dir())).toEqual([themeDir()]);
   });
 });
 

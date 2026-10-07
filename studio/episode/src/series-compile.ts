@@ -100,12 +100,24 @@ export function loadEpisode(
 }
 
 /**
- * Folders outside the episode a render may take assets from: the channel's
- * theme releases (library/<channel>/themes), when there are any (ADR-0040).
+ * Folders outside the episode a render may take assets from: the theme
+ * release its template release pins (library/<channel>/themes/<id>/<version>,
+ * ADR-0040), or none. Whatever cannot be read gives none: loading the
+ * episode reports why.
  */
 export function sharedRootsOf(episodeDir: string): string[] {
-  const themes = join(dirname(dirname(dirname(dirname(resolve(episodeDir))))), "themes");
-  return existsSync(themes) ? [themes] : [];
+  try {
+    const dir = resolve(episodeDir);
+    const seriesDir = dirname(dirname(dir));
+    const pin = JSON.parse(readFileSync(join(dir, EPISODE_SPEC_PATH), "utf-8"))?.template;
+    const releaseDir = seriesTemplatePath(dirname(dirname(dirname(seriesDir))), basename(dirname(dirname(seriesDir))), basename(seriesDir), pin?.id, pin?.version);
+    const theme = JSON.parse(readFileSync(join(releaseDir, SERIES_TEMPLATE_MANIFEST), "utf-8"))?.theme;
+    if (!theme) return [];
+    const themeDir = join(dirname(dirname(seriesDir)), themeReleasePath(theme.id, theme.version));
+    return existsSync(themeDir) ? [themeDir] : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Compile the episode's spec with its release's compiler. Writes nothing. */
@@ -161,7 +173,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     const real = realpathSync(file);
     const root = realpathSync(within);
     if (real !== root && !real.startsWith(root + sep)) {
-      const where = within === episodeDir ? "the episode" : within === seriesDir ? "the series" : "the channel's themes";
+      const where = within === episodeDir ? "the episode" : within === seriesDir ? "the series" : "its theme release";
       stop("path-escape", key, `${key} leads outside ${where} (${real})`);
     }
     if (!statSync(real).isFile()) stop("not-a-file", key, `${key} is not a file`);
@@ -284,7 +296,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     if (!existsSync(join(themeDir, THEME_FILE))) {
       stop("missing-theme", `${releaseKey}/${SERIES_TEMPLATE_MANIFEST}#$.theme`, `the pinned theme ${template.theme.id}@${template.theme.version} is not in this channel (${themeKey})`);
     }
-    const themeBytes = read(join(themeDir, THEME_FILE), themesDir, () => stop("missing-theme", `${themeKey}/${THEME_FILE}`, `${themeKey}/${THEME_FILE} is missing`));
+    const themeBytes = read(join(themeDir, THEME_FILE), themeDir, () => stop("missing-theme", `${themeKey}/${THEME_FILE}`, `${themeKey}/${THEME_FILE} is missing`));
     if (sha256(themeBytes) !== template.theme.hash) {
       stop("theme-mismatch", `${themeKey}/${THEME_FILE}`, `${themeKey}/${THEME_FILE} is not the theme the release pinned (${template.theme.hash}): pin the theme again in a new release`);
     }
@@ -295,9 +307,15 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
     const themeProblems = validateChannelTheme(theme);
     if (themeProblems.length > 0) throw new Stop(at(`${themeKey}/${THEME_FILE}`, themeProblems));
+    // the release it sits in is the one the pin names
+    for (const field of ["id", "version"] as const) {
+      if (theme![field] !== template.theme[field]) {
+        stop("theme-mismatch", `${themeKey}/${THEME_FILE}#$.${field}`, `${themeKey}/${THEME_FILE} says ${field} ${theme![field]}, not the pinned ${template.theme[field]}`);
+      }
+    }
     const offer = (id: string, file: string, kind: CompileAsset["kind"]) => {
       const path = `${themeKey}/${file}`;
-      read(join(themeDir, file), themesDir, () => stop("missing-asset", path, `${path} is missing`));
+      read(join(themeDir, file), themeDir, () => stop("missing-asset", path, `${path} is missing`));
       assets[id] = { path, hash: inputs[path]!, kind };
     };
     for (const [name, room] of Object.entries(theme!.rooms).sort(([a], [b]) => (a < b ? -1 : 1))) {

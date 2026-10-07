@@ -45,6 +45,23 @@ for (const [name, theme] of themes) {
     }
   });
 
+  test(`${name}: its rooms, brand and panel layout draw in room, brand-mark and panel`, () => {
+    const kit = (n: string, v: string) => KIT_VERSIONS.find((k) => k.name === n && k.version === v)!;
+    for (const [id, { image, monitor, ...room }] of Object.entries(theme.rooms)) {
+      // as the loader offers them: the room's picture and clip become assets
+      const props = { look: theme.look, room: { ...room, image: { $asset: `theme-${id}` }, ...(monitor ? { monitor: { box: monitor.box, video: { $asset: `theme-${id}-monitor` } } } : {}) } };
+      const result = kit("room", "1.0.0").props.safeParse(props);
+      assert.ok(result.success, `room ${id}: ${!result.success && JSON.stringify(result.error.issues)}`);
+    }
+    const brand = kit("brand-mark", "2.0.0").props.safeParse({ look: theme.look, ...theme.brand });
+    assert.ok(brand.success, `brand: ${!brand.success && JSON.stringify(brand.error.issues)}`);
+    if (theme.layout?.panel) {
+      const panel = kit("panel", "1.0.0");
+      const result = panel.props.safeParse({ ...panel.examples[0]!.props, look: theme.look, box: theme.layout.panel });
+      assert.ok(result.success, `panel: ${!result.success && JSON.stringify(result.error.issues)}`);
+    }
+  });
+
   test(`${name}: each of its characters is drawn by interprete@1.1.0`, () => {
     const kit = KIT_VERSIONS.find((k) => k.name === "interprete" && k.version === "1.1.0")!;
     for (const [who, { poses: _poses, ...character }] of Object.entries(theme.characters)) {
