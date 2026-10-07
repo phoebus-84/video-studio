@@ -38,7 +38,8 @@ export const SHEET_TARGET = 24;
 /** The most frames one sheet holds: @av/remotion-composer's MAX_SHEET_PICKS. */
 export const SHEET_MAX_PICKS = 120;
 
-const matches = (pattern: string, id: string) =>
+/** A section pattern: an exact id, or a prefix ending in `*` (`block-*`). */
+export const matchesSection = (pattern: string, id: string) =>
   pattern.endsWith("*") ? id.startsWith(pattern.slice(0, -1)) : id === pattern;
 
 const seconds = (value: number) => `${value > 0 ? "+" : "-"}${Math.abs(value)}s`;
@@ -79,7 +80,7 @@ export function sheetInstants(timeline: SheetTimeline, rules?: SheetRules, targe
   const warnings: string[] = [];
   (rules?.instants ?? []).forEach((rule, index) => {
     const name = `rule ${index + 1} (${describeRule(rule)})`;
-    const matching = sections.filter((s) => rule.sections === undefined || rule.sections.some((p) => matches(p, s.id)));
+    const matching = sections.filter((s) => rule.sections === undefined || rule.sections.some((p) => matchesSection(p, s.id)));
     if (matching.length === 0) {
       warnings.push(`${name} matches no section`);
       return;
