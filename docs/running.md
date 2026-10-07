@@ -115,11 +115,12 @@ written to `artifacts/layout-sheet/` in the episode:
 
 - `sheet.jpg` — the grid to read;
 - `frames/NNN.jpg` — each still at a quarter of the video's size;
-- `sheet.json` — the timeline it shows (by hash), the rules, the kits and the
-  `inputsHash` that says when the sheet is stale.
+- `sheet.json` — the timeline it shows (by hash), the rules, the kits, the
+  composer's drawing code and the `inputsHash` that says when the sheet is stale.
 
-The pipeline's `render` stage refuses a sheet that is missing, whose image was
-replaced, or that no longer shows exactly the timeline it would render. To
+The pipeline's `render` stage refuses a sheet that is missing, whose grid or
+stills were replaced, or that no longer shows exactly what it would render —
+a composer upgrade included. To
 render any timeline at chosen times without an episode, the composer has a
 command of its own:
 

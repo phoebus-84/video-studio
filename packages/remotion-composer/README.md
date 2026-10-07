@@ -99,7 +99,9 @@ Each tile is captioned `#NN · mm:ss.ff · label`. At most 120 distinct whole
 frames inside the timeline; anything else is `bad-sheet`, refused before
 anything is written. Which frames to pick, and where an episode keeps its
 sheet, are the studio's (`@studio/episode`). `timelineKits(timeline)` lists
-the kits a timeline draws with and their code hashes without rendering.
+the kits a timeline draws with and their code hashes without rendering. `drawingCodeHash()` names the rest of what draws the pictures —
+this package's built code and its Remotion and React versions — so a sheet
+made before a composer upgrade can be told apart from one made after.
 
 ## Partial render cache
 

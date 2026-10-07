@@ -22,8 +22,23 @@ if (!timelinePath || !outDir || !assetRoot || !times) {
   process.exit(1);
 }
 
+// Seconds as plain decimals: no blanks, signs, units or hexadecimal.
+const SECONDS = /^\d+(\.\d+)?$/;
+const bad = times.split(',').find((t) => !SECONDS.test(t));
+if (bad !== undefined) {
+  console.error(`--times: "${bad}" is not a number of seconds`);
+  process.exit(1);
+}
+
+let timeline: {fps?: unknown};
 try {
-  const timeline = JSON.parse(await readFile(timelinePath, 'utf8')) as {fps?: unknown};
+  timeline = JSON.parse(await readFile(timelinePath, 'utf8')) as {fps?: unknown};
+} catch (e) {
+  console.error(`cannot read the timeline ${timelinePath}: ${e instanceof Error ? e.message : String(e)}`);
+  process.exit(1);
+}
+
+try {
   const fps = typeof timeline.fps === 'number' ? timeline.fps : 0;
   const picks = times.split(',').map((t) => ({frame: Math.round(Number(t) * fps), label: `${t}s`}));
   const scale = flag('--scale');

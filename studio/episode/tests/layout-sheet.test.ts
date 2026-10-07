@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { decideEditTimeline, SeriesRulesError, writeEditTimeline } from "../src/episode-render.js";
 import { LAYOUT_SHEET_REPORT, layoutSheetStatus, makeLayoutSheet, sheetInputsHash } from "../src/layout-sheet.js";
-import { sheetInstants } from "../src/sheet-instants.js";
+import { SHEET_MAX_PICKS, sheetInstants } from "../src/sheet-instants.js";
+import { MAX_SHEET_PICKS } from "@av/remotion-composer";
 import { editSpec, sha256, specEpisode } from "../src/testing.js";
 
 /**
@@ -16,11 +17,13 @@ import { editSpec, sha256, specEpisode } from "../src/testing.js";
 
 const calls: { picks: { frame: number; label: string }[]; outDir: string; scale?: number }[] = [];
 let failAfterWriting = false;
+let drawingCode = `sha256:${"a".repeat(64)}`;
 
 vi.mock("@av/remotion-composer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@av/remotion-composer")>();
   return {
     ...actual,
+    drawingCodeHash: () => drawingCode,
     renderLayoutSheet: async (options: { timeline: any; picks: { frame: number; label: string }[]; outDir: string; scale?: number }) => {
       calls.push(options);
       mkdirSync(join(options.outDir, "frames"), { recursive: true });
@@ -54,6 +57,7 @@ beforeEach(() => {
   specEpisode(dir(), REF);
   calls.length = 0;
   failAfterWriting = false;
+  drawingCode = `sha256:${"a".repeat(64)}`;
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -69,6 +73,10 @@ function pinReleaseWithSheet(sheet: unknown): void {
 }
 
 describe("makeLayoutSheet", () => {
+  it("never asks the composer for more frames than it renders", () => {
+    expect(SHEET_MAX_PICKS).toBe(MAX_SHEET_PICKS);
+  });
+
   it("renders the timeline a render would use, at sheetInstants' frames, and says so in sheet.json", async () => {
     const decision = decideEditTimeline(dir(), { episodeRef: REF });
     const made = await makeLayoutSheet(dir(), { episodeRef: REF });
@@ -83,7 +91,8 @@ describe("makeLayoutSheet", () => {
     expect(r.rebuilt).toBe("there was no timeline yet");
     expect(r.rules).toEqual({ source: "poetry-short@1.0.0", instants: [] });
     expect(r.kits.map((k: { name: string }) => k.name)).toEqual(["captions", "still"]);
-    expect(r.inputsHash).toBe(sheetInputsHash({ timeline: r.timeline.hash, kits: r.kits, rules: r.rules, scale: 0.25 }));
+    expect(r.renderer).toBe(drawingCode);
+    expect(r.inputsHash).toBe(sheetInputsHash({ timeline: r.timeline.hash, kits: r.kits, renderer: r.renderer, rules: r.rules, scale: 0.25 }));
     expect(r.frames[0]).toEqual({ index: 0, frame: 0, seconds: 0, label: "first", path: "frames/000.jpg", hash: sha256("still 0") });
     expect(r.sheet.path).toBe("sheet.jpg");
     expect(r.warnings).toEqual([]);
@@ -151,6 +160,43 @@ describe("layoutSheetStatus", () => {
     await makeLayoutSheet(dir(), { episodeRef: REF });
     editSpec(dir(), (spec) => { spec.data.title = "Another morning"; });
     expect(layoutSheetStatus(dir(), { episodeRef: REF })).toEqual({ state: "stale", reasons: ["the timeline changed"] });
+  });
+
+  it("is stale when the composer's drawing code changed", async () => {
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    drawingCode = `sha256:${"b".repeat(64)}`;
+    expect(layoutSheetStatus(dir(), { episodeRef: REF })).toEqual({ state: "stale", reasons: ["the composer changed"] });
+  });
+
+  it("is missing when a still is gone or not the one rendered", async () => {
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    writeFileSync(at("artifacts/layout-sheet/frames/003.jpg"), "another still");
+    expect(layoutSheetStatus(dir(), { episodeRef: REF })).toEqual({ state: "missing", reason: "still frames/003.jpg is not the one rendered" });
+    rmSync(at("artifacts/layout-sheet/frames/003.jpg"));
+    expect(layoutSheetStatus(dir(), { episodeRef: REF })).toEqual({ state: "missing", reason: "still frames/003.jpg is missing" });
+  });
+
+  it("is missing when sheet.json points outside its directory, even at a file with the right hash", async () => {
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    const outside = at("artifacts/elsewhere.jpg");
+    writeFileSync(outside, readFileSync(at("artifacts/layout-sheet/sheet.jpg")));
+    const doc = report();
+    doc.sheet.path = "../elsewhere.jpg";
+    writeFileSync(at(LAYOUT_SHEET_REPORT), JSON.stringify(doc));
+    expect(layoutSheetStatus(dir(), { episodeRef: REF })).toEqual({ state: "missing", reason: `${LAYOUT_SHEET_REPORT} names files outside the sheet` });
+    const again = report();
+    again.sheet.path = "sheet.jpg";
+    again.frames[0].path = "../../edit-timeline.json";
+    writeFileSync(at(LAYOUT_SHEET_REPORT), JSON.stringify(again));
+    expect(layoutSheetStatus(dir(), { episodeRef: REF })).toEqual({ state: "missing", reason: `${LAYOUT_SHEET_REPORT} names files outside the sheet` });
+  });
+
+  it("is missing, never a crash, for a sheet.json of the wrong shape", async () => {
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    for (const doc of ["null", "[]", JSON.stringify({ sheet: "sheet.jpg" }), JSON.stringify({ ...report(), frames: "all of them" })]) {
+      writeFileSync(at(LAYOUT_SHEET_REPORT), doc);
+      expect(layoutSheetStatus(dir(), { episodeRef: REF }).state, doc).toBe("missing");
+    }
   });
 
   it("is stale when the sheet's rules changed", async () => {

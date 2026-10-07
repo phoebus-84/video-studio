@@ -70,7 +70,8 @@ episode pixel by pixel at identical instants.
 - `sections`: optional, 1–32 patterns. A pattern is a section id, which
   matches exactly, or a prefix ending in a single `*` (`block-*`), which
   matches every id starting with that prefix; schema pattern
-  `^[a-z0-9][a-z0-9-]*\*?$`. Absent: every section.
+  `^[A-Za-z0-9][A-Za-z0-9._-]*\*?$`, so every timeline `LocalId` can be
+  named. Absent: every section.
 
 A release is immutable: adding `sheet` to a series means a new release.
 `poetry-short@1.0.0` stays as it is and gets the default instants.
@@ -98,7 +99,11 @@ export function sheetInstants(timeline: EditTimeline, rules?: SheetRules, target
    hand-shortened section is not a reason to refuse a sheet. A rule that
    matches no section is a warning too.
 4. Picks on the same frame merge into one, labels joined with ` / ` in the
-   order above. The result is sorted by frame.
+   order above. At most `SHEET_MAX_PICKS` (120, the composer's limit) distinct
+   frames: past it a new frame is dropped — the defaults come first, then the
+   rules in order — and one warning counts them (`153 instants dropped: a
+   sheet holds at most 120 frames`), so no valid release makes a sheet
+   impossible. The result is sorted by frame.
 
 The same function gives `avg-jao.5` its instants: the sheet of the new
 version decides where both versions are rendered.
@@ -201,20 +206,24 @@ export function layoutSheetStatus(episodeDir: string, options: {episodeRef: Epis
 
 `rebuilt` is present only when the stored timeline would be replaced at
 render. `inputsHash` is `sha256` of the canonical JSON
-`{"kits":[…],"rules":{…},"scale":…,"timeline":"sha256:…"}` (contracts'
-`canonicalJson`: keys sorted; kits sorted by name then version). The timeline names every asset with its hash,
-every kit with its version, and all timing in frames; with the kits' code
-hashes and the instants' rules, nothing else decides what the sheet shows.
+`{"kits":[…],"renderer":"sha256:…","rules":{…},"scale":…,"timeline":"sha256:…"}`
+(contracts' `canonicalJson`: keys sorted; kits sorted by name then version).
+`renderer` is the composer's `drawingCodeHash()`: its own built code (the
+compositions, every kit, the helpers they share) and its Remotion and React
+versions. The timeline names every asset with its hash, every kit with its
+version, and all timing in frames; with the kits' code hashes, the drawing
+code and the instants' rules, nothing else decides what the sheet shows.
 
 `layoutSheetStatus` reads only:
 
-- `{state: "missing", reason}` — no readable `sheet.json`, or its `sheet.jpg`
-  is gone or its hash no longer matches the file (an edited image is not
+- `{state: "missing", reason}` — no readable `sheet.json`, one of the wrong
+  shape, one naming files other than `sheet.jpg` and `frames/NNN.jpg`, or a
+  grid or still gone or no longer matching its hash (an edited image is not
   evidence).
 - `{state: "stale", reasons: [...]}` — the inputs hash recomputed for the
   timeline a render would use differs; `reasons` name which parts changed
-  (`the timeline changed`, `the kits changed`, `the sheet's rules changed`,
-  `the scale changed`). A timeline that
+  (`the timeline changed`, `the kits changed`, `the composer changed`,
+  `the sheet's rules changed`, `the scale changed`). A timeline that
   cannot be decided (a broken spec) is `stale` with that problem as reason.
 - `{state: "current", inputsHash, sheetHash}`.
 

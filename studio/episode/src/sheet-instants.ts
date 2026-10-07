@@ -35,6 +35,9 @@ export interface SheetInstants {
 /** How many frames a sheet shows before the series' own instants, first and last included. */
 export const SHEET_TARGET = 24;
 
+/** The most frames one sheet holds: @av/remotion-composer's MAX_SHEET_PICKS. */
+export const SHEET_MAX_PICKS = 120;
+
 const matches = (pattern: string, id: string) =>
   pattern.endsWith("*") ? id.startsWith(pattern.slice(0, -1)) : id === pattern;
 
@@ -44,10 +47,17 @@ const describeRule = (rule: SheetInstantRule) => `${rule.at}${rule.offsetSeconds
 export function sheetInstants(timeline: SheetTimeline, rules?: SheetRules, target = SHEET_TARGET): SheetInstants {
   const last = timeline.durationInFrames - 1;
   const labels = new Map<number, string[]>();
+  // Past the limit a new frame is dropped (a label on a frame already picked
+  // still joins it): the defaults come first, then the rules in their order.
+  let dropped = 0;
   const add = (frame: number, label: string) => {
-    const at = labels.get(frame) ?? [];
-    if (!at.includes(label)) at.push(label);
-    labels.set(frame, at);
+    const at = labels.get(frame);
+    if (at === undefined && labels.size >= SHEET_MAX_PICKS) {
+      dropped++;
+      return;
+    }
+    if (at === undefined) labels.set(frame, [label]);
+    else if (!at.includes(label)) at.push(label);
   };
   add(0, "first");
   add(last, "last");
@@ -86,6 +96,8 @@ export function sheetInstants(timeline: SheetTimeline, rules?: SheetRules, targe
       add(frame, `${s.id} · ${describeRule(rule)}`);
     }
   });
+
+  if (dropped > 0) warnings.push(`${dropped} instants dropped: a sheet holds at most ${SHEET_MAX_PICKS} frames`);
 
   const picks = [...labels.entries()]
     .sort(([a], [b]) => a - b)

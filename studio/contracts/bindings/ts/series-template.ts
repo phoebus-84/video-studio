@@ -36,7 +36,7 @@ export interface SheetInstantRule {
   at: "start" | "middle" | "end";
   /** Shift from the anchor, in seconds; may be negative. */
   offsetSeconds?: number;
-  /** Section ids this rule applies to: an exact id, or a prefix ending in * (block-*). Absent: every section. */
+  /** Section ids this rule applies to: an exact id (a timeline LocalId), or a prefix ending in * (block-*). Absent: every section. */
   sections?: string[];
 }
 

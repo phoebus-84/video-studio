@@ -160,12 +160,16 @@ its section is a warning in the sheet, not an error.
 
 The series rules block the sheet: a timeline they refuse has no sheet.
 `sheet.json` records the timeline it shows by hash, the kits it drew with by
-their code hashes, the rules and the scale, and an `inputsHash` over all of
-them; the timeline names every asset by hash and all timing in frames, so
+their code hashes, the rest of the composer's drawing code (with its Remotion
+and React versions), the rules and the scale, and an `inputsHash` over all
+of them; the timeline names every asset by hash and all timing in frames, so
 nothing else decides the pictures. In the `series-production` pipeline
 (1.1.0) the `sheet` stage sits between `check` and `render`, with a human
-gate, and `render` refuses a sheet that is missing, whose image was replaced,
-or whose inputs hash no longer matches the timeline it would render. Signing
+gate, and `render` refuses a sheet that is missing, whose grid or stills were
+replaced, or whose inputs hash no longer matches what it would render.
+A sheet holds at most 120 frames: the defaults first, then the release's
+rules in order; instants past the limit are dropped with a warning, so no
+release can make a sheet impossible. Signing
 the sheet's review is `avg-3th.2`; comparing two versions at the same instants
 is `avg-jao.5`.
 

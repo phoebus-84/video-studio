@@ -43,7 +43,7 @@ vi.mock("@av/remotion-composer", async (importOriginal) => {
       const frames = options.picks.map((p, index) => {
         const path = join(options.outDir, "frames", `${String(index).padStart(3, "0")}.jpg`);
         writeFileSync(path, "still");
-        return { index, frame: p.frame, seconds: p.frame / options.timeline.fps, label: p.label, path, hash: `sha256:${"1".repeat(64)}` };
+        return { index, frame: p.frame, seconds: p.frame / options.timeline.fps, label: p.label, path, hash: `sha256:${createHash("sha256").update("still").digest("hex")}` };
       });
       const path = join(options.outDir, "sheet.jpg");
       writeFileSync(path, "sheet");

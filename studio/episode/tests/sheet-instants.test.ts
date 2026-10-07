@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sheetInstants, type SheetTimeline } from "../src/sheet-instants.js";
+import { SHEET_MAX_PICKS, sheetInstants, type SheetTimeline } from "../src/sheet-instants.js";
 
 /**
  * sheetInstants (avg-3th.1): the frames a layout sheet shows, from the
@@ -97,6 +97,22 @@ describe("sheetInstants", () => {
     // A section too short for its share puts several spread picks on one frame.
     expect(sheetInstants(timeline([{ id: "a", from: 0, duration: 2 }], 2), undefined, 10).picks)
       .toEqual([{ frame: 0, label: "first / a" }, { frame: 1, label: "last / a" }]);
+  });
+
+  it("never picks more frames than a sheet holds: the defaults first, then the rules in order, the rest dropped with a warning", () => {
+    // 8 sections × 32 rules is valid in a release, and would be 273 frames.
+    const sections = Array.from({ length: 8 }, (_, i) => ({ id: `block-${i + 1}`, from: i * 300, duration: 300 }));
+    const rules = { instants: Array.from({ length: 32 }, (_, i) => ({ at: "start" as const, offsetSeconds: i * 0.25 })) };
+    const { picks, warnings } = sheetInstants(timeline(sections, 2400), rules);
+    expect(picks).toHaveLength(SHEET_MAX_PICKS);
+    // Every default frame is still there…
+    const frames = new Set(picks.map((p) => p.frame));
+    for (const p of sheetInstants(timeline(sections, 2400)).picks) expect(frames.has(p.frame)).toBe(true);
+    // …rule 1 reached every section, and the last rule none.
+    expect(picks.filter((p) => p.label.includes("· start")).length).toBeGreaterThanOrEqual(8);
+    expect(picks.some((p) => p.label.includes("start+7.75s"))).toBe(false);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(new RegExp(`^\\d+ instants dropped: a sheet holds at most ${SHEET_MAX_PICKS} frames$`));
   });
 
   it("decides the same frames every time", () => {

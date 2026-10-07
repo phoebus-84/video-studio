@@ -57,7 +57,8 @@ export interface LayoutSheetResult {
 export function sheetTime(frame: number, fps: number): string {
   const whole = Math.floor(frame / fps);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(Math.floor(whole / 60))}:${pad(whole % 60)}.${pad(frame - whole * fps)}`;
+  // Rounded: with a fractional rate (29.97) the frame within the second is not whole.
+  return `${pad(Math.floor(whole / 60))}:${pad(whole % 60)}.${pad(Math.round(frame - whole * fps))}`;
 }
 
 function refuse(message: string): never {
@@ -95,10 +96,11 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
     throw new ComposerError(staging.problems[0]!.code, `assets are not what the timeline says: ${staging.problems.map((p) => p.message).join('; ')}`, staging.problems);
   }
   const {staged} = staging;
-  const work = await mkdtemp(path.join(tmpdir(), 'remotion-composer-sheet-'));
   const outDir = path.resolve(options.outDir);
+  let work: string | undefined;
   let browser: HeadlessBrowser | undefined;
   try {
+    work = await mkdtemp(path.join(tmpdir(), 'remotion-composer-sheet-'));
     const assetFrames: Record<string, number> = {};
     for (const [id, asset] of Object.entries(timeline.assets)) {
       if (asset.kind === 'video') assetFrames[staged.files[id]!] = videoFrames(staged.sources[id]!, timeline.fps);
@@ -153,6 +155,6 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
   } finally {
     await browser?.close({silent: true}).catch(() => undefined);
     await staged.cleanup();
-    await rm(work, {recursive: true, force: true});
+    if (work) await rm(work, {recursive: true, force: true});
   }
 }

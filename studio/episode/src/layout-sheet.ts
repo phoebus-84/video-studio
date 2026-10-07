@@ -5,15 +5,15 @@
 // sheetInstants decides, and one labelled grid of them, kept in
 // artifacts/layout-sheet/ with the sheet.json that says what they show. Its
 // inputsHash covers everything that decides the pictures — the timeline
-// (assets, timing and kit versions by hash), the kits' code, the instants'
-// rules and the scale — so layoutSheetStatus can tell a current sheet from
+// (assets, timing and kit versions by hash), the kits' code, the rest of the
+// composer's drawing code, the instants' rules and the scale — so layoutSheetStatus can tell a current sheet from
 // a stale one without rendering anything.
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { renderLayoutSheet, timelineKits, type LockedKit } from "@av/remotion-composer";
+import { drawingCodeHash, renderLayoutSheet, timelineKits, type LockedKit } from "@av/remotion-composer";
 import { canonicalJson } from "@studio/contracts/src/receipt.mjs";
 import { decideEditTimeline, SeriesRulesError, type TimelineDecision } from "./episode-render.js";
 import { EDIT_TIMELINE_PATH, type BuildOptions } from "./edit-timeline-builder.js";
@@ -41,6 +41,8 @@ export interface LayoutSheetReport {
   rules: SheetRulesSource;
   scale: number;
   kits: LockedKit[];
+  /** The composer's drawing code and its Remotion and React versions (drawingCodeHash). */
+  renderer: string;
   inputsHash: string;
   frames: { index: number; frame: number; seconds: number; label: string; path: string; hash: string }[];
   sheet: { path: string; hash: string; columns: number; rows: number; width: number; height: number };
@@ -62,7 +64,7 @@ export type LayoutSheetStatus =
 const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
 /** sha256 of the canonical JSON of what decides a sheet's pictures. */
-export function sheetInputsHash(parts: { timeline: string; kits: LockedKit[]; rules: SheetRulesSource; scale: number }): string {
+export function sheetInputsHash(parts: { timeline: string; kits: LockedKit[]; renderer: string; rules: SheetRulesSource; scale: number }): string {
   return sha256(canonicalJson(parts));
 }
 
@@ -81,8 +83,9 @@ function inputsOf(episodeDir: string, options: BuildOptions, decision: TimelineD
   const kits = timelineKits(decision.timeline as never);
   if (kits === null) throw new Error("a kit of this timeline is not one this studio has");
   const rules = rulesFor(episodeDir, options);
+  const renderer = drawingCodeHash();
   const timeline = `sha256:${decision.hash}`;
-  return { timeline, kits, rules, scale: SHEET_SCALE, inputsHash: sheetInputsHash({ timeline, kits, rules, scale: SHEET_SCALE }) };
+  return { timeline, kits, renderer, rules, scale: SHEET_SCALE, inputsHash: sheetInputsHash({ timeline, kits, renderer, rules, scale: SHEET_SCALE }) };
 }
 
 let temporaries = 0;
@@ -108,15 +111,17 @@ export async function makeLayoutSheet(episodeDir: string, options: BuildOptions)
   const temp = join(artifacts, `.layout-sheet.${suffix}.tmp`);
   const old = join(artifacts, `.layout-sheet.${suffix}.old`);
   const final = join(episodeDir, LAYOUT_SHEET_DIR);
+  let report: LayoutSheetReport;
   try {
     const result = await renderLayoutSheet({ timeline: decision.timeline, assetRoot: episodeDir, picks, outDir: temp, scale: SHEET_SCALE });
-    const report: LayoutSheetReport = {
+    report = {
       createdAt: new Date().toISOString(),
       timeline: { path: EDIT_TIMELINE_PATH, hash: inputs.timeline },
       ...(decision.rebuilt ? { rebuilt: decision.rebuilt } : {}),
       rules: inputs.rules,
       scale: inputs.scale,
       kits: inputs.kits,
+      renderer: inputs.renderer,
       inputsHash: inputs.inputsHash,
       frames: result.frames.map((f) => ({ ...f, path: relative(temp, f.path) })),
       sheet: { ...result.sheet, path: relative(temp, result.sheet.path) },
@@ -125,30 +130,56 @@ export async function makeLayoutSheet(episodeDir: string, options: BuildOptions)
     writeFileSync(join(temp, "sheet.json"), `${JSON.stringify(report, null, 2)}\n`, "utf-8");
     if (existsSync(final)) renameSync(final, old);
     renameSync(temp, final);
-    rmSync(old, { recursive: true, force: true });
-    return { report, reportPath: join(final, "sheet.json"), sheetPath: join(final, report.sheet.path) };
   } catch (error) {
     rmSync(temp, { recursive: true, force: true });
     // Between the two renames: put the previous sheet back.
     if (!existsSync(final) && existsSync(old)) renameSync(old, final);
     throw error;
   }
+  // The new sheet is in place: failing to remove the old one is no failure.
+  try {
+    rmSync(old, { recursive: true, force: true });
+  } catch {
+    /* a leftover .layout-sheet.*.old, harmless */
+  }
+  return { report, reportPath: join(final, "sheet.json"), sheetPath: join(final, report.sheet.path) };
 }
 
-/** Read sheet.json, or say why there is no sheet to speak of. */
+const isObject = (value: unknown): value is Record<string, any> => typeof value === "object" && value !== null && !Array.isArray(value);
+/** The names makeLayoutSheet writes: sheet.json can name nothing else. */
+const SHEET_IMAGE = /^sheet\.jpg$/;
+const STILL = /^frames\/\d{3}\.jpg$/;
+
+/**
+ * Read sheet.json and check the files it names are the ones rendered — the
+ * grid and every still — or say why there is no sheet to speak of.
+ */
 function readReport(episodeDir: string): { ok: true; report: LayoutSheetReport } | { ok: false; reason: string } {
   const path = join(episodeDir, LAYOUT_SHEET_REPORT);
   if (!existsSync(path)) return { ok: false, reason: `${LAYOUT_SHEET_REPORT} does not exist` };
-  let report: LayoutSheetReport;
+  let report: unknown;
   try {
     report = JSON.parse(readFileSync(path, "utf-8"));
   } catch {
     return { ok: false, reason: `${LAYOUT_SHEET_REPORT} is not JSON` };
   }
-  const image = typeof report?.sheet?.path === "string" ? join(episodeDir, LAYOUT_SHEET_DIR, report.sheet.path) : null;
-  if (!image || !existsSync(image)) return { ok: false, reason: "the sheet image is missing" };
+  if (!isObject(report) || !isObject(report.sheet) || !Array.isArray(report.frames) || !report.frames.every(isObject)) {
+    return { ok: false, reason: `${LAYOUT_SHEET_REPORT} is not a layout sheet report` };
+  }
+  if (typeof report.sheet.path !== "string" || !SHEET_IMAGE.test(report.sheet.path)
+    || !report.frames.every((f) => typeof f.path === "string" && STILL.test(f.path))) {
+    return { ok: false, reason: `${LAYOUT_SHEET_REPORT} names files outside the sheet` };
+  }
+  const dir = join(episodeDir, LAYOUT_SHEET_DIR);
+  const image = join(dir, report.sheet.path);
+  if (!existsSync(image)) return { ok: false, reason: "the sheet image is missing" };
   if (sha256(readFileSync(image)) !== report.sheet.hash) return { ok: false, reason: "the sheet image is not the one rendered" };
-  return { ok: true, report };
+  for (const frame of report.frames) {
+    const still = join(dir, frame.path);
+    if (!existsSync(still)) return { ok: false, reason: `still ${frame.path} is missing` };
+    if (sha256(readFileSync(still)) !== frame.hash) return { ok: false, reason: `still ${frame.path} is not the one rendered` };
+  }
+  return { ok: true, report: report as unknown as LayoutSheetReport };
 }
 
 /**
@@ -169,6 +200,7 @@ export function layoutSheetStatus(episodeDir: string, options: BuildOptions): La
   const reasons: string[] = [];
   if (report.timeline?.hash !== now.timeline) reasons.push("the timeline changed");
   if (canonicalJson(report.kits ?? null) !== canonicalJson(now.kits)) reasons.push("the kits changed");
+  if (report.renderer !== now.renderer) reasons.push("the composer changed");
   if (canonicalJson(report.rules ?? null) !== canonicalJson(now.rules)) reasons.push("the sheet's rules changed");
   if (report.scale !== now.scale) reasons.push("the scale changed");
   if (reasons.length === 0) reasons.push("its inputs hash does not match");

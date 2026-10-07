@@ -205,6 +205,12 @@ describe("layout sheet rules (avg-3th.1)", () => {
     })), []);
   });
 
+  it("can name every section id a timeline allows (its LocalId)", () => {
+    assert.deepEqual(validateSeriesTemplate(withSheet({
+      instants: [{ at: "start", sections: ["Intro", "block_1", "v1.2", "Block_*", "chapter.*"] }],
+    })), []);
+  });
+
   it("refuses rules it cannot read", () => {
     const cases = {
       "no instants": {},
@@ -218,7 +224,8 @@ describe("layout sheet rules (avg-3th.1)", () => {
       "empty sections": { instants: [{ at: "start", sections: [] }] },
       "star inside": { instants: [{ at: "start", sections: ["bl*ck"] }] },
       "bare star": { instants: [{ at: "start", sections: ["*"] }] },
-      "uppercase id": { instants: [{ at: "start", sections: ["Opening"] }] },
+      "leading dash": { instants: [{ at: "start", sections: ["-opening"] }] },
+      "space": { instants: [{ at: "start", sections: ["the end"] }] },
     };
     for (const [name, sheet] of Object.entries(cases)) {
       assert.ok(validateSeriesTemplate(withSheet(sheet)).length > 0, name);

@@ -1116,7 +1116,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_layout_sheet",
     label: "Layout Sheet",
-    description: `Render the episode's layout sheet: small stills of the timeline pva_compose_video would render, at the first and last frame, spread over its sections and at its series' declared instants, and one labelled grid of them (artifacts/layout-sheet/sheet.jpg). Open the grid and read it tile by tile with the review-layout-sheet skill before a render is spent. Refuses a timeline that breaks the series' rules.`,
+    description: `Render the episode's layout sheet: small stills of the timeline pva_compose_video would render without a profile argument, at the first and last frame, spread over its sections and at its series' declared instants, and one labelled grid of them (artifacts/layout-sheet/sheet.jpg). Open the grid and read it tile by tile with the review-layout-sheet skill before a render is spent. Refuses a timeline that breaks the series' rules.`,
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
