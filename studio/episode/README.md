@@ -16,7 +16,7 @@ adapters both call this package, so a tool and a stage never disagree.
 | `narration-manifest.ts` | The canonical `artifacts/narration/narration-manifest.json`: build, measure, validate, write |
 | `scene-images.ts` | Scene images in reading order and their lengths (legacy episodes) |
 | `edit-timeline-builder.ts` | `buildEditTimeline`: the timeline of an episode without a spec |
-| `series-compile.ts` | `loadEpisode`, `compileEpisode`, `checkEpisode`: a spec-driven episode, read, checked, compiled, held to its series' rules; offers `assets/images/*` as `image-<name>` and `assets/sounds/*` as `sound-<name>` |
+| `series-compile.ts` | `loadEpisode`, `compileEpisode`, `checkEpisode`: a spec-driven episode, read, checked, compiled, held to its series' rules; offers `assets/images/*` as `image-<name>` and `assets/sounds/*` as `sound-<name>`; reads the channel theme the release pins (ADR-0040) and offers its rooms as `theme-<room>`; `sharedRootsOf`: the channel's `themes/`, which renders and layout sheets may take assets from |
 | `episode-render.ts` | `writeEditTimeline`, `decideEditTimeline`, `currentEditTimeline`, `renderEpisode` |
 | `spec-init.ts` | `initEpisodeSpec`: a draft spec pinned to an exact template release; never replaces one |
 | `references.ts` | `proposeReference`: freeze an episode as a proposed golden reference |
