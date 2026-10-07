@@ -21,6 +21,9 @@ import {kit as verseBar100} from './verse-bar/1.0.0.js';
 import {kit as cover100} from './cover/1.0.0.js';
 import {kit as chapterOpener100} from './chapter-opener/1.0.0.js';
 import {kit as warp100} from './warp/1.0.0.js';
+import {kit as room100} from './room/1.0.0.js';
+import {kit as panel100} from './panel/1.0.0.js';
+import {kit as interprete110} from './interprete/1.1.0.js';
 
 export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 
@@ -28,7 +31,7 @@ export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([
   still100, clip100, captions100, captions110,
   brandMark100, lowerThird100, titleChip100, versePlate100, museumHall100, interprete100, roomEffect100,
-  brandMark200, blockTitle100, figureTitle100, verseBar100, cover100, chapterOpener100, warp100,
+  brandMark200, blockTitle100, figureTitle100, verseBar100, cover100, chapterOpener100, warp100, room100, panel100, interprete110,
 ]);
 
 const key = (name: string, version: string) => `${name}@${version}`;

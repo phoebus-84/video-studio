@@ -49,6 +49,30 @@ They share frozen library modules in `src/kits/lib/` — `stage-math`,
 palette) — and load Anton, Fraunces and Inter from `@fontsource` 5.3.0
 before the first frame.
 
+The lesson stage's kits are channel-neutral (ADR-0040): each takes `look` —
+colour roles, font roles by family, shared measures (`lib/look/1.0.0.ts`) —
+from the channel theme the compiler passes through, and the puppet takes a
+theme `character`. They are drawn for `youtube-1920x1080`; their examples use
+a demo look with no channel in it. `room`, `panel` and `interprete` share an
+optional `camera` (a close-up moves them together).
+
+| Kit | Layer | What it draws |
+|---|---|---|
+| `room@1.0.0` | fill | A room: its picture under a slow drift (or a push towards a point), a distant storm in its sky polygons (quiet over given windows, as at a loop's edges), windows and floor lit by a flash, glowing doors, a monitor playing a clip |
+| `panel@1.0.0` | fill | The glass panel, phase by phase: a picture framed on its focus with a slow push, two pictures with labels, or a clip; it turns between phases, materialises, lights with a flash, carries an AI credit |
+| `interprete@1.1.0` | fill | A theme character: poses, expressions, gaze, blinks, mouth from the voice's energy, shadow and reflection, teleport in and out (the hologram exit), a costume change on a flash |
+| `verse-bar@1.0.0` | overlay | Verses heard or discussed on a full plate: unsaid words dimmed, said and strong words highlighted, a kicker |
+| `block-title@1.0.0` | overlay | Opens a block: kicker, title, growing rule, one line of information, bottom left |
+| `figure-title@1.0.0` | overlay | A rhetorical figure's or keyword's name on a dark plate, fitted to its width |
+| `chapter-opener@1.0.0` | fill | Between chapters: flash, veil, kicker, title closing in, rule, subtitle |
+| `cover@1.0.0` | fill | The cover a video opens and closes on: kicker, huge title with an icon, hook lines, a dark gradient |
+| `warp@1.0.0` | fill | The passage between rooms: a flash with radial streaks |
+| `brand-mark@2.0.0` | overlay | A channel's mark from its theme's brand |
+
+They share `lib/look`, `lib/fonts/1.1.0.ts` (every bundled face, loaded by
+the families a look names) and `lib/lesson-stage/1.0.0.tsx` (glass, cover
+framing, looping clip, storm, live bolt, teleport, warp).
+
 ## Adding a kit or a version
 
 A released version never changes: a delivered episode must re-render as it
@@ -92,13 +116,14 @@ import {renderTimeline, validateTimeline, listKits} from '@av/remotion-composer'
 const result = await renderTimeline({
   timeline,            // a studio.video/v1alpha2 EditTimeline
   assetRoot,           // the directory asset paths are relative to
+  sharedRoots,         // optional: folders outside it assets may come from (a channel's themes, ADR-0040)
   outputPath: 'out.mp4',
   cacheDir: '.cache/remotion', // optional; omit for the original full-render path
 });
 ```
 
 Failures throw `ComposerError` with a `code` (`invalid-timeline`,
-`unknown-kit`, `bad-props`, `missing-asset`, `hash-mismatch`,
+`unknown-kit`, `bad-props`, `wrong-profile`, `missing-asset`, `hash-mismatch`,
 `render-failed`, `loudness-failed`, `bad-sheet`, `sheet-failed`) and, for
 validation, `problems` with JSON paths.
 
