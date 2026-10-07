@@ -1,0 +1,678 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dentro-i-versi-short/1.0.0/episode-spec.schema.json",
+  "title": "Dentro i versi · short — episode data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "author",
+    "verses",
+    "pictures",
+    "actor",
+    "hall"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kicker": {
+      "type": "string",
+      "minLength": 1
+    },
+    "titleLines": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "voiceEndWord": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "gloss"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "strong": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gloss": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "pictures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assetId"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "at": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "sc": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 1.5
+          },
+          "org": {
+            "type": "string"
+          },
+          "spill": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "cam": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dx",
+              "dy",
+              "z",
+              "r"
+            ],
+            "properties": {
+              "dx": {
+                "type": "number"
+              },
+              "dy": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              },
+              "r": {
+                "type": "number"
+              }
+            }
+          },
+          "fx": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "nebbia",
+                "vento",
+                "acqua",
+                "bagliore",
+                "fuoco",
+                "riflesso",
+                "uccelli",
+                "fulmini",
+                "sussulto"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variant"
+      ],
+      "properties": {
+        "variant": {
+          "enum": [
+            "attore",
+            "attrice"
+          ]
+        },
+        "outfit": {
+          "enum": [
+            "gilet",
+            "giacca"
+          ]
+        },
+        "hairstyle": {
+          "enum": [
+            "coda",
+            "corto"
+          ]
+        },
+        "accessories": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "earrings": {
+              "type": "boolean"
+            },
+            "freckles": {
+              "type": "boolean"
+            }
+          }
+        },
+        "base": {
+          "enum": [
+            "attore-saffo",
+            "attore-infinito",
+            "attrice-saffo",
+            "attrice-dante"
+          ]
+        },
+        "palette": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        }
+      }
+    },
+    "poses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "at"
+        ],
+        "properties": {
+          "at": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "preset": {
+            "enum": [
+              "riposo",
+              "invoca",
+              "mani-al-cuore",
+              "indica",
+              "apre",
+              "chiede",
+              "dialoga",
+              "spalle",
+              "braccio-alto"
+            ]
+          },
+          "lu": {
+            "type": "number"
+          },
+          "lf": {
+            "type": "number"
+          },
+          "ru": {
+            "type": "number"
+          },
+          "rf": {
+            "type": "number"
+          },
+          "head": {
+            "type": "number"
+          },
+          "lean": {
+            "type": "number"
+          },
+          "grip": {
+            "type": "number"
+          },
+          "step": {
+            "type": "number"
+          },
+          "twist": {
+            "type": "number"
+          },
+          "dip": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "expressions": {
+      "type": "string",
+      "pattern": "^[NAWIMS]*$"
+    },
+    "gaze": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to",
+          "x",
+          "y",
+          "h"
+        ],
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "to": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "h": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "pushVerses": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "lights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "at"
+        ],
+        "properties": {
+          "at": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "dark": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "spot": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "tint": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "w": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 1.5
+          }
+        }
+      }
+    },
+    "hall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "room"
+      ],
+      "properties": {
+        "room": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "textures": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "fog": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "caustics": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            }
+          }
+        },
+        "pedestal": {
+          "type": "boolean"
+        },
+        "teleport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "in",
+            "out"
+          ],
+          "properties": {
+            "in": {
+              "$ref": "#/$defs/Teleport"
+            },
+            "out": {
+              "$ref": "#/$defs/Teleport"
+            }
+          }
+        },
+        "wind": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/TimeRef"
+              },
+              "to": {
+                "$ref": "#/$defs/TimeRef"
+              },
+              "strength": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2
+              }
+            }
+          }
+        },
+        "shake": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/TimeRef"
+              },
+              "to": {
+                "$ref": "#/$defs/TimeRef"
+              },
+              "amp": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 20
+              }
+            }
+          }
+        },
+        "shatter": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "picture"
+            ],
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/TimeRef"
+              },
+              "picture": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "dur": {
+                "type": "number",
+                "minimum": 0.2,
+                "maximum": 5
+              }
+            }
+          }
+        },
+        "blackout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "to"
+          ],
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/TimeRef"
+            },
+            "to": {
+              "$ref": "#/$defs/TimeRef"
+            },
+            "dark": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "bolt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at"
+          ],
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/TimeRef"
+            },
+            "dur": {
+              "type": "number",
+              "minimum": 0.2,
+              "maximum": 3
+            }
+          }
+        }
+      }
+    },
+    "roomFx": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fx",
+          "at"
+        ],
+        "properties": {
+          "fx": {
+            "enum": [
+              "nebbia-sala",
+              "vapore",
+              "note",
+              "uccelli",
+              "foglie",
+              "incanto",
+              "apparizione",
+              "fantasma"
+            ]
+          },
+          "at": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "to": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "assetId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "w": {
+            "type": "number",
+            "minimum": 10,
+            "maximum": 1080
+          },
+          "mode": {
+            "enum": [
+              "sale",
+              "scende",
+              "salpa"
+            ]
+          },
+          "exit": {
+            "enum": [
+              "rientra",
+              "svanisce"
+            ]
+          },
+          "glow": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        }
+      }
+    },
+    "sfx": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assetId",
+          "at",
+          "dur"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "at": {
+            "$ref": "#/$defs/TimeRef"
+          },
+          "dur": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "$ref": "#/$defs/TimeRef"
+              }
+            ]
+          },
+          "gain": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "offset": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "applause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId"
+      ],
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "gain": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "dur": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 6
+        },
+        "delay": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    "music": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId"
+      ],
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "gain": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "duck": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "TimeRef": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^(verse|verseEnd|end|word|picture)(:[^+-]+)?([+-][0-9.]+)?$"
+        }
+      ]
+    },
+    "Teleport": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/TimeRef"
+        },
+        {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 3
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    }
+  }
+}
