@@ -62,8 +62,13 @@ run 19–43 s.
 - Takes get their timing from their audio; a person no longer writes it.
 - The voice worker gains a second model and a route; it stays one process.
 - The ElevenLabs client (`@av/elevenlabs`) follows CreativeStudio's rate
-  rules (one call at a time, two retries only for 429/5xx, `Retry-After`,
-  never for auth or quota; a connection lost after sending is `uncertain`
-  and not retried). Speech synthesis with ElevenLabs (`avg-8hs.1`) joins it.
+  rules: one call at a time; two retries, only for 429 and 503 (answers
+  that say nothing was processed), waiting `Retry-After` up to 30 s; never
+  for auth, quota or another 5xx, after which the work may have been done
+  and billed; a connection lost after sending is `uncertain` and not
+  retried. Speech synthesis with ElevenLabs (`avg-8hs.1`) joins it.
+- A token with no letters (a dash, an ellipsis, a guillemet) is not said:
+  it takes no time, in the gap where it is written, and never counts as
+  unmatched.
 - Verifying a take against its text (missing words, long pauses) is
   `avg-8hs.3`; this only reports the pauses over 0.35 s.

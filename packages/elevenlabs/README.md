@@ -18,9 +18,13 @@ const { words, loss } = await forcedAlignment({
 ## Rules
 
 - One request at a time per process.
-- At most two retries, only for 429 and 5xx — answers that say the request
-  was not processed — waiting `Retry-After` (or 2 s, then 4 s, at most 30 s).
-- Never a retry for a refused key (`auth`) or a spent quota (`quota`).
+- At most two retries, only for 429 and 503 — answers that say the request
+  was not processed — waiting `Retry-After` (seconds or a date; or 2 s, then
+  4 s). A wait over 30 s is not waited: the call fails `rate-limited` and
+  says when to retry.
+- Never a retry for a refused key (`auth`), a spent quota (`quota`), or any
+  other 5xx (`server`): after a 500 or a 504 the work may have been done,
+  and billed.
 - A connection lost after the request left is `uncertain` and not retried:
   it may have been processed, and billed. No connection at all is
   `unreachable`: nothing was sent.

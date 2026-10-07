@@ -425,8 +425,9 @@ too: the words spread evenly over the audio.
 { "audio_path": "/abs/path/take.wav", "text": "La nebbia a gl'irti colli", "language": "it" }
 ```
 
-`language` is an ISO 639-1 code or a name: Chinese, English, Cantonese,
-French, German, Italian, Japanese, Korean, Portuguese, Russian, Spanish.
+`language` is an ISO 639-1 code, with or without a region (`it`, `it-IT`,
+`en_US`), or a name: Chinese, English, Cantonese, French, German, Italian,
+Japanese, Korean, Portuguese, Russian, Spanish.
 
 #### Response `200 OK`
 
@@ -447,4 +448,13 @@ work.
 The error envelope, `detail[0].type` one of `too-long` (over 300 s),
 `unsupported-language`, `bad-audio` (not an absolute path to readable
 audio), `empty-text`.
+
+#### Response `503`
+
+`detail[0].type` `model-unavailable`: the aligner could not be loaded (a
+first download without network, a wrong `QTW_ALIGN_MODEL`).
+
+#### Response `500`
+
+`detail[0].type` `aligner-failed`: the model itself failed while aligning.
 

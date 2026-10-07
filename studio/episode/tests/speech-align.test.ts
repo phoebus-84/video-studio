@@ -55,6 +55,15 @@ describe("mapToText", () => {
     }
   });
 
+  it("places a token with no letters — a dash, an ellipsis — in the gap, without counting it unmatched", () => {
+    const raw = ["Il", "mare", "e", "il", "cielo", "sono", "uno"].map((t, i) => w(t, i * 0.5, i * 0.5 + 0.4));
+    const { words, unmapped } = mapToText("Il mare — e il cielo … sono uno. «", raw);
+    expect(unmapped).toEqual([]);
+    expect(words.map((x) => x.text)).toEqual(["Il", "mare", "—", "e", "il", "cielo", "…", "sono", "uno.", "«"]);
+    expect(words[2]).toEqual({ text: "—", start: 0.9, end: 0.9 });
+    expect(words[9]).toEqual({ text: "«", start: 3.4, end: 3.4 });
+  });
+
   it("keeps words in order and never overlapping", () => {
     const { words } = mapToText("a b c", [w("a", 0, 0.6), w("b", 0.5, 0.9), w("c", 0.85, 1.2)]);
     for (let i = 1; i < words.length; i++) expect(words[i]!.start).toBeGreaterThanOrEqual(words[i - 1]!.end);
@@ -89,6 +98,19 @@ describe("snapToSilences", () => {
     expect(last[1]!.end - last[1]!.start).toBeGreaterThanOrEqual(0.05);
     expect(last[1]!.end).toBeLessThanOrEqual(1.05);
     expect(last[0]!.end).toBeLessThanOrEqual(last[1]!.start);
+  });
+
+  it("leaves a token with no letters as it is: it is not said", () => {
+    const words = snapToSilences([w("mare", 0, 0.5), w("—", 0.5, 0.5), w("e", 0.5, 0.9)], [], 2);
+    expect(words[1]).toEqual(w("—", 0.5, 0.5));
+  });
+
+  it("never lets a word end after the audio", () => {
+    const words = snapToSilences([w("a", 0, 0.5), w("fine", 0.5, 2.3)], [], 2);
+    expect(words[1]).toEqual(w("fine", 0.5, 2));
+    const past = snapToSilences([w("oltre", 2.1, 2.4)], [], 2);
+    expect(past[0]!.start).toBeLessThanOrEqual(past[0]!.end);
+    expect(past[0]!.end).toBeLessThanOrEqual(2);
   });
 
   it("rounds to the millisecond and keeps the order", () => {

@@ -35,8 +35,8 @@ class AlignError(Exception):
 
 
 def language_name(language: str) -> str | None:
-    """The model's name for a language given by code or by name; None when it has none."""
-    key = language.strip().lower()
+    """The model's name for a language given by code (a region allowed: en-US, it_IT) or by name; None when it has none."""
+    key = language.strip().lower().replace("_", "-").split("-")[0]
     if key in LANGUAGES:
         return LANGUAGES[key]
     return next((name for name in LANGUAGES.values() if name.lower() == key), None)
@@ -94,7 +94,10 @@ class Aligner:
             return {"words": words, "model": self.model_id, "language": name}
         with self._lock:
             if self._model is None:
-                self._model = self._loader(self.model_id)
+                try:
+                    self._model = self._loader(self.model_id)
+                except Exception as error:  # a first download without network, a bad repo id
+                    raise AlignError("model-unavailable", f"the aligner {self.model_id} could not be loaded: {error}") from None
             model = self._model
             supported = model.get_supported_languages()
             if supported is not None and name.lower() not in supported:

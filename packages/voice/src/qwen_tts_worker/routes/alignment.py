@@ -57,5 +57,8 @@ async def align(request: AlignRequest) -> AlignResponse:
     try:
         result = await run_in_threadpool(_get().align, request.audio_path, request.text, request.language)
     except AlignError as error:
-        raise HTTPException(status_code=422, detail=[{"msg": error.message, "type": error.code}]) from None
+        status = 503 if error.code == "model-unavailable" else 422
+        raise HTTPException(status_code=status, detail=[{"msg": error.message, "type": error.code}]) from None
+    except Exception as error:  # the model itself failed: say so, in the envelope callers read
+        raise HTTPException(status_code=500, detail=[{"msg": f"the aligner failed: {error}", "type": "aligner-failed"}]) from None
     return AlignResponse(**result)

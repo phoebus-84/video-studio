@@ -67,8 +67,11 @@ and the vocabulary schema's enum (kept identical by `check-vocabulary`).
   is loaded, and the 300 s limit.
 - `audio_path` must be absolute; errors travel in the worker's error
   envelope, the code in `detail[0].type` (HTTP 422).
-- Errors (`{ "code", "message" }`, HTTP 4xx): `too-long` (audio over 300 s),
-  `unsupported-language`, `bad-audio` (unreadable or missing), `empty-text`.
+- Errors (the worker's envelope, the code in `detail[0].type`): HTTP 422
+  `too-long` (audio over 300 s), `unsupported-language`, `bad-audio`
+  (unreadable or missing), `empty-text`; HTTP 503 `model-unavailable` (the
+  model could not be loaded); HTTP 500 `aligner-failed` (the model failed).
+  A language may carry a region (`it-IT`, `en_US`).
 - Under `tts_mode = "fake"` (the worker's explicit CI mode) alignment is fake
   too: words spread evenly over the audio's duration, model `fake-aligner`.
   A live failure never falls back to it.
@@ -89,8 +92,10 @@ class ElevenLabsError { code: "auth" | "quota" | "rate-limited" | "bad-request" 
 - `POST https://api.elevenlabs.io/v1/forced-alignment`, multipart (`file`,
   `text`), header `xi-api-key`.
 - Rate rules (CreativeStudio UP-39): one call at a time per process; at most
-  two retries, only for 429 and 5xx answered before any processing, waiting
-  `Retry-After` (or 2 s, 4 s); never retry 401/403 (`auth`) or a quota error
+  two retries, only for 429 and 503 (answered before any processing),
+  waiting `Retry-After` (seconds or a date; or 2 s, 4 s), none when it asks
+  for more than 30 s; never retry another 5xx (the work may have been done
+  and billed), 401/403 (`auth`) or a quota error
   (`quota`); a connection lost after the request was sent is `uncertain`,
   never retried; no connection at all is `unreachable` (nothing was sent).
 - The key never appears in an error, a log line or a thrown message.
@@ -118,8 +123,11 @@ measureSilences(audioPath: string): Promise<{ silences: [number, number][]; spee
    letters matched (a word the provider split); a word several tokens
    matched is shared between them by letters (a word it merged). A token
    matched to none takes the gap between its neighbours, `confidence: 0`,
-   and is listed in `unmapped`. More than 10% of tokens unmapped →
-   `alignment-mismatch`.
+   and is listed in `unmapped`. More than 10% of the said tokens unmapped →
+   `alignment-mismatch`. A token with no letters or digits (a dash, an
+   ellipsis, a guillemet) is not said: it is never unmapped and takes no
+   time, in the gap where it is written; snapping and the minimum length
+   leave it alone.
 2. **Silences** from `ffmpeg -af silencedetect=noise=-35dB:d=0.10`.
    `speech` is the complement. No word runs into a silence: a silence that
    falls inside a word leaves it the side with more speech — an end running
@@ -157,7 +165,9 @@ elevenLabsAlignmentUsd(minutes: number): number   // the profile's estimate
    one, `language`, `alignment: {provider, model, method: "forced",
    createdAt}`, `words`, `speech` — and checks it with
    `validateWordTiming(doc, {audioHash})`.
-4. Writes the timing where `takes.json` already names it for this take, or
+4. Re-reads `takes.json` (another take may have been aligned meanwhile) and
+   refuses (`audio-changed`) if this take's audio or text changed during
+   the alignment. Writes the timing where `takes.json` already names it for this take, or
    `artifacts/timing/<take>.json` (the layout the series fixtures use),
    atomically, then
    rewrites `takes.json` with that take's `timing: {path, hash}` set and
@@ -195,6 +205,7 @@ worker URL, the ElevenLabs key and the spend function.
 | `audio-changed` | the take's audio is not the file `takes.json` names |
 | `no-language` | the take has no language |
 | `worker-unreachable` | the voice worker does not answer |
+| `model-unavailable`, `aligner-failed` | the worker answered: the model could not load, or failed |
 | `too-long`, `unsupported-language`, `bad-audio`, `empty-text` | from the worker |
 | `no-key` | ElevenLabs asked for, no key |
 | `auth`, `quota`, `rate-limited`, `bad-request`, `server`, `unreachable`, `uncertain` | from ElevenLabs |

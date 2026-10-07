@@ -1,9 +1,10 @@
 // One ElevenLabs request at a time per process, with CreativeStudio's rules
-// (UP-39): at most two retries, only for 429 and 5xx — answers that say the
-// request was not processed — waiting Retry-After (or 2 s, then 4 s); never a
-// retry for auth or quota; a connection lost after the request left is
-// `uncertain` and is not retried, since it may have been processed (and
-// billed). The key never appears in an error.
+// (UP-39): at most two retries, only for 429 and 503 — answers that say the
+// request was not processed — waiting Retry-After (seconds or a date; or 2 s,
+// then 4 s), and none when it asks for more than 30 s; never a retry for auth
+// or quota, nor for another 5xx, after which the work may have been done and
+// billed; a connection lost after the request left is `uncertain` and is not
+// retried either. The key never appears in an error.
 
 import { ElevenLabsError } from "./errors.js";
 
@@ -31,7 +32,7 @@ function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Errors raised before any byte left: nothing was sent, so nothing was processed. */
-const NOT_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"]);
+const NOT_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
 
 function causeCode(error: unknown): string | undefined {
   const cause = (error as { cause?: { code?: string } })?.cause;
@@ -54,9 +55,16 @@ async function describe(response: Response, apiKey: string): Promise<{ message: 
   return { message: message.split(apiKey).join("[key]"), status };
 }
 
+/** How long Retry-After asks to wait, in ms (seconds or an HTTP date); the back-off when it says nothing. */
 function waitFor(response: Response, attempt: number): number {
-  const header = Number(response.headers.get("retry-after"));
-  return Number.isFinite(header) && header > 0 ? Math.min(header * 1000, MAX_WAIT_MS) : 2000 * 2 ** attempt;
+  const header = response.headers.get("retry-after");
+  if (header !== null) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+  }
+  return 2000 * 2 ** attempt;
 }
 
 /** POST `path` with `body` and return the parsed JSON answer. */
@@ -84,12 +92,16 @@ export function postForm(path: string, body: () => FormData, options: RequestOpt
       const { message, status } = await describe(response, options.apiKey);
       if (status === "quota_exceeded" || response.status === 402) throw new ElevenLabsError("quota", `ElevenLabs quota: ${message}`, response.status);
       if (response.status === 401 || response.status === 403) throw new ElevenLabsError("auth", `ElevenLabs refused the key: ${message}`, response.status);
-      const retryable = response.status === 429 || response.status >= 500;
-      if (retryable && attempt < MAX_RETRIES) {
-        await sleep(waitFor(response, attempt));
+      const retryable = response.status === 429 || response.status === 503;
+      const wait = waitFor(response, attempt);
+      if (retryable && attempt < MAX_RETRIES && wait <= MAX_WAIT_MS) {
+        await sleep(wait);
         continue;
       }
-      if (response.status === 429) throw new ElevenLabsError("rate-limited", `ElevenLabs is rate limiting: ${message}`, 429);
+      if (response.status === 429) {
+        const later = wait > MAX_WAIT_MS ? ` (retry after ${Math.round(wait / 1000)} s)` : "";
+        throw new ElevenLabsError("rate-limited", `ElevenLabs is rate limiting: ${message}${later}`, 429);
+      }
       if (response.status >= 500) throw new ElevenLabsError("server", `ElevenLabs failed: ${message}`, response.status);
       throw new ElevenLabsError("bad-request", `ElevenLabs refused the request: ${message}`, response.status);
     }

@@ -75,6 +75,31 @@ describe("forcedAlignment", () => {
     expect(waits).toEqual([3000, 4000]);
   });
 
+  it("never retries a 500 or a 504: the work may have been done, and billed", async () => {
+    for (const status of [500, 504]) {
+      requests = [];
+      handlers.push(json(status, { detail: "upstream" }), json(200, WORDS));
+      const error = await failure(align());
+      expect([status, error.code, requests.length]).toEqual([status, "server", 1]);
+      handlers.length = 0;
+    }
+  });
+
+  it("reads Retry-After as a date too, and gives up rather than wait more than 30 s", async () => {
+    const inTwoSeconds = new Date(Date.now() + 2000).toUTCString();
+    handlers.push(json(429, {}, { "retry-after": inTwoSeconds }), json(200, WORDS));
+    await align();
+    expect(waits).toHaveLength(1);
+    expect(waits[0]!).toBeGreaterThan(500);
+    expect(waits[0]!).toBeLessThanOrEqual(2000);
+    waits.length = 0;
+    requests = [];
+    handlers.push(json(429, { detail: "come back in two minutes" }, { "retry-after": "120" }));
+    const error = await failure(align());
+    expect([error.code, requests.length, waits]).toEqual(["rate-limited", 1, []]);
+    expect(error.message).toMatch(/retry after 120 s/);
+  });
+
   it("gives up after two retries", async () => {
     handlers.push(json(429, {}), json(429, {}), json(429, { detail: "still too fast" }));
     const error = await failure(align());

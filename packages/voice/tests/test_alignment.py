@@ -82,6 +82,26 @@ class TestAlignRoute:
             assert _code(response) == code, body
 
 
+class TestAlignRouteFailures:
+    def test_a_model_that_cannot_load_is_503_model_unavailable(self, fake_client, tmp_path, monkeypatch):
+        from qwen_tts_worker.routes import alignment
+        monkeypatch.setattr(alignment, "_get", lambda: Aligner("some/aligner", loader=lambda repo: (_ for _ in ()).throw(OSError("offline"))))
+        response = fake_client.post("/align", json={"audio_path": str(_tone(tmp_path / "t.wav", 1.0)), "text": "uno", "language": "it"})
+        assert response.status_code == 503
+        assert _code(response) == "model-unavailable"
+
+    def test_an_aligner_that_fails_is_500_aligner_failed_in_the_envelope(self, fake_client, tmp_path, monkeypatch):
+        from qwen_tts_worker.routes import alignment
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("metal device lost")
+        model = SimpleNamespace(generate=broken, get_supported_languages=lambda: None)
+        monkeypatch.setattr(alignment, "_get", lambda: Aligner("some/aligner", loader=lambda repo: model))
+        response = fake_client.post("/align", json={"audio_path": str(_tone(tmp_path / "t.wav", 1.0)), "text": "uno", "language": "it"})
+        assert response.status_code == 500
+        assert _code(response) == "aligner-failed"
+        assert "metal device lost" in response.json()["detail"][0]["msg"]
+
+
 class _FakeItem(SimpleNamespace):
     pass
 
@@ -120,6 +140,23 @@ class TestAligner:
         assert language_name("italian") == "Italian"
         assert language_name("Portuguese") == "Portuguese"
         assert language_name("xx") is None
+
+    def test_reads_a_language_tag_with_a_region(self):
+        # takes.json and WordTiming allow tags such as en-US, pt-BR, zh-CN.
+        assert language_name("en-US") == "English"
+        assert language_name("pt-BR") == "Portuguese"
+        assert language_name("it_IT") == "Italian"
+        assert language_name("zh-Hans-CN") == "Chinese"
+
+    def test_says_when_the_model_cannot_be_loaded(self, tmp_path):
+        def offline(repo):
+            raise OSError("Could not reach huggingface.co")
+        aligner = Aligner("some/aligner", loader=offline)
+        with pytest.raises(AlignError) as raised:
+            aligner.align(str(_tone(tmp_path / "take.wav", 1.0)), "uno", "it")
+        assert raised.value.code == "model-unavailable"
+        assert "huggingface.co" in raised.value.message
+        assert not aligner.loaded
 
 
 @pytest.mark.skipif(os.environ.get("QTW_ALIGN_LIVE") != "1" or shutil.which("say") is None,

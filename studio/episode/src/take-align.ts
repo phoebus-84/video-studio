@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { ELEVENLABS_PROFILES, ElevenLabsError, forcedAlignment } from "@av/elevenlabs";
 import { validateNarrationTakes } from "@studio/contracts/src/narration-takes.mjs";
@@ -68,11 +68,24 @@ function writeAtomically(path: string, text: string): void {
   renameSync(temp, path);
 }
 
-/** A path takes.json names, confined to the episode. */
+const outside = (base: string, full: string) => {
+  const rel = relative(base, full);
+  return rel === "" || rel.startsWith("..") || isAbsolute(rel);
+};
+
+/** A path takes.json names, confined to the episode — links followed, when the file exists. */
 function inEpisode(episodeDir: string, path: unknown, what: string): string {
   const full = typeof path === "string" ? resolve(episodeDir, path) : "";
-  const rel = relative(episodeDir, full);
-  if (!full || rel === "" || rel.startsWith("..") || isAbsolute(rel)) throw new AlignError("no-such-take", `${what} ${String(path)} is not a file of this episode`);
+  if (!full || outside(episodeDir, full)) throw new AlignError("no-such-take", `${what} ${String(path)} is not a file of this episode`);
+  let real: string | null = null;
+  try {
+    real = realpathSync(full);
+  } catch {
+    /* not there yet (a timing file to write), or missing (reported by the caller) */
+  }
+  if (real !== null && outside(realpathSync(episodeDir), real)) {
+    throw new AlignError("no-such-take", `${what} ${String(path)} leads out of this episode`);
+  }
   return full;
 }
 
@@ -91,11 +104,12 @@ async function alignLocally(workerUrl: string | undefined, audioPath: string, te
   const body = await response.json().catch(() => undefined) as { words?: RawWord[]; model?: string; detail?: { type?: string; msg?: string }[] } | undefined;
   if (!response.ok) {
     const detail = body?.detail?.[0];
-    const known = ["too-long", "unsupported-language", "bad-audio", "empty-text"];
-    const code = known.includes(detail?.type ?? "") ? detail!.type as "too-long" : "worker-unreachable";
+    const known = ["too-long", "unsupported-language", "bad-audio", "empty-text", "model-unavailable"];
+    // The worker answered: whatever went wrong, it is not unreachable.
+    const code = known.includes(detail?.type ?? "") ? detail!.type as "too-long" : "aligner-failed";
     throw new AlignError(code, `the voice worker could not align: ${detail?.msg ?? `HTTP ${response.status}`}`);
   }
-  if (!Array.isArray(body?.words)) throw new AlignError("worker-unreachable", "the voice worker answered without words");
+  if (!Array.isArray(body?.words)) throw new AlignError("aligner-failed", "the voice worker answered without words");
   return { words: body.words, model: String(body.model ?? "unknown") };
 }
 
@@ -172,12 +186,18 @@ export async function alignTake(episodeDir: string, options: AlignTakeOptions): 
   const path = take.timing?.path ?? timingPathFor(take.id);
   const timingFile = inEpisode(episodeDir, path, "timing");
   const text = `${JSON.stringify(timing, null, 2)}\n`;
-  const updated = structuredClone(doc);
-  updated.takes[index].timing = { path, hash: sha256(text) };
-  const updatedProblems = validateNarrationTakes(updated);
+  // takes.json as it is now — another take may have been aligned meanwhile —
+  // with only this take's timing set; and only if this take is still the one aligned.
+  const current = JSON.parse(readFileSync(takesPath, "utf-8"));
+  const now = current?.takes?.find?.((t: { id: string }) => t.id === take.id);
+  if (!now || now.audio?.hash !== take.audio.hash || now.text !== take.text) {
+    throw new AlignError("audio-changed", `take "${take.id}" changed in ${TAKES_PATH} while it was being aligned: align it again`);
+  }
+  now.timing = { path, hash: sha256(text) };
+  const updatedProblems = validateNarrationTakes(current);
   if (updatedProblems.length > 0) throw new Error(`${TAKES_PATH} would not be valid: ${updatedProblems.map((p) => p.message).join("; ")}`);
   writeAtomically(timingFile, text);
-  writeAtomically(takesPath, `${JSON.stringify(updated, null, 2)}\n`);
+  writeAtomically(takesPath, `${JSON.stringify(current, null, 2)}\n`);
 
   const pauses = measured.silences
     .filter(([s, e]) => s > 0 && e < measured.durationSeconds && e - s > REPORTED_PAUSE_SECONDS)

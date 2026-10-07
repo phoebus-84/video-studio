@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
@@ -90,6 +90,37 @@ describe("alignTake with the local aligner", () => {
     expect(after.takes[0].timing).toEqual({ path: "artifacts/timing/light.json", hash: sha256(readFileSync(at(result.path))) });
     expect({ ...after, takes: after.takes.slice(1) }).toEqual({ ...before, takes: before.takes.slice(1) });
     expect({ ...after.takes[0], timing: null }).toEqual({ ...before.takes[0], timing: null });
+  });
+
+  it("keeps what another alignment wrote to takes.json meanwhile", async () => {
+    // While "light" is being aligned, "cup" finishes and takes.json names its new timing.
+    workerAnswers.push((body) => {
+      const doc = takes();
+      doc.takes[1].timing = { path: "artifacts/timing/cup.json", hash: `sha256:${"c".repeat(64)}` };
+      writeFileSync(at("artifacts/narration/takes.json"), `${JSON.stringify(doc, null, 2)}\n`);
+      return evenly(2.6)(body);
+    });
+    await alignTake(dir(), { take: "light", language: "en", workerUrl });
+    const after = takes();
+    expect(after.takes[0].timing.path).toBe("artifacts/timing/light.json");
+    expect(after.takes[1].timing).toEqual({ path: "artifacts/timing/cup.json", hash: `sha256:${"c".repeat(64)}` });
+  });
+
+  it("refuses a take's audio that is a link out of the episode", async () => {
+    const outside = join(root, "elsewhere.wav");
+    copyFileSync(at("assets/takes/light.wav"), outside);
+    unlinkSync(at("assets/takes/light.wav"));
+    symlinkSync(outside, at("assets/takes/light.wav"));
+    await expect(alignTake(dir(), { take: "light", language: "en", workerUrl })).rejects.toMatchObject({ code: "no-such-take" });
+    expect(workerCalls).toEqual([]);
+  });
+
+  it("tells a worker that failed from one that is not there", async () => {
+    const code = (p: Promise<unknown>) => p.then(() => "none", (e) => (e instanceof AlignError ? e.code : String(e)));
+    workerAnswers.push(() => ({ status: 503, body: { error: "HTTP error", detail: [{ msg: "could not download the model", type: "model-unavailable" }] } }));
+    expect(await code(alignTake(dir(), { take: "light", language: "en", workerUrl }))).toBe("model-unavailable");
+    workerAnswers.push(() => ({ status: 500, body: "Internal Server Error" }));
+    expect(await code(alignTake(dir(), { take: "light", language: "en", workerUrl }))).toBe("aligner-failed");
   });
 
   it("says which words it could not place", async () => {

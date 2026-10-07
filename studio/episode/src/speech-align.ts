@@ -19,6 +19,8 @@ export type AlignErrorCode =
   | "audio-changed"
   | "no-language"
   | "worker-unreachable"
+  | "model-unavailable"
+  | "aligner-failed"
   | "too-long"
   | "unsupported-language"
   | "bad-audio"
@@ -136,23 +138,27 @@ export function mapToText(text: string, raw: RawWord[]): { words: TimedWord[]; u
     }
   });
 
-  const unmapped = tokens.flatMap((_, t) => (spans[t]!.length === 0 ? [t] : []));
-  if (unmapped.length > tokens.length * MAX_UNMAPPED_SHARE) {
-    throw new AlignError("alignment-mismatch", `${unmapped.length} of ${tokens.length} words found no match in the aligner's words: is this the right text for this audio?`);
+  // A token with no letters (a dash, an ellipsis, a guillemet) is not said:
+  // it is never unmatched, and it sits in the gap where it is written.
+  const said = tokens.map((t) => letters(t).length > 0);
+  const unmapped = tokens.flatMap((_, t) => (said[t] && spans[t]!.length === 0 ? [t] : []));
+  const saidCount = said.filter(Boolean).length;
+  if (unmapped.length > saidCount * MAX_UNMAPPED_SHARE) {
+    throw new AlignError("alignment-mismatch", `${unmapped.length} of ${saidCount} words found no match in the aligner's words: is this the right text for this audio?`);
   }
   const words: TimedWord[] = tokens.map((t, i) => {
     const s = spans[i]!;
-    return s.length > 0
-      ? { text: t, start: Math.min(...s.map((x) => x.start)), end: Math.max(...s.map((x) => x.end)) }
-      : { text: t, start: Number.NaN, end: Number.NaN, confidence: 0 };
+    if (s.length > 0) return { text: t, start: Math.min(...s.map((x) => x.start)), end: Math.max(...s.map((x) => x.end)) };
+    return said[i] ? { text: t, start: Number.NaN, end: Number.NaN, confidence: 0 } : { text: t, start: Number.NaN, end: Number.NaN };
   });
-  // Unmatched tokens fill the gap between their neighbours.
+  const placed = (x: TimedWord, i: number) => !Number.isNaN(x.start) && (said[i] || spans[i]!.length > 0);
+  // Unmatched words fill the gap between their neighbours; unsaid tokens take no time in it.
   words.forEach((word, i) => {
     if (!Number.isNaN(word.start)) return;
-    const before = words.slice(0, i).reverse().find((x) => !Number.isNaN(x.end));
-    const after = words.slice(i + 1).find((x) => !Number.isNaN(x.start));
+    const before = words.slice(0, i).map((x, k) => [x, k] as const).reverse().find(([x, k]) => placed(x, k))?.[0];
+    const after = words.slice(i + 1).map((x, k) => [x, k + i + 1] as const).find(([x, k]) => placed(x, k))?.[0];
     word.start = before?.end ?? after?.start ?? 0;
-    word.end = after?.start ?? word.start;
+    word.end = said[i] ? after?.start ?? word.start : word.start;
   });
   // In order, never overlapping.
   for (let i = 1; i < words.length; i++) {
@@ -177,7 +183,9 @@ function round(w: TimedWord): TimedWord {
  */
 export function snapToSilences(input: TimedWord[], silences: [number, number][], durationSeconds: number): TimedWord[] {
   const words = input.map((w) => ({ ...w }));
+  const said = (w: TimedWord) => letters(w.text).length > 0;
   for (const word of words) {
+    if (!said(word)) continue;
     for (const [s, e] of silences) {
       if (e <= word.start || s >= word.end) continue;
       // A silence inside the word: the word is the side with more speech.
@@ -189,7 +197,7 @@ export function snapToSilences(input: TimedWord[], silences: [number, number][],
     }
   }
   words.forEach((word, i) => {
-    if (word.end - word.start >= MIN_WORD_SECONDS) return;
+    if (!said(word) || word.end - word.start >= MIN_WORD_SECONDS) return;
     const next = words[i + 1];
     const prev = words[i - 1];
     if (next && next.end - next.start > 0.2) {
@@ -203,6 +211,11 @@ export function snapToSilences(input: TimedWord[], silences: [number, number][],
       if (next) next.start = Math.max(next.start, word.end);
     }
   });
+  // Nothing past the audio's end.
+  for (const word of words) {
+    word.end = Math.min(word.end, durationSeconds);
+    word.start = Math.min(word.start, word.end);
+  }
   return words.map(round);
 }
 
