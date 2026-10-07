@@ -55,6 +55,15 @@ describe('validateTimeline', () => {
     assert.match(result.ok ? '' : result.problems[0]!.message, /still@2\.0\.0: available still@1\.0\.0/);
   });
 
+  it('refuses a kit drawn for another output profile', () => {
+    const doc = clone(fixture('explainer.json'));
+    doc.tracks[0].items[0].kit = {name: 'title-chip', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {title: 'San Martino'};
+    assert.deepEqual(problems(doc), [['wrong-profile', '$.tracks[0].items[0].kit']]);
+    const result = validateTimeline(doc);
+    assert.match(result.ok ? '' : result.problems[0]!.message, /title-chip@1\.0\.0 is drawn for vertical-1080x1920, not youtube-1920x1080/);
+  });
+
   it('refuses props a kit does not accept, at the offending field', () => {
     const doc = clone(fixture('explainer.json'));
     doc.tracks[0].items[1].props.fit = 'stretch';
@@ -70,17 +79,25 @@ describe('validateTimeline', () => {
 
   it('lists every kit version with what the catalog needs', () => {
     const ids = outputProfiles().map((p) => p.id);
-    assert.deepEqual(listKits(ids).map((k) => [k.name, k.version, k.layer, k.examples]), [
-      ['captions', '1.0.0', 'fill', ['bottom', 'top']],
-      ['captions', '1.1.0', 'overlay', ['bottom', 'top', 'center', 'long', 'overflowing']],
-      ['clip', '1.0.0', 'fill', ['plays']],
-      ['still', '1.0.0', 'fill', ['cover', 'contain']],
+    assert.deepEqual(listKits(ids).map((k) => [k.name, k.version, k.layer]), [
+      ['brand-mark', '1.0.0', 'overlay'],
+      ['captions', '1.0.0', 'fill'],
+      ['captions', '1.1.0', 'overlay'],
+      ['clip', '1.0.0', 'fill'],
+      ['lower-third', '1.0.0', 'overlay'],
+      ['still', '1.0.0', 'fill'],
+      ['title-chip', '1.0.0', 'overlay'],
     ]);
-    assert.deepEqual(listKits(ids)[1]!.previews, {
+    const captions = listKits(ids).find((k) => k.name === 'captions' && k.version === '1.1.0')!;
+    assert.deepEqual(captions.examples, ['bottom', 'top', 'center', 'long', 'overflowing']);
+    assert.deepEqual(captions.previews, {
       'youtube-1920x1080': 'previews/captions@1.1.0.youtube-1920x1080.png',
       'vertical-1080x1920': 'previews/captions@1.1.0.vertical-1080x1920.png',
     });
-    assert.deepEqual(listKits()[0]!.previews, {});
+    // A format's kit is listed with the profiles it is drawn for, and previews only there.
+    const chip = listKits(ids).find((k) => k.name === 'title-chip')!;
+    assert.deepEqual([chip.profiles, chip.previews], [['vertical-1080x1920'], {'vertical-1080x1920': 'previews/title-chip@1.0.0.vertical-1080x1920.png'}]);
+    assert.deepEqual(listKits()[1]!.previews, {});
     assert.ok(listKits().every((k) => k.description.length > 0));
   });
 });

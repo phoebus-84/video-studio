@@ -7,11 +7,17 @@ import {kit as still100} from './still/1.0.0.js';
 import {kit as clip100} from './clip/1.0.0.js';
 import {kit as captions100} from './captions/1.0.0.js';
 import {kit as captions110} from './captions/1.1.0.js';
+import {kit as brandMark100} from './brand-mark/1.0.0.js';
+import {kit as lowerThird100} from './lower-third/1.0.0.js';
+import {kit as titleChip100} from './title-chip/1.0.0.js';
 
 export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 
 /** Every released kit version. Adding a version: import it here, then `npm run kits:lock`. */
-export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([still100, clip100, captions100, captions110]);
+export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([
+  still100, clip100, captions100, captions110,
+  brandMark100, lowerThird100, titleChip100,
+]);
 
 const key = (name: string, version: string) => `${name}@${version}`;
 const byKey = new Map(KIT_VERSIONS.map((k) => [key(k.name, k.version), k]));
