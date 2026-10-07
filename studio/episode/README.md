@@ -6,7 +6,7 @@ its `episode-spec.json` by its series template's compiler — checked against it
 series' rules, shown on a layout sheet and rendered with `@av/remotion-composer`.
 
 The agent's tools (`pva_init_spec`, `pva_build_timeline`, `pva_check_episode`,
-`pva_layout_sheet`, `pva_compose_video`, the narration tools) and the `series-production` stage
+`pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, the narration tools) and the `series-production` stage
 adapters both call this package, so a tool and a stage never disagree.
 
 ## What it offers
@@ -22,6 +22,8 @@ adapters both call this package, so a tool and a stage never disagree.
 | `references.ts` | `proposeReference`: freeze an episode as a proposed golden reference |
 | `sheet-instants.ts` | `sheetInstants`: the frames a layout sheet shows, from the timeline and the release's `sheet` rules (pure) |
 | `layout-sheet.ts` | `makeLayoutSheet`, `layoutSheetStatus`: `artifacts/layout-sheet/`, and whether it still shows what a render would use |
+| `version-diff.ts` | `alignInstants`, `measure`, `judge`: which frames two versions compare, how different they are, the verdict (pure) |
+| `version-compare.ts` | `compareVersions`: two renders, or a render and a golden reference, decoded with ffmpeg at the same instants, into `reviews/compare/<old>--<new>/` |
 
 `@studio/episode/testing` exports `specEpisode`, `editSpec` and `sha256`: a
 complete poetry-short episode on disk, from `@studio/series`'s golden fixture,
@@ -32,6 +34,6 @@ for tests.
 ```
 npm run build       # tsc to dist/ (the agent and the adapters import it from there)
 npm run typecheck
-npm test            # vitest
+npm test            # vitest; the version comparison tests need ffmpeg and ffprobe on PATH
 REMOTION_E2E=1 npm test   # also one real layout sheet (build @av/remotion-composer first)
 ```
