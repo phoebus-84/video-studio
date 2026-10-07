@@ -61,10 +61,12 @@ and the vocabulary schema's enum (kept identical by `check-vocabulary`).
   `en`, `fr`, `de`, `es`, `pt`, `ru`, `ja`, `ko`, `zh`).
 - Response `{ "words": [{ "text", "start", "end" }], "model": str,
   "language": str }` — the model's own tokens and seconds, unprocessed.
-- The aligner model (`ALIGN_MODEL`, default
+- The aligner model (`QTW_ALIGN_MODEL`, default
   `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`) is loaded on first use and
-  kept, as the speech model is; the worker's health reports whether it is
-  loaded.
+  kept, as the speech model is; `GET /align` reports the model, whether it
+  is loaded, and the 300 s limit.
+- `audio_path` must be absolute; errors travel in the worker's error
+  envelope, the code in `detail[0].type` (HTTP 422).
 - Errors (`{ "code", "message" }`, HTTP 4xx): `too-long` (audio over 300 s),
   `unsupported-language`, `bad-audio` (unreadable or missing), `empty-text`.
 - Under `tts_mode = "fake"` (the worker's explicit CI mode) alignment is fake
@@ -81,7 +83,7 @@ forcedAlignment(options: {
   signal?: AbortSignal;
 }): Promise<{ words: { text: string; start: number; end: number; loss?: number }[]; loss?: number }>
 ELEVENLABS_PROFILES: { forcedAlignment: { usdPerMinute: number; estimate: true } }
-class ElevenLabsError { code: "auth" | "quota" | "rate-limited" | "bad-request" | "server" | "uncertain"; status?: number; message }
+class ElevenLabsError { code: "auth" | "quota" | "rate-limited" | "bad-request" | "server" | "unreachable" | "uncertain"; status?: number; message }
 ```
 
 - `POST https://api.elevenlabs.io/v1/forced-alignment`, multipart (`file`,
@@ -90,7 +92,7 @@ class ElevenLabsError { code: "auth" | "quota" | "rate-limited" | "bad-request" 
   two retries, only for 429 and 5xx answered before any processing, waiting
   `Retry-After` (or 2 s, 4 s); never retry 401/403 (`auth`) or a quota error
   (`quota`); a connection lost after the request was sent is `uncertain`,
-  never retried.
+  never retried; no connection at all is `unreachable` (nothing was sent).
 - The key never appears in an error, a log line or a thrown message.
 - The price is an estimate in the profile, documented as such and editable;
   ElevenLabs returns no price for alignment.
@@ -108,18 +110,22 @@ measureSilences(audioPath: string): Promise<{ silences: [number, number][]; spee
 ```
 
 1. **Tokens.** The written text's tokens are its whitespace-separated
-   pieces (the `WordTiming` rule: one token, no whitespace). Each is matched
-   with the provider's words in order on a normalised form (lower case,
-   letters and digits only, apostrophes and accents kept as letters), with
-   a sequence match so a provider that splits or merges a word does not
-   shift the rest. A token matched to several provider words takes their
-   span; one matched to none takes the gap between its neighbours,
-   `confidence: 0`, and is listed in `unmapped`. More than 10% of tokens
-   unmapped → `alignment-mismatch`.
+   pieces (the `WordTiming` rule: one token, no whitespace). Their letters
+   (lower case, accents removed, letters and digits only) are paired in
+   order with the provider words' letters; where they disagree (a misheard
+   word) the pairing skips ahead on either side, up to 12 letters, to where
+   three letters agree again. A token takes the span of the words its
+   letters matched (a word the provider split); a word several tokens
+   matched is shared between them by letters (a word it merged). A token
+   matched to none takes the gap between its neighbours, `confidence: 0`,
+   and is listed in `unmapped`. More than 10% of tokens unmapped →
+   `alignment-mismatch`.
 2. **Silences** from `ffmpeg -af silencedetect=noise=-35dB:d=0.10`.
-   `speech` is the complement. No word runs into a silence: an end inside a
-   word that a silence starts after is clipped to the silence's start; a
-   start that a silence ends after is moved to the silence's end.
+   `speech` is the complement. No word runs into a silence: a silence that
+   falls inside a word leaves it the side with more speech — an end running
+   into a pause is clipped to its start, a start just before a pause moves
+   to its end (the spike's "piovigginando", 63 ms before a one-second
+   pause). A word wholly inside a silence is left to the aligner.
 3. **Minimum length** 80 ms: a shorter word takes the time from its
    following neighbour when that one is longer than 200 ms, otherwise from
    its preceding one; never overlapping a neighbour, never past the audio.
@@ -130,26 +136,30 @@ measureSilences(audioPath: string): Promise<{ silences: [number, number][]; spee
 
 ```ts
 alignTake(episodeDir: string, options: {
-  episodeRef: EpisodeRef;
   take: string;
   provider?: "qwen-local" | "elevenlabs";      // default qwen-local
-  workerUrl?: string;                         // default the agent's configured worker URL
-  elevenlabs?: { apiKey: string; spend: (call) => Promise<…> };  // supplied by the caller
+  language?: string;                          // when the take gives none
+  workerUrl?: string;                         // the local voice worker
+  elevenlabs?: { apiKey: string; baseUrl?: string; pay?: <T>(minutes: number, call: () => Promise<T>) => Promise<T> };
 }): Promise<{ timing: WordTiming; path: string; unmapped: string[]; pauses: number[] }>
+elevenLabsAlignmentUsd(minutes: number): number   // the profile's estimate
 ```
 
 1. Reads `artifacts/narration/takes.json` (`validateNarrationTakes`), finds
    the take (`no-such-take`), checks its audio's hash (`audio-changed`).
 2. Calls the provider with the take's audio, its `text`, its `language`
-   (`no-language` when the take has none). `qwen-local` through the
-   worker (`worker-unreachable` when it does not answer); `elevenlabs`
-   through `@av/elevenlabs`, wrapped by the caller's spend function.
+   (or the `language` option; `no-language` when there is neither).
+   `qwen-local` through the worker (`worker-unreachable` when it does not
+   answer); `elevenlabs` through `@av/elevenlabs`, wrapped by the caller's
+   spend function.
 3. Post-processes, builds the `WordTiming` — `take: {id, source?}`,
    `audio` (path, hash, duration), `text`, `spokenText` when the take has
    one, `language`, `alignment: {provider, model, method: "forced",
    createdAt}`, `words`, `speech` — and checks it with
    `validateWordTiming(doc, {audioHash})`.
-4. Writes `artifacts/narration/timing/<take>.json` atomically, then
+4. Writes the timing where `takes.json` already names it for this take, or
+   `artifacts/timing/<take>.json` (the layout the series fixtures use),
+   atomically, then
    rewrites `takes.json` with that take's `timing: {path, hash}` set and
    nothing else changed (parsed, the one field set, serialised in the same
    two-space form; a `takes.json` not in that form is rewritten in it — the
@@ -163,11 +173,15 @@ worker URL, the ElevenLabs key and the spend function.
 
 ### Agent — `pva_align_take`
 
-- Parameters: `channel, series, episode, take, provider?`.
+- Parameters: `channel, series, episode, take, provider?, language?`.
 - `provider: "elevenlabs"`: the key from `ELEVENLABS_API_KEY` (`no-key`
   when unset), the call through `paidCall` (capability `speech.align`,
-  provider `elevenlabs`, estimate from the profile × the take's minutes);
-  a budget that cannot hold the estimate refuses before sending.
+  provider `elevenlabs`, estimate `elevenLabsAlignmentUsd(minutes)` —
+  `PaidCall` gains an optional `estimate` for prices that are not fal's);
+  a budget that cannot hold the estimate refuses before sending
+  (`SpendRefused`, replied as `budget`). A refusal before processing
+  (`auth`, `quota`, `rate-limited`, `bad-request`, `unreachable`) settles
+  as not billed.
 - Replies: `✅ <take>: <n> words, <provider> (<model>) → <path>`, the pauses
   over 0.35 s, the unmapped words. Errors with their code.
 - `pva_capability_status` reports `speech.align` for both providers: the
@@ -177,13 +191,13 @@ worker URL, the ElevenLabs key and the spend function.
 
 | Code | When |
 |---|---|
-| `no-such-take` | the take is not in `takes.json` |
+| `no-such-take` | the take is not in `takes.json`, or `takes.json` is missing or not valid |
 | `audio-changed` | the take's audio is not the file `takes.json` names |
 | `no-language` | the take has no language |
 | `worker-unreachable` | the voice worker does not answer |
 | `too-long`, `unsupported-language`, `bad-audio`, `empty-text` | from the worker |
 | `no-key` | ElevenLabs asked for, no key |
-| `auth`, `quota`, `rate-limited`, `uncertain`, `server` | from ElevenLabs |
+| `auth`, `quota`, `rate-limited`, `bad-request`, `server`, `unreachable`, `uncertain` | from ElevenLabs |
 | `budget` | the spend ledger refuses the estimate |
 | `alignment-mismatch` | more than 10% of the text's tokens found no word |
 
@@ -194,9 +208,10 @@ is valid.
 
 ADR-0038 "Word timing comes from forced alignment against the text" (the
 choice, the spike's numbers, the 300 s limit, Qwen local by default and
-ElevenLabs by choice); `docs/running.md` (aligning a take, the model's first
-download, `ELEVENLABS_API_KEY`); the voice worker's README (`/align`); the
-new package's README.
+ElevenLabs by choice) and its row in `docs/index.md`; `docs/running.md`
+(aligning a take, the model's first download, `ELEVENLABS_API_KEY`); the
+voice worker's README and `docs/API.md` (`/align`); the new package's
+README; the episode README.
 
 ## Testing
 
