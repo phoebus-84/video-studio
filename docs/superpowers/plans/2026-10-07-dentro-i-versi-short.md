@@ -25,7 +25,7 @@ Generated files are taken from that commit with `git checkout 99a6b41 -- <path>`
 
 ## Global Constraints
 
-- Work on branch `feat/dentro-i-versi-short`, in the main checkout (`/Users/euripide/strange_things/video-studio`). It holds the spec commits.
+- Work on branch `feat/dentro-i-versi-short`, in the main checkout (not a worktree). It holds the spec commits.
 - Never push or merge without the user's go.
 - Leave the checkout's unrelated changes alone: `studio/gateway/src/workspace/filesystem-service.ts`, `studio/gateway/test/workspace-filesystem.test.ts` and `.beads/`. Never stage them; never run `bd`.
 - Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Use `git add` with explicit paths only.
