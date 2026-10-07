@@ -47,6 +47,7 @@ episodes/<episode>/
   episode.yaml                    # workspace identity/settings, unchanged
   episode-spec.json               # editable EpisodeSpec; pins a template release
   artifacts/edit-timeline.json    # compiler output (avg-jao.2)
+  artifacts/layout-sheet/         # sheet.json, sheet.jpg, frames/ (avg-3th.1)
   reviews/references/<reference-id>/
     episode-spec.json             # frozen editorial snapshot for the reference
     edit-timeline.json            # frozen derived snapshot
@@ -134,8 +135,39 @@ captions are split), never the format itself (the voice, the text, the
 profile, the effects). Errors refuse the build and the render before anything
 is written; warnings are reported and recorded in the render report.
 `pva_check_episode` runs the same check without writing anything — the gate
-the layout sheet (`avg-3th.1`) and the pipeline stages (`avg-jao.4`) will
-block on. A template that names no validator has no series rules.
+the layout sheet (`avg-3th.1`) and the pipeline stages (`avg-jao.4`) block
+on. A template that names no validator has no series rules.
+
+### The layout sheet shows what will be rendered
+
+Before a render, a person reads the episode's **layout sheet**
+(`avg-3th.1`): small stills of the timeline a render would use and one grid
+of them, labelled by number, time and reason. Its instants are decided the
+same way every time from the timeline alone — the first and last frame, a
+spread over the sections by length (at least one each, never on a cut) — plus
+the instants the release declares in an optional `sheet` field of
+`series-template.json`:
+
+```json
+"sheet": { "instants": [{ "at": "start", "offsetSeconds": 2, "sections": ["block-*"] }] }
+```
+
+Each rule is anchored to the `start`, `middle` or `end` of every matching
+section, so a hand edit that moves a section moves its instants. Rules are
+data, pinned with the release like everything else: a series that wants
+different instants publishes a new release. An instant that falls outside
+its section is a warning in the sheet, not an error.
+
+The series rules block the sheet: a timeline they refuse has no sheet.
+`sheet.json` records the timeline it shows by hash, the kits it drew with by
+their code hashes, the rules and the scale, and an `inputsHash` over all of
+them; the timeline names every asset by hash and all timing in frames, so
+nothing else decides the pictures. In the `series-production` pipeline
+(1.1.0) the `sheet` stage sits between `check` and `render`, with a human
+gate, and `render` refuses a sheet that is missing, whose image was replaced,
+or whose inputs hash no longer matches the timeline it would render. Signing
+the sheet's review is `avg-3th.2`; comparing two versions at the same instants
+is `avg-jao.5`.
 
 ### Golden references are evidence, not live pointers
 
@@ -217,8 +249,8 @@ before it is promoted; afterwards only a signed withdrawal ends a reference.
 - `avg-jao.2` owns loading/resolving the pinned release, compiler dispatch,
   workspace writes/staleness and the spec → timeline integration.
 - `avg-jao.3` owns the series validators and the check that blocks rendering;
-  `avg-jao.6` owns reference trust/promotion integration; blocking the layout
-  sheet comes with the sheet (`avg-3th.1`).
+  `avg-jao.6` owns reference trust/promotion integration; `avg-3th.1` made
+  the layout sheet, which the series rules block.
 - `avg-jao.4` owns pipeline wiring: the `series-production` family (spec,
   pictures, takes, timeline, check, render), its stage adapters and
   `pva_init_spec`; `avg-jao.5` owns identical-instant visual

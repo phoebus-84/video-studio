@@ -129,7 +129,7 @@ describe("extensions/index.ts — tool registration", () => {
   });
 
   it("registers the expected suite of production tools", () => {
-    expect(mockPi.tools.length).toBe(46);
+    expect(mockPi.tools.length).toBe(47);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "pva_blender_create_scene",
@@ -158,6 +158,7 @@ describe("extensions/index.ts — tool registration", () => {
       "pva_health",
       "pva_init_spec",
       "pva_journal",
+      "pva_layout_sheet",
       "pva_list_skills",
       "pva_load_skill",
       "pva_plan_rerun",
