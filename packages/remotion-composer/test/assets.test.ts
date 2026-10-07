@@ -1,6 +1,6 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {sha256, stageAssets} from '../src/assets.js';
@@ -72,5 +72,34 @@ describe('stageAssets', () => {
       ['missing-asset', '$.assets["scene-03-ending"].path'],
     ]);
     await rm(root, {recursive: true, force: true});
+  });
+
+  it('stages an asset from a shared root outside the episode, and nothing from elsewhere', async () => {
+    // library/<channel>/themes/… beside library/<channel>/series/<s>/episodes/<e>
+    const library = await episodeWith({'themes/t/1.0.0/rooms/hall.png': 'a hall', 'secrets/key.txt': 'no'});
+    const episode = path.join(library, 'series/s/episodes/e');
+    await mkdir(episode, {recursive: true});
+    const doc = clone(fixture('explainer.json')) as EditTimeline;
+    doc.assets = {
+      'theme-hall': {path: '../../../../themes/t/1.0.0/rooms/hall.png', hash: await sha256(path.join(library, 'themes/t/1.0.0/rooms/hall.png')), kind: 'image'},
+    };
+    const shared = path.join(library, 'themes');
+    const out = await stageAssets(doc, episode, [shared]);
+    assert.ok(out.ok);
+    if (!out.ok) return;
+    assert.equal(await readFile(path.join(out.staged.publicDir, out.staged.files['theme-hall']!), 'utf8'), 'a hall');
+    await out.staged.cleanup();
+    // Without the shared root it is outside the episode; with it, a path beside it is still refused.
+    const alone = await stageAssets(doc, episode);
+    assert.deepEqual(alone.ok ? [] : alone.problems.map((p) => p.code), ['missing-asset']);
+    // A link inside the shared root that leads elsewhere is not inside it.
+    await symlink(path.join(library, 'secrets/key.txt'), path.join(library, 'themes/t/1.0.0/rooms/link.png'));
+    doc.assets['theme-hall'] = {path: '../../../../themes/t/1.0.0/rooms/link.png', hash: await sha256(path.join(library, 'secrets/key.txt')), kind: 'image'};
+    const linked = await stageAssets(doc, episode, [shared]);
+    assert.deepEqual(linked.ok ? [] : linked.problems.map((p) => p.code), ['missing-asset']);
+    doc.assets['theme-hall']!.path = '../../../../secrets/key.txt';
+    const beside = await stageAssets(doc, episode, [shared]);
+    assert.deepEqual(beside.ok ? [] : beside.problems.map((p) => p.code), ['missing-asset']);
+    await rm(library, {recursive: true, force: true});
   });
 });

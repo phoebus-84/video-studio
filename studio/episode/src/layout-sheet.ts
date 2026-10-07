@@ -17,7 +17,7 @@ import { drawingCodeHash, renderLayoutSheet, timelineKits, type LockedKit } from
 import { canonicalJson } from "@studio/contracts/src/receipt.mjs";
 import { decideEditTimeline, SeriesRulesError, type TimelineDecision } from "./episode-render.js";
 import { EDIT_TIMELINE_PATH, type BuildOptions } from "./edit-timeline-builder.js";
-import { isSpecDriven, loadEpisode } from "./series-compile.js";
+import { isSpecDriven, loadEpisode, sharedRootsOf } from "./series-compile.js";
 import { sheetInstants, type SheetRules } from "./sheet-instants.js";
 
 export const LAYOUT_SHEET_DIR = "artifacts/layout-sheet";
@@ -113,7 +113,7 @@ export async function makeLayoutSheet(episodeDir: string, options: BuildOptions)
   const final = join(episodeDir, LAYOUT_SHEET_DIR);
   let report: LayoutSheetReport;
   try {
-    const result = await renderLayoutSheet({ timeline: decision.timeline, assetRoot: episodeDir, picks, outDir: temp, scale: SHEET_SCALE });
+    const result = await renderLayoutSheet({ timeline: decision.timeline, assetRoot: episodeDir, sharedRoots: sharedRootsOf(episodeDir), picks, outDir: temp, scale: SHEET_SCALE });
     report = {
       createdAt: new Date().toISOString(),
       timeline: { path: EDIT_TIMELINE_PATH, hash: inputs.timeline },

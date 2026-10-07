@@ -1,0 +1,40 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ChannelTheme",
+  "id": "sample",
+  "version": "1.0.0",
+  "look": {
+    "colors": {
+      "ink": "#1b1d24",
+      "text": "#f4f5f7",
+      "textDim": "rgba(244,245,247,.85)",
+      "accent": "#4f9dff",
+      "highlight": "#ffd166",
+      "glow": "#cfe3ff",
+      "lightning": "#c9c3ff",
+      "plate": "rgba(20,22,30,.86)",
+      "plateLine": "rgba(255,255,255,.4)",
+      "shadow": "rgba(0,0,0,.4)",
+      "backdrop": "#14161e",
+      "signal": "#ff5d6c"
+    },
+    "fonts": { "display": "Anton", "serif": "Fraunces", "sans": "Inter" },
+    "measures": { "plateRadius": 12, "textShadow": "0 2px 3px rgba(0,0,0,.8)", "minTextPx": 26 }
+  },
+  "layout": { "safe": { "top": 120, "bottom": 960 }, "floorY": 950, "panel": { "x": 440, "y": 150, "w": 1060, "h": 596 } },
+  "characters": {
+    "guide": {
+      "variant": "attrice",
+      "outfit": "gilet",
+      "palette": {
+        "ink": "#2e2620", "shirt": "#e9edf8", "shirtDark": "#c9d0e6", "vest": "#2a3266", "vestLight": "#4a56a0", "button": "#4f9dff",
+        "inner": "#e9edf8", "innerDark": "#c9d0e6", "skin": "#f6b386", "skinDark": "#cf7c4e", "trousers": "#1a1f44", "shoe": "#fafaf5", "sole": "#dcd8cc"
+      },
+      "poses": { "indica": { "ru": 126, "rf": 140, "head": 4 } }
+    }
+  },
+  "rooms": {
+    "hall": { "image": "rooms/hall.png", "sky": [{ "poly": [[0, 0], [660, 262], [660, 540], [0, 492]], "period": 7.5, "seed": 3 }], "windows": [[[0, 0], [660, 170], [660, 600], [0, 760]]] }
+  },
+  "brand": { "text": "SAMPLE", "icon": "none" }
+}

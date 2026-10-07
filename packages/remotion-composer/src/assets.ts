@@ -4,7 +4,7 @@
 // public directory, named by asset id, that the bundle serves.
 
 import {createHash} from 'node:crypto';
-import {createReadStream, existsSync} from 'node:fs';
+import {createReadStream, existsSync, realpathSync} from 'node:fs';
 import {copyFile, link, mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -26,18 +26,29 @@ export interface StagedAssets {
   cleanup: () => Promise<void>;
 }
 
+/**
+ * `sharedRoots` are folders outside the asset root that assets may also come
+ * from — a channel's theme releases beside its episodes (ADR-0040); nothing
+ * else outside the root is ever staged.
+ */
 export async function stageAssets(
-  timeline: EditTimeline, assetRoot: string,
+  timeline: EditTimeline, assetRoot: string, sharedRoots: readonly string[] = [],
 ): Promise<{ok: true; staged: StagedAssets} | {ok: false; problems: ComposerProblem[]}> {
   const root = path.resolve(assetRoot);
+  const real = (p: string) => (existsSync(p) ? realpathSync(p) : p);
+  const roots = [root, ...sharedRoots.map((r) => path.resolve(r))].map(real);
+  // links are followed before comparing: a link inside a root that leads elsewhere is not inside it
+  const inside = (abs: string) => existsSync(abs) && roots.some((r) => {
+    const rel = path.relative(r, realpathSync(abs));
+    return !rel.startsWith('..') && !path.isAbsolute(rel);
+  });
   const problems: ComposerProblem[] = [];
   const sources: Record<string, string> = {};
   for (const [id, asset] of Object.entries(timeline.assets)) {
     const p = `$.assets[${JSON.stringify(id)}]`;
     const abs = path.resolve(root, asset.path);
-    const rel = path.relative(root, abs);
-    if (rel.startsWith('..') || path.isAbsolute(rel) || !existsSync(abs)) {
-      problems.push({code: 'missing-asset', message: `asset "${id}": ${asset.path} is not a file under ${root}`, path: `${p}.path`});
+    if (!inside(abs) || !existsSync(abs)) {
+      problems.push({code: 'missing-asset', message: `asset "${id}": ${asset.path} is not a file under ${roots.join(' or ')}`, path: `${p}.path`});
       continue;
     }
     const actual = await sha256(abs);

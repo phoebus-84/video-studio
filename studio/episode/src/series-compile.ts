@@ -17,6 +17,7 @@ import { EPISODE_SPEC_PATH, SERIES_TEMPLATE_MANIFEST, seriesTemplatePath } from 
 import { validateNarrationTakes } from "@studio/contracts/src/narration-takes.mjs";
 import { SERIES_TEMPLATE_FILES, validateEpisodeSpec, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
 import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
+import { THEME_FILE, themeReleasePath, validateChannelTheme, type ChannelTheme } from "@studio/contracts/src/channel-themes.mjs";
 
 export const NARRATION_TAKES_PATH = "artifacts/narration/takes.json";
 /** What the loader offers from assets/: every file in each folder, as <prefix>-<name>. */
@@ -98,6 +99,27 @@ export function loadEpisode(
   }
 }
 
+/**
+ * Folders outside the episode a render may take assets from: the theme
+ * release its template release pins (library/<channel>/themes/<id>/<version>,
+ * ADR-0040), or none. Whatever cannot be read gives none: loading the
+ * episode reports why.
+ */
+export function sharedRootsOf(episodeDir: string): string[] {
+  try {
+    const dir = resolve(episodeDir);
+    const seriesDir = dirname(dirname(dir));
+    const pin = JSON.parse(readFileSync(join(dir, EPISODE_SPEC_PATH), "utf-8"))?.template;
+    const releaseDir = seriesTemplatePath(dirname(dirname(dirname(seriesDir))), basename(dirname(dirname(seriesDir))), basename(seriesDir), pin?.id, pin?.version);
+    const theme = JSON.parse(readFileSync(join(releaseDir, SERIES_TEMPLATE_MANIFEST), "utf-8"))?.theme;
+    if (!theme) return [];
+    const themeDir = join(dirname(dirname(seriesDir)), themeReleasePath(theme.id, theme.version));
+    return existsSync(themeDir) ? [themeDir] : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Compile the episode's spec with its release's compiler. Writes nothing. */
 export function compileEpisode(
   episodeDir: string,
@@ -151,7 +173,8 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     const real = realpathSync(file);
     const root = realpathSync(within);
     if (real !== root && !real.startsWith(root + sep)) {
-      stop("path-escape", key, `${key} leads outside ${within === episodeDir ? "the episode" : "the series"} (${real})`);
+      const where = within === episodeDir ? "the episode" : within === seriesDir ? "the series" : "its theme release";
+      stop("path-escape", key, `${key} leads outside ${where} (${real})`);
     }
     if (!statSync(real).isFile()) stop("not-a-file", key, `${key} is not a file`);
     const bytes = readFileSync(real);
@@ -261,7 +284,47 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
   }
 
-  return { ok: true, input: { spec, template, narration, timings, assets, inputs }, releaseKey };
+  // ── The channel theme the release pins (ADR-0040) ─────────────────────────
+  // Read from library/<channel>/themes/<id>/<version>/, held to the pin's hash
+  // and to the contract; its room images (and monitor clips) are offered as
+  // theme-<room> (theme-<room>-monitor), with paths relative to the episode.
+  let theme: ChannelTheme | undefined;
+  if (template.theme) {
+    const themesDir = join(dirname(dirname(seriesDir)), "themes");
+    const themeDir = join(dirname(themesDir), themeReleasePath(template.theme.id, template.theme.version));
+    const themeKey = relative(episodeDir, themeDir).split(sep).join("/");
+    if (!existsSync(join(themeDir, THEME_FILE))) {
+      stop("missing-theme", `${releaseKey}/${SERIES_TEMPLATE_MANIFEST}#$.theme`, `the pinned theme ${template.theme.id}@${template.theme.version} is not in this channel (${themeKey})`);
+    }
+    const themeBytes = read(join(themeDir, THEME_FILE), themeDir, () => stop("missing-theme", `${themeKey}/${THEME_FILE}`, `${themeKey}/${THEME_FILE} is missing`));
+    if (sha256(themeBytes) !== template.theme.hash) {
+      stop("theme-mismatch", `${themeKey}/${THEME_FILE}`, `${themeKey}/${THEME_FILE} is not the theme the release pinned (${template.theme.hash}): pin the theme again in a new release`);
+    }
+    try {
+      theme = JSON.parse(themeBytes.toString("utf-8"));
+    } catch (error) {
+      return stop("bad-theme", `${themeKey}/${THEME_FILE}`, `${themeKey}/${THEME_FILE} is not JSON: ${(error as Error).message}`);
+    }
+    const themeProblems = validateChannelTheme(theme);
+    if (themeProblems.length > 0) throw new Stop(at(`${themeKey}/${THEME_FILE}`, themeProblems));
+    // the release it sits in is the one the pin names
+    for (const field of ["id", "version"] as const) {
+      if (theme![field] !== template.theme[field]) {
+        stop("theme-mismatch", `${themeKey}/${THEME_FILE}#$.${field}`, `${themeKey}/${THEME_FILE} says ${field} ${theme![field]}, not the pinned ${template.theme[field]}`);
+      }
+    }
+    const offer = (id: string, file: string, kind: CompileAsset["kind"]) => {
+      const path = `${themeKey}/${file}`;
+      read(join(themeDir, file), themeDir, () => stop("missing-asset", path, `${path} is missing`));
+      assets[id] = { path, hash: inputs[path]!, kind };
+    };
+    for (const [name, room] of Object.entries(theme!.rooms).sort(([a], [b]) => (a < b ? -1 : 1))) {
+      offer(`theme-${name}`, room.image, "image");
+      if (room.monitor) offer(`theme-${name}-monitor`, room.monitor.video, "video");
+    }
+  }
+
+  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}) }, releaseKey };
 }
 
 const IN_TIMELINE = /^\$\.(tracks|profile|durationInFrames|resolution|assets|sections)\b/;

@@ -24,6 +24,8 @@ export interface LayoutSheetOptions {
   timeline: unknown;
   /** The directory asset paths are relative to (the episode). */
   assetRoot: string;
+  /** Folders outside assetRoot that assets may also come from (a channel's theme releases, ADR-0040). */
+  sharedRoots?: string[];
   /** Distinct whole frames inside the timeline, in the order the sheet shows them. */
   picks: {frame: number; label: string}[];
   /** Created if missing; frames/NNN.jpg and sheet.jpg are written inside. */
@@ -91,7 +93,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
 
   const kits = timelineKits(timeline) ?? refuse('a kit of this timeline is not in kits.lock.json');
 
-  const staging = await stageAssets(timeline, options.assetRoot);
+  const staging = await stageAssets(timeline, options.assetRoot, options.sharedRoots);
   if (!staging.ok) {
     throw new ComposerError(staging.problems[0]!.code, `assets are not what the timeline says: ${staging.problems.map((p) => p.message).join('; ')}`, staging.problems);
   }

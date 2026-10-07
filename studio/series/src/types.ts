@@ -11,14 +11,15 @@ import type { EpisodeSpec, SeriesTemplate } from "@studio/contracts/src/series-t
 import type { NarrationTakes } from "@studio/contracts/bindings/ts/narration-takes.ts";
 import type { WordTiming } from "@studio/contracts/bindings/ts/word-timing.ts";
 import type { EditTimeline } from "@studio/contracts/bindings/ts/v1alpha2/edit-timeline.ts";
+import type { ChannelTheme } from "@studio/contracts/src/channel-themes.mjs";
 
-export type { EditTimeline, EpisodeSpec, NarrationTakes, SeriesTemplate, WordTiming };
+export type { ChannelTheme, EditTimeline, EpisodeSpec, NarrationTakes, SeriesTemplate, WordTiming };
 
 /** A file the timeline refers to, relative to the episode. */
 export interface CompileAsset {
   path: string;
   hash: string;
-  kind: "image" | "audio";
+  kind: "image" | "audio" | "video";
 }
 
 export interface CompileInput {
@@ -37,6 +38,11 @@ export interface CompileInput {
   assets: Record<string, CompileAsset>;
   /** Relative path → "sha256:…" of every file read, recorded as provenance. */
   inputs: Record<string, string>;
+  /**
+   * The channel theme the release pins (ADR-0040), already checked against
+   * the pin and the contract; its rooms' images are assets theme-<room>.
+   */
+  theme?: ChannelTheme;
 }
 
 /** Something in the input that stops compilation, located by a JSON path. */

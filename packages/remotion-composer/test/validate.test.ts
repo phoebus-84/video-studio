@@ -1,6 +1,7 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
 import {listKits} from '../src/kits/index.js';
+import {DEMO_LOOK} from '../src/kits/lib/look/1.0.0.js';
 import {validateTimeline} from '../src/validate.js';
 import {clone, fixture, outputProfiles} from './helpers.js';
 
@@ -45,10 +46,11 @@ describe('validateTimeline', () => {
   });
 
   it('refuses kits it does not have, by name or by version', () => {
-    // The lesson excerpt uses sala, interprete and verse-bar: sala and verse-bar do not exist yet,
-    // and interprete@1.0.0 is drawn for 9:16 only (the long lesson's comes with avg-dcf.4).
+    // The lesson excerpt (a contracts sketch) uses sala, interprete@1.0.0 and verse-bar@1.0.0: sala does
+    // not exist, interprete@1.0.0 is drawn for 9:16 only (the lesson's is 1.1.0), and the sketch's
+    // verse-bar props are not the real kit's (it takes a look and lines of words).
     const codes = new Set(problems(fixture('lesson-excerpt.json')).map(([code]) => code));
-    assert.deepEqual([...codes].sort(), ['unknown-kit', 'wrong-profile']);
+    assert.deepEqual([...codes].sort(), ['bad-props', 'unknown-kit', 'wrong-profile']);
     const doc = clone(fixture('explainer.json'));
     doc.tracks[0].items[0].kit.version = '2.0.0';
     assert.deepEqual(problems(doc), [['unknown-kit', '$.tracks[0].items[0].kit']]);
@@ -63,6 +65,49 @@ describe('validateTimeline', () => {
     assert.deepEqual(problems(doc), [['wrong-profile', '$.tracks[0].items[0].kit']]);
     const result = validateTimeline(doc);
     assert.match(result.ok ? '' : result.problems[0]!.message, /title-chip@1\.0\.0 is drawn for vertical-1080x1920, not youtube-1920x1080/);
+  });
+
+  it('accepts a channel-neutral lesson kit with a look in 16:9, and refuses a malformed look at its path', () => {
+    const doc = clone(fixture('explainer.json'));
+    doc.tracks[0].items[0].kit = {name: 'block-title', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), kicker: 'CHAPTER I', title: 'THE CONTEXT'};
+    assert.deepEqual(problems(doc), []);
+    doc.tracks[0].items[0].props.look.colors.accent = 'cyan';
+    delete doc.tracks[0].items[0].props.look.fonts.serif;
+    assert.deepEqual(problems(doc).sort(), [
+      ['bad-props', '$.tracks[0].items[0].props.look.colors.accent'],
+      ['bad-props', '$.tracks[0].items[0].props.look.fonts.serif'],
+    ]);
+  });
+
+  it('refuses a look whose fonts the composer cannot draw: an unbundled family, or one without a role\'s faces', () => {
+    const doc = clone(fixture('explainer.json'));
+    doc.tracks[0].items[0].kit = {name: 'block-title', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), kicker: 'CHAPTER I', title: 'THE CONTEXT'};
+    doc.tracks[0].items[0].props.look.fonts.display = 'anton';
+    doc.tracks[0].items[0].props.look.fonts.serif = 'Anton';
+    assert.deepEqual(problems(doc).sort(), [
+      ['bad-props', '$.tracks[0].items[0].props.look.fonts.display'],
+      ['bad-props', '$.tracks[0].items[0].props.look.fonts.serif'],
+    ]);
+  });
+
+  it('refuses panel phases at one instant, and a storm faster than a bolt lasts', () => {
+    const doc = clone(fixture('explainer.json'));
+    const picture = {kind: 'picture', src: {$asset: 'scene-01-woods'}};
+    doc.tracks[0].items[0].kit = {name: 'panel', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), phases: [{at: 0, content: picture}, {at: 0, content: picture}]};
+    assert.deepEqual(problems(doc), [['bad-props', '$.tracks[0].items[0].props.phases']]);
+    doc.tracks[0].items[0].kit = {name: 'room', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), room: {image: {$asset: 'scene-01-woods'}, sky: [{poly: [[0, 0], [100, 0], [100, 100]], period: 1}]}};
+    assert.deepEqual(problems(doc), [['bad-props', '$.tracks[0].items[0].props.room.sky[0].period']]);
+  });
+
+  it('refuses a 16:9 lesson kit in a 9:16 timeline', () => {
+    const doc = clone(fixture('vertical-short.json'));
+    doc.tracks[0].items[0].kit = {name: 'chapter-opener', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), kicker: 'CHAPTER I', title: 'THE CONTEXT'};
+    assert.deepEqual(problems(doc), [['wrong-profile', '$.tracks[0].items[0].kit']]);
   });
 
   it('refuses props a kit does not accept, at the offending field', () => {
@@ -81,17 +126,27 @@ describe('validateTimeline', () => {
   it('lists every kit version with what the catalog needs', () => {
     const ids = outputProfiles().map((p) => p.id);
     assert.deepEqual(listKits(ids).map((k) => [k.name, k.version, k.layer]), [
+      ['block-title', '1.0.0', 'overlay'],
       ['brand-mark', '1.0.0', 'overlay'],
+      ['brand-mark', '2.0.0', 'overlay'],
       ['captions', '1.0.0', 'fill'],
       ['captions', '1.1.0', 'overlay'],
+      ['chapter-opener', '1.0.0', 'fill'],
       ['clip', '1.0.0', 'fill'],
+      ['cover', '1.0.0', 'fill'],
+      ['figure-title', '1.0.0', 'overlay'],
       ['interprete', '1.0.0', 'fill'],
+      ['interprete', '1.1.0', 'fill'],
       ['lower-third', '1.0.0', 'overlay'],
       ['museum-hall', '1.0.0', 'fill'],
+      ['panel', '1.0.0', 'fill'],
+      ['room', '1.0.0', 'fill'],
       ['room-effect', '1.0.0', 'fill'],
       ['still', '1.0.0', 'fill'],
       ['title-chip', '1.0.0', 'overlay'],
+      ['verse-bar', '1.0.0', 'overlay'],
       ['verse-plate', '1.0.0', 'overlay'],
+      ['warp', '1.0.0', 'fill'],
     ]);
     const captions = listKits(ids).find((k) => k.name === 'captions' && k.version === '1.1.0')!;
     assert.deepEqual(captions.examples, ['bottom', 'top', 'center', 'long', 'overflowing']);

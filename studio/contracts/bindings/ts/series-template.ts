@@ -5,6 +5,7 @@
  */
 
 import type { Slug, RevisionNumber, ContentHash, PortableRelativePath } from "./identity";
+import type { ThemePin } from "./channel-theme";
 import type { GateReview } from "./gate-review";
 
 export type TemplateVersion = string;
@@ -51,6 +52,8 @@ export interface SeriesTemplate {
   version: TemplateVersion;
   compiler: SeriesComponentRef;
   validator?: SeriesComponentRef;
+  /** The channel theme release this series draws with (ADR-0040); absent: the kits' own look. */
+  theme?: ThemePin;
   files: {
     schema: SeriesFileRef;
     template: SeriesFileRef;
