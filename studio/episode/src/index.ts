@@ -10,3 +10,5 @@ export * from "./spec-init.js";
 export * from "./references.js";
 export * from "./sheet-instants.js";
 export * from "./layout-sheet.js";
+export * from "./version-diff.js";
+export * from "./version-compare.js";

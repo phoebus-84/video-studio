@@ -45,6 +45,7 @@ import {
   type NarrationSegmentInput,
   decideEditTimeline,
   EDIT_TIMELINE_PATH,
+  compareVersions,
   initEpisodeSpec,
   makeLayoutSheet,
   proposeReference,
@@ -1144,6 +1145,59 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: [`❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}`, ...problems].join("\n") }],
           details: { code: e.code ?? null, problems: e.problems ?? [] } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "pva_compare_versions",
+    label: "Compare Versions",
+    description: "Prove a correction touched only what was asked (UP-54): compare two renders of the episode — or a golden reference of its series — at the same instants (the layout sheet's, about 24, aligned section by section; or the `times` given), and report every compared frame that differs and every section added, removed or resized. Name the sections the correction should change in `expect`; the verdict is ok when every difference found is inside them. Only the compared instants are seen: pass `times` inside the corrected part to look closer. Writes reviews/compare/<old>--<new>/ with changed.jpg (old | new | difference) to open.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      old: Type.String({ description: "The version delivered before the correction: a render id (output/<render-id>.mp4) or reference:<template-id>/<reference-id>" }),
+      new: Type.Optional(Type.String({ description: "The corrected version; default the current render" })),
+      expect: Type.Optional(Type.Array(Type.String(), { description: "Section ids the correction should change; a trailing * matches a prefix (block-*)" })),
+      threshold: Type.Optional(Type.Number({ description: "Mean grey difference (0–255) above which a frame has changed; default 1. A frame also changes when enough of its pixels do" })),
+      times: Type.Optional(Type.Array(Type.Number(), { description: "Compare at these seconds of the new version instead of the layout sheet's instants" })),
+      shifts: Type.Optional(Type.Array(Type.Object({ from: Type.Number(), by: Type.Number() }), { description: "Only for renders without a timeline: from <from> seconds on, the old version is <by> seconds later" })),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      try {
+        const { report, changedPath } = await compareVersions(dir, {
+          old: params.old,
+          ...(params.new ? { new: params.new } : {}),
+          ...(params.expect ? { expect: params.expect } : {}),
+          ...(params.threshold !== undefined ? { threshold: params.threshold } : {}),
+          ...(params.times ? { times: params.times } : {}),
+          ...(params.shifts ? { shifts: params.shifts } : {}),
+        });
+        const verdict = report.verdict === "ok"
+          ? `✅ ok: every difference found is inside ${report.expect!.join(", ")}`
+          : report.verdict === "unexpected-changes"
+            ? `❌ unexpected changes outside ${report.expect!.join(", ")}: ${report.unexpected.length} frame(s), ${report.unexpectedStructure.length} section(s)`
+            : `${report.changed.length} of ${report.pairs.length} frames differ (no expectation given)`;
+        const lines = [
+          `${verdict} — ${report.old.ref} → ${report.new.ref}, ${report.pairs.length} instants compared, aligned by ${report.alignment}`,
+          ...report.structure.map((c) =>
+            `  ${report.unexpectedStructure.includes(c) ? "❌" : "·"} ${c.section ?? "the video"} ${c.change} (${c.oldFrames} → ${c.newFrames} frames)`),
+          ...report.pairs.filter((p) => p.changed).map((p) =>
+            `  ${report.unexpected.includes(p.index) ? "❌" : "·"} #${String(p.index).padStart(2, "0")} · ${p.seconds.toFixed(2)}s · ${p.section ?? "no section"} · `
+            + (p.reason ?? `diff ${p.meanDiff} (${Math.round((p.changedShare ?? 0) * 100)}%)`)),
+          ...(changedPath ? [`open: ${changedPath}`] : []),
+          ...[...report.old.notes, ...report.new.notes, ...report.warnings].map((w) => `⚠️ ${w}`),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { report, changedPath } as Record<string, unknown> };
+      } catch (err) {
+        const e = err as { message?: string; code?: string };
+        return {
+          content: [{ type: "text" as const, text: `❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}` }],
+          details: { code: e.code ?? null } as Record<string, unknown>,
           isError: true as unknown as boolean,
         };
       }

@@ -5,7 +5,8 @@
 // rebuilt from the episode's material when that material changed, and is
 // otherwise rendered exactly as it stands — a hand edit, on the web or on
 // disk, is never overwritten. Renders are immutable: output/<render-id>.mp4
-// with a sibling report, and output/current.json moved last.
+// with the timeline it rendered (<render-id>.timeline.json, avg-jao.5) and a
+// report beside it, and output/current.json moved last.
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
@@ -347,6 +348,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   const outputPath = join(outputDir, `${renderId}.mp4`);
   const partialPath = join(outputDir, `.${renderId}.partial.mp4`);
   const reportPath = join(outputDir, `${renderId}.report.json`);
+  const snapshot = `${renderId}.timeline.json`;
 
   let result: RenderResult;
   try {
@@ -364,10 +366,12 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   }
   result = { ...result, path: outputPath };
 
+  // The exact text rendered: a later version is compared with it section by section.
+  writeAtomically(join(outputDir, snapshot), decision.text);
   writeAtomically(reportPath, serialize({
     renderId,
     createdAt: new Date().toISOString(),
-    timeline: { path: EDIT_TIMELINE_PATH, hash: `sha256:${current.hash}` },
+    timeline: { path: EDIT_TIMELINE_PATH, hash: `sha256:${current.hash}`, snapshot },
     ...(current.compiledBy ? { compiledBy: current.compiledBy } : {}),
     ...(current.validation ? { validation: current.validation } : {}),
     ...(current.rebuilt ? { rebuilt: current.rebuilt } : {}),
