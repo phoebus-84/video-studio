@@ -10,6 +10,14 @@ export interface SeriesComponentRef { id: string; version: string }
 export interface TemplatePin extends SeriesComponentRef { hash: string }
 export interface SeriesFileRef { path: string; hash: string }
 export interface SeriesEpisodeRef { channel: string; series: string; episode: string }
+/** One layout-sheet instant per matching section (avg-3th.1). */
+export interface SheetInstantRule {
+  at: "start" | "middle" | "end";
+  offsetSeconds?: number;
+  /** Exact section ids, or prefixes ending in `*`; absent: every section. */
+  sections?: string[];
+}
+export interface SheetRules { instants: SheetInstantRule[] }
 export interface SeriesTemplate {
   apiVersion: "studio.video/v1alpha1";
   kind: "SeriesTemplate";
@@ -18,6 +26,7 @@ export interface SeriesTemplate {
   compiler: SeriesComponentRef;
   validator?: SeriesComponentRef;
   files: { schema: SeriesFileRef; template: SeriesFileRef; standard: SeriesFileRef };
+  sheet?: SheetRules;
   metadata?: Record<string, unknown>;
 }
 export interface EpisodeSpec {

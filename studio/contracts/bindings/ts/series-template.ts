@@ -31,6 +31,19 @@ export interface SeriesFileRef {
   hash: ContentHash;
 }
 
+export interface SheetInstantRule {
+  /** Where in each matching section: its first frame, its middle, its last frame. */
+  at: "start" | "middle" | "end";
+  /** Shift from the anchor, in seconds; may be negative. */
+  offsetSeconds?: number;
+  /** Section ids this rule applies to: an exact id, or a prefix ending in * (block-*). Absent: every section. */
+  sections?: string[];
+}
+
+export interface SheetRules {
+  instants: SheetInstantRule[];
+}
+
 export interface SeriesTemplate {
   apiVersion: "studio.video/v1alpha1";
   kind: "SeriesTemplate";
@@ -43,6 +56,7 @@ export interface SeriesTemplate {
     template: SeriesFileRef;
     standard: SeriesFileRef;
   };
+  sheet?: SheetRules;
   metadata?: Record<string, unknown>;
 }
 

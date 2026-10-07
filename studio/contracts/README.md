@@ -40,7 +40,8 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
 
 `src/series-templates.mjs` exports:
 
-- `validateSeriesTemplate(manifest)`: closed manifest shape and canonical filenames.
+- `validateSeriesTemplate(manifest)`: closed manifest shape and canonical filenames,
+  including the optional `sheet.instants` rules a layout sheet adds (avg-3th.1).
 - `validateTemplateBundle({manifest, files})`: exact UTF-8 manifest text and a
   filename → UTF-8 text map; verifies every file hash and compiles the self-contained
   Draft 2020-12 data schema. No filesystem access or schema downloads.
