@@ -31,13 +31,19 @@ export const previewCompositionId = (name: string, version: string, exampleId: s
 export const previewPath = (name: string, version: string, profileId: string): string =>
   `previews/${name}@${version}.${profileId}.png`;
 
+/** Whether a kit version is drawn for a profile (a kit without `profiles` is drawn for all). */
+export const drawnFor = (kit: Pick<KitVersion, 'profiles'>, profileId: string): boolean =>
+  !kit.profiles || kit.profiles.includes(profileId);
+
 export interface KitListing {
   name: string;
   version: string;
   description: string;
   layer: 'overlay' | 'fill';
   examples: string[];
-  /** Output profile id → preview path, for the profiles asked for. */
+  /** The profiles it is drawn for, when not all (ADR-0039). */
+  profiles?: string[];
+  /** Output profile id → preview path, for the profiles asked for that it is drawn for. */
   previews: Record<string, string>;
 }
 
@@ -55,7 +61,8 @@ export const listKits = (profileIds: readonly string[] = []): KitListing[] =>
       description: k.description,
       layer: k.layer ?? 'fill',
       examples: k.examples.map((e) => e.id),
-      previews: Object.fromEntries(profileIds.map((id) => [id, previewPath(k.name, k.version, id)])),
+      ...(k.profiles ? {profiles: [...k.profiles]} : {}),
+      previews: Object.fromEntries(profileIds.filter((id) => drawnFor(k, id)).map((id) => [id, previewPath(k.name, k.version, id)])),
     }));
 
 function compareSemver(a: string, b: string): number {

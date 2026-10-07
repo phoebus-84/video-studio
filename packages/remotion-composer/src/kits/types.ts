@@ -43,6 +43,12 @@ export interface KitVersion {
    * the profile's safe zone (checked on every example). Absent: fills the frame.
    */
   layer?: 'overlay';
+  /**
+   * The output profiles the kit is drawn for (ADR-0039); absent: every
+   * profile. A format's kit laid out for 9:16 says so, and is neither tested
+   * nor accepted in another profile.
+   */
+  profiles?: string[];
   /** Validates props as a timeline writes them. */
   props: ZodTypeAny;
   component: React.FC<{props: Record<string, unknown>; context: KitContext}>;

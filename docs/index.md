@@ -56,7 +56,7 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0038-word-timing-comes-from-forced-alignment) holds 38 accepted
+[`adr/`](./adr/0039-format-kits-share-frozen-libraries) holds 39 accepted
 decisions. The ones that most shape the code:
 
 | ADR | Decision |
@@ -72,6 +72,7 @@ decisions. The ones that most shape the code:
 | [0036](./adr/0036-the-studio-renders-episodes-through-the-edit-timeline) | The studio renders episodes through the edit timeline, with Remotion |
 | [0037](./adr/0037-series-templates-pin-editorial-standards) | Series templates pin editorial standards |
 | [0038](./adr/0038-word-timing-comes-from-forced-alignment) | Word timing comes from forced alignment against the text |
+| [0039](./adr/0039-format-kits-share-frozen-libraries) | Format kits share frozen libraries, locked with them |
 
 ADR-0022 (independent repositories per module) is superseded by 0032.
 ADR-0009 (FFmpeg compiles a typed edit timeline) is superseded by 0034.

@@ -4,54 +4,19 @@
 
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import ts from 'typescript';
-import {KIT_VERSIONS, previewPath} from '../src/kits/index.js';
+import {KIT_VERSIONS, drawnFor, previewPath} from '../src/kits/index.js';
 import {outputProfiles} from './helpers.js';
+import {kitSourceHash, moduleProblems, sourceFiles} from '../scripts/kit-source.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = (name: string, version: string) => path.join(root, 'src/kits', name, `${version}.tsx`);
 const lock = JSON.parse(readFileSync(path.join(root, 'kits.lock.json'), 'utf8')) as Record<string, string>;
-const ALLOWED_IMPORTS = new Set(['react', 'remotion', 'zod', '../types.js']);
 /** The branch whose lock a change must keep: every entry there stays, unchanged. */
 const LOCK_BASE = process.env.KITS_LOCK_BASE ?? 'origin/main';
-
-/**
- * Every module a file reaches: import/export declarations, `import x =
- * require()`, dynamic `import()` and `require()`. `../types.js` may only be
- * reached for types, so nothing shared at runtime can change an old version.
- */
-function moduleProblems(file: string): string[] {
-  const sf = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const problems: string[] = [];
-  const check = (spec: string, typeOnly: boolean) => {
-    if (!ALLOWED_IMPORTS.has(spec)) problems.push(`imports ${spec}: only ${[...ALLOWED_IMPORTS].join(', ')} are allowed`);
-    else if (spec === '../types.js' && !typeOnly) problems.push('imports values from ../types.js: only types may come from there (use import type)');
-  };
-  const visit = (node: ts.Node) => {
-    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      const clause = node.importClause;
-      const bindings = clause?.namedBindings;
-      const typeOnly = !!clause && (clause.isTypeOnly || (!clause.name && !!bindings && ts.isNamedImports(bindings) && bindings.elements.every((e) => e.isTypeOnly)));
-      check(node.moduleSpecifier.text, typeOnly);
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-      check(node.moduleSpecifier.text, node.isTypeOnly);
-    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      const expr = node.moduleReference.expression;
-      check(ts.isStringLiteral(expr) ? expr.text : '<computed>', node.isTypeOnly);
-    } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
-      const arg = node.arguments[0];
-      check(arg && ts.isStringLiteral(arg) ? arg.text : '<computed>', false);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
-  return problems;
-}
 
 describe('kit versions', () => {
   for (const kit of KIT_VERSIONS) {
@@ -76,20 +41,21 @@ describe('kit versions', () => {
         }
       });
 
-      it('lives in its own self-contained file', () => {
+      it('lives in its own file, sharing only frozen library modules', () => {
         const file = source(kit.name, kit.version);
         assert.ok(existsSync(file), `${path.relative(root, file)} must hold ${id}`);
-        assert.deepEqual(moduleProblems(file), [], id);
+        for (const f of sourceFiles(file)) assert.deepEqual(moduleProblems(f), [], path.relative(root, f));
       });
 
-      it('is frozen by kits.lock.json', () => {
-        const actual = `sha256:${createHash('sha256').update(readFileSync(source(kit.name, kit.version))).digest('hex')}`;
+      it('is frozen by kits.lock.json, with the library modules it uses', () => {
         assert.ok(lock[id], `${id} is not in kits.lock.json: run npm run kits:lock`);
-        assert.equal(actual, lock[id], `${id} is released: restore its file and add ${kit.name}/<next version>.tsx instead`);
+        assert.equal(kitSourceHash(source(kit.name, kit.version)), lock[id],
+          `${id} is released: restore its file and the library modules it uses, and add ${kit.name}/<next version>.tsx (and new module versions) instead`);
       });
 
-      it('has a committed preview in every output profile', () => {
-        for (const profile of outputProfiles()) {
+      it('has a committed preview in every output profile it is drawn for', () => {
+        assert.ok(outputProfiles().some((p) => drawnFor(kit, p.id)), `${id} names no known output profile`);
+        for (const profile of outputProfiles().filter((p) => drawnFor(kit, p.id))) {
           const file = previewPath(kit.name, kit.version, profile.id);
           assert.ok(existsSync(path.join(root, file)), `${file} is missing: run npm run kits:previews`);
         }
@@ -98,7 +64,7 @@ describe('kit versions', () => {
   }
 
   it('keeps no preview that no version and profile has', () => {
-    const expected = new Set(KIT_VERSIONS.flatMap((k) => outputProfiles().map((p) => path.basename(previewPath(k.name, k.version, p.id)))));
+    const expected = new Set(KIT_VERSIONS.flatMap((k) => outputProfiles().filter((p) => drawnFor(k, p.id)).map((p) => path.basename(previewPath(k.name, k.version, p.id)))));
     assert.deepEqual(readdirSync(path.join(root, 'previews')).filter((f) => !expected.has(f)), []);
   });
 
@@ -120,7 +86,7 @@ describe('kit versions', () => {
     const registered = new Set(KIT_VERSIONS.map((k) => `${k.name}@${k.version}`));
     assert.deepEqual(Object.keys(lock).filter((id) => !registered.has(id)), []);
     const files = readdirSync(path.join(root, 'src/kits'), {withFileTypes: true})
-      .filter((d) => d.isDirectory())
+      .filter((d) => d.isDirectory() && d.name !== 'lib')
       .flatMap((d) => readdirSync(path.join(root, 'src/kits', d.name)).filter((f) => f.endsWith('.tsx')).map((f) => `${d.name}@${f.replace(/\.tsx$/, '')}`));
     assert.deepEqual(files.filter((id) => !registered.has(id)), []);
   });
