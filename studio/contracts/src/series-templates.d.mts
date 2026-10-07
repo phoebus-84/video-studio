@@ -25,6 +25,8 @@ export interface SeriesTemplate {
   version: string;
   compiler: SeriesComponentRef;
   validator?: SeriesComponentRef;
+  /** The channel theme release this series draws with (ADR-0040). */
+  theme?: { id: string; version: string; hash: string };
   files: { schema: SeriesFileRef; template: SeriesFileRef; standard: SeriesFileRef };
   sheet?: SheetRules;
   metadata?: Record<string, unknown>;

@@ -85,6 +85,7 @@
         "version": { "$ref": "#/$defs/TemplateVersion" },
         "compiler": { "$ref": "#/$defs/SeriesComponentRef" },
         "validator": { "$ref": "#/$defs/SeriesComponentRef" },
+        "theme": { "$ref": "channel-theme.schema.json#/$defs/ThemePin", "description": "The channel theme release this series draws with (ADR-0040); absent: the kits' own look." },
         "files": {
           "type": "object",
           "additionalProperties": false,

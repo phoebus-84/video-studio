@@ -89,6 +89,13 @@ Approved golden descriptors live separately at
 `templates/<id>/references/<reference-id>.json`, pinning frozen review
 snapshots and immutable output media, not today's episode or current pointer.
 
+A release may also pin the channel's look: `theme: {id, version, hash}`
+names `<channel>/themes/<id>/<version>/theme.json`
+([ADR-0040](adr/0040-channel-themes-carry-the-look-as-data.md)) — colour and
+font roles, characters, rooms and brand, with the images it names beside
+it. Theme releases are immutable too; a new look is a new theme release and
+a new series template release.
+
 This is the contract for forthcoming series compilers. Existing episode
 initialization and composition do not yet create or consume it. Path helpers
 are `seriesTemplatePath` and `seriesReferencePath` in `layout.mjs`;

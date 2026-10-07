@@ -6,6 +6,7 @@ import addFormats from "ajv-formats";
 import identitySchema from "../schemas/v1alpha1/identity.schema.json" with { type: "json" };
 import gateSchema from "../schemas/v1alpha1/gate-review.schema.json" with { type: "json" };
 import schema from "../schemas/v1alpha1/series-template.schema.json" with { type: "json" };
+import themeSchema from "../schemas/v1alpha1/channel-theme.schema.json" with { type: "json" };
 
 export const FILL = "__FILL__";
 export const SERIES_TEMPLATE_FILES = Object.freeze({
@@ -20,7 +21,7 @@ const hash = (text) => `sha256:${createHash("sha256").update(text, "utf8").diges
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const ajv = new Ajv2020({ allErrors: true, strict: true, ownProperties: true });
 addFormats(ajv);
-ajv.addSchema(identitySchema).addSchema(gateSchema).addSchema(schema);
+ajv.addSchema(identitySchema).addSchema(gateSchema).addSchema(themeSchema).addSchema(schema);
 
 function shape(kind, doc) {
   const validate = ajv.getSchema(`${schema.$id}#/$defs/${kind}`);

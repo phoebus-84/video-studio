@@ -1,0 +1,524 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/channel-theme.schema.json",
+  "title": "A channel's look as data: colour and font roles, characters, rooms, brand (ADR-0040)",
+  "$defs": {
+    "Color": {
+      "type": "string",
+      "pattern": "^(#[0-9a-fA-F]{6}|rgba\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*(0|1|0?\\.\\d+)\\s*\\))$",
+      "description": "#rrggbb or rgba(r, g, b, a)."
+    },
+    "Box": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "h": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "Point": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "Polygon": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "$ref": "#/$defs/Point"
+      }
+    },
+    "ThemeVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "ThemePin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "hash"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "identity.schema.json#/$defs/Slug"
+        },
+        "version": {
+          "$ref": "#/$defs/ThemeVersion"
+        },
+        "hash": {
+          "$ref": "identity.schema.json#/$defs/ContentHash"
+        }
+      },
+      "description": "Hash of the exact theme.json bytes; the theme names its images, which the loader hashes."
+    },
+    "Look": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "colors",
+        "fonts",
+        "measures"
+      ],
+      "properties": {
+        "colors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ink",
+            "text",
+            "textDim",
+            "accent",
+            "highlight",
+            "glow",
+            "lightning",
+            "plate",
+            "plateLine",
+            "shadow",
+            "backdrop",
+            "signal"
+          ],
+          "properties": {
+            "ink": {
+              "$ref": "#/$defs/Color"
+            },
+            "text": {
+              "$ref": "#/$defs/Color"
+            },
+            "textDim": {
+              "$ref": "#/$defs/Color"
+            },
+            "accent": {
+              "$ref": "#/$defs/Color"
+            },
+            "highlight": {
+              "$ref": "#/$defs/Color"
+            },
+            "glow": {
+              "$ref": "#/$defs/Color"
+            },
+            "lightning": {
+              "$ref": "#/$defs/Color"
+            },
+            "plate": {
+              "$ref": "#/$defs/Color"
+            },
+            "plateLine": {
+              "$ref": "#/$defs/Color"
+            },
+            "shadow": {
+              "$ref": "#/$defs/Color"
+            },
+            "backdrop": {
+              "$ref": "#/$defs/Color"
+            },
+            "signal": {
+              "$ref": "#/$defs/Color"
+            }
+          }
+        },
+        "fonts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "display",
+            "serif",
+            "sans"
+          ],
+          "properties": {
+            "display": {
+              "type": "string",
+              "minLength": 1
+            },
+            "serif": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sans": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "description": "Family names among the composer's bundled faces; kits use fixed weights per role."
+        },
+        "measures": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plateRadius",
+            "textShadow",
+            "minTextPx"
+          ],
+          "properties": {
+            "plateRadius": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 64
+            },
+            "textShadow": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "minTextPx": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 80
+            }
+          }
+        }
+      }
+    },
+    "Character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variant",
+        "palette"
+      ],
+      "properties": {
+        "variant": {
+          "enum": [
+            "attore",
+            "attrice"
+          ]
+        },
+        "outfit": {
+          "enum": [
+            "gilet",
+            "giacca"
+          ]
+        },
+        "hairstyle": {
+          "enum": [
+            "coda",
+            "corto"
+          ]
+        },
+        "accessories": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "earrings": {
+              "type": "boolean"
+            },
+            "freckles": {
+              "type": "boolean"
+            }
+          }
+        },
+        "palette": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ink",
+            "shirt",
+            "shirtDark",
+            "vest",
+            "vestLight",
+            "button",
+            "inner",
+            "innerDark",
+            "skin",
+            "skinDark",
+            "trousers",
+            "shoe",
+            "sole"
+          ],
+          "properties": {
+            "ink": {
+              "$ref": "#/$defs/Color"
+            },
+            "shirt": {
+              "$ref": "#/$defs/Color"
+            },
+            "shirtDark": {
+              "$ref": "#/$defs/Color"
+            },
+            "vest": {
+              "$ref": "#/$defs/Color"
+            },
+            "vestLight": {
+              "$ref": "#/$defs/Color"
+            },
+            "button": {
+              "$ref": "#/$defs/Color"
+            },
+            "inner": {
+              "$ref": "#/$defs/Color"
+            },
+            "innerDark": {
+              "$ref": "#/$defs/Color"
+            },
+            "skin": {
+              "$ref": "#/$defs/Color"
+            },
+            "skinDark": {
+              "$ref": "#/$defs/Color"
+            },
+            "trousers": {
+              "$ref": "#/$defs/Color"
+            },
+            "shoe": {
+              "$ref": "#/$defs/Color"
+            },
+            "sole": {
+              "$ref": "#/$defs/Color"
+            },
+            "hair": {
+              "$ref": "#/$defs/Color"
+            },
+            "hairHi": {
+              "$ref": "#/$defs/Color"
+            },
+            "hairGloss": {
+              "$ref": "#/$defs/Color"
+            },
+            "lip": {
+              "$ref": "#/$defs/Color"
+            },
+            "freckles": {
+              "$ref": "#/$defs/Color"
+            }
+          }
+        },
+        "poses": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "lu": {
+                "type": "number"
+              },
+              "lf": {
+                "type": "number"
+              },
+              "ru": {
+                "type": "number"
+              },
+              "rf": {
+                "type": "number"
+              },
+              "head": {
+                "type": "number"
+              },
+              "lean": {
+                "type": "number"
+              },
+              "grip": {
+                "type": "number"
+              },
+              "step": {
+                "type": "number"
+              },
+              "twist": {
+                "type": "number"
+              },
+              "dip": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "Sky": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poly"
+      ],
+      "properties": {
+        "poly": {
+          "$ref": "#/$defs/Polygon"
+        },
+        "period": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "description": "A region of sky where distant lightning strikes, from its top edge towards its bottom edge."
+    },
+    "Room": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "image": {
+          "$ref": "identity.schema.json#/$defs/PortableRelativePath"
+        },
+        "sky": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Sky"
+          }
+        },
+        "windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polygon"
+          },
+          "description": "Lit by a flash."
+        },
+        "doors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Box"
+          },
+          "description": "Glow softly, more with a flash."
+        },
+        "monitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "box",
+            "video"
+          ],
+          "properties": {
+            "box": {
+              "$ref": "#/$defs/Box"
+            },
+            "video": {
+              "$ref": "identity.schema.json#/$defs/PortableRelativePath"
+            }
+          }
+        }
+      }
+    },
+    "ChannelTheme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apiVersion",
+        "kind",
+        "id",
+        "version",
+        "look",
+        "characters",
+        "rooms",
+        "brand"
+      ],
+      "properties": {
+        "apiVersion": {
+          "const": "studio.video/v1alpha1"
+        },
+        "kind": {
+          "const": "ChannelTheme"
+        },
+        "id": {
+          "$ref": "identity.schema.json#/$defs/Slug"
+        },
+        "version": {
+          "$ref": "#/$defs/ThemeVersion"
+        },
+        "look": {
+          "$ref": "#/$defs/Look"
+        },
+        "layout": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "safe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "top",
+                "bottom"
+              ],
+              "properties": {
+                "top": {
+                  "type": "number"
+                },
+                "bottom": {
+                  "type": "number"
+                }
+              }
+            },
+            "floorY": {
+              "type": "number"
+            },
+            "panel": {
+              "$ref": "#/$defs/Box"
+            }
+          },
+          "description": "Where the format puts things, when stricter than the output profile."
+        },
+        "characters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Character"
+          }
+        },
+        "rooms": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Room"
+          }
+        },
+        "brand": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text",
+            "icon"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "icon": {
+              "enum": [
+                "bolt",
+                "none"
+              ]
+            }
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}
