@@ -30,24 +30,25 @@ The short's kits (`avg-dcf.3`) were built the other way round: the Dentro i vers
 - **`layout`**: optional, where the format is stricter than the output profile.
 
 `validateChannelTheme` holds a theme to the contract:
-- fonts the composer bundles;
+- fonts the composer bundles, with the faces each role is drawn with;
+- room names that can name an asset, storms no faster than a bolt lasts;
 - palette keys and pose angles the puppet has;
 - geometry on the 1920×1080 frame;
 - image paths that stay in the release.
 
 **A series template release pins its theme** by id, version and the hash of `theme.json`. When the release names one, the loader (`loadEpisode`):
-- reads it and checks it against the pin (`missing-theme`, `theme-mismatch`) and against the contract;
+- reads it and checks it against the pin (`missing-theme`, `theme-mismatch`, its own `id` and `version` included) and against the contract, every file inside that release (`path-escape`);
 - puts it in `CompileInput.theme`;
 - offers each room's picture as the asset `theme-<room>` (`theme-<room>-monitor` for its clip), with a path relative to the episode;
 - hashes all of it into the episode's inputs.
 
 A published episode therefore re-renders with the look it had, until a new release pins a new theme.
 
-**Kits receive the look as a prop.** The composer's `lib/look/1.0.0.ts` defines the same `look` vocabulary as zod. Channel-neutral kits take `look` (and, for the puppet, a theme `character`) like any other prop, and compilers pass the theme's look through untouched. `lib/fonts/1.1.0.ts` loads only the families a look names, before the first frame.
+**Kits receive the look as a prop.** The composer's `lib/look/1.0.0.ts` defines the same `look` vocabulary as zod, fonts checked against the bundled faces (`lib/font-metrics/1.0.0.ts`, which also gives kits the faces' widths to fit text with). Channel-neutral kits take `look` (and, for the puppet, a theme `character`) like any other prop, and compilers pass the theme's look through untouched. `lib/fonts/1.1.0.ts` loads only the families a look names, before the first frame.
 
 The composer may not import the contracts (`check:boundaries`), so the two schemas are held together from the app side: a test in `@studio/series` passes every theme fixture's look and characters through the props schemas of every neutral kit, and compares the font families.
 
-**Renders may take assets from the channel's themes.** `stageAssets`, `renderTimeline` and `renderLayoutSheet` accept `sharedRoots`: folders outside the asset root that assets may come from. `renderEpisode` and `makeLayoutSheet` pass the channel's `themes/` folder; nothing else outside the episode is ever staged.
+**Renders may take assets from the channel's themes.** `stageAssets`, `renderTimeline` and `renderLayoutSheet` accept `sharedRoots`: folders outside the asset root that assets may come from. `renderEpisode` and `makeLayoutSheet` pass the theme release the episode's series pins; nothing else outside the episode is ever staged, and links are followed before the comparison.
 
 ## Consequences
 

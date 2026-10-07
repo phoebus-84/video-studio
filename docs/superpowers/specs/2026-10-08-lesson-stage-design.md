@@ -56,7 +56,8 @@ A sky region is just its polygon: bolts fall from its top edge towards its botto
 
 `validateChannelTheme(doc)` returns problems with JSON paths:
 - the schema is satisfied;
-- every font family is a bundled one, with weights it has;
+- every font family is a bundled one (`unknown-font`), with the faces the kits draw its role with (`missing-face`; `ROLE_FACES`: display 400, serif 400 italic, sans 400 and 600);
+- every room's name can follow `theme-` in an asset id (letters, digits, dots, underscores), and every storm's period is at least 1.6 s (a bolt's life);
 - every palette uses only the puppet's keys;
 - every pose uses only its angles;
 - room geometry lies inside 1920×1080;
@@ -67,6 +68,7 @@ A sky region is just its polygon: bolts fall from its top edge towards its botto
 ### 2. The look in the composer
 
 - **`lib/look/1.0.0.ts`**: `LookSchema` (zod), the same shape as the contract's `look`. It also provides `plateStyle(look)` (a short shadow, `0 10px 24px`, so plates near the safe zone stay inside it), `alpha(colour, a)`, `textPx`, and `DEMO_LOOK` for examples.
+- **`lib/font-metrics/1.0.0.ts`**: the advance widths of every bundled face, read from the font files (printable ASCII, Italian accents, typographic punctuation; anything else counts as 0.8 em). `textWidth` and `fitSize` let a kit size each single line of text to the room it has before drawing: lines never wrap, and an average character width would let wide letters overflow. `LookSchema` checks the fonts with it: a family must be bundled and have its role's faces, as in the contract.
 - **`lib/fonts/1.1.0.ts`**: a registry of every bundled face (Anton 400; Fraunces 400 and 700, normal and italic; Inter 200, 300, 400, 600). `useLookFonts(look.fonts)` loads the faces of the families the look names, under `delayRender`. A face that fails stops the render with its error, as `fonts@1.0.0` does now. `BUNDLED_FAMILIES` is exported, so the app can compare it with the contract.
 - **`lib/lesson-stage/1.0.0.tsx`**: the neutral drawing code the stage kits share. Its colours come from `look`.
   - Teleport, the hologram exit and LiveBolt are neutral copies; `hall-fx@1.0.0` imports the Dentro i versi palette, so the neutral kits never import it.
@@ -88,6 +90,8 @@ A sky region is just its polygon: bolts fall from its top edge towards its botto
 | `warp@1.0.0` | fill | `rise?`, `fall?` (seconds to and from its peak) |
 | `brand-mark@2.0.0` | overlay | `text`, `icon`, `x?` (110), `y?` (60: inside the 16:9 zone) |
 
+Every single line of text is fitted with `fitSize` to the room it has (the plate, the panel's half, the safe width, the cover's 900 px), shrinking below its nominal size only when the text needs it; opening letter spacings that close as a title settles are proportional to the size. A panel's phases come at strictly later instants. A room's `quiet` windows silence the storm with a 0.6 s ramp inside the item only, so a window that starts at the item's start is quiet on its first frame; the monitor's clip holds still there whether or not the storm is on. A clip shorter than its item starts over (the composer gives a kit each video's length).
+
 Assets are `{ $asset }` objects; pictures of any shape are framed with `object-fit: cover` on their focus. Overlays fade through the timeline's transitions; nothing slides in (CreativeStudio's 30 px slide would leave the zone). `room`, `panel` and `interprete` share an optional `camera` (`stage-props`' schema) for CreativeStudio's close-ups.
 
 Every time in props is in seconds from the item's start, as in `avg-dcf.3`. Overlays lie inside the profile's safe zone. The examples also respect the stricter lesson zone (y 120–960), and every kit can be placed by props.
@@ -105,9 +109,9 @@ When the pinned template release names a theme, `loadEpisode`:
 6. offers each room image as the asset `theme-<room>`;
 7. hashes the theme and its images into the inputs.
 
-The theme's own validation problems keep the contract's codes, located inside `theme.json`. A release without a theme loads exactly as before.
+The theme's own validation problems keep the contract's codes, located inside `theme.json` (`bad-theme` is only for JSON that does not parse). Its `id` and `version` must be the pin's (`theme-mismatch` at `#$.id` or `#$.version`). Every file it names is read inside its own release: a link into another release, or out of it, is `path-escape`. A release without a theme loads exactly as before.
 
-The room images live in the channel, outside the episode, so the composer gains `sharedRoots` (`stageAssets`, `renderTimeline`, `renderLayoutSheet`): folders outside the asset root that assets may come from. `renderEpisode` and `makeLayoutSheet` pass the channel's `themes/` (`sharedRootsOf(episodeDir)`); nothing else outside the episode is staged.
+The room images live in the channel, outside the episode, so the composer gains `sharedRoots` (`stageAssets`, `renderTimeline`, `renderLayoutSheet`): folders outside the asset root that assets may come from. `renderEpisode` and `makeLayoutSheet` pass the theme release the episode's template release pins (`sharedRootsOf(episodeDir)`: nothing when it pins none); nothing else outside the episode is staged, and links are followed before the comparison. The composer's CLIs take `--shared <dir,dir>`.
 
 ### 5. The first theme
 
