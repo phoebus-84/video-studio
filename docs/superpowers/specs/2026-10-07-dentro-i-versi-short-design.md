@@ -255,26 +255,41 @@ or at the last word; the video lasts until 6 s after it. Profile
 (`missing-unit`), or one without both takes (`missing-take`); verses whose
 words are not the recital's (`verse-mismatch`); a `word:` or
 `voiceEndWord` the recital does not say (`unknown-word`); a
-`voiceEndWord` last said before the last verse (`voice-end-early`); a time
-that is not one, or `picture:N` with no picture N (`bad-time`); an unknown
-pose preset (`unknown-pose`) or costume (`unknown-palette`); a picture or
-sound with no file (`missing-asset`); a sound or room effect starting after
-the video's end (`after-end`).
+`voiceEndWord` last said before the last verse (`voice-end-early`); a
+strong word its verse does not have (`unknown-word`); a time that is not
+one — `verse:N` past the last verse, `picture:N` not before the picture
+being placed, a time before 0, a picture not after the previous one, a span
+(room effect, shake, wind, blackout, gaze) that does not end after it
+starts (`bad-time`); a shatter of a picture that does not exist
+(`unknown-picture`); an unknown pose preset (`unknown-pose`), costume or
+costume colour (`unknown-palette`); a picture, sound, apparition figure or
+fog texture with no file (`missing-asset`); a sound or room effect
+starting after the video's end (`after-end`); a title too wide for the
+chip beside the mark (`title-too-long`).
+
+Titles are sized with Anton's and Inter's real advance widths (from
+`@fontsource` 5.3.0, in the compiler), not an average: the card's Anton
+size is the largest at which every line fits; the chip shows the author
+only when the title has at most 13 characters and both fit beside the
+mark.
 
 ### 6. The validator `dentro-i-versi-short@1.0.0`
 
 Holds the timeline to be rendered — a hand edit included — to the format:
 
 - errors: `profile-changed`, `fps-changed`, `duration-range` (25–90 s),
-  `forbidden-kit` (only the seven kits, at 1.0.0), `verse-text` (a plate
-  that is not a verse of the spec; UP-59), `missing-verse`,
-  `missing-actor`, `missing-teleport` (in and out: the first and last frame
-  are the empty hall), `altered-voice` (takes never cut, moved or reworked);
+  `hidden-track` (every track plays), `forbidden-kit` (only the seven
+  kits, at 1.0.0), `verse-text` (a plate that is not a verse of the spec;
+  UP-59), `missing-verse` (counted: a refrain needs a plate per saying),
+  `missing-actor`, `missing-teleport` and `loop-broken` (the actor arrives
+  after the first frame and is gone by the last: the first and last frame
+  are the empty hall), `altered-voice` (takes never cut, moved or
+  reworked; the voice track's gain and ducking untouched);
 - warnings: `apparitions` (`apparizione`, `fantasma`) not exactly 2,
   `apparition-short` (under 5 s; UP-58), `title-pause` (between the title's
   last word and the poem's first, not 0.8–1.4 s).
 
-Golden cases as for `poetry-short` (15).
+Golden cases as for `poetry-short` (21).
 
 ### 7. The template release (fixtures)
 
@@ -296,7 +311,8 @@ the release into the channel's series.
   .flac .ogg`) as `sound-<name>`, kind `audio`, hashed into the inputs, as
   it does pictures; two files with one name are `ambiguous-asset`.
 - `alignTake` also writes the take's **energy** (`measureEnergy`: RMS per
-  1/30 s, divided by the loudest, as many samples as the take lasts):
+  1/30 s, divided by the 95th percentile of the frames above −50 dBFS and
+  capped at 1, as many samples as the take lasts):
   without it the actor's mouth stays closed. ADR-0038 records it.
 - `@studio/episode/testing` gains `divShortEpisode`: the golden San Martino
   on disk, every picture, sound and take written by the caller or as

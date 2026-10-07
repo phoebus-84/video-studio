@@ -11,7 +11,7 @@
     "template": {
       "id": "dentro-i-versi-short",
       "version": "1.0.0",
-      "hash": "sha256:215955004330daa502e16c9331da7503955e300d27e0627b75748b718db679c8"
+      "hash": "sha256:02fe71afba6da2ada1dd80e313b9a12bbd80e3d89cd84966168e515c9f4b322e"
     },
     "data": {
       "title": "San Martino",
@@ -734,7 +734,7 @@
     "files": {
       "schema": {
         "path": "episode-spec.schema.json",
-        "hash": "sha256:79241b087ad80ff01fa551a0729a4422c14c099ca8682fa7850ebbaf37fc4518"
+        "hash": "sha256:da81920478119245f0788905f6d9a38d4059edb1195aefd02932aaa0291f4c0b"
       },
       "template": {
         "path": "episode-spec.template.json",
@@ -2299,9 +2299,9 @@
   },
   "inputs": {
     "../../templates/dentro-i-versi-short/1.0.0/FORMAT.md": "sha256:6f93e27cb5f7203f7134e0dc110ec2f33ca3672423b0ab16b9c286ea82de0f23",
-    "../../templates/dentro-i-versi-short/1.0.0/episode-spec.schema.json": "sha256:79241b087ad80ff01fa551a0729a4422c14c099ca8682fa7850ebbaf37fc4518",
+    "../../templates/dentro-i-versi-short/1.0.0/episode-spec.schema.json": "sha256:da81920478119245f0788905f6d9a38d4059edb1195aefd02932aaa0291f4c0b",
     "../../templates/dentro-i-versi-short/1.0.0/episode-spec.template.json": "sha256:9063f24a54799015e9014d8bb79e206f27ddc86c4bc17d8218b00676a5e714e1",
-    "../../templates/dentro-i-versi-short/1.0.0/series-template.json": "sha256:215955004330daa502e16c9331da7503955e300d27e0627b75748b718db679c8",
+    "../../templates/dentro-i-versi-short/1.0.0/series-template.json": "sha256:02fe71afba6da2ada1dd80e313b9a12bbd80e3d89cd84966168e515c9f4b322e",
     "artifacts/narration/takes.json": "sha256:16d31c12f6e5945d4e47760158bda849d8690803008ece08e3e3c8cf132de17a",
     "artifacts/timing/recita.json": "sha256:fc87e0fdd533a1e58f05a5199d2f54de525667809ff8f52343598e128373d912",
     "artifacts/timing/titolo.json": "sha256:b8148e5e1e3868b9ec88fe891d9549b6de748243f4ef63696f2f4c61155df668",
@@ -2335,6 +2335,6 @@
     "assets/sounds/vento-breve.mp3": "sha256:a63067d4c24b6a18a49e7355bd072ff957d4974abfaba9250fd24ae21682ab99",
     "assets/takes/recita.wav": "sha256:1fa1ed6f8a6ca20ca29862fa689e19d5c1ca43d1153d42ae7528212427f9e643",
     "assets/takes/titolo.wav": "sha256:6b75acfd8acd81091172febaf3680c038eaefe1f172db0326778b596cafa330e",
-    "episode-spec.json": "sha256:4dbf30bba36b91b1e19d0e39395978a7752a6f328bacd31a68e9e057b1967b13"
+    "episode-spec.json": "sha256:66adb3c37f7c66aea6b3c75f778fe1d710dbd0fa85f1e4da43d780202cfb0c7b"
   }
 }

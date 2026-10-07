@@ -1,5 +1,8 @@
 {
-  "compiler": { "id": "dentro-i-versi-short", "version": "1.0.0" },
+  "compiler": {
+    "id": "dentro-i-versi-short",
+    "version": "1.0.0"
+  },
   "cases": [
     {
       "name": "the compiled timeline, untouched",
@@ -9,81 +12,336 @@
     {
       "name": "a room effect moved by half a second and a light changed: within the rules",
       "set": [
-        { "path": "$.tracks[1].items[0].from", "value": 144 },
-        { "path": "$.tracks[0].items[0].props.lights[2].dark", "value": 0.2 }
+        {
+          "path": "$.tracks[1].items[0].from",
+          "value": 144
+        },
+        {
+          "path": "$.tracks[0].items[0].props.lights[2].dark",
+          "value": 0.2
+        }
       ],
       "expect": []
     },
     {
       "name": "a verse retyped on its plate",
-      "set": [{ "path": "$.tracks[4].items[0].props.text", "value": "La nebbia agli irti colli piovigginando scende," }],
+      "set": [
+        {
+          "path": "$.tracks[4].items[0].props.text",
+          "value": "La nebbia agli irti colli piovigginando scende,"
+        }
+      ],
       "expect": [
-        { "code": "verse-text", "severity": "error", "path": "$.tracks[4].items[0].props.text" },
-        { "code": "missing-verse", "severity": "error", "path": "$.data.verses[0]" }
+        {
+          "code": "verse-text",
+          "severity": "error",
+          "path": "$.tracks[4].items[0].props.text"
+        },
+        {
+          "code": "missing-verse",
+          "severity": "error",
+          "path": "$.data.verses[0]"
+        }
       ]
     },
     {
       "name": "a verse plate removed",
-      "set": [{ "path": "$.tracks[5].items[0]", "value": null }],
-      "expect": [{ "code": "missing-verse", "severity": "error", "path": "$.data.verses[1]" }]
+      "set": [
+        {
+          "path": "$.tracks[5].items[0]",
+          "value": null
+        }
+      ],
+      "expect": [
+        {
+          "code": "missing-verse",
+          "severity": "error",
+          "path": "$.data.verses[1]"
+        }
+      ]
     },
     {
       "name": "the brand mark drawn with another kit",
-      "set": [{ "path": "$.tracks[9].items[0].kit", "value": { "name": "still", "version": "1.0.0" } }],
-      "expect": [{ "code": "forbidden-kit", "severity": "error", "path": "$.tracks[9].items[0].kit" }]
+      "set": [
+        {
+          "path": "$.tracks[9].items[0].kit",
+          "value": {
+            "name": "still",
+            "version": "1.0.0"
+          }
+        }
+      ],
+      "expect": [
+        {
+          "code": "forbidden-kit",
+          "severity": "error",
+          "path": "$.tracks[9].items[0].kit"
+        }
+      ]
     },
     {
       "name": "a kit at another version",
-      "set": [{ "path": "$.tracks[7].items[0].kit.version", "value": "1.1.0" }],
-      "expect": [{ "code": "forbidden-kit", "severity": "error", "path": "$.tracks[7].items[0].kit" }]
+      "set": [
+        {
+          "path": "$.tracks[7].items[0].kit.version",
+          "value": "1.1.0"
+        }
+      ],
+      "expect": [
+        {
+          "code": "forbidden-kit",
+          "severity": "error",
+          "path": "$.tracks[7].items[0].kit"
+        }
+      ]
     },
     {
       "name": "the actor no longer teleports out",
-      "set": [{ "path": "$.tracks[6].items[0].props.teleport.out", "value": null }],
-      "expect": [{ "code": "missing-teleport", "severity": "error", "path": "$.tracks[6].items[0].props.teleport" }]
+      "set": [
+        {
+          "path": "$.tracks[6].items[0].props.teleport.out",
+          "value": null
+        }
+      ],
+      "expect": [
+        {
+          "code": "missing-teleport",
+          "severity": "error",
+          "path": "$.tracks[6].items[0].props.teleport"
+        }
+      ]
     },
     {
       "name": "the actor removed",
-      "set": [{ "path": "$.tracks[6]", "value": null }],
-      "expect": [{ "code": "missing-actor", "severity": "error", "path": "$.tracks" }]
+      "set": [
+        {
+          "path": "$.tracks[6]",
+          "value": null
+        }
+      ],
+      "expect": [
+        {
+          "code": "missing-actor",
+          "severity": "error",
+          "path": "$.tracks"
+        }
+      ]
     },
     {
       "name": "the recital moved by a frame",
-      "set": [{ "path": "$.tracks[10].items[1].from", "value": 121 }],
-      "expect": [{ "code": "altered-voice", "severity": "error", "path": "$.tracks[10].items[1]" }]
+      "set": [
+        {
+          "path": "$.tracks[10].items[1].from",
+          "value": 121
+        }
+      ],
+      "expect": [
+        {
+          "code": "altered-voice",
+          "severity": "error",
+          "path": "$.tracks[10].items[1]"
+        }
+      ]
     },
     {
       "name": "the voice made louder",
-      "set": [{ "path": "$.tracks[10].items[0].gain", "value": 1.2 }],
-      "expect": [{ "code": "altered-voice", "severity": "error", "path": "$.tracks[10].items[0]" }]
+      "set": [
+        {
+          "path": "$.tracks[10].items[0].gain",
+          "value": 1.2
+        }
+      ],
+      "expect": [
+        {
+          "code": "altered-voice",
+          "severity": "error",
+          "path": "$.tracks[10].items[0]"
+        }
+      ]
     },
     {
       "name": "the profile changed",
-      "set": [{ "path": "$.profile.loudness.integrated", "value": -16 }],
-      "expect": [{ "code": "profile-changed", "severity": "error", "path": "$.profile" }]
+      "set": [
+        {
+          "path": "$.profile.loudness.integrated",
+          "value": -16
+        }
+      ],
+      "expect": [
+        {
+          "code": "profile-changed",
+          "severity": "error",
+          "path": "$.profile"
+        }
+      ]
     },
     {
       "name": "cut to 23 s",
-      "set": [{ "path": "$.durationInFrames", "value": 690 }],
-      "expect": [{ "code": "duration-range", "severity": "error", "path": "$.durationInFrames" }]
+      "set": [
+        {
+          "path": "$.durationInFrames",
+          "value": 690
+        }
+      ],
+      "expect": [
+        {
+          "code": "duration-range",
+          "severity": "error",
+          "path": "$.durationInFrames"
+        }
+      ]
+    },
+    {
+      "name": "the voice muted",
+      "set": [
+        {
+          "path": "$.tracks[10].muted",
+          "value": true
+        }
+      ],
+      "expect": [
+        {
+          "code": "hidden-track",
+          "severity": "error",
+          "path": "$.tracks[10]"
+        }
+      ]
+    },
+    {
+      "name": "the actor's track hidden",
+      "set": [
+        {
+          "path": "$.tracks[6].hidden",
+          "value": true
+        }
+      ],
+      "expect": [
+        {
+          "code": "hidden-track",
+          "severity": "error",
+          "path": "$.tracks[6]"
+        }
+      ]
+    },
+    {
+      "name": "a lane of verse plates hidden",
+      "set": [
+        {
+          "path": "$.tracks[4].hidden",
+          "value": true
+        }
+      ],
+      "expect": [
+        {
+          "code": "hidden-track",
+          "severity": "error",
+          "path": "$.tracks[4]"
+        }
+      ]
+    },
+    {
+      "name": "the voice ducked under the music",
+      "set": [
+        {
+          "path": "$.tracks[10].duck",
+          "value": {
+            "under": [
+              "music"
+            ],
+            "gain": 0.5
+          }
+        }
+      ],
+      "expect": [
+        {
+          "code": "altered-voice",
+          "severity": "error",
+          "path": "$.tracks[10]"
+        }
+      ]
+    },
+    {
+      "name": "the actor still on stage at the last frame",
+      "set": [
+        {
+          "path": "$.tracks[6].items[0].props.teleport.out.at",
+          "value": 37.2
+        }
+      ],
+      "expect": [
+        {
+          "code": "loop-broken",
+          "severity": "error",
+          "path": "$.tracks[6].items[0].props.teleport.out"
+        }
+      ]
+    },
+    {
+      "name": "the actor already on stage at the first frame",
+      "set": [
+        {
+          "path": "$.tracks[6].items[0].props.teleport.in.at",
+          "value": -1
+        }
+      ],
+      "expect": [
+        {
+          "code": "loop-broken",
+          "severity": "error",
+          "path": "$.tracks[6].items[0].props.teleport.in"
+        }
+      ]
     },
     {
       "name": "one apparition only",
-      "setInput": [{ "path": "$.spec.data.roomFx[4]", "value": null }],
+      "setInput": [
+        {
+          "path": "$.spec.data.roomFx[4]",
+          "value": null
+        }
+      ],
       "set": [],
-      "expect": [{ "code": "apparitions", "severity": "warning", "path": "$.tracks" }]
+      "expect": [
+        {
+          "code": "apparitions",
+          "severity": "warning",
+          "path": "$.tracks"
+        }
+      ]
     },
     {
       "name": "an apparition of 3 s",
-      "setInput": [{ "path": "$.spec.data.roomFx[2].to", "value": "verse:4+3.2" }],
+      "setInput": [
+        {
+          "path": "$.spec.data.roomFx[2].to",
+          "value": "verse:4+3.2"
+        }
+      ],
       "set": [],
-      "expect": [{ "code": "apparition-short", "severity": "warning", "path": "$.tracks[2].items[0].props" }]
+      "expect": [
+        {
+          "code": "apparition-short",
+          "severity": "warning",
+          "path": "$.tracks[2].items[0].props"
+        }
+      ]
     },
     {
       "name": "two seconds between the title and the poem",
-      "setInput": [{ "path": "$.narration.units[0].sequence[1].pauseBefore", "value": 1.66 }],
+      "setInput": [
+        {
+          "path": "$.narration.units[0].sequence[1].pauseBefore",
+          "value": 1.66
+        }
+      ],
       "set": [],
-      "expect": [{ "code": "title-pause", "severity": "warning", "path": "$.units" }]
+      "expect": [
+        {
+          "code": "title-pause",
+          "severity": "warning",
+          "path": "$.units"
+        }
+      ]
     }
   ]
 }

@@ -8,7 +8,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { compileSpec, type CompileInput, type CompileResult } from "../src/index.js";
+import { checkSeries, compileSpec, type CompileInput, type CompileResult } from "../src/index.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "fixtures", "dentro-i-versi-short", "1.0.0", "input.json");
 const load = (): CompileInput & { spec: { data: any }; narration: any } => JSON.parse(readFileSync(FIXTURE, "utf-8"));
@@ -120,7 +120,7 @@ test("the title card fits the space left of the actor: one line when it fits at 
   delete input.spec.data.titleLines;
   const short = only(compiled(input), "card");
   assert.deepEqual(short.props.titleLines, ["ALLA SERA"]);
-  assert.equal(short.props.size, 105);
+  assert.equal(short.props.size, 109);
 });
 
 test("the chip names the author only for a short title", () => {
@@ -148,6 +148,52 @@ test("no track has overlapping items: overlaps go to the next lane", () => {
   assert.ok(r.timeline.tracks.some((t) => t.id === "sfx-2"));
 });
 
+test("a picture may follow an earlier one: picture:N counts from the pictures before it", () => {
+  const input = load();
+  input.spec.data.pictures[2].at = "picture:1+2";
+  const hall = only(compiled(input), "hall");
+  close(hall.props.pictures[2].at, hall.props.pictures[1].at + 2, "picture 2");
+});
+
+test("short applause fades over at most half of itself", () => {
+  const input = load();
+  input.spec.data.applause.dur = 0.5;
+  const applause = items(compiled(input), "applause")[0]!;
+  assert.equal(applause.duration, 15);
+  assert.ok(applause.fadeIn + applause.fadeOut <= applause.duration);
+});
+
+test("strong words are matched to the verse's own words, elisions included", () => {
+  const input = load();
+  input.spec.data.verses[6].strong = ["uccelli", "Rossastre"];
+  const plate = items(compiled(input), "verses")[6]!;
+  // The plate bolds a token by its letters: "d’uccelli" and "rossastre", as written in the verse.
+  assert.deepEqual(plate.props.strong, ["duccelli", "rossastre"]);
+});
+
+test("the title card is sized by Anton's real widths: wide letters get a smaller size", () => {
+  const input = load();
+  input.spec.data.title = "Mio Mammolo Maomettano";
+  input.spec.data.titleLines = ["Mio Mammolo", "Maomettano"];
+  const card = only(compiled(input), "card");
+  // "MIO MAMMOLO" is 5.79 em in Anton (M is 0.75 em), plus 3 px of spacing per letter, inside 514 − 66 px:
+  // the wider line sets the size, not the longer one.
+  assert.equal(card.props.size, 71);
+  // San Martino's card is as CreativeStudio drew it.
+  assert.equal(only(compiled(load()), "card").props.size, 124);
+});
+
+test("the chip drops the author when title and author do not fit beside the mark", () => {
+  const input = load();
+  input.spec.data.title = "Il lampo";
+  assert.equal(only(compiled(input), "chip").props.author, "Giosuè Carducci");
+  // 13 characters, as CreativeStudio allows, but wide ones: with the author it would reach the mark.
+  input.spec.data.title = "Mammà mammina";
+  assert.equal(only(compiled(input), "chip").props.author, undefined);
+  input.spec.data.title = "Frate Sole e Sora Luna";
+  assert.equal(only(compiled(input), "chip").props.author, undefined);
+});
+
 test("refuses, with the path of the cause", async (t) => {
   const cases: [string, (input: ReturnType<typeof load>) => void, [string, string][]][] = [
     ["a word the recital does not say", (i) => { i.spec.data.roomFx[1].at = "word:vendemmia"; }, [["unknown-word", "$.data.roomFx[1].at"]]],
@@ -163,6 +209,21 @@ test("refuses, with the path of the cause", async (t) => {
     ["a voiceEndWord last said before the last verse", (i) => { i.spec.data.voiceEndWord = "il"; }, [["voice-end-early", "$.data.voiceEndWord"]]],
     ["a sound after the end", (i) => { i.spec.data.sfx[0].at = "end+6.5"; }, [["after-end", "$.data.sfx[0].at"]]],
     ["a room effect after the end", (i) => { i.spec.data.roomFx[0].at = "end+7"; i.spec.data.roomFx[0].to = "end+9"; }, [["after-end", "$.data.roomFx[0].at"]]],
+    ["a verse time without its verse", (i) => { i.spec.data.pictures[1].at = "verse"; }, [["bad-time", "$.data.pictures[1].at"]]],
+    ["a verse that is not a number", (i) => { i.spec.data.pictures[1].at = "verse:due"; }, [["bad-time", "$.data.pictures[1].at"]]],
+    ["a word time without its word", (i) => { i.spec.data.roomFx[1].at = "word"; }, [["bad-time", "$.data.roomFx[1].at"]]],
+    ["end with an argument", (i) => { i.spec.data.roomFx[8].to = "end:3"; }, [["bad-time", "$.data.roomFx[8].to"]]],
+    ["a time before the video starts", (i) => { i.spec.data.sfx[0].at = "verse:1-10"; }, [["bad-time", "$.data.sfx[0].at"]]],
+    ["pictures out of order", (i) => { i.spec.data.pictures[2].at = 1; }, [["bad-time", "$.data.pictures[2].at"]]],
+    ["a room effect that ends before it starts", (i) => { i.spec.data.roomFx[0].to = "verse:1"; }, [["bad-time", "$.data.roomFx[0].to"]]],
+    ["a shake that ends before it starts", (i) => { i.spec.data.hall.shake[0].to = "verse:1"; }, [["bad-time", "$.data.hall.shake[0].to"]]],
+    ["a gaze that ends before it starts", (i) => { i.spec.data.gaze[1].to = "verse:1"; }, [["bad-time", "$.data.gaze[1].to"]]],
+    ["an apparition without its figure", (i) => { delete i.spec.data.roomFx[2].assetId; }, [["missing-asset", "$.data.roomFx[2].assetId"]]],
+    ["hall fog without its texture", (i) => { delete i.spec.data.hall.textures; }, [["missing-asset", "$.data.hall.textures.fog"]]],
+    ["a shatter of a picture that does not exist", (i) => { i.spec.data.hall.shatter = [{ at: "verse:3", picture: 12 }]; }, [["unknown-picture", "$.data.hall.shatter[0].picture"]]],
+    ["a costume colour the actor does not have", (i) => { i.spec.data.actor.palette.cape = "#ff0000"; }, [["unknown-palette", "$.data.actor.palette.cape"]]],
+    ["a strong word the verse does not have", (i) => { i.spec.data.verses[0].strong.push("mare"); }, [["unknown-word", "$.data.verses[0].strong[2]"]]],
+    ["a title too long for the chip", (i) => { i.spec.data.title = "Il cinque maggio di Alessandro Manzoni"; }, [["title-too-long", "$.data.title"]]],
     ["the poem without its title", (i) => { i.narration.units[0].sequence = [{ take: "recita" }]; }, [["missing-take", "$.units"]]],
     ["no recital unit", (i) => { i.narration.units[0].id = "poem"; }, [["missing-unit", "$.units"]]],
   ];
@@ -173,4 +234,13 @@ test("refuses, with the path of the cause", async (t) => {
       assert.deepEqual(problems(compileSpec(input)), expected);
     });
   }
+});
+
+test("the validator counts verses: a poem with a refrain needs a plate for each saying", () => {
+  const input = load();
+  const timeline = compiled(input).timeline;
+  // As if verse 2 repeated verse 1 (a refrain): the plates show verse 1 once.
+  input.spec.data.verses[1] = { ...input.spec.data.verses[0] };
+  const { findings } = checkSeries({ ...input, timeline, compiled: timeline });
+  assert.deepEqual(findings.filter((f) => f.code === "missing-verse").map((f) => f.path), ["$.data.verses[1]"]);
 });

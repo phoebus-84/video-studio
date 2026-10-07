@@ -53,7 +53,8 @@
         "properties": {
           "text": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 120
           },
           "strong": {
             "type": "array",
@@ -63,7 +64,8 @@
           },
           "gloss": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 160
           }
         }
       }
@@ -188,9 +190,80 @@
         },
         "palette": {
           "type": "object",
-          "additionalProperties": {
-            "type": "string",
-            "pattern": "^#[0-9a-fA-F]{6}$"
+          "additionalProperties": false,
+          "properties": {
+            "ink": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "shirt": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "shirtDark": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "vest": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "vestLight": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "button": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "inner": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "innerDark": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "skin": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "skinDark": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "trousers": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "shoe": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "sole": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "hair": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "hairHi": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "hairGloss": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "lip": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "freckles": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            }
           }
         }
       }
@@ -655,7 +728,7 @@
         },
         {
           "type": "string",
-          "pattern": "^(verse|verseEnd|end|word|picture)(:[^+-]+)?([+-][0-9.]+)?$"
+          "pattern": "^(?:(?:verse|verseEnd|picture):\\d+|word:.+?|end)([+-]\\d+(?:\\.\\d+)?)?$"
         }
       ]
     },

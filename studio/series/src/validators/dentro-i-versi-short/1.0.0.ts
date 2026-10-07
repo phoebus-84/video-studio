@@ -67,6 +67,13 @@ function validate(input: ValidateInput): Finding[] {
     error("duration-range", "$.durationInFrames", `${(frames / 30).toFixed(1)} s is outside 25–90 s: the poem and its applause decide the length, not the timeline`);
   }
 
+  // Every track of the format plays.
+  timeline.tracks.forEach((track, i) => {
+    if (track.hidden || track.muted) {
+      error("hidden-track", `$.tracks[${i}]`, `track "${track.id}" is ${track.hidden ? "hidden" : "muted"}: every track of this format plays`);
+    }
+  });
+
   for (const { item, path } of visual) {
     if (item.kit && !KITS.includes(kitOf(item))) {
       error("forbidden-kit", `${path}.kit`, `"${item.id}" uses ${kitOf(item)}; this format draws only with ${KITS.join(", ")}`);
@@ -80,9 +87,16 @@ function validate(input: ValidateInput): Finding[] {
     const text = collapse(String(item.props?.text ?? ""));
     if (!verses.includes(text)) error("verse-text", `${path}.props.text`, `"${text}" is not a verse of the poem: change the spec, not the plate`);
   }
-  const shown = new Set(plates.map(({ item }) => collapse(String(item.props?.text ?? ""))));
+  // Counted: a refrain said twice needs two plates.
+  const shown = new Map<string, number>();
+  for (const { item } of plates) {
+    const text = collapse(String(item.props?.text ?? ""));
+    shown.set(text, (shown.get(text) ?? 0) + 1);
+  }
   verses.forEach((text, k) => {
-    if (!shown.has(text)) error("missing-verse", `$.data.verses[${k}]`, `verse ${k + 1} ("${text}") has no plate`);
+    const left = shown.get(text) ?? 0;
+    if (left === 0) error("missing-verse", `$.data.verses[${k}]`, `verse ${k + 1} ("${text}") has no plate`);
+    else shown.set(text, left - 1);
   });
 
   // The actor arrives and leaves by teleport: first and last frame are the empty hall.
@@ -92,6 +106,15 @@ function validate(input: ValidateInput): Finding[] {
     const teleport = item.props?.teleport;
     if (!teleport?.in || !teleport?.out) {
       error("missing-teleport", `${path}.props.teleport`, `"${item.id}" does not teleport ${!teleport?.in ? "in" : "out"}: the first and the last frame are the empty hall`);
+      continue;
+    }
+    // Times are from the item's start: the actor arrives after the first frame and is gone by the last.
+    const end = item.duration / timeline.fps;
+    if (teleport.in.at < 0) {
+      error("loop-broken", `${path}.props.teleport.in`, `"${item.id}" arrives at ${teleport.in.at} s: the first frame must be the empty hall`);
+    }
+    if (teleport.out.at + teleport.out.dur > end) {
+      error("loop-broken", `${path}.props.teleport.out`, `"${item.id}" is still leaving at ${(teleport.out.at + teleport.out.dur).toFixed(2)} s, after its last frame (${end.toFixed(2)} s): the last frame must be the empty hall`);
     }
   }
 
@@ -100,6 +123,15 @@ function validate(input: ValidateInput): Finding[] {
   const voiceAt = timeline.tracks.findIndex((track) => track.id === "voice");
   const voice = voiceOf(timeline);
   const reference = voiceOf(compiled);
+  // The voice track itself — its gain, its ducking — is the compiler's too (hidden and muted are hidden-track).
+  const trackOnly = (t: EditTimeline | undefined, i: number) => {
+    const { items: _items, hidden: _hidden, muted: _muted, ...rest } = (t?.tracks[i] ?? {}) as Record<string, unknown>;
+    return canonical(rest);
+  };
+  const compiledVoiceAt = compiled.tracks.findIndex((track) => track.id === "voice");
+  if (voiceAt !== -1 && compiledVoiceAt !== -1 && trackOnly(timeline, voiceAt) !== trackOnly(compiled, compiledVoiceAt)) {
+    error("altered-voice", `$.tracks[${voiceAt}]`, "the voice track's gain or ducking was changed: the voice plays as recorded");
+  }
   if (voice.length !== reference.length) {
     error("altered-voice", voiceAt === -1 ? "$.tracks" : `$.tracks[${voiceAt}]`, `the voice has ${voice.length} items; the takes are laid out in ${reference.length}`);
   } else {

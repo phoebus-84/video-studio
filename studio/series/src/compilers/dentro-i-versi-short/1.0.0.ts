@@ -65,6 +65,19 @@ const PALETTES: Record<string, Record<string, string>> = {
   "attrice-dante": { ink: "#2e2620", shirt: "#f2b632", shirtDark: "#c4860f", vest: "#1f4fbf", vestLight: "#5f8ae6", button: "#f7e6a6", inner: "#f2b632", innerDark: "#c4860f", skin: "#f6b386", skinDark: "#cf7c4e", trousers: "#2a2452", shoe: "#fafaf5", sole: "#dcd8cc", hair: "#3b2216", hairHi: "#6e4127", hairGloss: "#a06a43" },
 };
 const FRONT_FX = new Set(["note", "apparizione", "fantasma"]);
+/** The colours the interprete kit draws a costume with. */
+const PALETTE_KEYS = ["ink", "shirt", "shirtDark", "vest", "vestLight", "button", "inner", "innerDark", "skin", "skinDark", "trousers", "shoe", "sole", "hair", "hairHi", "hairGloss", "lip", "freckles"];
+
+/** Advance widths (em) of Anton 400 and Inter 600 (@fontsource 5.3.0), for sizing titles; other characters count as wide. */
+const ANTON_EM: Record<string, number> = { A: 0.4854, B: 0.4785, C: 0.4741, D: 0.4932, E: 0.4116, F: 0.3989, G: 0.4849, H: 0.499, I: 0.2266, J: 0.4663, K: 0.4722, L: 0.3975, M: 0.7461, N: 0.498, O: 0.4863, P: 0.4722, Q: 0.4937, R: 0.4766, S: 0.4614, T: 0.3955, U: 0.4736, V: 0.4692, W: 0.7119, X: 0.4839, Y: 0.4463, Z: 0.4102, "0": 0.4941, "1": 0.3306, "2": 0.4941, "3": 0.4941, "4": 0.4941, "5": 0.4941, "6": 0.4941, "7": 0.4941, "8": 0.4941, "9": 0.4941, " ": 0.2344, "'": 0.2139, "’": 0.2319, ",": 0.2363, ".": 0.2285, ";": 0.2451, ":": 0.2417, "!": 0.229, "?": 0.4922, "-": 0.311, "–": 0.311, "—": 0.563, "«": 0.5781, "»": 0.5781, "À": 0.4854, "È": 0.4116, "É": 0.4116, "Ì": 0.2266, "Ò": 0.4863, "Ù": 0.4736 };
+const INTER_600_EM: Record<string, number> = { A: 0.7275, B: 0.6592, C: 0.7368, D: 0.7222, E: 0.6055, F: 0.5879, G: 0.749, H: 0.7456, I: 0.2769, J: 0.5796, K: 0.7031, L: 0.5654, M: 0.9224, N: 0.7593, O: 0.7686, P: 0.645, Q: 0.7729, R: 0.6523, S: 0.6504, T: 0.6602, U: 0.7358, V: 0.7275, W: 1.02, X: 0.7197, Y: 0.7134, Z: 0.6523, " ": 0.252, "'": 0.3257, "’": 0.2939, ",": 0.3188, ".": 0.3188, "-": 0.4653, "À": 0.7275, "È": 0.6055, "É": 0.6055, "Ì": 0.2769, "Ò": 0.7686, "Ù": 0.7358 };
+/** Width in px of upper-cased `text` at `size` px with `spacing` px between letters. */
+const textWidth = (em: Record<string, number>, text: string, size: number, spacing: number) =>
+  [...text.toLocaleUpperCase("it-IT")].reduce((w, c) => w + (em[c] ?? 0.75) * size + spacing, 0);
+/** The brand mark's pill (x 60, Inter 600 24 px, spacing 6, the bolt and paddings): where the chip must stop, with a 24 px gap. */
+const MARK_RIGHT = 60 + 16 + 20 + 12 + textWidth(INTER_600_EM, "DENTRO I VERSI", 24, 6) + 20 + 24;
+/** The chip's right edge (1080 − 140). */
+const CHIP_RIGHT = 940;
 
 type TimeRef = number | string;
 interface Data {
@@ -184,37 +197,49 @@ function compile(input: CompileInput): CompileResult {
 
   // ── Times: verse:N, verseEnd:N, word:parola, end, picture:N (± seconds) ───
   let pictureAt: number[] = [];
+  const TIME = /^(?:(verse|verseEnd|picture):(\d+)|word:(.+?)|(end))([+-]\d+(?:\.\d+)?)?$/;
   const tref = (ref: TimeRef | undefined, path: string, fallback = 0): number => {
     if (ref === undefined) return fallback;
-    if (typeof ref === "number") return ref;
-    const m = /^(verse|verseEnd|end|word|picture)(?::([^+-]+))?([+-][0-9.]+)?$/.exec(ref.trim());
-    if (!m) {
-      problems.push({ code: "bad-time", path, message: `"${ref}" is not a time (verse:N, verseEnd:N, word:parola, end, picture:N, ± seconds)` });
+    const bad = (message: string) => {
+      problems.push({ code: "bad-time", path, message });
       return fallback;
-    }
-    const off = m[3] ? parseFloat(m[3]) : 0;
-    switch (m[1]) {
-      case "verse": return L(parseInt(m[2]!, 10)) + off;
-      case "verseEnd": return E(parseInt(m[2]!, 10)) + off;
-      case "end": return VE + off;
-      case "word": {
-        const key = norm(m[2]!);
-        const word = poem.find((w) => norm(w.text) === key) ?? poem.find((w) => norm(w.text).startsWith(key));
-        if (!word) {
-          problems.push({ code: "unknown-word", path, message: `the recital does not say "${m[2]}"` });
-          return fallback;
-        }
-        return word.start + off;
-      }
-      default: {
+    };
+    let t: number;
+    if (typeof ref === "number") t = ref;
+    else {
+      const m = TIME.exec(ref.trim());
+      if (!m) return bad(`"${ref}" is not a time (verse:N, verseEnd:N, word:parola, end, picture:N, ± seconds)`);
+      const off = m[5] ? parseFloat(m[5]) : 0;
+      if (m[1] === "picture") {
+        // Only a picture before the one being placed has a time yet.
         const at = pictureAt[parseInt(m[2]!, 10)];
-        if (at === undefined) {
-          problems.push({ code: "bad-time", path, message: `there is no picture ${m[2]}` });
+        if (at === undefined) return bad(`there is no picture ${m[2]} before this time`);
+        t = at + off;
+      } else if (m[1]) {
+        const n = parseInt(m[2]!, 10);
+        if (n < 1 || n > LN.length) return bad(`there is no verse ${n}: the poem has ${LN.length}`);
+        t = (m[1] === "verse" ? L(n) : E(n)) + off;
+      } else if (m[3] !== undefined) {
+        const key = norm(m[3]);
+        const word = poem.find((w) => norm(w.text) === key) ?? poem.find((w) => key !== "" && norm(w.text).startsWith(key));
+        if (!word) {
+          problems.push({ code: "unknown-word", path, message: `the recital does not say "${m[3]}"` });
           return fallback;
         }
-        return at + off;
-      }
+        t = word.start + off;
+      } else t = VE + off;
     }
+    if (t < 0) return bad(`"${ref}" falls at ${round3(t)} s, before the video starts`);
+    return t;
+  };
+  /** A span's end, refused unless it comes after its start. */
+  const until = (start: number, ref: TimeRef, path: string): number => {
+    const t = tref(ref, path, start + 1);
+    if (t <= start) {
+      problems.push({ code: "bad-time", path, message: `ends at ${round3(t)} s, not after it starts (${round3(start)} s)` });
+      return start + 1;
+    }
+    return t;
   };
 
   // ── Assets ────────────────────────────────────────────────────────────────
@@ -238,7 +263,18 @@ function compile(input: CompileInput): CompileResult {
   };
 
   // ── Pictures, camera, lightning, lights ──────────────────────────────────
-  pictureAt = data.pictures.map((p, i) => (i === 0 ? 0 : tref(p.at, `$.data.pictures[${i}].at`, L(Math.min(i + 1, LN.length)))));
+  // Each picture after the one before: the screen crossfades from one to the next.
+  data.pictures.forEach((p, i) => {
+    if (i === 0) {
+      pictureAt.push(0);
+      return;
+    }
+    const at = tref(p.at, `$.data.pictures[${i}].at`, L(Math.min(i + 1, LN.length)));
+    if (at <= pictureAt[i - 1]!) {
+      problems.push({ code: "bad-time", path: `$.data.pictures[${i}].at`, message: `picture ${i} at ${round3(at)} s does not come after picture ${i - 1} (${round3(pictureAt[i - 1]!)} s)` });
+    }
+    pictureAt.push(at);
+  });
   const pictures = data.pictures.map((p, i) => ({
     src: image(p.assetId, `$.data.pictures[${i}].assetId`),
     at: round3(pictureAt[i]!),
@@ -255,17 +291,29 @@ function compile(input: CompileInput): CompileResult {
       env(L(1), VE + 1.8, VE - L(1), 1.4, 0.025),
       ...pushV.map((n) => env(L(n) - 0.25, E(n) + 1.3, 0.8, 0.8, 0.06 * 0.45)),
     ],
-    shake: (data.hall.shake ?? []).map((s, i) => env(tref(s.from, `$.data.hall.shake[${i}].from`), tref(s.to, `$.data.hall.shake[${i}].to`), 0.2, 0.3, s.amp ?? 7)),
+    shake: (data.hall.shake ?? []).map((s, i) => {
+      const from = tref(s.from, `$.data.hall.shake[${i}].from`);
+      return env(from, until(from, s.to, `$.data.hall.shake[${i}].to`), 0.2, 0.3, s.amp ?? 7);
+    }),
   };
   const strikes = pictureAt.slice(1).map((a) => round3(a - 0.05)).filter((x) => x > 0.5 && x < VE);
   const lights = data.lights && data.lights.length > 0
     ? data.lights.map((l, i) => ({ at: round3(tref(l.at, `$.data.lights[${i}].at`)), dark: l.dark ?? 0.18, spot: l.spot ?? "#fff1d8", w: l.w ?? 1 }))
     : [{ at: 0, dark: 0.05, spot: "#eaf4ff", w: 1 }, { at: round3(VE + 1.8), dark: 0.03, spot: "#eaf4ff", w: 1.1 }];
   const hall = data.hall;
-  const blackout = hall.blackout ? env(tref(hall.blackout.at, "$.data.hall.blackout.at"), tref(hall.blackout.to, "$.data.hall.blackout.to"), 0.5, 0.8, hall.blackout.dark ?? 0.8) : undefined;
+  const blackoutAt = hall.blackout ? tref(hall.blackout.at, "$.data.hall.blackout.at") : 0;
+  const blackout = hall.blackout ? env(blackoutAt, until(blackoutAt, hall.blackout.to, "$.data.hall.blackout.to"), 0.5, 0.8, hall.blackout.dark ?? 0.8) : undefined;
   const bolt = hall.bolt ? { at: round3(tref(hall.bolt.at, "$.data.hall.bolt.at")), dur: hall.bolt.dur ?? 0.7 } : undefined;
-  const wind = (hall.wind ?? []).map((w, i) => env(tref(w.from, `$.data.hall.wind[${i}].from`), tref(w.to, `$.data.hall.wind[${i}].to`), 0.6, 0.8, w.strength ?? 1));
-  const shatter = (hall.shatter ?? []).map((s, i) => ({ at: round3(tref(s.at, `$.data.hall.shatter[${i}].at`)), picture: s.picture, dur: s.dur ?? 1.4 }));
+  const wind = (hall.wind ?? []).map((w, i) => {
+    const from = tref(w.from, `$.data.hall.wind[${i}].from`);
+    return env(from, until(from, w.to, `$.data.hall.wind[${i}].to`), 0.6, 0.8, w.strength ?? 1);
+  });
+  const shatter = (hall.shatter ?? []).map((s, i) => {
+    if (s.picture >= data.pictures.length) {
+      problems.push({ code: "unknown-picture", path: `$.data.hall.shatter[${i}].picture`, message: `there is no picture ${s.picture}: the spec has ${data.pictures.length}` });
+    }
+    return { at: round3(tref(s.at, `$.data.hall.shatter[${i}].at`)), picture: s.picture, dur: s.dur ?? 1.4 };
+  });
   const textures = {
     ...(hall.textures?.fog ? { fog: image(hall.textures.fog, "$.data.hall.textures.fog") } : {}),
     ...(hall.textures?.caustics ? { caustics: image(hall.textures.caustics, "$.data.hall.textures.caustics") } : {}),
@@ -277,6 +325,9 @@ function compile(input: CompileInput): CompileResult {
   const actor = data.actor;
   const base = PALETTES[actor.base ?? (actor.variant === "attrice" ? "attrice-saffo" : "attore-saffo")];
   if (!base) problems.push({ code: "unknown-palette", path: "$.data.actor.base", message: `no costume "${actor.base}" (${Object.keys(PALETTES).join(", ")})` });
+  for (const key of Object.keys(actor.palette ?? {})) {
+    if (!PALETTE_KEYS.includes(key)) problems.push({ code: "unknown-palette", path: `$.data.actor.palette.${key}`, message: `the actor has no colour "${key}" (${PALETTE_KEYS.join(", ")})` });
+  }
   const palette = { ...base, ...(actor.palette ?? {}) };
   const poses = [
     { at: 0, pose: REST },
@@ -296,7 +347,10 @@ function compile(input: CompileInput): CompileResult {
   ];
   const gaze = [
     ...pictureAt.slice(1).map((a) => ({ from: round3(a + 0.1), to: round3(a + 1.5), x: 3.5, y: -3, h: 5 })),
-    ...(data.gaze ?? []).map((g, i) => ({ from: round3(tref(g.from, `$.data.gaze[${i}].from`)), to: round3(tref(g.to, `$.data.gaze[${i}].to`)), x: g.x, y: g.y, h: g.h })),
+    ...(data.gaze ?? []).map((g, i) => {
+      const from = tref(g.from, `$.data.gaze[${i}].from`);
+      return { from: round3(from), to: round3(until(from, g.to, `$.data.gaze[${i}].to`)), x: g.x, y: g.y, h: g.h };
+    }),
   ];
   const blinks: number[] = [];
   for (let b = 1.1, i = 0; b < VE + TAIL; i++) {
@@ -323,7 +377,13 @@ function compile(input: CompileInput): CompileResult {
   // ── Room effects ──────────────────────────────────────────────────────────
   const roomItems = (data.roomFx ?? []).map((r, i) => {
     const a = tref(r.at, `$.data.roomFx[${i}].at`);
-    const b = r.to === undefined ? a + 8 : tref(r.to, `$.data.roomFx[${i}].to`);
+    const b = r.to === undefined ? a + 8 : until(a, r.to, `$.data.roomFx[${i}].to`);
+    if (r.fx === "apparizione" && !r.assetId) {
+      problems.push({ code: "missing-asset", path: `$.data.roomFx[${i}].assetId`, message: "an apparizione needs its figure: the cut-out picture that comes out" });
+    }
+    if (r.fx === "nebbia-sala" && !hall.textures?.fog && !problems.some((q) => q.path === "$.data.hall.textures.fog")) {
+      problems.push({ code: "missing-asset", path: "$.data.hall.textures.fog", message: `nebbia-sala (roomFx[${i}]) draws with the hall's fog texture: name one` });
+    }
     const from = frames(a);
     const end = frames(b + (FRONT_FX.has(r.fx) ? 1 : 0));
     if (from >= durationInFrames) problems.push({ code: "after-end", path: `$.data.roomFx[${i}].at`, message: `${r.fx} starts at ${round3(a)} s, after the video ends (${round3(END)} s)` });
@@ -354,6 +414,19 @@ function compile(input: CompileInput): CompileResult {
     };
   });
 
+  // Strong words, as the plate bolds them (lower case, letters only), matched
+  // to the verse's own tokens — "uccelli" bolds "d’uccelli".
+  const plateKey = (token: string) => token.toLocaleLowerCase("it-IT").replace(/[^\p{L}]+/gu, "");
+  const strongKeys = (v: Data["verses"][number], i: number) => {
+    const keys: string[] = [];
+    (v.strong ?? []).forEach((word, j) => {
+      const said = tokens(v.text).filter((t) => norm(t) === norm(word) || norm(t.split(/['’]/).pop()!) === norm(word));
+      if (said.length === 0) problems.push({ code: "unknown-word", path: `$.data.verses[${i}].strong[${j}]`, message: `verse ${i + 1} has no word "${word}"` });
+      for (const t of said) if (!keys.includes(plateKey(t))) keys.push(plateKey(t));
+    });
+    return keys;
+  };
+
   // ── Verse plates ──────────────────────────────────────────────────────────
   const plateItems = data.verses.map((v, i) => {
     const from = frames(LN[i]!.start - 0.28);
@@ -368,7 +441,7 @@ function compile(input: CompileInput): CompileResult {
       props: {
         text: v.text,
         words: verseWords[i]!.map((w, j) => ({ text: tokens(v.text)[j]!, at: round3(w.start - at0) })),
-        ...(v.strong ? { strong: v.strong } : {}),
+        ...(v.strong ? { strong: strongKeys(v, i) } : {}),
         gloss: v.gloss,
         start: round3(LN[i]!.start - at0),
       },
@@ -381,7 +454,8 @@ function compile(input: CompileInput): CompileResult {
   const tw = tokens(data.title);
   const titleLines = data.titleLines ?? [tw.slice(0, Math.ceil(tw.length / 2)).join(" "), tw.slice(Math.ceil(tw.length / 2)).join(" ")].filter(Boolean);
   const cardWidth = Math.round(ACTOR.x - 150 * ACTOR.scale - 24 - PLATE_X);
-  const fit = (lines: string[]) => Math.min(124, Math.floor((cardWidth - 66) / (0.47 * Math.max(...lines.map((l) => l.length)))));
+  // Anton size at which the longest line fills the card's inner width (letter spacing 3 px).
+  const fit = (lines: string[]) => Math.min(124, Math.min(...lines.map((l) => Math.floor((cardWidth - 66 - 3 * [...l].length) / textWidth(ANTON_EM, l, 1, 0)))));
   const cardLines = fit([data.title]) >= 100 ? [data.title] : titleLines;
   const card = { kicker: data.kicker ?? data.author.toUpperCase(), titleLines: cardLines.map((l) => l.toUpperCase()), author: data.author, maxWidth: cardWidth, size: fit(cardLines) };
   const opening = frames(L(1) - 0.1);
@@ -392,9 +466,16 @@ function compile(input: CompileInput): CompileResult {
     { id: "card-opening", from: 0, duration: opening, kit: KIT("lower-third"), props: { ...card }, source: "title", transitionOut: { type: "fade" as const, duration: frames(0.8) } },
     { id: "card-bow", from: bowFrom, duration: durationInFrames - bowFrom, kit: KIT("lower-third"), props: { ...card, ruleGrow: 0 }, source: "title", transitionIn: { type: "fade" as const, duration: frames(0.9) } },
   ];
+  // The chip (Anton 36, spacing 2; author Inter 600 18, spacing 4; paddings 22) stays clear of the mark.
+  const chipTitle = 2 * 22 + 2 + textWidth(ANTON_EM, data.title, 36, 2);
+  const withAuthor = chipTitle + 14 + textWidth(INTER_600_EM, data.author, 18, 4);
+  if (CHIP_RIGHT - chipTitle < MARK_RIGHT) {
+    problems.push({ code: "title-too-long", path: "$.data.title", message: `"${data.title}" is too long for the chip beside the mark (${Math.ceil(chipTitle)} px, ${Math.floor(CHIP_RIGHT - MARK_RIGHT)} px free)` });
+  }
+  const chipAuthor = data.title.length <= 13 && CHIP_RIGHT - withAuthor >= MARK_RIGHT;
   const chipItem = {
     id: "chip", from: chipFrom, duration: chipEnd - chipFrom, kit: KIT("title-chip"),
-    props: { title: data.title, ...(data.title.length > 13 ? {} : { author: data.author }) },
+    props: { title: data.title, ...(chipAuthor ? { author: data.author } : {}) },
     source: "title",
     transitionIn: { type: "fade" as const, duration: frames(0.8) },
     transitionOut: { type: "fade" as const, duration: frames(0.9) },
@@ -428,7 +509,8 @@ function compile(input: CompileInput): CompileResult {
     ? (() => {
       const from = frames(VE + (data.applause.delay ?? 0.8));
       const dur = data.applause.dur ?? 5.7;
-      return { id: "applause", from, duration: Math.max(1, Math.min(frames(VE + (data.applause.delay ?? 0.8) + dur), durationInFrames) - from), asset: sound(data.applause.assetId, "$.data.applause.assetId"), gain: data.applause.gain ?? 0.72, fadeIn: 12, fadeOut: 40, source: "applause" };
+      const duration = Math.max(1, Math.min(frames(VE + (data.applause.delay ?? 0.8) + dur), durationInFrames) - from);
+      return { id: "applause", from, duration, asset: sound(data.applause.assetId, "$.data.applause.assetId"), gain: data.applause.gain ?? 0.72, fadeIn: Math.min(12, duration >> 1), fadeOut: Math.min(40, duration >> 1), source: "applause" };
     })()
     : null;
   const music = data.music
