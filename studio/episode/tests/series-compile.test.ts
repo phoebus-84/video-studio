@@ -193,6 +193,29 @@ describe("loadEpisode", () => {
     expect(Object.keys(loaded.input.inputs)).toHaveLength(13);
     expect(Object.keys(loaded.input.assets).sort()).toEqual(["image-cat", "image-morning-room", "image-teacup", "narration-cup", "narration-light"]);
   });
+
+  it("offers every sound in assets/sounds as sound-<name>, hashed", () => {
+    mkdirSync(at("assets/sounds"), { recursive: true });
+    writeFileSync(at("assets/sounds/applause.wav"), "clapping");
+    writeFileSync(at("assets/sounds/Thunder.MP3"), "rumble");
+    writeFileSync(at("assets/sounds/credits.txt"), "who recorded what");
+    writeFileSync(at("assets/sounds/.DS_Store"), "finder");
+    const loaded = loadEpisode(dir(), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    expect(loaded.input.assets["sound-applause"]).toEqual({ path: "assets/sounds/applause.wav", hash: sha256("clapping"), kind: "audio" });
+    expect(loaded.input.assets["sound-Thunder"]?.path).toBe("assets/sounds/Thunder.MP3");
+    expect(loaded.input.inputs["assets/sounds/applause.wav"]).toBe(sha256("clapping"));
+    expect(Object.keys(loaded.input.assets).filter((id) => id.startsWith("sound-")).sort()).toEqual(["sound-Thunder", "sound-applause"]);
+  });
+
+  it("ambiguous-asset: two files for one sound", () => {
+    mkdirSync(at("assets/sounds"), { recursive: true });
+    writeFileSync(at("assets/sounds/applause.wav"), "clapping");
+    writeFileSync(at("assets/sounds/applause.mp3"), "clapping again");
+    const loaded = loadEpisode(dir(), { episodeRef: REF });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) expect(loaded.problems.map((p) => [p.code, p.path])).toEqual([["ambiguous-asset", "assets/sounds/applause.wav"]]);
+  });
 });
 
 describe("checkEpisode", () => {

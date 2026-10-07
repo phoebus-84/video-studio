@@ -19,7 +19,11 @@ import { SERIES_TEMPLATE_FILES, validateEpisodeSpec, validateTemplateBundle } fr
 import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
 
 export const NARRATION_TAKES_PATH = "artifacts/narration/takes.json";
-const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+/** What the loader offers from assets/: every file in each folder, as <prefix>-<name>. */
+const OFFERED = [
+  { dir: "images", prefix: "image", kind: "image", extensions: [".png", ".jpg", ".jpeg", ".webp"] },
+  { dir: "sounds", prefix: "sound", kind: "audio", extensions: [".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"] },
+] as const;
 
 /** Located as `<file relative to the episode>#<JSON path>`, or a bare file. */
 export interface SeriesCompileProblem {
@@ -236,22 +240,25 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     timings[take.id] = timing;
   });
 
-  // ── Images ────────────────────────────────────────────────────────────────
-  // Every picture in assets/images is offered as image-<name>; the compiler
-  // says which it needs. Two files with one name is a choice nobody made.
-  const imagesDir = join(episodeDir, "assets", "images");
-  const images = existsSync(imagesDir)
-    ? readdirSync(imagesDir, { withFileTypes: true })
-      .filter((e) => !e.isDirectory() && !e.name.startsWith(".") && IMAGE_EXTENSIONS.includes(extname(e.name).toLowerCase()))
-      .map((e) => e.name)
-      .sort()
-    : [];
-  for (const file of images) {
-    const id = `image-${file.slice(0, -extname(file).length)}`;
-    const path = `assets/images/${file}`;
-    if (assets[id]) stop("ambiguous-asset", path, `${assets[id].path} and ${path} are both ${id.slice(6)}: keep one`);
-    read(join(episodeDir, path), episodeDir, () => stop("missing-asset", path, `${path} is missing`));
-    assets[id] = { path, hash: inputs[path]!, kind: "image" };
+  // ── Images and sounds ─────────────────────────────────────────────────────
+  // Every picture in assets/images is offered as image-<name>, every sound in
+  // assets/sounds as sound-<name>; the compiler says which it needs. Two files
+  // with one name is a choice nobody made.
+  for (const { dir, prefix, kind, extensions } of OFFERED) {
+    const folder = join(episodeDir, "assets", dir);
+    const files = existsSync(folder)
+      ? readdirSync(folder, { withFileTypes: true })
+        .filter((e) => !e.isDirectory() && !e.name.startsWith(".") && (extensions as readonly string[]).includes(extname(e.name).toLowerCase()))
+        .map((e) => e.name)
+        .sort()
+      : [];
+    for (const file of files) {
+      const id = `${prefix}-${file.slice(0, -extname(file).length)}`;
+      const path = `assets/${dir}/${file}`;
+      if (assets[id]) stop("ambiguous-asset", path, `${assets[id].path} and ${path} are both ${id.slice(prefix.length + 1)}: keep one`);
+      read(join(episodeDir, path), episodeDir, () => stop("missing-asset", path, `${path} is missing`));
+      assets[id] = { path, hash: inputs[path]!, kind };
+    }
   }
 
   return { ok: true, input: { spec, template, narration, timings, assets, inputs }, releaseKey };

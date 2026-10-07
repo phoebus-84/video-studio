@@ -16,14 +16,14 @@ adapters both call this package, so a tool and a stage never disagree.
 | `narration-manifest.ts` | The canonical `artifacts/narration/narration-manifest.json`: build, measure, validate, write |
 | `scene-images.ts` | Scene images in reading order and their lengths (legacy episodes) |
 | `edit-timeline-builder.ts` | `buildEditTimeline`: the timeline of an episode without a spec |
-| `series-compile.ts` | `loadEpisode`, `compileEpisode`, `checkEpisode`: a spec-driven episode, read, checked, compiled, held to its series' rules |
+| `series-compile.ts` | `loadEpisode`, `compileEpisode`, `checkEpisode`: a spec-driven episode, read, checked, compiled, held to its series' rules; offers `assets/images/*` as `image-<name>` and `assets/sounds/*` as `sound-<name>` |
 | `episode-render.ts` | `writeEditTimeline`, `decideEditTimeline`, `currentEditTimeline`, `renderEpisode` |
 | `spec-init.ts` | `initEpisodeSpec`: a draft spec pinned to an exact template release; never replaces one |
 | `references.ts` | `proposeReference`: freeze an episode as a proposed golden reference |
 | `sheet-instants.ts` | `sheetInstants`: the frames a layout sheet shows, from the timeline and the release's `sheet` rules (pure) |
 | `layout-sheet.ts` | `makeLayoutSheet`, `layoutSheetStatus`: `artifacts/layout-sheet/`, and whether it still shows what a render would use |
 | `version-diff.ts` | `alignInstants`, `measure`, `judge`: which frames two versions compare, how different they are, the verdict (pure) |
-| `speech-align.ts` | `mapToText`, `snapToSilences`, `measureSilences`: a provider's words made into a take's words (ADR-0038) |
+| `speech-align.ts` | `mapToText`, `snapToSilences`, `measureSilences`, `measureEnergy`: a provider's words made into a take's words, and the take's energy (ADR-0038) |
 | `take-align.ts` | `alignTake`: a take's WordTiming by forced alignment, local or ElevenLabs, written beside it and named in `takes.json` |
 | `version-compare.ts` | `compareVersions`: two renders, or a render and a golden reference, decoded with ffmpeg at the same instants, into `reviews/compare/<old>--<new>/` |
 

@@ -72,3 +72,6 @@ run 19–43 s.
   unmatched.
 - Verifying a take against its text (missing words, long pauses) is
   `avg-8hs.3`; this only reports the pauses over 0.35 s.
+- Added with `avg-dcf.3`: the timing also carries the take's energy — RMS
+  per 1/30 s, divided by the loudest — measured with ffmpeg, whatever the
+  provider; what moves with the voice (the interprete's mouth) reads it.
