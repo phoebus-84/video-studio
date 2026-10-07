@@ -28,8 +28,26 @@ Kits in this version: `still@1.0.0`, `clip@1.0.0`, `captions@1.0.0`, and
 `captions@1.1.0`, which keeps its text inside the profile's safe zone and cuts
 text that does not fit at the zone's edge (keep captions short). A
 timeline gets exactly the version it names; `listKits(profileIds)` gives each
-version's description, layer, examples and a preview per profile
-(`previews/<name>@<version>.<profile>.png`).
+version's description, layer, profiles, examples and a preview per profile
+it is drawn for (`previews/<name>@<version>.<profile>.png`).
+
+The Dentro i versi short's kits (CreativeStudio's `sala8`, drawn for
+`vertical-1080x1920` only; ADR-0039):
+
+| Kit | Layer | What it draws |
+|---|---|---|
+| `museum-hall@1.0.0` | fill | The hall: room image, the screen with its pictures, their camera moves and picture effects, lightning, lights and spill, wind, shatter, pedestal, blackout and its bolt |
+| `room-effect@1.0.0` | fill | One effect in the room, inside the camera: `nebbia-sala`, `vapore`, `note`, `uccelli`, `foglie`, `incanto`, `apparizione` (a cut-out figure), `fantasma` |
+| `verse-plate@1.0.0` | overlay | A verse on its plate, words lit as they are said, strong words bold, the paraphrase under it |
+| `interprete@1.0.0` | fill | The actor: poses, expressions, gaze, blinks, the mouth from the voice's energy, teleport in and out, the bow |
+| `lower-third@1.0.0` | overlay | The title card: kicker, Anton title on one or two lines, growing cyan rule, author |
+| `title-chip@1.0.0` | overlay | The compact title · author chip |
+| `brand-mark@1.0.0` | overlay | The «DENTRO I VERSI» mark |
+
+They share frozen library modules in `src/kits/lib/` — `stage-math`,
+`fonts`, `stage-props`, `hall-fx`, `interprete`, `dentro-i-versi` (the
+palette) — and load Anton, Fraunces and Inter from `@fontsource` 5.3.0
+before the first frame.
 
 ## Adding a kit or a version
 
@@ -38,24 +56,31 @@ was. A change — even a fix — is a new version next to the old one.
 
 1. Write `src/kits/<name>/<version>.tsx` exporting `kit: KitVersion` (name,
    version, one-sentence description, zod `props`, `component`, `examples`).
-   It may import only `react`, `remotion`, `zod`, and types (`import type`)
-   from `../types.js`: shared runtime code changing would silently change old
-   versions. For a new version, copy the previous file and edit the copy.
+   It may import only `react`, `remotion`, `zod`, types (`import type`)
+   from `../types.js`, and frozen library modules by exact version
+   (`../lib/<name>/<x.y.z>.js`, ADR-0039): ordinary shared code changing would
+   silently change old versions. A library module keeps the same rule (and
+   may load an `@fontsource` font file with a dynamic `import()`); a change
+   to one is a new module version. For a new version, copy the previous file
+   and edit the copy. A kit drawn for some output profiles only lists them
+   in `profiles`; elsewhere a timeline using it is refused (`wrong-profile`).
    A kit that draws text or graphics over the picture declares
    `layer: "overlay"` and lays itself out inside `context.profile.safeZone`.
 2. Give it at least one example: props as a timeline writes them, a
    `durationInFrames`, the `frame` to preview, and `samples` mapping its
    `$asset` ids to files in `kits/samples/`.
 3. Add it to `KIT_VERSIONS` in `src/kits/index.ts`.
-4. `npm run kits:lock` records the file's sha256 in `kits.lock.json` (it
+4. `npm run kits:lock` records the kit's hash in `kits.lock.json` — the
+   file's sha256, or, when it imports library modules, the sha256 over the
+   file and every module it reaches, path and bytes in sorted order (it
    never rewrites an existing entry); `npm run kits:previews` renders the
-   first example in every output profile to
+   first example in every output profile the kit is drawn for to
    `previews/<name>@<version>.<profile>.png` (a third of the size: 640×360,
    360×640). Commit both.
 5. `npm test` checks the metadata, the self-contained imports and the lock
    — including that every version locked on `origin/main` (or
    `$KITS_LOCK_BASE`) is still there, unchanged — and renders one real frame
-   of every example in every output profile. An overlay kit is drawn on a
+   of every example in every output profile it is drawn for. An overlay kit is drawn on a
    transparent background, and the box of what it drew must lie inside the
    profile's safe zone; the failure says by how many pixels and on which side.
 

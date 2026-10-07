@@ -88,6 +88,7 @@ describe('validateTimeline', () => {
       ['interprete', '1.0.0', 'fill'],
       ['lower-third', '1.0.0', 'overlay'],
       ['museum-hall', '1.0.0', 'fill'],
+      ['room-effect', '1.0.0', 'fill'],
       ['still', '1.0.0', 'fill'],
       ['title-chip', '1.0.0', 'overlay'],
       ['verse-plate', '1.0.0', 'overlay'],
