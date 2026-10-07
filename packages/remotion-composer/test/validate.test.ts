@@ -45,9 +45,10 @@ describe('validateTimeline', () => {
   });
 
   it('refuses kits it does not have, by name or by version', () => {
-    // The lesson excerpt uses sala, interprete and verse-bar, which avg-tk7.3 and later issues add.
+    // The lesson excerpt uses sala, interprete and verse-bar: sala and verse-bar do not exist yet,
+    // and interprete@1.0.0 is drawn for 9:16 only (the long lesson's comes with avg-dcf.4).
     const codes = new Set(problems(fixture('lesson-excerpt.json')).map(([code]) => code));
-    assert.deepEqual([...codes], ['unknown-kit']);
+    assert.deepEqual([...codes].sort(), ['unknown-kit', 'wrong-profile']);
     const doc = clone(fixture('explainer.json'));
     doc.tracks[0].items[0].kit.version = '2.0.0';
     assert.deepEqual(problems(doc), [['unknown-kit', '$.tracks[0].items[0].kit']]);
@@ -84,6 +85,7 @@ describe('validateTimeline', () => {
       ['captions', '1.0.0', 'fill'],
       ['captions', '1.1.0', 'overlay'],
       ['clip', '1.0.0', 'fill'],
+      ['interprete', '1.0.0', 'fill'],
       ['lower-third', '1.0.0', 'overlay'],
       ['museum-hall', '1.0.0', 'fill'],
       ['still', '1.0.0', 'fill'],
