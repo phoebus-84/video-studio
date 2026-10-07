@@ -11,13 +11,14 @@ import {kit as brandMark100} from './brand-mark/1.0.0.js';
 import {kit as lowerThird100} from './lower-third/1.0.0.js';
 import {kit as titleChip100} from './title-chip/1.0.0.js';
 import {kit as versePlate100} from './verse-plate/1.0.0.js';
+import {kit as museumHall100} from './museum-hall/1.0.0.js';
 
 export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 
 /** Every released kit version. Adding a version: import it here, then `npm run kits:lock`. */
 export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([
   still100, clip100, captions100, captions110,
-  brandMark100, lowerThird100, titleChip100, versePlate100,
+  brandMark100, lowerThird100, titleChip100, versePlate100, museumHall100,
 ]);
 
 const key = (name: string, version: string) => `${name}@${version}`;
