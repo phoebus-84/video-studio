@@ -19,26 +19,36 @@ let root: string;
 const dir = () => join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
 const at = (relative: string) => join(dir(), relative);
 
-interface Segment { id: string; color: string; seconds: number }
+interface Segment {
+  id: string;
+  /** A colour, or "testsrc2" for a moving test pattern. */
+  color: string;
+  seconds: number;
+  /** A white box drawn on the section: "x:y:w:h". */
+  box?: string;
+}
 const FPS = 30;
 
 /** A render of `segments`, as renderEpisode leaves it: video, timeline snapshot (unless `timeline: false`), report. */
-function render(id: string, segments: Segment[], options: { timeline?: boolean; size?: string; episodeDir?: string } = {}): void {
+function render(id: string, segments: Segment[], options: { timeline?: boolean; size?: string; episodeDir?: string; crf?: number; timelineSize?: string } = {}): void {
   const base = options.episodeDir ?? dir();
   const size = options.size ?? "320x180";
   mkdirSync(join(base, "output"), { recursive: true });
   const video = join(base, "output", `${id}.mp4`);
   execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
-    ...segments.flatMap((s) => ["-f", "lavfi", "-i", `color=c=${s.color}:s=${size}:r=${FPS}:d=${s.seconds}`]),
-    "-filter_complex", `${segments.map((_, i) => `[${i}:v]`).join("")}concat=n=${segments.length}:v=1[v]`,
-    "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", video]);
+    ...segments.flatMap((s) => ["-f", "lavfi", "-i", s.color === "testsrc2"
+      ? `testsrc2=s=${size}:r=${FPS}:d=${s.seconds}`
+      : `color=c=${s.color}:s=${size}:r=${FPS}:d=${s.seconds}`]),
+    "-filter_complex", `${segments.map((s, i) => (s.box ? `[${i}:v]drawbox=${s.box}:color=white:t=fill[s${i}];` : "")).join("")}`
+      + `${segments.map((s, i) => (s.box ? `[s${i}]` : `[${i}:v]`)).join("")}concat=n=${segments.length}:v=1[v]`,
+    "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", String(options.crf ?? 18), video]);
   let from = 0;
   const sections = segments.map((s) => {
     const section = { id: s.id, from, duration: s.seconds * FPS };
     from += section.duration;
     return section;
   });
-  const [width, height] = size.split("x").map(Number);
+  const [width, height] = (options.timelineSize ?? size).split("x").map(Number);
   const timelineText = `${JSON.stringify({ fps: FPS, durationInFrames: from, resolution: { width, height }, sections }, null, 2)}\n`;
   if (options.timeline !== false) writeFileSync(join(base, "output", `${id}.timeline.json`), timelineText);
   writeFileSync(join(base, "output", `${id}.report.json`), JSON.stringify({
@@ -119,6 +129,42 @@ describe("compareVersions", () => {
     expect(r.report.verdict).toBe("ok");
   });
 
+  it("sees a section the correction deleted, though no sampled frame can", async () => {
+    render("render-1-aaaaaaaa", ORIGINAL);
+    render("render-2-bbbbbbbb", ORIGINAL.filter((s) => s.id !== "block-1"));
+    const r = await compareVersions(dir(), { old: "render-1-aaaaaaaa", new: "render-2-bbbbbbbb", expect: ["block-2"] });
+    expect(r.report.verdict).toBe("unexpected-changes");
+    expect(r.report.structure).toEqual([{ section: "block-1", change: "removed", oldFrames: 60, newFrames: 0 }]);
+    expect(r.report.unexpectedStructure).toEqual(r.report.structure);
+    const asked = await compareVersions(dir(), { old: "render-1-aaaaaaaa", new: "render-2-bbbbbbbb", expect: ["block-1"] });
+    expect(asked.report.verdict).toBe("ok");
+  });
+
+  it("sees a word-sized change the mean alone would miss", async () => {
+    render("render-1-aaaaaaaa", ORIGINAL);
+    render("render-2-bbbbbbbb", withBlock1({ box: "140:80:32:8" }));
+    const r = await compareVersions(dir(), { old: "render-1-aaaaaaaa", new: "render-2-bbbbbbbb", expect: ["intro"] });
+    const block1 = r.report.pairs.filter((p) => p.section === "block-1");
+    expect(block1.every((p) => p.meanDiff! < 1 && p.changed)).toBe(true);
+    expect(r.report.verdict).toBe("unexpected-changes");
+  });
+
+  it("finds nothing changed between two encodings of the same pictures", async () => {
+    const pattern = ORIGINAL.map((s) => ({ ...s, color: "testsrc2" }));
+    render("render-1-aaaaaaaa", pattern, { crf: 18 });
+    render("render-2-bbbbbbbb", pattern, { crf: 23 });
+    const r = await compareVersions(dir(), { old: "render-1-aaaaaaaa", new: "render-2-bbbbbbbb" });
+    expect(r.report.changed).toEqual([]);
+  });
+
+  it("takes the size from the videos, noting a timeline that says otherwise", async () => {
+    render("render-1-aaaaaaaa", ORIGINAL, { timelineSize: "640x360" });
+    render("render-2-bbbbbbbb", ORIGINAL);
+    const r = await compareVersions(dir(), { old: "render-1-aaaaaaaa", new: "render-2-bbbbbbbb" });
+    expect(r.report.old.notes).toEqual(["its timeline says 640x360; the video is 320x180"]);
+    expect(r.report.changed).toEqual([]);
+  });
+
   it("falls back to time for a render that kept no timeline, and says so", async () => {
     render("render-1-aaaaaaaa", ORIGINAL, { timeline: false });
     render("render-2-bbbbbbbb", ORIGINAL);
@@ -166,7 +212,17 @@ describe("compareVersions", () => {
     const r = await compareVersions(dir(), { old: "reference:poetry-short/evening-v1", new: "render-2-bbbbbbbb", expect: ["block-1"] });
     expect(r.report.verdict).toBe("ok");
     expect(r.report.old.notes).toEqual(["signature not checked: run vpr reference verify for trust"]);
-    expect(r.dir).toBe(at(`${COMPARE_DIR}/reference-poetry-short-evening-v1--render-2-bbbbbbbb`));
+    expect(r.dir).toBe(at(`${COMPARE_DIR}/reference_poetry-short_evening-v1--render-2-bbbbbbbb`));
+
+    // A reference names its own series: one of another series is not this one's.
+    writeFileSync(descriptorPath, JSON.stringify({
+      ...reference,
+      episodeRef: { ...reference.episodeRef, series: "prose" },
+      approval: { ...reference.approval, episode: `${REF.channel}/prose/evening` },
+    }));
+    await expect(compareVersions(dir(), { old: "reference:poetry-short/evening-v1", new: "render-2-bbbbbbbb" }))
+      .rejects.toMatchObject({ code: "no-such-reference" });
+    writeFileSync(descriptorPath, JSON.stringify(reference));
 
     writeFileSync(join(other, "output/render-9-cccccccc.mp4"), "not the reference any more");
     await expect(compareVersions(dir(), { old: "reference:poetry-short/evening-v1", new: "render-2-bbbbbbbb" }))

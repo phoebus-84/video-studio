@@ -59,7 +59,7 @@ describe("pva_compare_versions", () => {
     const result = await tool({ old: "render-1-aaaaaaaa", expect: ["block-1"] });
     expect(result.isError).toBeFalsy();
     const text: string = result.content[0].text;
-    expect(text).toMatch(/^✅ ok: every difference is inside block-1 — render-1-aaaaaaaa → render-2-bbbbbbbb, aligned by sections/);
+    expect(text).toMatch(/^✅ ok: every difference found is inside block-1 — render-1-aaaaaaaa → render-2-bbbbbbbb, \d+ instants compared, aligned by sections/);
     expect(text).toMatch(/· #\d\d · \d+\.\d\ds · block-1 · diff \d+(\.\d)? \(\d+%\)/);
     expect(text).toContain(`open: ${join(dir(), "reviews/compare/render-1-aaaaaaaa--render-2-bbbbbbbb/changed.jpg")}`);
   });
@@ -70,6 +70,27 @@ describe("pva_compare_versions", () => {
     expect(text).toMatch(/^❌ unexpected changes outside intro: \d+ frame\(s\)/);
     expect(text).toMatch(/❌ #\d\d · \d+\.\d\ds · block-1 · /);
     expect(text).toContain("⚠️ intro was expected to change and did not");
+  });
+
+  it("names a section that changed shape, which no frame shows", async () => {
+    render("render-3-cccccccc", ["red", "blue", "blue"]);
+    // Rewrite render 3 as two sections: block-1 removed.
+    const out = join(dir(), "output");
+    const timeline = `${JSON.stringify({ fps: 30, durationInFrames: 90, resolution: { width: 320, height: 180 },
+      sections: [{ id: "intro", from: 0, duration: 30 }, { id: "block-2", from: 30, duration: 60 }] })}\n`;
+    writeFileSync(join(out, "render-3-cccccccc.timeline.json"), timeline);
+    const report = JSON.parse(readFileSync(join(out, "render-3-cccccccc.report.json"), "utf-8"));
+    report.timeline.hash = sha256(timeline);
+    writeFileSync(join(out, "render-3-cccccccc.report.json"), JSON.stringify(report));
+    const text: string = (await tool({ old: "render-1-aaaaaaaa", new: "render-3-cccccccc", expect: ["block-2"] })).content[0].text;
+    expect(text).toMatch(/^❌ unexpected changes outside block-2/);
+    expect(text).toContain("❌ block-1 removed (30 → 0 frames)");
+    expect(text).toContain("❌ block-2 resized (30 → 60 frames)".replace("❌", "·"));
+  });
+
+  it("compares at the times asked", async () => {
+    const result = await tool({ old: "render-1-aaaaaaaa", times: [0.5, 1.5], expect: ["block-1"] });
+    expect(result.content[0].text).toMatch(/2 instants compared/);
   });
 
   it("replies with the error's code", async () => {

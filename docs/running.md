@@ -135,13 +135,16 @@ version, then ask the agent to compare it with the render the person received
 (`pva_compare_versions`, with `old` that render's id — or
 `reference:<template>/<id>` for a golden reference — and `expect` the
 sections the correction should touch; the `compare-versions` skill walks it).
-Both videos are decoded with ffmpeg at the same instants, aligned section by
-section through the timeline every render keeps beside it
-(`output/<render-id>.timeline.json`). The result is in
-`reviews/compare/<old>--<new>/`:
+Both videos are decoded with ffmpeg at the same instants — the layout sheet's,
+about 24, or the `times` you ask for — aligned section by section through the
+timeline every render keeps beside it (`output/<render-id>.timeline.json`).
+Only those instants are seen; sections added, removed or resized are reported
+whatever was sampled. The result is in `reviews/compare/<old>--<new>/` (a
+reference is written `reference_<template>_<id>`):
 
-- `report.json` — every pair of frames measured, the verdict (`ok`,
-  `unexpected-changes`, or `listed` without an expectation) and warnings;
+- `report.json` — every pair of frames measured, the sections that changed
+  shape, the verdict (`ok`, `unexpected-changes`, or `listed` without an
+  expectation) and warnings;
 - `pairs/NNN.jpg` and `changed.jpg` — each changed frame as old | new |
   difference.
 

@@ -38,10 +38,13 @@ that differs is listed with its section.
    `output/`, or the render they named), `expect` the sections the
    correction should change — section ids, or a prefix with `*`.
 3. **Read the verdict.**
-   - `ok`: every difference is inside the expected sections. Open
-     `changed.jpg` and check the differences are the ones asked for.
+   - `ok`: every difference found is inside the expected sections. Open
+     `changed.jpg` and check the differences are the ones asked for. Only
+     the compared instants (about 24) are seen: for a small correction, pass
+     `times` inside the corrected part and around it to look closer.
    - `unexpected changes`: the correction touched more than it should. Each
-     `❌` line names the frame, its time and its section. Undo or narrow the
+     `❌` line names the frame, its time and its section — or a section
+     added, removed or resized that nobody asked for. Undo or narrow the
      change, render again, compare again.
    - A warning that an expected section did not change usually means the
      wrong render was compared, or the correction did not take.

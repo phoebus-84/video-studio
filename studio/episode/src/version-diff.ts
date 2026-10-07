@@ -62,8 +62,23 @@ export interface Shift {
   by: number;
 }
 
+/**
+ * A difference in the shape of the two versions that no sampled frame can
+ * show: a section added, removed or resized, or — without sections — videos
+ * of different lengths.
+ */
+export interface StructureChange {
+  /** null for a difference in length between versions without sections. */
+  section: string | null;
+  change: "added" | "removed" | "resized" | "length";
+  oldFrames: number;
+  newFrames: number;
+}
+
 export interface Alignment {
   picks: ComparePick[];
+  /** Sections added, removed or resized; or the length, aligning by time. */
+  structure: StructureChange[];
   /** "sections" when both versions have sections; otherwise "time". */
   alignment: "sections" | "time";
   warnings: string[];
@@ -83,6 +98,7 @@ export function alignInstants(newer: AlignSide, older: AlignSide, options: { tim
   }
 
   let instants: { frame: number; label: string }[];
+  const warnings: string[] = [];
   if (options.times !== undefined) {
     if (options.times.length === 0) throw new CompareError("bad-options", "give at least one time, or none for the sheet's instants");
     const seen = new Map<number, string>();
@@ -96,13 +112,15 @@ export function alignInstants(newer: AlignSide, older: AlignSide, options: { tim
     instants = [...seen.entries()].sort(([a], [b]) => a - b).map(([frame, label]) => ({ frame, label }));
   } else {
     const sections = usable(newer.sections);
-    instants = sheetInstants({ fps: newer.fps, durationInFrames: newer.durationInFrames, ...(sections.length > 0 ? { sections } : {}) }).picks;
+    const sheet = sheetInstants({ fps: newer.fps, durationInFrames: newer.durationInFrames, ...(sections.length > 0 ? { sections } : {}) });
+    instants = sheet.picks;
+    warnings.push(...sheet.warnings);
   }
 
   const newSections = usable(newer.sections);
   const oldSections = usable(older.sections);
   const bySections = newSections.length > 0 && oldSections.length > 0;
-  const warnings = bySections && shifts.length > 0 ? ["shifts ignored: both versions have sections, aligned by section"] : [];
+  if (bySections && shifts.length > 0) warnings.push("shifts ignored: both versions have sections, aligned by section");
 
   const picks = instants.map(({ frame, label }, index): ComparePick => {
     const section = containing(newSections, frame);
@@ -121,8 +139,43 @@ export function alignInstants(newer: AlignSide, older: AlignSide, options: { tim
     if (oldFrame < 0 || oldFrame >= older.durationInFrames) return { ...pick, oldFrame: null, reason: "missing-in-old" };
     return { ...pick, oldFrame };
   });
-  return { picks, alignment: bySections ? "sections" : "time", warnings };
+  return { picks, structure: structureOf(newer, older, bySections), alignment: bySections ? "sections" : "time", warnings };
 }
+
+/** What sampling cannot see: sections added, removed or resized; without sections, a change of length. */
+function structureOf(newer: AlignSide, older: AlignSide, bySections: boolean): StructureChange[] {
+  // Lengths compared in time, so a change of frame rate alone is no change.
+  const frames = (side: AlignSide, n: number) => Math.round((n * newer.fps) / side.fps);
+  if (!bySections) {
+    return frames(older, older.durationInFrames) === newer.durationInFrames
+      ? []
+      : [{ section: null, change: "length", oldFrames: older.durationInFrames, newFrames: newer.durationInFrames }];
+  }
+  const newSections = usable(newer.sections);
+  const oldSections = usable(older.sections);
+  const changes: StructureChange[] = [];
+  for (const old of oldSections) {
+    const now = newSections.find((s) => s.id === old.id);
+    if (!now) changes.push({ section: old.id, change: "removed", oldFrames: old.duration, newFrames: 0 });
+    else if (frames(older, old.duration) !== now.duration) {
+      changes.push({ section: old.id, change: "resized", oldFrames: old.duration, newFrames: now.duration });
+    }
+  }
+  for (const now of newSections) {
+    if (!oldSections.some((s) => s.id === now.id)) changes.push({ section: now.id, change: "added", oldFrames: 0, newFrames: now.duration });
+  }
+  return changes;
+}
+
+/**
+ * The share of pixels that, once changed, makes a frame changed whatever its
+ * mean: a word in a caption moves the mean of a whole frame by less than 1.
+ */
+export const MIN_CHANGED_SHARE = 0.002;
+
+/** Has a frame changed: its mean past the threshold, or enough of its pixels changed. */
+export const changedFrame = (m: { meanDiff: number; changedShare: number }, threshold: number) =>
+  m.meanDiff > threshold || m.changedShare >= MIN_CHANGED_SHARE;
 
 /** How different two grey frames of the same size are. */
 export function measure(a: Uint8Array, b: Uint8Array): { meanDiff: number; changedShare: number } {
@@ -140,18 +193,22 @@ export function measure(a: Uint8Array, b: Uint8Array): { meanDiff: number; chang
 
 export type Verdict = "ok" | "unexpected-changes" | "listed";
 
-/** What the changed pairs mean against the sections expected to change. */
+/** What the changed pairs and the changes of shape mean against the sections expected to change. */
 export function judge(
   pairs: { index: number; section: string | null; changed: boolean }[],
   expect: string[] | undefined,
-): { verdict: Verdict; changed: number[]; unexpected: number[]; warnings: string[] } {
+  structure: StructureChange[] = [],
+): { verdict: Verdict; changed: number[]; unexpected: number[]; unexpectedStructure: StructureChange[]; warnings: string[] } {
   const changed = pairs.filter((p) => p.changed);
   const indexes = changed.map((p) => p.index);
-  if (expect === undefined) return { verdict: "listed", changed: indexes, unexpected: [], warnings: [] };
+  if (expect === undefined) return { verdict: "listed", changed: indexes, unexpected: [], unexpectedStructure: [], warnings: [] };
   const expected = (section: string | null) => section !== null && expect.some((pattern) => matchesSection(pattern, section));
   const unexpected = changed.filter((p) => !expected(p.section)).map((p) => p.index);
+  const unexpectedStructure = structure.filter((c) => !expected(c.section));
+  const touched = [...changed.map((p) => p.section), ...structure.map((c) => c.section)];
   const warnings = expect
-    .filter((pattern) => !changed.some((p) => p.section !== null && matchesSection(pattern, p.section)))
+    .filter((pattern) => !touched.some((section) => section !== null && matchesSection(pattern, section)))
     .map((pattern) => `${pattern} was expected to change and did not`);
-  return { verdict: unexpected.length > 0 ? "unexpected-changes" : "ok", changed: indexes, unexpected, warnings };
+  const verdict = unexpected.length > 0 || unexpectedStructure.length > 0 ? "unexpected-changes" : "ok";
+  return { verdict, changed: indexes, unexpected, unexpectedStructure, warnings };
 }

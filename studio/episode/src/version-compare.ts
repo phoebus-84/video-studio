@@ -12,10 +12,21 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { validateSeriesReference } from "@studio/contracts/src/series-templates.mjs";
-import { alignInstants, CompareError, judge, measure, type AlignSide, type ComparePick, type Shift, type Verdict } from "./version-diff.js";
+import {
+  alignInstants,
+  changedFrame,
+  CompareError,
+  judge,
+  measure,
+  type AlignSide,
+  type ComparePick,
+  type Shift,
+  type StructureChange,
+  type Verdict,
+} from "./version-diff.js";
 
 const exec = promisify(execFile);
 
@@ -78,21 +89,43 @@ function fromTimeline(doc: any): { side: AlignSide; width: number; height: numbe
   return { side: { fps, durationInFrames, sections }, width, height };
 }
 
-/** What ffprobe says of a video: its rate, its frames and its size. */
-async function probe(video: string): Promise<{ side: AlignSide; width: number; height: number }> {
-  let out: string;
+async function ffprobe(video: string, args: string[]): Promise<any> {
   try {
-    ({ stdout: out } = await exec("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_frames",
-      "-show_entries", "stream=width,height,r_frame_rate,nb_read_frames", "-of", "json", video]));
+    const { stdout } = await exec("ffprobe", ["-v", "error", "-select_streams", "v:0", ...args, "-of", "json", video]);
+    return JSON.parse(stdout).streams?.[0];
   } catch (error) {
     throw new CompareError("decode-failed", `ffprobe could not read ${video}: ${(error as Error).message}`);
   }
-  const stream = JSON.parse(out).streams?.[0];
+}
+
+/** The size of a video's picture, read from the video itself. */
+async function videoSize(video: string): Promise<{ width: number; height: number }> {
+  const stream = await ffprobe(video, ["-show_entries", "stream=width,height"]);
+  if (!(stream?.width > 0 && stream?.height > 0)) throw new CompareError("decode-failed", `${video} has no video stream`);
+  return { width: stream.width, height: stream.height };
+}
+
+/** A video's rate and frame count, for a version without a timeline (it decodes the whole video). */
+async function videoTiming(video: string): Promise<AlignSide> {
+  const stream = await ffprobe(video, ["-count_frames", "-show_entries", "stream=r_frame_rate,nb_read_frames"]);
   const [num, den] = String(stream?.r_frame_rate ?? "0/1").split("/").map(Number);
   const fps = num! / (den || 1);
   const durationInFrames = Number(stream?.nb_read_frames);
-  if (!stream || !(fps > 0) || !(durationInFrames > 0)) throw new CompareError("decode-failed", `${video} has no video stream ffprobe can measure`);
-  return { side: { fps, durationInFrames, sections: null }, width: stream.width, height: stream.height };
+  if (!(fps > 0) || !(durationInFrames > 0)) throw new CompareError("decode-failed", `${video} has no video stream ffprobe can measure`);
+  return { fps, durationInFrames, sections: null };
+}
+
+/**
+ * Timing and sections from the timeline when there is one, from the video
+ * otherwise; the size always from the video, which is what is compared.
+ */
+async function measured(video: string, timelineDoc: unknown, notes: string[]): Promise<{ side: AlignSide; width: number; height: number }> {
+  const size = await videoSize(video);
+  const fromDoc = timelineDoc === undefined ? null : fromTimeline(timelineDoc);
+  if (fromDoc && (fromDoc.width !== size.width || fromDoc.height !== size.height)) {
+    notes.push(`its timeline says ${fromDoc.width}x${fromDoc.height}; the video is ${size.width}x${size.height}`);
+  }
+  return { side: fromDoc?.side ?? await videoTiming(video), ...size };
 }
 
 async function renderVersion(episodeDir: string, renderId: string): Promise<Version> {
@@ -108,25 +141,29 @@ async function renderVersion(episodeDir: string, renderId: string): Promise<Vers
   const notes: string[] = [];
   const snapshotPath = `output/${renderId}.timeline.json`;
   let timeline: Version["timeline"] = null;
-  let measured: ReturnType<typeof fromTimeline> = null;
+  let timelineDoc: unknown;
   if (existsSync(join(episodeDir, snapshotPath))) {
     const text = readFileSync(join(episodeDir, snapshotPath));
     if (sha256Text(text) === report?.timeline?.hash) {
       timeline = { path: snapshotPath, hash: sha256Text(text) };
-      measured = fromTimeline(readJson(join(episodeDir, snapshotPath)));
+      timelineDoc = readJson(join(episodeDir, snapshotPath));
     } else {
       notes.push(`${snapshotPath} is not the timeline the report names: aligned by time`);
     }
   } else {
     notes.push(`${renderId} kept no timeline: aligned by time`);
   }
-  return { ref: renderId, episodeDir, video: { path: `output/${renderId}.mp4`, hash }, timeline, ...(measured ?? await probe(video)), notes };
+  return { ref: renderId, episodeDir, video: { path: `output/${renderId}.mp4`, hash }, timeline, ...await measured(video, timelineDoc, notes), notes };
 }
 
 async function referenceVersion(episodeDir: string, ref: string, templateId: string, referenceId: string): Promise<Version> {
   const seriesDir = dirname(dirname(episodeDir));
   const descriptor = readJson(join(seriesDir, "templates", templateId, "references", `${referenceId}.json`));
-  if (descriptor === undefined || validateSeriesReference(descriptor).length > 0) {
+  // This episode is <channel>/series/<series>/episodes/<episode>: a reference names its own series.
+  const series = basename(seriesDir);
+  const channel = basename(dirname(dirname(seriesDir)));
+  if (descriptor === undefined || validateSeriesReference(descriptor).length > 0
+    || descriptor.episodeRef.series !== series || descriptor.episodeRef.channel !== channel) {
     throw new CompareError("no-such-reference", `templates/${templateId}/references/${referenceId}.json is not a reference of this series`);
   }
   const refEpisode = join(seriesDir, "episodes", descriptor.episodeRef.episode);
@@ -140,14 +177,15 @@ async function referenceVersion(episodeDir: string, ref: string, templateId: str
   if (hash !== descriptor.render.hash || sha256Text(timelineText) !== descriptor.timeline.hash) {
     throw new CompareError("reference-changed", `the render or timeline of reference ${referenceId} is not what its descriptor says`);
   }
-  const measured = fromTimeline(readJson(timelinePath)) ?? await probe(video);
+  const notes = ["signature not checked: run vpr reference verify for trust"];
+  const sized = await measured(video, readJson(timelinePath), notes);
   return {
     ref,
     episodeDir: refEpisode,
     video: { path: descriptor.render.path, hash },
     timeline: { path: descriptor.timeline.path, hash: descriptor.timeline.hash },
-    ...measured,
-    notes: [`signature not checked: run vpr reference verify for trust`],
+    ...sized,
+    notes,
   };
 }
 
@@ -166,7 +204,8 @@ function currentRender(episodeDir: string): string {
   return current.renderId;
 }
 
-const dirName = (ref: VersionRef) => ref.replace(/^reference:/, "reference-").replace("/", "-");
+/** A version's part of the comparison's directory name: "_" appears in no id, so no two refs share one. */
+const dirName = (ref: VersionRef) => ref.replace(/^reference:/, "reference_").replace("/", "_");
 
 /**
  * Decode `frames` of `video` in one ffmpeg pass, at `width`×`height`: each as
@@ -232,6 +271,9 @@ export interface ComparedPair extends ComparePick {
 }
 
 export interface CompareReport {
+  /** Sections added, removed or resized (or, without sections, a change of length): what no sampled frame shows. */
+  structure: StructureChange[];
+  unexpectedStructure: StructureChange[];
   createdAt: string;
   old: Omit<Version, "episodeDir" | "side" | "width" | "height">;
   new: Omit<Version, "episodeDir" | "side" | "width" | "height">;
@@ -284,7 +326,7 @@ export async function compareVersions(episodeDir: string, options: CompareOption
   if (older.width !== newer.width || older.height !== newer.height) {
     throw new CompareError("resolution-differs", `${older.ref} is ${older.width}x${older.height}, ${newer.ref} is ${newer.width}x${newer.height}: nothing would be comparable`);
   }
-  const { picks, alignment, warnings } = alignInstants(newer.side, older.side, {
+  const { picks, structure, alignment, warnings } = alignInstants(newer.side, older.side, {
     ...(options.times ? { times: options.times } : {}),
     ...(options.shifts ? { shifts: options.shifts } : {}),
   });
@@ -310,9 +352,9 @@ export async function compareVersions(episodeDir: string, options: CompareOption
       const seconds = Math.round((p.newFrame / newer.side.fps) * 1000) / 1000;
       if (p.oldFrame === null) return { ...p, seconds, meanDiff: null, changedShare: null, changed: true };
       const m = measure(oldFrames.get(p.oldFrame)!, newFrames.get(p.newFrame)!);
-      return { ...p, seconds, ...m, changed: m.meanDiff > threshold };
+      return { ...p, seconds, ...m, changed: changedFrame(m, threshold) };
     });
-    const judged = judge(pairs, options.expect);
+    const judged = judge(pairs, options.expect, structure);
 
     const changed = pairs.filter((p) => p.changed);
     if (changed.length > 0) {
@@ -339,6 +381,8 @@ export async function compareVersions(episodeDir: string, options: CompareOption
       shifts: options.shifts ?? [],
       expect: options.expect ?? null,
       verdict: judged.verdict,
+      structure,
+      unexpectedStructure: judged.unexpectedStructure,
       pairs,
       changed: judged.changed,
       unexpected: judged.unexpected,
@@ -350,7 +394,11 @@ export async function compareVersions(episodeDir: string, options: CompareOption
     if (changed.length > 0) changedPath = join(final, "changed.jpg");
   } catch (error) {
     rmSync(temp, { recursive: true, force: true });
-    if (!existsSync(final) && existsSync(old)) renameSync(old, final);
+    // Put the previous comparison back — unless another run has replaced it meanwhile.
+    if (existsSync(old)) {
+      if (existsSync(final)) rmSync(old, { recursive: true, force: true });
+      else renameSync(old, final);
+    }
     throw error;
   }
   try {

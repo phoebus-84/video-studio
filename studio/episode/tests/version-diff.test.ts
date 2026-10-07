@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alignInstants, CompareError, judge, measure, type AlignSide } from "../src/version-diff.js";
+import { alignInstants, changedFrame, CompareError, judge, measure, type AlignSide } from "../src/version-diff.js";
 
 /**
  * The pure half of a version comparison (avg-jao.5): which frames of the two
@@ -76,6 +76,30 @@ describe("alignInstants", () => {
     expect(() => alignInstants(side(null), side(null), { shifts: [{ from: Number.NaN, by: 1 }] })).toThrow(/shift/);
   });
 
+  it("reports a section the new version no longer has, and one whose length changed", () => {
+    // block-1 deleted; block-2 shortened from 100 to 60 frames.
+    const newer = [{ id: "intro", from: 0, duration: 100 }, { id: "block-2", from: 100, duration: 60 }];
+    const r = alignInstants(side(newer, 160), side(three(), 300));
+    expect(r.structure).toEqual([
+      { section: "block-1", change: "removed", oldFrames: 100, newFrames: 0 },
+      { section: "block-2", change: "resized", oldFrames: 100, newFrames: 60 },
+    ]);
+  });
+
+  it("reports added sections and a difference in length when aligning by time", () => {
+    const added = alignInstants(side([...three(), { id: "coda", from: 300, duration: 60 }], 360), side(three(), 300));
+    expect(added.structure).toEqual([{ section: "coda", change: "added", oldFrames: 0, newFrames: 60 }]);
+    const byTime = alignInstants(side(null, 300), side(null, 330), { times: [1] });
+    expect(byTime.structure).toEqual([{ section: null, change: "length", oldFrames: 330, newFrames: 300 }]);
+    expect(alignInstants(side(null, 300), side(null, 300), { times: [1] }).structure).toEqual([]);
+  });
+
+  it("passes on what the sheet's instants had to drop", () => {
+    const many = Array.from({ length: 200 }, (_, i) => ({ id: `s-${i}`, from: i * 2, duration: 2 }));
+    const r = alignInstants(side(many, 400), side(many, 400));
+    expect(r.warnings.some((w) => /instants dropped/.test(w))).toBe(true);
+  });
+
   it("numbers picks in order and deduplicates repeated times", () => {
     const r = alignInstants(side(null), side(null), { times: [2, 1, 2.01] });
     expect(r.picks.map((p) => [p.index, p.newFrame])).toEqual([[0, 30], [1, 60]]);
@@ -86,6 +110,17 @@ describe("measure", () => {
   it("is zero for identical frames", () => {
     const a = new Uint8Array(100).fill(40);
     expect(measure(a, a.slice())).toEqual({ meanDiff: 0, changedShare: 0 });
+  });
+
+  it("counts a frame as changed when its mean moves past the threshold, or enough of its pixels change", () => {
+    const a = new Uint8Array(10_000).fill(20);
+    const word = a.slice();
+    word.fill(235, 0, 30); // 30 of 10 000 pixels: a word — the mean barely moves
+    expect(measure(a, word).meanDiff).toBeLessThan(1);
+    expect(changedFrame(measure(a, word), 1)).toBe(true);
+    const speck = a.slice();
+    speck.fill(235, 0, 5); // 5 pixels: noise
+    expect(changedFrame(measure(a, speck), 1)).toBe(false);
   });
 
   it("averages the absolute difference and counts the pixels that changed by more than 16", () => {
@@ -106,12 +141,12 @@ describe("judge", () => {
 
   it("is ok when every change is in an expected section", () => {
     expect(judge([p(0, "intro", false), p(1, "block-3", true), p(2, "block-4", true)], ["block-*"]))
-      .toEqual({ verdict: "ok", changed: [1, 2], unexpected: [], warnings: [] });
+      .toEqual({ verdict: "ok", changed: [1, 2], unexpected: [], unexpectedStructure: [], warnings: [] });
   });
 
   it("names the unexpected changes, a sectionless one included", () => {
     expect(judge([p(0, "intro", true), p(1, "block-3", true), p(2, null, true)], ["block-3"]))
-      .toEqual({ verdict: "unexpected-changes", changed: [0, 1, 2], unexpected: [0, 2], warnings: [] });
+      .toEqual({ verdict: "unexpected-changes", changed: [0, 1, 2], unexpected: [0, 2], unexpectedStructure: [], warnings: [] });
   });
 
   it("warns about an expected section that did not change", () => {
@@ -121,7 +156,20 @@ describe("judge", () => {
     ]);
   });
 
+  it("counts a section that changed shape as a change of that section", () => {
+    const structure = [{ section: "block-1", change: "removed" as const, oldFrames: 100, newFrames: 0 }];
+    expect(judge([p(0, "intro", false)], ["block-1"], structure))
+      .toEqual({ verdict: "ok", changed: [], unexpected: [], unexpectedStructure: [], warnings: [] });
+    expect(judge([p(0, "intro", false)], ["intro"], structure)).toEqual({
+      verdict: "unexpected-changes", changed: [], unexpected: [], unexpectedStructure: structure,
+      warnings: ["intro was expected to change and did not"],
+    });
+    // A length change without sections cannot be attributed: unexpected whenever there is an expectation.
+    const length = [{ section: null, change: "length" as const, oldFrames: 330, newFrames: 300 }];
+    expect(judge([], ["block-*"], length).verdict).toBe("unexpected-changes");
+  });
+
   it("only lists without an expectation", () => {
-    expect(judge([p(0, "intro", true)], undefined)).toEqual({ verdict: "listed", changed: [0], unexpected: [], warnings: [] });
+    expect(judge([p(0, "intro", true)], undefined)).toEqual({ verdict: "listed", changed: [0], unexpected: [], unexpectedStructure: [], warnings: [] });
   });
 });

@@ -1154,7 +1154,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_compare_versions",
     label: "Compare Versions",
-    description: "Prove a correction touched only what was asked (UP-54): compare two renders of the episode — or a golden reference of its series — at the same instants, aligned section by section, and report every frame that differs. Name the sections the correction should change in `expect`; the verdict is ok when every difference is inside them. Writes reviews/compare/<old>--<new>/ with changed.jpg (old | new | difference) to open.",
+    description: "Prove a correction touched only what was asked (UP-54): compare two renders of the episode — or a golden reference of its series — at the same instants (the layout sheet's, about 24, aligned section by section; or the `times` given), and report every compared frame that differs and every section added, removed or resized. Name the sections the correction should change in `expect`; the verdict is ok when every difference found is inside them. Only the compared instants are seen: pass `times` inside the corrected part to look closer. Writes reviews/compare/<old>--<new>/ with changed.jpg (old | new | difference) to open.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -1162,7 +1162,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       old: Type.String({ description: "The version delivered before the correction: a render id (output/<render-id>.mp4) or reference:<template-id>/<reference-id>" }),
       new: Type.Optional(Type.String({ description: "The corrected version; default the current render" })),
       expect: Type.Optional(Type.Array(Type.String(), { description: "Section ids the correction should change; a trailing * matches a prefix (block-*)" })),
-      threshold: Type.Optional(Type.Number({ description: "Mean grey difference (0–255) above which a frame has changed; default 1" })),
+      threshold: Type.Optional(Type.Number({ description: "Mean grey difference (0–255) above which a frame has changed; default 1. A frame also changes when enough of its pixels do" })),
+      times: Type.Optional(Type.Array(Type.Number(), { description: "Compare at these seconds of the new version instead of the layout sheet's instants" })),
       shifts: Type.Optional(Type.Array(Type.Object({ from: Type.Number(), by: Type.Number() }), { description: "Only for renders without a timeline: from <from> seconds on, the old version is <by> seconds later" })),
     }),
     async execute(_toolCallId, params) {
@@ -1173,15 +1174,18 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           ...(params.new ? { new: params.new } : {}),
           ...(params.expect ? { expect: params.expect } : {}),
           ...(params.threshold !== undefined ? { threshold: params.threshold } : {}),
+          ...(params.times ? { times: params.times } : {}),
           ...(params.shifts ? { shifts: params.shifts } : {}),
         });
         const verdict = report.verdict === "ok"
-          ? `✅ ok: every difference is inside ${report.expect!.join(", ")}`
+          ? `✅ ok: every difference found is inside ${report.expect!.join(", ")}`
           : report.verdict === "unexpected-changes"
-            ? `❌ unexpected changes outside ${report.expect!.join(", ")}: ${report.unexpected.length} frame(s)`
+            ? `❌ unexpected changes outside ${report.expect!.join(", ")}: ${report.unexpected.length} frame(s), ${report.unexpectedStructure.length} section(s)`
             : `${report.changed.length} of ${report.pairs.length} frames differ (no expectation given)`;
         const lines = [
-          `${verdict} — ${report.old.ref} → ${report.new.ref}, aligned by ${report.alignment}`,
+          `${verdict} — ${report.old.ref} → ${report.new.ref}, ${report.pairs.length} instants compared, aligned by ${report.alignment}`,
+          ...report.structure.map((c) =>
+            `  ${report.unexpectedStructure.includes(c) ? "❌" : "·"} ${c.section ?? "the video"} ${c.change} (${c.oldFrames} → ${c.newFrames} frames)`),
           ...report.pairs.filter((p) => p.changed).map((p) =>
             `  ${report.unexpected.includes(p.index) ? "❌" : "·"} #${String(p.index).padStart(2, "0")} · ${p.seconds.toFixed(2)}s · ${p.section ?? "no section"} · `
             + (p.reason ?? `diff ${p.meanDiff} (${Math.round((p.changedShare ?? 0) * 100)}%)`)),

@@ -61,11 +61,13 @@ interface Version {
   hash must equal the report's `render.hash` (`render-changed`). The timeline
   is `output/<id>.timeline.json` when it exists and its sha256 equals the
   report's `timeline.hash`; otherwise none (a note says alignment fell back to
-  time). `fps`, `width`, `height` and `durationInFrames` come from that
-  timeline, or from `ffprobe` when there is none.
+  time). `fps` and `durationInFrames` come from that timeline, or from
+  `ffprobe` (counting frames) when there is none; `width` and `height` always
+  from the video, with a note when the timeline says otherwise.
 - **A reference** (`reference:<tid>/<rid>`): the descriptor
-  `templates/<tid>/references/<rid>.json` of this episode's series, read and
-  shape-checked with `validateSeriesReference`; its episode is
+  `templates/<tid>/references/<rid>.json` of this episode's series, read,
+  shape-checked with `validateSeriesReference`, and naming this episode's
+  channel and series; its episode is
   `episodes/<episodeRef.episode>/` of the same series. Its `render.path` and
   `timeline.path` (relative to that episode, confined to it) must hash as the
   descriptor says (`reference-changed`). Note: `signature not checked: run
@@ -118,7 +120,17 @@ alignInstants(newer: AlignSide, older: AlignSide, options?: { times?: number[]; 
 - **Measure (pure, Node):** for each mapped pair of grey buffers,
   `meanDiff` = mean |a − b| (0–255, one decimal) and `changedShare` = share
   of pixels with |a − b| > 16 (three decimals). A pair is **changed** when
-  `meanDiff > threshold` (default `1.0`) or when it has a `reason`.
+  `meanDiff > threshold` (default `1.0`), when `changedShare ≥ 0.002`
+  (`MIN_CHANGED_SHARE`: a word in a caption barely moves a whole frame's
+  mean), or when it has a `reason`.
+- **Shape (`structure`):** what no sampled frame can show. Aligning by
+  sections: every old section absent from the new version (`removed`), every
+  new one absent from the old (`added`), every common one whose length
+  changed (`resized`, compared in time). Aligning by time: a difference in
+  length (`length`, section `null`). The sheet's own warnings (instants
+  dropped past 120) are passed on.
+- **Sampling:** only the compared instants are seen — about 24, or the
+  `times` asked; the reply says how many.
 - **Pictures, changed pairs only:** `pairs/NNN.jpg` — old | new | difference
   side by side, the difference drawn by ffmpeg (`blend=all_mode=difference`
   then `eq` brightening, so small changes are visible); a missing side is
@@ -129,9 +141,10 @@ alignInstants(newer: AlignSide, older: AlignSide, options?: { times?: number[]; 
 
 - `expect`: section patterns (exact id, or prefix ending in `*`, as in the
   template's `sheet` rules).
-- With `expect`: `ok` when every changed pair's section matches a pattern;
-  otherwise `unexpected-changes`. A changed pair with no section (no
-  timelines) is unexpected. A pattern matching no changed pair adds a
+- With `expect`: `ok` when every changed pair's section, and every change
+  of shape's section, matches a pattern; otherwise `unexpected-changes`
+  (`unexpected` and `unexpectedStructure` name them). A change with no
+  section (no timelines) is unexpected. A pattern matching no change adds a
   warning (`block-3 was expected to change and did not`).
 - Without `expect`: `listed`.
 
@@ -150,7 +163,8 @@ compareVersions(episodeDir: string, options: {
 ```
 
 Writes `reviews/compare/<old>--<new>/` in this episode (a reference's ref is
-written `reference-<tid>-<rid>`), through `reviews/compare/.<dir>.<pid>.<n>.tmp`
+written `reference_<tid>_<rid>`: `_` is in no id, so two refs never share a
+name), through `reviews/compare/.<dir>.<pid>.<n>.tmp`
 and a whole-directory swap, as the layout sheet does: a failure leaves a
 previous comparison of the same pair as it was. `report.json`:
 
@@ -164,6 +178,8 @@ previous comparison of the same pair as it was. `report.json`:
   "shifts": [],
   "expect": ["block-3"],
   "verdict": "ok" | "unexpected-changes" | "listed",
+  "structure": [{ "section": "block-1", "change": "removed", "oldFrames": 60, "newFrames": 0 }],
+  "unexpectedStructure": [],
   "pairs": [{ "index": 0, "label": "first", "section": "intro", "newFrame": 0, "oldFrame": 0,
               "seconds": 0, "meanDiff": 0, "changedShare": 0, "changed": false }],
   "changed": [3, 4],
@@ -184,9 +200,11 @@ timeline, report, `current.json`).
 ### Agent — `pva_compare_versions`
 
 - Parameters: `channel, series, episode, old, new?, expect?, threshold?,
-  shifts?` (`shifts` as `[{from, by}]` in seconds).
-- Replies: the verdict; each changed frame as `#NN · mm:ss.ff · <section> ·
-  diff <meanDiff> (<changedShare×100>%)` with its reason if any; the path of
+  times?, shifts?` (`shifts` as `[{from, by}]` in seconds).
+- Replies: the verdict and how many instants were compared; each change of
+  shape (`block-1 removed (60 → 0 frames)`); each changed frame as
+  `#NN · <seconds>s · <section> · diff <meanDiff> (<changedShare×100>%)`
+  with its reason if any; the path of
   `changed.jpg` to open; notes and warnings. Errors reply with their code.
 - Skill `skills/studio/compare-versions.md` (`0.1.0`): after a correction to
   a rendered episode, render the new version, compare it with the delivered

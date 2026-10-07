@@ -189,12 +189,19 @@ the layout sheet's, of the new version — are carried into the old version
 section by section, at the same offset: a block that got longer does not make
 everything after it look changed. A render without a timeline is aligned by
 time, with optional shifts. A frame differs when its mean grey difference
-exceeds a threshold (1.0 of 255 by default); one with no counterpart (a new
-section, a section that got shorter, a video that ends earlier) differs by
-definition.
+exceeds a threshold (1.0 of 255 by default) or when enough of its pixels
+changed (0.2%: a word in a caption barely moves the mean); one with no
+counterpart (a new section, a section that got longer, a video that ends
+earlier) differs by definition. What no frame can show is compared as shape:
+a section added, removed or resized, or — without sections — a change of
+length.
 
-Given the sections the correction was meant to change, the verdict is `ok`
-when every difference is inside them and `unexpected-changes` otherwise; an
+Only the compared instants are seen — the layout sheet's, about 24, or the
+times asked — so a change between them can be missed; the comparison says
+how many it compared, and a closer look passes times inside the corrected
+part. Given the sections the correction was meant to change, the verdict is
+`ok` when every difference found is inside them and `unexpected-changes`
+otherwise; an
 unexpected change is undone or narrowed, never waved through. The comparison
 is evidence for a person (`reviews/compare/<old>--<new>/`, with each changed
 frame drawn old | new | difference), not a pipeline gate. A reference's
