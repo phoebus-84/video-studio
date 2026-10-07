@@ -31,6 +31,7 @@
             "image.generate",
             "image.edit",
             "speech.synthesize",
+            "speech.align",
             "graphics.render",
             "terminal.record",
             "video.compose",

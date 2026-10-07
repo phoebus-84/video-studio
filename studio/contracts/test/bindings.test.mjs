@@ -29,6 +29,12 @@ describe("TypeScript bindings", () => {
     assert.ok(content.includes('"speech.synthesize"'), "vocabulary.ts should contain speech.synthesize");
   });
 
+  it("knows speech.align wherever a capability is named (avg-8hs.2)", () => {
+    for (const name of ["vocabulary", "capability-binding", "provider-job"]) {
+      assert.ok(readBinding(name).includes('"speech.align"'), `${name}.ts should contain speech.align`);
+    }
+  });
+
   it("generates journal event type with stage.started", () => {
     const content = readBinding("journal-event");
     assert.ok(content.includes('"stage.started"'), "journal-event.ts should contain stage.started");
