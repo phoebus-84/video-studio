@@ -44,6 +44,19 @@ it("discovers the propose-reference skill: Pi proposes, a person approves", asyn
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+it("discovers the review-layout-sheet skill the series-production pipeline names", async () => {
+  const root = await mkdtemp(join(tmpdir(), "layout-sheet-skill-"));
+  try {
+    const builtInPath = fileURLToPath(new URL("../../../skills/studio/", import.meta.url));
+    const catalog = await discoverSkills({ libraryRoot: root, builtInPath });
+    expect(catalog.list({ source: "built-in" }).find(s => s.id === "review-layout-sheet")?.description).toContain("layout sheet");
+    const skill = await catalog.load("review-layout-sheet");
+    expect(skill).toContain("pva_layout_sheet");
+    expect(skill).toContain("no text over a face");
+    expect(skill).toContain("Never approve the sheet yourself");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("discovers composed flat/folder skills and scopes layout-2 series overrides", async () => {
   const root = await mkdtemp(join(tmpdir(), "skills-discovery-"));
   try {

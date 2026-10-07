@@ -7,7 +7,7 @@ pipeline:
   description: "A short vertical poem: series-production, with the poem's recital as its one take"
   extends:
     pipeline: series-production
-    version: "1.0.0"
+    version: "1.1.0"
   stages:
     - id: takes
       name: "Recital Take"

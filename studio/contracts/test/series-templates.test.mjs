@@ -192,6 +192,47 @@ describe("series template contracts", () => {
   });
 });
 
+describe("layout sheet rules (avg-3th.1)", () => {
+  const withSheet = (sheet) => ({ ...JSON.parse(bundle().manifest), sheet });
+
+  it("accepts instants anchored to sections, with offsets and section patterns", () => {
+    assert.deepEqual(validateSeriesTemplate(withSheet({
+      instants: [
+        { at: "start", offsetSeconds: 2 },
+        { at: "middle" },
+        { at: "end", offsetSeconds: -1.5, sections: ["opening", "block-*"] },
+      ],
+    })), []);
+  });
+
+  it("can name every section id a timeline allows (its LocalId)", () => {
+    assert.deepEqual(validateSeriesTemplate(withSheet({
+      instants: [{ at: "start", sections: ["Intro", "block_1", "v1.2", "Block_*", "chapter.*"] }],
+    })), []);
+  });
+
+  it("refuses rules it cannot read", () => {
+    const cases = {
+      "no instants": {},
+      "empty instants": { instants: [] },
+      "too many rules": { instants: Array.from({ length: 33 }, () => ({ at: "start" })) },
+      "unknown anchor": { instants: [{ at: "quarter" }] },
+      "missing anchor": { instants: [{ offsetSeconds: 1 }] },
+      "offset as text": { instants: [{ at: "start", offsetSeconds: "2" }] },
+      "unknown key": { instants: [{ at: "start", frame: 10 }] },
+      "unknown sheet key": { instants: [{ at: "start" }], scale: 0.5 },
+      "empty sections": { instants: [{ at: "start", sections: [] }] },
+      "star inside": { instants: [{ at: "start", sections: ["bl*ck"] }] },
+      "bare star": { instants: [{ at: "start", sections: ["*"] }] },
+      "leading dash": { instants: [{ at: "start", sections: ["-opening"] }] },
+      "space": { instants: [{ at: "start", sections: ["the end"] }] },
+    };
+    for (const [name, sheet] of Object.entries(cases)) {
+      assert.ok(validateSeriesTemplate(withSheet(sheet)).length > 0, name);
+    }
+  });
+});
+
 describe("golden reference descriptors", () => {
   it("requires an explicit human approval, never policy, agent, request or rejection", () => {
     for (const [field, value] of [["origin", "agent"], ["origin", "policy"], ["decision", "requested"], ["decision", "rejected"]]) {

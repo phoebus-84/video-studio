@@ -1,14 +1,15 @@
-# The series-production family (avg-jao.4, ADR-0037). One manifest for every
+# The series-production family (avg-jao.4, ADR-0037); 1.1.0 adds the layout
+# sheet between the check and the render (avg-3th.1). One manifest for every
 # series with a template: the compiler and the validator are the ones the
 # episode's pinned release names, never the pipeline's. Stages that depend on
 # work not done yet (source, take synthesis and verification, alignment, the
-# layout sheet, the render audit, the delivery package) are inserted by their
-# own issues as new versions of this manifest. A series extends it and
-# replaces stages by id (ADR-0001).
+# render audit, the delivery package) are inserted by their own issues as new
+# versions of this manifest. A series extends it and replaces stages by id
+# (ADR-0001).
 pipeline:
   id: series-production
-  version: "1.0.0"
-  description: "A series episode from its template: the spec, its pictures and narration takes, the timeline its template's compiler makes, the series rules checked, the render."
+  version: "1.1.0"
+  description: "A series episode from its template: the spec, its pictures and narration takes, the timeline its template's compiler makes, the series rules checked, the layout sheet read, the render."
   capabilities:
     - id: video.compose
       version: "1.0.0"
@@ -108,15 +109,39 @@ pipeline:
       depends_on:
         - timeline
 
+    - id: sheet
+      name: "Layout Sheet"
+      type: editorial
+      description: "Render the layout sheet of the checked timeline; a person reads it frame by frame before a render is spent"
+      inputs:
+        - contract: edit-timeline.json
+          version: "1.0.0"
+        - contract: series-check.json
+          version: "1.0.0"
+      outputs:
+        - contract: layout-sheet.json
+          version: "1.0.0"
+      gates:
+        autopilot: false
+        review: human
+        retry_on_failure: 1
+      skills:
+        - skill: review-layout-sheet
+          version: "0.1.0"
+      depends_on:
+        - check
+
     - id: render
       name: "Render"
       type: capability
-      description: "Render the checked timeline to output/<render-id>.mp4 and move output/current.json"
+      description: "Render the checked timeline, whose layout sheet was read, to output/<render-id>.mp4 and move output/current.json"
       capability: video.compose
       inputs:
         - contract: edit-timeline.json
           version: "1.0.0"
         - contract: series-check.json
+          version: "1.0.0"
+        - contract: layout-sheet.json
           version: "1.0.0"
       outputs:
         - contract: output.mp4
@@ -132,4 +157,4 @@ pipeline:
         - skill: compose-video
           version: "0.5.0"
       depends_on:
-        - check
+        - sheet

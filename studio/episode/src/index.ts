@@ -8,3 +8,5 @@ export * from "./series-compile.js";
 export * from "./episode-render.js";
 export * from "./spec-init.js";
 export * from "./references.js";
+export * from "./sheet-instants.js";
+export * from "./layout-sheet.js";

@@ -84,7 +84,8 @@ pipeline's.
 | `takes` → `takes.json` | the person or Pi: the narration takes and their word timing | human |
 | `timeline` → `edit-timeline.json` | adapter `series-timeline` (the release's compiler) | — |
 | `check` → `series-check.json` | adapter `series-check` (the release's validator); errors fail it | human |
-| `render` → `output.mp4` | adapter `series-render` (`video.compose`, Remotion) | human |
+| `sheet` → `layout-sheet.json` | adapter `series-sheet` (Remotion): stills at the series' instants and a labelled grid; the `review-layout-sheet` skill | human |
+| `render` → `output.mp4` | adapter `series-render` (`video.compose`, Remotion); refuses a missing or stale sheet | human |
 
 A series extends it and replaces stages by id (ADR-0001). The example
 `studio/pipelines/fixtures/valid/series-local/poetry-short.yaml` keeps every
@@ -96,7 +97,7 @@ pipeline:
   version: "1.0.0"
   extends:
     pipeline: series-production
-    version: "1.0.0"
+    version: "1.1.0"
   stages:
     - id: takes
       name: "Recital Take"
@@ -105,9 +106,10 @@ pipeline:
 
 Stages that depend on unfinished work arrive as new versions of the base:
 take synthesis, alignment and verification (`avg-8hs.*`) turn `takes` into
-capability stages; the layout sheet (`avg-3th.1`) goes between `check` and
-`render`; the render audit (`avg-3th.3`) and the delivery package
-(`avg-3th.5`) follow `render`.
+capability stages; the render audit (`avg-3th.3`) and the delivery package
+(`avg-3th.5`) follow `render`. Version 1.1.0 added the layout sheet
+(`avg-3th.1`) between `check` and `render`; an episode resolved on 1.0.0 keeps
+its snapshot.
 
 ## Adding a workflow
 

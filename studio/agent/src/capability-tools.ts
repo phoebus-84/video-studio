@@ -46,6 +46,7 @@ import {
   decideEditTimeline,
   EDIT_TIMELINE_PATH,
   initEpisodeSpec,
+  makeLayoutSheet,
   proposeReference,
   renderEpisode,
   writeEditTimeline,
@@ -1106,6 +1107,43 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: [`❌ ${e.message ?? String(err)}`, ...problems].join("\n") }],
           details: { problems: e.problems ?? [] } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "pva_layout_sheet",
+    label: "Layout Sheet",
+    description: `Render the episode's layout sheet: small stills of the timeline pva_compose_video would render without a profile argument, at the first and last frame, spread over its sections and at its series' declared instants, and one labelled grid of them (artifacts/layout-sheet/sheet.jpg). Open the grid and read it tile by tile with the review-layout-sheet skill before a render is spent. Refuses a timeline that breaks the series' rules.`,
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+      try {
+        // Queued with pva_compose_video, which may rewrite the timeline this shows.
+        const sheet = await withFileMutationQueue(join(dir, "output", "current.json"), async () => makeLayoutSheet(dir, { episodeRef }));
+        const { report } = sheet;
+        const lines = [
+          `✅ layout sheet: ${report.frames.length} frames, ${report.sheet.columns}×${report.sheet.rows}, rules ${report.rules.source}`,
+          `open it: ${sheet.sheetPath}`,
+          `stills: ${join(dir, "artifacts", "layout-sheet", "frames")}`,
+          `inputs ${report.inputsHash}`,
+          ...(report.rebuilt ? [`it shows the timeline a render would recompile first: ${report.rebuilt}`] : []),
+          ...report.warnings.map((w) => `⚠️ ${w}`),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: sheet as unknown as Record<string, unknown> };
+      } catch (err) {
+        const e = err as { message?: string; code?: string; problems?: Array<{ code: string; message: string; path?: string }> };
+        const problems = (e.problems ?? []).map((p) => `  - ${p.code}${p.path ? ` at ${p.path}` : ""}: ${p.message}`);
+        return {
+          content: [{ type: "text" as const, text: [`❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}`, ...problems].join("\n") }],
+          details: { code: e.code ?? null, problems: e.problems ?? [] } as Record<string, unknown>,
           isError: true as unknown as boolean,
         };
       }

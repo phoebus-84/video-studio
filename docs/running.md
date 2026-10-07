@@ -96,12 +96,37 @@ Production: `pva_generate_image`, `pva_synthesize_speech`,
 `pva_synthesize_nonverbal_audio`, `pva_render_graphics`,
 `pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
 `pva_propose_reference`,
-`pva_build_timeline`, `pva_check_episode`, `pva_compose_video`, `pva_compose_multitrack_video`,
+`pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`, `pva_compose_video`, `pva_compose_multitrack_video`,
 `pva_probe_media`
 
 A tool whose capability is not ready will fail rather than silently degrade.
 `npm run doctor` tells you which are ready; `pva_capability_status` tells the
 agent the same thing from inside a session.
+
+### The layout sheet
+
+Before a render is spent, look at the **layout sheet**: small stills of the
+timeline a render would use, at the first and last frame, spread over its
+sections and at the instants its series' template declares, with one grid of
+them labelled by number, time and reason. Ask the agent for it
+(`pva_layout_sheet`; the `review-layout-sheet` skill reads it tile by tile),
+or let the `series-production` pipeline make it at its `sheet` stage. It is
+written to `artifacts/layout-sheet/` in the episode:
+
+- `sheet.jpg` — the grid to read;
+- `frames/NNN.jpg` — each still at a quarter of the video's size;
+- `sheet.json` — the timeline it shows (by hash), the rules, the kits, the
+  composer's drawing code and the `inputsHash` that says when the sheet is stale.
+
+The pipeline's `render` stage refuses a sheet that is missing, whose grid or
+stills were replaced, or that no longer shows exactly what it would render —
+a composer upgrade included. To
+render any timeline at chosen times without an episode, the composer has a
+command of its own:
+
+```bash
+node packages/remotion-composer/dist/sheet-cli.js timeline.json out/ --assets episode/ --times 0,2.5,10
+```
 
 ### Speech: start the voice worker first
 

@@ -8,7 +8,8 @@
     "node": ">=20"
   },
   "bin": {
-    "render-timeline": "./dist/cli.js"
+    "render-timeline": "./dist/cli.js",
+    "layout-sheet": "./dist/sheet-cli.js"
   },
   "exports": {
     ".": "./dist/index.js"

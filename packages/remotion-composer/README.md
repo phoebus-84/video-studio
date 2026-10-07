@@ -74,8 +74,34 @@ const result = await renderTimeline({
 
 Failures throw `ComposerError` with a `code` (`invalid-timeline`,
 `unknown-kit`, `bad-props`, `missing-asset`, `hash-mismatch`,
-`render-failed`, `loudness-failed`) and, for validation, `problems` with JSON
-paths.
+`render-failed`, `loudness-failed`, `bad-sheet`, `sheet-failed`) and, for
+validation, `problems` with JSON paths.
+
+### Layout sheet
+
+`renderLayoutSheet` renders a timeline's stills at the frames the caller
+picks, then one labelled grid of them (the `Sheet` composition), from one
+bundle in one browser (avg-3th.1):
+
+```ts
+const sheet = await renderLayoutSheet({
+  timeline, assetRoot,
+  picks: [{frame: 0, label: 'first'}, {frame: 300, label: 'poem · start+2s'}],
+  outDir: 'sheet/',    // frames/000.jpg … and sheet.jpg
+  scale: 0.25,         // default; columns default to 6 (landscape) or 8
+});
+// sheet.frames[i] = {index, frame, seconds, label, path, hash}
+// sheet.sheet = {path, hash, columns, rows, width, height}
+// sheet.kits = [{name, version, hash}] — code hashes from kits.lock.json
+```
+
+Each tile is captioned `#NN · mm:ss.ff · label`. At most 120 distinct whole
+frames inside the timeline; anything else is `bad-sheet`, refused before
+anything is written. Which frames to pick, and where an episode keeps its
+sheet, are the studio's (`@studio/episode`). `timelineKits(timeline)` lists
+the kits a timeline draws with and their code hashes without rendering. `drawingCodeHash()` names the rest of what draws the pictures —
+this package's built code and its Remotion and React versions — so a sheet
+made before a composer upgrade can be told apart from one made after.
 
 ## Partial render cache
 
@@ -119,6 +145,7 @@ network or wall-clock inputs.
 ```bash
 npm run build --workspace @av/remotion-composer
 node packages/remotion-composer/dist/cli.js timeline.json out.mp4 --assets <episode-dir> --cache <cache-dir>
+node packages/remotion-composer/dist/sheet-cli.js timeline.json out-dir/ --assets <episode-dir> --times 0,2.5,10 [--scale 0.25] [--columns 6]
 ```
 
 ## Tests
@@ -126,7 +153,7 @@ node packages/remotion-composer/dist/cli.js timeline.json out.mp4 --assets <epis
 ```bash
 npm test --workspace @av/remotion-composer                     # schema, kits, volume, assets, one frame per kit example and profile
 npm run build --workspace @av/remotion-composer && \
-  REMOTION_E2E=1 npm test --workspace @av/remotion-composer    # also real renders and cache recovery/reuse checks
+  REMOTION_E2E=1 npm test --workspace @av/remotion-composer    # also real renders, a real layout sheet and cache recovery/reuse checks
 ```
 
 The first render downloads Remotion's headless Chrome.

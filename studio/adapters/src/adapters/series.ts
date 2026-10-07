@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // The series-production stages the studio performs (avg-jao.4)
 // ---------------------------------------------------------------------------
-// Compile, check and render a spec-driven episode — the same code the agent's
+// Compile, check, sheet (avg-3th.1) and render a spec-driven episode — the same code the agent's
 // tools call (@studio/episode), so a stage and a tool never disagree. The
 // compiler and the validator are the ones the episode's pinned template
 // release names; nothing here chooses them.
@@ -13,6 +13,9 @@ import {
   decideEditTimeline,
   EDIT_TIMELINE_PATH,
   isSpecDriven,
+  LAYOUT_SHEET_REPORT,
+  layoutSheetStatus,
+  makeLayoutSheet,
   renderEpisode,
   writeEditTimeline,
 } from "@studio/episode";
@@ -99,36 +102,72 @@ export const seriesCheck: StageAdapter = {
   },
 };
 
-export const seriesRender: StageAdapter = {
-  id: "series-render",
-  summary: "Renders the checked edit timeline with Remotion to output/<render-id>.mp4, refusing one that breaks the series' rules",
-  capability: "video.compose",
+/**
+ * What a person reviewed is the timeline the check report names: a stage
+ * after the check works on that one, or none — a later edit, even one the
+ * rules allow, goes back to review.
+ */
+function requireCheckedTimeline(ctx: AdapterContext): void {
+  const reportPath = join(ctx.episodeDir, SERIES_CHECK_PATH);
+  if (!existsSync(reportPath)) {
+    throw new Error(`${SERIES_CHECK_PATH} is missing: run the check stage`);
+  }
+  let checked: unknown;
+  try {
+    checked = (JSON.parse(readFileSync(reportPath, "utf-8")) as { timeline?: { hash?: unknown } }).timeline?.hash;
+  } catch {
+    checked = undefined;
+  }
+  let current: string;
+  try {
+    current = `sha256:${decideEditTimeline(ctx.episodeDir, { episodeRef: ctx.ref }).hash}`;
+  } catch (error) {
+    return failWith(ctx, error);
+  }
+  if (checked !== current) {
+    throw new Error(`the timeline changed since it was checked: run the check stage again (${SERIES_CHECK_PATH})`);
+  }
+}
+
+export const seriesSheet: StageAdapter = {
+  id: "series-sheet",
+  summary: "Renders the layout sheet of the checked timeline — small stills at the series' instants and a labelled grid of them — for a person to read before the render",
+  capability: null,
   provider: "remotion-composer",
-  produces: ["output.mp4"],
+  produces: ["layout-sheet.json"],
   consumes: ["edit-timeline.json", "series-check.json"],
-  requires: { system: ["ffmpeg"] },
+  requires: {},
   async perform(ctx) {
     requireSpec(ctx);
-    const reportPath = join(ctx.episodeDir, SERIES_CHECK_PATH);
-    if (!existsSync(reportPath)) {
-      throw new Error(`${SERIES_CHECK_PATH} is missing: run the check stage`);
-    }
-    // What a person reviewed is the timeline the report names: render that
-    // one, or none — a later edit, even one the rules allow, goes back to review.
-    let checked: unknown;
+    requireCheckedTimeline(ctx);
     try {
-      checked = (JSON.parse(readFileSync(reportPath, "utf-8")) as { timeline?: { hash?: unknown } }).timeline?.hash;
-    } catch {
-      checked = undefined;
-    }
-    let current: string;
-    try {
-      current = `sha256:${decideEditTimeline(ctx.episodeDir, { episodeRef: ctx.ref }).hash}`;
+      const sheet = await makeLayoutSheet(ctx.episodeDir, { episodeRef: ctx.ref });
+      const { report } = sheet;
+      ctx.log(`  sheet: ${report.frames.length} frames (${report.sheet.columns}×${report.sheet.rows}), rules ${report.rules.source} → ${sheet.sheetPath}`);
+      for (const w of report.warnings) ctx.log(`    ⚠️ ${w}`);
+      return [sheet.reportPath, sheet.sheetPath];
     } catch (error) {
       return failWith(ctx, error);
     }
-    if (checked !== current) {
-      throw new Error(`the timeline changed since it was checked: run the check stage again (${SERIES_CHECK_PATH})`);
+  },
+};
+
+export const seriesRender: StageAdapter = {
+  id: "series-render",
+  summary: "Renders the checked edit timeline, whose layout sheet is current, with Remotion to output/<render-id>.mp4, refusing one that breaks the series' rules",
+  capability: "video.compose",
+  provider: "remotion-composer",
+  produces: ["output.mp4"],
+  consumes: ["edit-timeline.json", "series-check.json", "layout-sheet.json"],
+  requires: { system: ["ffmpeg"] },
+  async perform(ctx) {
+    requireSpec(ctx);
+    requireCheckedTimeline(ctx);
+    // The sheet a person read must show exactly what is about to be rendered.
+    const sheet = layoutSheetStatus(ctx.episodeDir, { episodeRef: ctx.ref });
+    if (sheet.state !== "current") {
+      const why = sheet.state === "missing" ? `missing (${sheet.reason})` : `stale (${sheet.reasons.join("; ")})`;
+      throw new Error(`the layout sheet is ${why}: run the sheet stage again (${LAYOUT_SHEET_REPORT})`);
     }
     try {
       const render = await renderEpisode(ctx.episodeDir, { episodeRef: ctx.ref });
