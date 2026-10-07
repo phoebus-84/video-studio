@@ -78,7 +78,8 @@
       "name": "@av/remotion-composer",
       "version": "0.3.0",
       "bin": {
-        "render-timeline": "./dist/cli.js"
+        "layout-sheet": "./dist/sheet-cli.js",
+        "render-timeline": "./dist/cli.js",
       },
       "dependencies": {
         "@remotion/bundler": "4.0.505",

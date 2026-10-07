@@ -1,6 +1,7 @@
 import React from 'react';
 import {Composition} from 'remotion';
 import {Timeline, type TimelineProps} from './Timeline.js';
+import {Sheet, sheetSize, type SheetProps} from './Sheet.js';
 
 const preview: TimelineProps = {
   timeline: {
@@ -23,20 +24,34 @@ const preview: TimelineProps = {
   assetFrames: {},
 };
 
+const emptySheet: SheetProps = {tiles: [], columns: 1, tileWidth: 480, tileHeight: 270};
+
 export const RemotionRoot: React.FC = () => (
-  <Composition
-    id="Timeline"
-    component={Timeline}
-    durationInFrames={preview.timeline.durationInFrames}
-    fps={preview.timeline.fps}
-    width={preview.timeline.resolution.width}
-    height={preview.timeline.resolution.height}
-    defaultProps={preview}
-    calculateMetadata={({props}) => ({
-      durationInFrames: props.timeline.durationInFrames,
-      fps: props.timeline.fps,
-      width: props.timeline.resolution.width,
-      height: props.timeline.resolution.height,
-    })}
-  />
+  <>
+    <Composition
+      id="Timeline"
+      component={Timeline}
+      durationInFrames={preview.timeline.durationInFrames}
+      fps={preview.timeline.fps}
+      width={preview.timeline.resolution.width}
+      height={preview.timeline.resolution.height}
+      defaultProps={preview}
+      calculateMetadata={({props}) => ({
+        durationInFrames: props.timeline.durationInFrames,
+        fps: props.timeline.fps,
+        width: props.timeline.resolution.width,
+        height: props.timeline.resolution.height,
+      })}
+    />
+    <Composition
+      id="Sheet"
+      component={Sheet}
+      durationInFrames={1}
+      fps={30}
+      width={sheetSize(emptySheet).width}
+      height={sheetSize(emptySheet).height}
+      defaultProps={emptySheet}
+      calculateMetadata={({props}) => ({...sheetSize(props), durationInFrames: 1, fps: 30})}
+    />
+  </>
 );

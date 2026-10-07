@@ -5,7 +5,9 @@ export type ComposerErrorCode =
   | 'missing-asset'
   | 'hash-mismatch'
   | 'render-failed'
-  | 'loudness-failed';
+  | 'loudness-failed'
+  | 'bad-sheet'
+  | 'sheet-failed';
 
 export interface ComposerProblem {
   code: ComposerErrorCode;
