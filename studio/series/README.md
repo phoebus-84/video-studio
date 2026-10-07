@@ -24,7 +24,8 @@ Compilers are **pure**: they read no file, ask no clock and keep no state.
 Everything arrives already read, checked and hashed — in the studio, by
 `compileEpisode` in `@studio/episode` (`studio/episode/src/series-compile.ts`), which also decides
 the asset ids (`image-<name>` for `assets/images/<name>.<ext>`,
-`narration-<take>` for each take's audio). A timeline the validators refuse
+`sound-<name>` for `assets/sounds/<name>.<ext>`, `narration-<take>` for each
+take's audio). A timeline the validators refuse
 comes back with problem codes prefixed `timeline:` — a compiler bug, not bad
 input.
 
@@ -33,6 +34,7 @@ input.
 | Compiler | What it makes |
 |---|---|
 | `poetry-short@1.0.0` | A vertical poem: pictures changing on cued words (`still@1.0.0`, `fit: cover`, 12-frame crossfades centred on each cue), the `narration` unit of `takes.json` on the voice track, captions grouped from the measured words (at `. ! ? ; :` and before 42 characters), `holdSeconds` of picture after the voice, the title as the chapter of one section. |
+| `dentro-i-versi-short@1.0.0` | Dentro i versi · short (CreativeStudio's `sala8`): the `recital` unit — the title take, then the poem — from 0.3 s; the video lasts until 6 s after `voiceEndWord`. From the spec's data and the measured words it computes the camera's breathing, pushes and shakes, lightning at each picture change, lights, wind, shatter, blackout, the actor's poses, expressions, gazes, blinks, mouth (from the voice's energy), live and bow windows, and the title card's fit; it lays out the museum kits (`museum-hall`, `room-effect`, `verse-plate`, `interprete`, `lower-third`, `title-chip`, `brand-mark`), the sounds, applause and music. Times are seconds or `verse:N`, `verseEnd:N`, `word:parola`, `end`, `picture:N`, ± seconds. Items that overlap go on separate lanes (`verses-1`, `verses-2`, `room-1`…, `sfx-1`…). Sections: `title`, `verse-N`, `bow`. |
 
 ## Validators
 
@@ -50,6 +52,7 @@ const { validator, findings } = checkSeries({ ...input, timeline, compiled });
 | Validator | Rules |
 |---|---|
 | `poetry-short@1.0.0` | Errors: a track missing, `profile-changed`, `fps-changed`, `duration-range` (10–60 s), `extra-track`, `hidden-track`, `stacking-changed`, `forbidden-kit`, `forbidden-transition` (only a 12-frame crossfade in), `altered-voice` (takes never cut, moved or reworked), `asset-changed` (no picture or take swapped, added or removed by hand), `text-not-voice` (the captions say exactly what the compiler captioned from the voice), `missing-picture`, `uncovered-frames`. Warnings: `panel-flash` (under 1 s), `panel-long` (over 7 s), `caption-long` (over 42 characters). |
+| `dentro-i-versi-short@1.0.0` | Errors: `profile-changed`, `fps-changed`, `duration-range` (25–90 s), `forbidden-kit` (only the seven museum kits at 1.0.0), `verse-text` (a plate that is not a verse of the spec), `missing-verse`, `missing-actor`, `missing-teleport` (in and out: the first and last frame are the empty hall), `altered-voice`. Warnings: `apparitions` (not 2), `apparition-short` (under 5 s), `title-pause` (not 0.8–1.4 s between the title and the poem). |
 
 Like compilers, validators are pure, one file per version
 (`src/validators/<id>/<version>.ts`, registered in `src/validators.ts`, the
