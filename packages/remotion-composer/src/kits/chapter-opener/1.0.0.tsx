@@ -11,6 +11,7 @@ import {DEMO_LOOK, LookSchema, alpha, type Look} from '../lib/look/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
 import {clamp, ease} from '../lib/stage-math/1.0.0.js';
 import {strikeAt} from '../lib/lesson-stage/1.0.0.js';
+import {fitSize} from '../lib/font-metrics/1.0.0.js';
 
 const ChapterOpener: KitVersion['component'] = ({props}) => {
   const look = props.look as Look;
@@ -20,6 +21,10 @@ const ChapterOpener: KitVersion['component'] = ({props}) => {
   const k = ease((t - 0.35) / 0.8);
   const flash = strikeAt(t, [0]);
   const sub = props.sub as string | undefined;
+  // on one line inside the safe width (1920 − 2 × 120), at its widest: the spacing closes from 0.24 em
+  // to 0.04 em (36 px to 6 px at 150 px), in proportion to the size
+  const titleSize = fitSize({family: look.fonts.display, weight: 400}, [props.title as string], 1680, 150, (s) => 0.24 * s);
+  const subSize = sub ? fitSize({family: look.fonts.sans, weight: 400}, [sub], 1680, 38) : 38;
   return (
     <AbsoluteFill>
       <AbsoluteFill style={{background: '#000000'}} />
@@ -27,9 +32,9 @@ const ChapterOpener: KitVersion['component'] = ({props}) => {
       <AbsoluteFill style={{background: alpha(c.glow, 0.55 * flash), mixBlendMode: 'screen'}} />
       <div style={{position: 'absolute', left: 0, right: 0, top: 330, display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: clamp(t / 0.3)}}>
         <div style={{fontFamily: fonts.sans, fontWeight: 600, fontSize: 28, letterSpacing: 10, color: c.accent}}>{props.kicker as string}</div>
-        <div style={{fontFamily: fonts.display, fontSize: 150, letterSpacing: (1 - k) * 30 + 6, color: c.text, lineHeight: 1, marginTop: 24, textShadow: look.measures.textShadow, whiteSpace: 'nowrap'}}>{props.title as string}</div>
+        <div style={{fontFamily: fonts.display, fontSize: titleSize, letterSpacing: titleSize * ((1 - k) * 0.2 + 0.04), color: c.text, lineHeight: 1, marginTop: 24, textShadow: look.measures.textShadow, whiteSpace: 'nowrap'}}>{props.title as string}</div>
         <div style={{width: 640 * k, height: 2, background: c.accent, marginTop: 26, boxShadow: `0 0 18px ${c.accent}`}} />
-        {sub ? <div style={{fontFamily: fonts.sans, fontWeight: 400, fontSize: 38, color: c.text, marginTop: 28}}>{sub}</div> : null}
+        {sub ? <div style={{fontFamily: fonts.sans, fontWeight: 400, fontSize: subSize, color: c.text, marginTop: 28, whiteSpace: 'nowrap'}}>{sub}</div> : null}
       </div>
     </AbsoluteFill>
   );
@@ -49,6 +54,7 @@ export const kit: KitVersion = {
   component: ChapterOpener,
   examples: [
     {id: 'settled', props: {look: DEMO_LOOK, kicker: 'CHAPTER I', title: 'THE CONTEXT', sub: 'Italy in 1894 · how the poem was born'}, durationInFrames: 120, frame: 60},
+    {id: 'wide-title', props: {look: DEMO_LOOK, kicker: 'CHAPTER IV', title: 'WWWWWWWWWWWWWWWWWWWW', sub: 'a subtitle long enough to need its whole line, and then some'}, durationInFrames: 120, frame: 10},
     {id: 'flash', props: {look: DEMO_LOOK, kicker: 'CHAPTER III', title: 'THE METRE'}, durationInFrames: 120, frame: 2},
   ],
 };

@@ -9,6 +9,7 @@ import {z} from 'zod';
 import type {KitVersion} from '../types.js';
 import {DEMO_LOOK, LookSchema, alpha, type Look} from '../lib/look/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
+import {fitSize} from '../lib/font-metrics/1.0.0.js';
 
 const Cover: KitVersion['component'] = ({props}) => {
   const look = props.look as Look;
@@ -17,13 +18,18 @@ const Cover: KitVersion['component'] = ({props}) => {
   const title = props.titleLines as string[];
   const hooks = (props.hookLines as string[] | undefined) ?? [];
   const kicker = props.kicker as string | undefined;
-  const size = Math.min(236, 900 / Math.max(2, ...title.map((w) => w.length * 0.48)));
+  // everything stays left of the gradient's fade (900 px wide from x 120), the icon beside the title
+  const display = {family: look.fonts.display, weight: 400};
+  const size = fitSize(display, title, 900 - (props.icon === 'bolt' ? 120 : 0), 236, () => 4);
+  // the bolt hangs beside the title and down over the first hook line: hooks keep clear of it
+  const hookSize = fitSize(display, hooks, 900 - (props.icon === 'bolt' ? 120 : 0), 70, () => 2);
+  const kickerSize = kicker ? fitSize({family: look.fonts.sans, weight: 600}, [kicker], 900 - 44, 34, () => 8) : 34;
   const shade = '0 4px 0 rgba(0,0,0,.6), 0 8px 30px rgba(0,0,0,.55)';
   return (
     <div style={{position: 'absolute', inset: 0}}>
       <div style={{position: 'absolute', inset: 0, background: `linear-gradient(90deg, ${alpha(c.backdrop, 0.86)} 0%, ${alpha(c.backdrop, 0.62)} 38%, ${alpha(c.backdrop, 0)} 58%)`}} />
       <div style={{position: 'absolute', left: 120, top: 190, display: 'flex', flexDirection: 'column', alignItems: 'flex-start'}}>
-        {kicker ? <div style={{fontFamily: fonts.sans, fontWeight: 600, fontSize: 34, letterSpacing: 8, color: c.ink, background: c.highlight, padding: '10px 22px 11px', borderRadius: 10}}>{kicker}</div> : null}
+        {kicker ? <div style={{fontFamily: fonts.sans, fontWeight: 600, fontSize: kickerSize, letterSpacing: 8, color: c.ink, background: c.highlight, padding: '10px 22px 11px', borderRadius: 10}}>{kicker}</div> : null}
         <div style={{position: 'relative', fontFamily: fonts.display, fontSize: size, lineHeight: 0.92, color: c.text, marginTop: 26, letterSpacing: 4, textShadow: `0 0 28px ${c.accent}, 0 6px 0 rgba(0,0,0,.7), 0 12px 40px rgba(0,0,0,.6)`}}>
           {title.map((w, i) => <React.Fragment key={i}>{i ? <br /> : null}{w}</React.Fragment>)}
           {props.icon === 'bolt' ? (
@@ -32,7 +38,7 @@ const Cover: KitVersion['component'] = ({props}) => {
             </svg>
           ) : null}
         </div>
-        {hooks.map((l, i) => <div key={i} style={{fontFamily: fonts.display, fontSize: 70, letterSpacing: 2, color: i ? c.text : c.highlight, marginTop: i ? 6 : 26, lineHeight: 1, textShadow: shade}}>{l}</div>)}
+        {hooks.map((l, i) => <div key={i} style={{fontFamily: fonts.display, fontSize: hookSize, letterSpacing: 2, color: i ? c.text : c.highlight, marginTop: i ? 6 : 26, lineHeight: 1, textShadow: shade}}>{l}</div>)}
       </div>
     </div>
   );
@@ -53,6 +59,7 @@ export const kit: KitVersion = {
   component: Cover,
   examples: [
     {id: 'two-lines', props: {look: DEMO_LOOK, kicker: 'POET · 7 VERSES', titleLines: ['THE', 'FLASH'], hookLines: ['1 SECOND', 'IN SLOW MOTION'], icon: 'bolt'}, durationInFrames: 30, frame: 0},
+    {id: 'wide', props: {look: DEMO_LOOK, kicker: 'A KICKER OF THIRTY CHARACTERS', titleLines: ['MMMMMMMMMMMMMM', 'WWWWWWWWWWWWWW'], hookLines: ['MMMMMMMMMMMMMMMMMMMMMMMM', 'A HOOK OF TWENTY-FOUR CH'], icon: 'bolt'}, durationInFrames: 30, frame: 0},
     {id: 'one-line', props: {look: DEMO_LOOK, titleLines: ['INFINITY'], hookLines: ['A HEDGE', 'AND THE ENDLESS']}, durationInFrames: 30, frame: 0},
   ],
 };

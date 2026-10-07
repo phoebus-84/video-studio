@@ -5,11 +5,23 @@
 
 import type {CSSProperties} from 'react';
 import {z} from 'zod';
+import {hasFace, type Face} from '../font-metrics/1.0.0.js';
 
 const color = z.string().regex(/^(#[0-9a-fA-F]{6}|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\))$/, 'a colour is #rrggbb or rgba(r, g, b, a)');
 
 export const COLOR_ROLES = ['ink', 'text', 'textDim', 'accent', 'highlight', 'glow', 'lightning', 'plate', 'plateLine', 'shadow', 'backdrop', 'signal'] as const;
 export type ColorRole = (typeof COLOR_ROLES)[number];
+
+/** The faces channel-neutral kits draw each font role with: a role's family must have them (as the contracts' ROLE_FACES). */
+export const ROLE_FACES: Record<'display' | 'serif' | 'sans', Omit<Face, 'family'>[]> = {
+  display: [{weight: 400}],
+  serif: [{weight: 400, style: 'italic'}],
+  sans: [{weight: 400}, {weight: 600}],
+};
+const family = (role: keyof typeof ROLE_FACES) => z.string().refine(
+  (f) => ROLE_FACES[role].every((face) => hasFace({...face, family: f})),
+  {message: `a bundled family (Anton, Fraunces, Inter) with the faces the ${role} role is drawn with`},
+);
 
 export const LookSchema = z.object({
   /**
@@ -20,7 +32,7 @@ export const LookSchema = z.object({
    */
   colors: z.object(Object.fromEntries(COLOR_ROLES.map((r) => [r, color])) as Record<ColorRole, typeof color>).strict(),
   /** Families among the bundled faces (fonts@1.1.0); weights are the kits'. */
-  fonts: z.object({display: z.string().min(1), serif: z.string().min(1), sans: z.string().min(1)}).strict(),
+  fonts: z.object({display: family('display'), serif: family('serif'), sans: family('sans')}).strict(),
   measures: z.object({plateRadius: z.number().min(0).max(64), textShadow: z.string().min(1).max(200), minTextPx: z.number().min(10).max(80)}).strict(),
 }).strict();
 export type Look = z.infer<typeof LookSchema>;

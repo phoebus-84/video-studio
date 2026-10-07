@@ -80,6 +80,29 @@ describe('validateTimeline', () => {
     ]);
   });
 
+  it('refuses a look whose fonts the composer cannot draw: an unbundled family, or one without a role\'s faces', () => {
+    const doc = clone(fixture('explainer.json'));
+    doc.tracks[0].items[0].kit = {name: 'block-title', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), kicker: 'CHAPTER I', title: 'THE CONTEXT'};
+    doc.tracks[0].items[0].props.look.fonts.display = 'anton';
+    doc.tracks[0].items[0].props.look.fonts.serif = 'Anton';
+    assert.deepEqual(problems(doc).sort(), [
+      ['bad-props', '$.tracks[0].items[0].props.look.fonts.display'],
+      ['bad-props', '$.tracks[0].items[0].props.look.fonts.serif'],
+    ]);
+  });
+
+  it('refuses panel phases at one instant, and a storm faster than a bolt lasts', () => {
+    const doc = clone(fixture('explainer.json'));
+    const picture = {kind: 'picture', src: {$asset: 'scene-01-woods'}};
+    doc.tracks[0].items[0].kit = {name: 'panel', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), phases: [{at: 0, content: picture}, {at: 0, content: picture}]};
+    assert.deepEqual(problems(doc), [['bad-props', '$.tracks[0].items[0].props.phases']]);
+    doc.tracks[0].items[0].kit = {name: 'room', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), room: {image: {$asset: 'scene-01-woods'}, sky: [{poly: [[0, 0], [100, 0], [100, 100]], period: 1}]}};
+    assert.deepEqual(problems(doc), [['bad-props', '$.tracks[0].items[0].props.room.sky[0].period']]);
+  });
+
   it('refuses a 16:9 lesson kit in a 9:16 timeline', () => {
     const doc = clone(fixture('vertical-short.json'));
     doc.tracks[0].items[0].kit = {name: 'chapter-opener', version: '1.0.0'};

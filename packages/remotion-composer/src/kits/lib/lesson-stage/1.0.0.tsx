@@ -7,7 +7,7 @@
 // instance, images and videos URLs their caller resolved.
 
 import React, {useId} from 'react';
-import {Freeze, Img, OffthreadVideo} from 'remotion';
+import {Freeze, Img, Loop, OffthreadVideo} from 'remotion';
 import {clamp, ease, rnd} from '../stage-math/1.0.0.js';
 import {alpha, type Look} from '../look/1.0.0.js';
 
@@ -146,13 +146,20 @@ export const Cover: React.FC<{src: string; box: Box; cx?: number; cy?: number; z
   </div>
 );
 
-/** A video in a box that shows its own first frame, frozen, where `live` is 0 (the loop's first and last frames). */
-export const LoopClip: React.FC<{src: string; box: Box; live: number; filter?: string}> = ({src, box, live, filter}) => (
-  <div style={{position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, overflow: 'hidden'}}>
-    <Freeze frame={0}><OffthreadVideo src={src} muted style={{width: '100%', height: '100%', objectFit: 'cover', filter}} /></Freeze>
-    {live > 0 && <div style={{position: 'absolute', inset: 0, opacity: live}}><OffthreadVideo src={src} muted style={{width: '100%', height: '100%', objectFit: 'cover', filter}} /></div>}
-  </div>
-);
+/**
+ * A video in a box that shows its own first frame, frozen, where `live` is 0
+ * (the loop's first and last frames); given its length in frames, it starts
+ * over when it ends instead of holding its last frame.
+ */
+export const LoopClip: React.FC<{src: string; box: Box; live: number; frames?: number; filter?: string}> = ({src, box, live, frames, filter}) => {
+  const video = <OffthreadVideo src={src} muted style={{width: '100%', height: '100%', objectFit: 'cover', filter}} />;
+  return (
+    <div style={{position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, overflow: 'hidden'}}>
+      <Freeze frame={0}>{video}</Freeze>
+      {live > 0 && <div style={{position: 'absolute', inset: 0, opacity: live}}>{frames && frames > 0 ? <Loop durationInFrames={frames}>{video}</Loop> : video}</div>}
+    </div>
+  );
+};
 
 // --------------------------------------------------------------- glass panel
 /**

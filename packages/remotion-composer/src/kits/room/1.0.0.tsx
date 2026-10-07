@@ -10,7 +10,7 @@ import {AbsoluteFill, Img, useCurrentFrame, useVideoConfig} from 'remotion';
 import {z} from 'zod';
 import type {KitVersion} from '../types.js';
 import {DEMO_LOOK, LookSchema, alpha, type Look} from '../lib/look/1.0.0.js';
-import {ease, win} from '../lib/stage-math/1.0.0.js';
+import {ease, ramp} from '../lib/stage-math/1.0.0.js';
 import {AssetUrl, BoxSchema, CameraSchema, cameraStyle, type Camera} from '../lib/stage-props/1.0.0.js';
 import {DistantStorm, LoopClip, strikeAt, type Box, type Point, type Sky} from '../lib/lesson-stage/1.0.0.js';
 
@@ -23,21 +23,27 @@ interface RoomProps {
 }
 const polygon = (poly: Point[]) => `polygon(${poly.map(([x, y]) => `${x}px ${y}px`).join(',')})`;
 
-const Room: KitVersion['component'] = ({props}) => {
+const Room: KitVersion['component'] = ({props, context}) => {
   const look = props.look as Look;
   const c = look.colors;
-  const t = useCurrentFrame() / useVideoConfig().fps;
+  const {fps, durationInFrames} = useVideoConfig();
+  const t = useCurrentFrame() / fps;
+  const end = durationInFrames / fps;
   const room = props.room as RoomProps;
   const fl = strikeAt(t, ((props.flash as {strikes: number[]} | undefined) ?? {strikes: []}).strikes);
   const quiet = (props.quiet as [number, number][] | undefined) ?? [];
-  const calm = (props.lightning ?? true) ? quiet.reduce((v, [a, b]) => v * (1 - win(t, a, b, 0.6)), 1) : 0;
+  // how far from quiet: 0 inside a quiet window, ramping over 0.6 s at its inner edges only —
+  // a window that starts at the item's start (or ends at its end) is quiet right there
+  const notQuiet = quiet.reduce((v, [a, b]) => v * (1 - (a <= 0 ? 1 : ramp(t, a, a + 0.6)) * (b >= end ? 1 : 1 - ramp(t, b - 0.6, b)) * (t >= a && t <= b ? 1 : 0)), 1);
+  const calm = (props.lightning ?? true) ? notQuiet : 0;
   const dark = (props.dark as number | undefined) ?? 0;
   const push = props.push as {at: number; dur: number; scale: number; origin: Point} | undefined;
   const drift = (props.drift ?? true) ? 1 : 0;
   const z0 = 1 + drift * (0.04 + 0.012 * Math.sin(t * 0.05));
   const pk = push ? ease((t - push.at) / push.dur) : 0;
   const scale = z0 * (1 + (push ? push.scale - 1 : 0) * pk);
-  const origin = push && pk > 0 ? push.origin : [960, 520];
+  // one origin for the whole item: switching it when the push starts would make the picture jump
+  const origin = push ? push.origin : [960, 520];
   const camera = props.camera as Camera | undefined;
   return (
     <AbsoluteFill style={{overflow: 'hidden', background: c.backdrop}}>
@@ -46,7 +52,7 @@ const Room: KitVersion['component'] = ({props}) => {
         <Img src={room.image} style={{position: 'absolute', inset: 0, width: 1920, height: 1080, filter: `brightness(${1.04 + fl * 0.3 - dark * 0.8}) saturate(1.05)`}} />
         {room.monitor ? (
           <>
-            <LoopClip src={room.monitor.video} box={room.monitor.box} live={calm} />
+            <LoopClip src={room.monitor.video} box={room.monitor.box} live={notQuiet} frames={context.assetFrames[room.monitor.video]} />
             <div style={{position: 'absolute', left: room.monitor.box.x - 40, top: room.monitor.box.y - 40, width: room.monitor.box.w + 80, height: room.monitor.box.h + 80, background: `radial-gradient(closest-side, ${alpha(c.accent, 0.32)}, ${alpha(c.accent, 0)})`, mixBlendMode: 'screen'}} />
           </>
         ) : null}
@@ -81,12 +87,12 @@ export const kit: KitVersion = {
     look: LookSchema,
     room: z.object({
       image: AssetUrl,
-      sky: z.array(z.object({poly: z.array(PointSchema).min(3), period: z.number().positive().optional(), seed: z.number().int().min(0).optional(), scale: z.number().positive().optional()}).strict()).optional(),
+      sky: z.array(z.object({poly: z.array(PointSchema).min(3), period: z.number().min(1.6).optional(), seed: z.number().int().min(0).optional(), scale: z.number().positive().optional()}).strict()).optional(),
       windows: z.array(z.array(PointSchema).min(3)).optional(),
       doors: z.array(BoxSchema).optional(),
       monitor: z.object({box: BoxSchema, video: AssetUrl}).strict().optional(),
     }).strict(),
-    /** The distant storm: on unless false; off over each quiet window (seconds from the item's start), ramping over 0.6 s. */
+    /** The distant storm: on unless false; off over each quiet window (seconds from the item's start), ramping over 0.6 s inside the item; the monitor's clip holds still there too. */
     lightning: z.boolean().optional(),
     quiet: z.array(z.tuple([z.number(), z.number()])).optional(),
     flash: z.object({strikes: z.array(z.number())}).strict().optional(),

@@ -8,6 +8,7 @@ import {z} from 'zod';
 import type {KitVersion} from '../types.js';
 import {DEMO_LOOK, LookSchema, plateStyle, type Look} from '../lib/look/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
+import {fitSize} from '../lib/font-metrics/1.0.0.js';
 import {ease} from '../lib/stage-math/1.0.0.js';
 
 const FigureTitle: KitVersion['component'] = ({props}) => {
@@ -17,14 +18,17 @@ const FigureTitle: KitVersion['component'] = ({props}) => {
   const k = ease(t / 0.6);
   const w = (props.maxWidth as number | undefined) ?? 820;
   const text = props.text as string;
-  const size = Math.min((props.size as number | undefined) ?? 96, (w - 80) / (text.length * 0.5));
+  // sized for the widest moment: the letter spacing closes from 0.155 em to 0.03 em as it settles
+  // (15 px to 3 px at 96 px), in proportion, so a long name shrinks evenly instead of collapsing
+  const size = fitSize({family: look.fonts.display, weight: 400}, [text], w - 68, (props.size as number | undefined) ?? 96, (s) => 0.155 * s);
+  const kickerSize = fitSize({family: look.fonts.sans, weight: 600}, [props.kicker as string], w - 68, 26, () => 7);
   const center = (props.align ?? 'center') === 'center';
   const x = props.x as number;
   return (
     <div style={{position: 'absolute', left: center ? x - w / 2 : x, top: props.y as number, width: w, display: 'flex', justifyContent: center ? 'center' : 'flex-start'}}>
       <div style={{display: 'inline-flex', flexDirection: 'column', alignItems: center ? 'center' : 'flex-start', gap: 10, padding: '18px 34px 22px', ...plateStyle(look), transform: `scale(${0.94 + 0.06 * k})`}}>
-        <div style={{fontFamily: fonts.sans, fontWeight: 600, fontSize: 26, letterSpacing: 7, color: look.colors.accent}}>{props.kicker as string}</div>
-        <div style={{fontFamily: fonts.display, fontSize: size, letterSpacing: (1 - k) * 12 + 3, color: look.colors.text, lineHeight: 1, whiteSpace: 'nowrap'}}>{text}</div>
+        <div style={{fontFamily: fonts.sans, fontWeight: 600, fontSize: kickerSize, letterSpacing: 7, color: look.colors.accent}}>{props.kicker as string}</div>
+        <div style={{fontFamily: fonts.display, fontSize: size, letterSpacing: size * ((1 - k) * 0.125 + 0.03), color: look.colors.text, lineHeight: 1, whiteSpace: 'nowrap'}}>{text}</div>
       </div>
     </div>
   );
@@ -50,6 +54,7 @@ export const kit: KitVersion = {
   component: FigureTitle,
   examples: [
     {id: 'figure', props: {look: DEMO_LOOK, kicker: 'RHETORICAL FIGURE', text: 'ONOMATOPOEIA', x: 960, y: 220}, durationInFrames: 45, frame: 30},
+    {id: 'wide', props: {look: DEMO_LOOK, kicker: 'RHETORICAL FIGURE', text: 'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', x: 960, y: 220}, durationInFrames: 45, frame: 0},
     {id: 'settling', props: {look: DEMO_LOOK, kicker: 'KEYWORD', text: 'LIGHT', x: 960, y: 220}, durationInFrames: 45, frame: 6},
   ],
 };

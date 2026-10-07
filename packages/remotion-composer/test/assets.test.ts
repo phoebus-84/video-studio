@@ -1,6 +1,6 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {sha256, stageAssets} from '../src/assets.js';
@@ -92,6 +92,11 @@ describe('stageAssets', () => {
     // Without the shared root it is outside the episode; with it, a path beside it is still refused.
     const alone = await stageAssets(doc, episode);
     assert.deepEqual(alone.ok ? [] : alone.problems.map((p) => p.code), ['missing-asset']);
+    // A link inside the shared root that leads elsewhere is not inside it.
+    await symlink(path.join(library, 'secrets/key.txt'), path.join(library, 'themes/t/1.0.0/rooms/link.png'));
+    doc.assets['theme-hall'] = {path: '../../../../themes/t/1.0.0/rooms/link.png', hash: await sha256(path.join(library, 'secrets/key.txt')), kind: 'image'};
+    const linked = await stageAssets(doc, episode, [shared]);
+    assert.deepEqual(linked.ok ? [] : linked.problems.map((p) => p.code), ['missing-asset']);
     doc.assets['theme-hall']!.path = '../../../../secrets/key.txt';
     const beside = await stageAssets(doc, episode, [shared]);
     assert.deepEqual(beside.ok ? [] : beside.problems.map((p) => p.code), ['missing-asset']);

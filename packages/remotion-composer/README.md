@@ -70,8 +70,12 @@ optional `camera` (a close-up moves them together).
 | `brand-mark@2.0.0` | overlay | A channel's mark from its theme's brand |
 
 They share `lib/look`, `lib/fonts/1.1.0.ts` (every bundled face, loaded by
-the families a look names) and `lib/lesson-stage/1.0.0.tsx` (glass, cover
-framing, looping clip, storm, live bolt, teleport, warp).
+the families a look names), `lib/font-metrics/1.0.0.ts` (the faces' advance
+widths: every single line of text is fitted to the room it has, never
+wrapped) and `lib/lesson-stage/1.0.0.tsx` (glass, cover framing, a clip that
+loops, storm, live bolt, teleport, warp). A look's fonts must be bundled
+families with the faces their role is drawn with (display 400, serif 400
+italic, sans 400 and 600).
 
 ## Adding a kit or a version
 
@@ -194,8 +198,8 @@ network or wall-clock inputs.
 
 ```bash
 npm run build --workspace @av/remotion-composer
-node packages/remotion-composer/dist/cli.js timeline.json out.mp4 --assets <episode-dir> --cache <cache-dir>
-node packages/remotion-composer/dist/sheet-cli.js timeline.json out-dir/ --assets <episode-dir> --times 0,2.5,10 [--scale 0.25] [--columns 6]
+node packages/remotion-composer/dist/cli.js timeline.json out.mp4 --assets <episode-dir> [--shared <theme-release-dir>] --cache <cache-dir>
+node packages/remotion-composer/dist/sheet-cli.js timeline.json out-dir/ --assets <episode-dir> --times 0,2.5,10 [--shared <theme-release-dir>] [--scale 0.25] [--columns 6]
 ```
 
 ## Tests
