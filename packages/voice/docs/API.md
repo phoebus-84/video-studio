@@ -405,3 +405,46 @@ The following endpoints will be added in subsequent issues:
 
 - `POST /models/load` — Load a model explicitly
 - `POST /models/unload` — Unload the current model
+
+## Forced alignment
+
+When each word of a known text is said in an audio file (avg-8hs.2). The
+model (`QTW_ALIGN_MODEL`, default `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`)
+is loaded on first use and kept. Under `QTW_TTS_MODE=fake` alignment is fake
+too: the words spread evenly over the audio.
+
+### `GET /align`
+
+```json
+{ "model": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit", "loaded": false, "maxSeconds": 300 }
+```
+
+### `POST /align`
+
+```json
+{ "audio_path": "/abs/path/take.wav", "text": "La nebbia a gl'irti colli", "language": "it" }
+```
+
+`language` is an ISO 639-1 code or a name: Chinese, English, Cantonese,
+French, German, Italian, Japanese, Korean, Portuguese, Russian, Spanish.
+
+#### Response `200 OK`
+
+```json
+{
+  "words": [{ "text": "La", "start": 0.0, "end": 0.24 }, { "text": "nebbia", "start": 0.24, "end": 0.72 }],
+  "model": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
+  "language": "Italian"
+}
+```
+
+The model's own words and seconds (80 ms resolution), unprocessed: mapping
+them onto the written text and onto the measured silences is the studio's
+work.
+
+#### Response `422`
+
+The error envelope, `detail[0].type` one of `too-long` (over 300 s),
+`unsupported-language`, `bad-audio` (not an absolute path to readable
+audio), `empty-text`.
+
