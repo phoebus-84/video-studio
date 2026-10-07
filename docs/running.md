@@ -186,6 +186,25 @@ There is no supervisor that starts the worker for you: the agent will report
 `speech.synthesize` as unavailable rather than launching a multi-gigabyte model
 server behind your back.
 
+### Word timing: aligning a take
+
+A take's word timing — when each word of its text is said — is measured by
+forced alignment ([ADR-0038](adr/0038-word-timing-comes-from-forced-alignment.md)).
+Ask the agent to align a take (`pva_align_take`, with the take's id from
+`artifacts/narration/takes.json`); the timing is written beside it
+(`artifacts/timing/<take>.json`) and `takes.json` names it.
+
+- By default the voice worker aligns it locally with Qwen3-ForcedAligner. The
+  first alignment downloads the model (about 1.3 GB); after that it stays
+  loaded like the speech model. `GET /align` on the worker says which model
+  and whether it is loaded.
+- With `provider: "elevenlabs"` ElevenLabs aligns it instead — only when you
+  ask, never as a fallback. It needs `ELEVENLABS_API_KEY` in the agent's
+  environment, and each call goes through the episode's spend ledger at an
+  estimated price per minute of audio.
+- At most 300 s of audio at a time; a take without a `language` needs one
+  given (`it`, `en`…).
+
 ## 2. Agent plus gateway plus web studio
 
 The gateway owns Pi RPC processes and streams events to the browser. Start it
