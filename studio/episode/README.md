@@ -3,10 +3,10 @@
 An episode on disk, produced (ADR-0036, ADR-0037): its narration manifest and
 scene images, its edit timeline — built from its material, or compiled from
 its `episode-spec.json` by its series template's compiler — checked against its
-series' rules, and rendered with `@av/remotion-composer`.
+series' rules, shown on a layout sheet and rendered with `@av/remotion-composer`.
 
 The agent's tools (`pva_init_spec`, `pva_build_timeline`, `pva_check_episode`,
-`pva_compose_video`, the narration tools) and the `series-production` stage
+`pva_layout_sheet`, `pva_compose_video`, the narration tools) and the `series-production` stage
 adapters both call this package, so a tool and a stage never disagree.
 
 ## What it offers
@@ -19,6 +19,9 @@ adapters both call this package, so a tool and a stage never disagree.
 | `series-compile.ts` | `loadEpisode`, `compileEpisode`, `checkEpisode`: a spec-driven episode, read, checked, compiled, held to its series' rules |
 | `episode-render.ts` | `writeEditTimeline`, `decideEditTimeline`, `currentEditTimeline`, `renderEpisode` |
 | `spec-init.ts` | `initEpisodeSpec`: a draft spec pinned to an exact template release; never replaces one |
+| `references.ts` | `proposeReference`: freeze an episode as a proposed golden reference |
+| `sheet-instants.ts` | `sheetInstants`: the frames a layout sheet shows, from the timeline and the release's `sheet` rules (pure) |
+| `layout-sheet.ts` | `makeLayoutSheet`, `layoutSheetStatus`: `artifacts/layout-sheet/`, and whether it still shows what a render would use |
 
 `@studio/episode/testing` exports `specEpisode`, `editSpec` and `sha256`: a
 complete poetry-short episode on disk, from `@studio/series`'s golden fixture,
@@ -30,4 +33,5 @@ for tests.
 npm run build       # tsc to dist/ (the agent and the adapters import it from there)
 npm run typecheck
 npm test            # vitest
+REMOTION_E2E=1 npm test   # also one real layout sheet (build @av/remotion-composer first)
 ```
