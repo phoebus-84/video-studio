@@ -52,7 +52,9 @@ episodes/<episode>/
     episode-spec.json             # frozen editorial snapshot for the reference
     edit-timeline.json            # frozen derived snapshot
   output/<render-id>.mp4
+  output/<render-id>.timeline.json  # the exact timeline rendered (avg-jao.5)
   output/<render-id>.report.json
+  reviews/compare/<old>--<new>/   # version comparisons (avg-jao.5)
 ```
 
 `layout.mjs` owns the path builders and names. IDs are slugs; versions are
@@ -170,8 +172,33 @@ replaced, or whose inputs hash no longer matches what it would render.
 A sheet holds at most 120 frames: the defaults first, then the release's
 rules in order; instants past the limit are dropped with a warning, so no
 release can make a sheet impossible. Signing
-the sheet's review is `avg-3th.2`; comparing two versions at the same instants
-is `avg-jao.5`.
+the sheet's review is `avg-3th.2`.
+
+### Corrections are proven by comparison
+
+A correction to a rendered episode changes only what was asked for, and that
+is shown (`avg-jao.5`, CreativeStudio's UP-54): the new render is compared
+with the old one — or with a golden reference — at the same instants, and
+every frame that differs is listed with its section.
+
+Renders are compared, not re-rendered: an old timeline's assets may no longer
+exist, but its video does, and both videos are decoded alike. Each render
+keeps the exact timeline it rendered beside it
+(`output/<render-id>.timeline.json`, hashed in its report), so the instants —
+the layout sheet's, of the new version — are carried into the old version
+section by section, at the same offset: a block that got longer does not make
+everything after it look changed. A render without a timeline is aligned by
+time, with optional shifts. A frame differs when its mean grey difference
+exceeds a threshold (1.0 of 255 by default); one with no counterpart (a new
+section, a section that got shorter, a video that ends earlier) differs by
+definition.
+
+Given the sections the correction was meant to change, the verdict is `ok`
+when every difference is inside them and `unexpected-changes` otherwise; an
+unexpected change is undone or narrowed, never waved through. The comparison
+is evidence for a person (`reviews/compare/<old>--<new>/`, with each changed
+frame drawn old | new | difference), not a pipeline gate. A reference's
+signature is not checked here — that is the operator's `vpr reference verify`.
 
 ### Golden references are evidence, not live pointers
 
@@ -257,7 +284,7 @@ before it is promoted; afterwards only a signed withdrawal ends a reference.
   the layout sheet, which the series rules block.
 - `avg-jao.4` owns pipeline wiring: the `series-production` family (spec,
   pictures, takes, timeline, check, render), its stage adapters and
-  `pva_init_spec`; `avg-jao.5` owns identical-instant visual
-  comparisons. Real channel templates and approved reference media belong to
+  `pva_init_spec`; `avg-jao.5` made the identical-instant comparison of
+  two versions. Real channel templates and approved reference media belong to
   `avg-dcf`, not contract fixtures. No CreativeStudio runtime or production
   content is copied into this repository.

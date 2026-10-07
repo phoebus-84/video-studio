@@ -57,6 +57,19 @@ it("discovers the review-layout-sheet skill the series-production pipeline names
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+it("discovers the compare-versions skill: a correction changes only what was asked", async () => {
+  const root = await mkdtemp(join(tmpdir(), "compare-versions-skill-"));
+  try {
+    const builtInPath = fileURLToPath(new URL("../../../skills/studio/", import.meta.url));
+    const catalog = await discoverSkills({ libraryRoot: root, builtInPath });
+    expect(catalog.list({ source: "built-in" }).find(s => s.id === "compare-versions")?.description).toContain("only the requested part");
+    const skill = await catalog.load("compare-versions");
+    expect(skill).toContain("pva_compare_versions");
+    expect(skill).toContain("UP-54");
+    expect(skill).toContain("Never wave an unexpected change through");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("discovers composed flat/folder skills and scopes layout-2 series overrides", async () => {
   const root = await mkdtemp(join(tmpdir(), "skills-discovery-"));
   try {

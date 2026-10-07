@@ -96,7 +96,7 @@ Production: `pva_generate_image`, `pva_synthesize_speech`,
 `pva_synthesize_nonverbal_audio`, `pva_render_graphics`,
 `pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
 `pva_propose_reference`,
-`pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`, `pva_compose_video`, `pva_compose_multitrack_video`,
+`pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, `pva_compose_multitrack_video`,
 `pva_probe_media`
 
 A tool whose capability is not ready will fail rather than silently degrade.
@@ -127,6 +127,23 @@ command of its own:
 ```bash
 node packages/remotion-composer/dist/sheet-cli.js timeline.json out/ --assets episode/ --times 0,2.5,10
 ```
+
+### Comparing two versions
+
+After a correction, prove it changed only what was asked: render the new
+version, then ask the agent to compare it with the render the person received
+(`pva_compare_versions`, with `old` that render's id — or
+`reference:<template>/<id>` for a golden reference — and `expect` the
+sections the correction should touch; the `compare-versions` skill walks it).
+Both videos are decoded with ffmpeg at the same instants, aligned section by
+section through the timeline every render keeps beside it
+(`output/<render-id>.timeline.json`). The result is in
+`reviews/compare/<old>--<new>/`:
+
+- `report.json` — every pair of frames measured, the verdict (`ok`,
+  `unexpected-changes`, or `listed` without an expectation) and warnings;
+- `pairs/NNN.jpg` and `changed.jpg` — each changed frame as old | new |
+  difference.
 
 ### Speech: start the voice worker first
 
