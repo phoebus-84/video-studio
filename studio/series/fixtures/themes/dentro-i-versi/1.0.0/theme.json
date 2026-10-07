@@ -1,0 +1,405 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "ChannelTheme",
+  "id": "dentro-i-versi",
+  "version": "1.0.0",
+  "look": {
+    "colors": {
+      "ink": "#0c1230",
+      "text": "#f6f8ff",
+      "textDim": "rgba(244,247,255,.92)",
+      "accent": "#5fdcff",
+      "highlight": "#ffbf5e",
+      "glow": "#bfefff",
+      "lightning": "#c3b8ff",
+      "plate": "rgba(8,12,36,.86)",
+      "plateLine": "rgba(255,255,255,.45)",
+      "shadow": "rgba(4,6,20,.4)",
+      "backdrop": "#0b1030",
+      "signal": "#ff5d6c"
+    },
+    "fonts": {
+      "display": "Anton",
+      "serif": "Fraunces",
+      "sans": "Inter"
+    },
+    "measures": {
+      "plateRadius": 14,
+      "textShadow": "0 2px 3px rgba(6,10,32,.85), 0 0 14px rgba(6,10,32,.55)",
+      "minTextPx": 26
+    }
+  },
+  "layout": {
+    "safe": {
+      "top": 120,
+      "bottom": 960
+    },
+    "floorY": 950,
+    "panel": {
+      "x": 440,
+      "y": 150,
+      "w": 1060,
+      "h": 596
+    }
+  },
+  "characters": {
+    "guida": {
+      "variant": "attrice",
+      "outfit": "gilet",
+      "palette": {
+        "ink": "#2e2620",
+        "shirt": "#e9edf8",
+        "shirtDark": "#c9d0e6",
+        "vest": "#2a3266",
+        "vestLight": "#4a56a0",
+        "button": "#5fdcff",
+        "inner": "#e9edf8",
+        "innerDark": "#c9d0e6",
+        "skin": "#f6b386",
+        "skinDark": "#cf7c4e",
+        "trousers": "#1a1f44",
+        "shoe": "#fafaf5",
+        "sole": "#dcd8cc",
+        "hair": "#3b2216",
+        "hairHi": "#6e4127",
+        "hairGloss": "#a06a43"
+      },
+      "poses": {
+        "riposo": {},
+        "invoca": {
+          "lu": 20,
+          "lf": 54,
+          "ru": 20,
+          "rf": 54,
+          "head": -2,
+          "step": 1
+        },
+        "mani-al-cuore": {
+          "lu": 38,
+          "lf": 92,
+          "ru": 22,
+          "rf": 60,
+          "head": -4,
+          "lean": 2
+        },
+        "indica": {
+          "ru": 126,
+          "rf": 140,
+          "head": 4
+        },
+        "apre": {
+          "lu": 62,
+          "lf": 72,
+          "ru": 62,
+          "rf": 72,
+          "head": -4,
+          "step": 1
+        },
+        "chiede": {
+          "lu": 56,
+          "lf": 72,
+          "ru": 56,
+          "rf": 72,
+          "head": -4,
+          "step": 1
+        },
+        "dialoga": {
+          "lu": 34,
+          "lf": 88,
+          "ru": 34,
+          "rf": 88,
+          "head": -5,
+          "dip": 1
+        },
+        "spalle": {
+          "lu": 24,
+          "lf": 110,
+          "ru": 24,
+          "rf": 110,
+          "head": -3,
+          "twist": 1
+        },
+        "braccio-alto": {
+          "lu": 66,
+          "lf": 78,
+          "ru": 20,
+          "rf": 58,
+          "head": -3,
+          "step": 1
+        },
+        "punta": {
+          "lu": 92,
+          "lf": 100,
+          "ru": 14,
+          "rf": 24,
+          "head": -6,
+          "twist": 0.3
+        },
+        "conta": {
+          "lu": 14,
+          "lf": 20,
+          "ru": 70,
+          "rf": 150,
+          "head": 3
+        },
+        "pensa": {
+          "lu": 12,
+          "lf": 18,
+          "ru": 40,
+          "rf": 160,
+          "head": 5,
+          "lean": 1
+        }
+      }
+    },
+    "attore-illuminato": {
+      "variant": "attore",
+      "outfit": "gilet",
+      "palette": {
+        "ink": "#2e2620",
+        "shirt": "#eef2ff",
+        "shirtDark": "#c3cbe8",
+        "vest": "#eef2ff",
+        "vestLight": "#ffffff",
+        "button": "#5fdcff",
+        "inner": "#ffbf5e",
+        "innerDark": "#e09a2e",
+        "skin": "#f6b386",
+        "skinDark": "#cf7c4e",
+        "trousers": "#283066",
+        "shoe": "#fafaf5",
+        "sole": "#dcd8cc"
+      },
+      "poses": {
+        "riposo": {},
+        "invoca": {
+          "lu": 20,
+          "lf": 54,
+          "ru": 20,
+          "rf": 54,
+          "head": -2,
+          "step": 1
+        },
+        "mani-al-cuore": {
+          "lu": 38,
+          "lf": 92,
+          "ru": 22,
+          "rf": 60,
+          "head": -4,
+          "lean": 2
+        },
+        "indica": {
+          "ru": 126,
+          "rf": 140,
+          "head": 4
+        },
+        "apre": {
+          "lu": 62,
+          "lf": 72,
+          "ru": 62,
+          "rf": 72,
+          "head": -4,
+          "step": 1
+        },
+        "chiede": {
+          "lu": 56,
+          "lf": 72,
+          "ru": 56,
+          "rf": 72,
+          "head": -4,
+          "step": 1
+        },
+        "dialoga": {
+          "lu": 34,
+          "lf": 88,
+          "ru": 34,
+          "rf": 88,
+          "head": -5,
+          "dip": 1
+        },
+        "spalle": {
+          "lu": 24,
+          "lf": 110,
+          "ru": 24,
+          "rf": 110,
+          "head": -3,
+          "twist": 1
+        },
+        "braccio-alto": {
+          "lu": 66,
+          "lf": 78,
+          "ru": 20,
+          "rf": 58,
+          "head": -3,
+          "step": 1
+        },
+        "punta": {
+          "lu": 92,
+          "lf": 100,
+          "ru": 14,
+          "rf": 24,
+          "head": -6,
+          "twist": 0.3
+        },
+        "conta": {
+          "lu": 14,
+          "lf": 20,
+          "ru": 70,
+          "rf": 150,
+          "head": 3
+        },
+        "pensa": {
+          "lu": 12,
+          "lf": 18,
+          "ru": 40,
+          "rf": 160,
+          "head": 5,
+          "lean": 1
+        }
+      }
+    }
+  },
+  "rooms": {
+    "atrio": {
+      "image": "rooms/atrio.png",
+      "sky": [
+        {
+          "poly": [
+            [
+              0,
+              0
+            ],
+            [
+              310,
+              128
+            ],
+            [
+              310,
+              560
+            ],
+            [
+              0,
+              560
+            ]
+          ],
+          "period": 6.5,
+          "seed": 7
+        },
+        {
+          "poly": [
+            [
+              618,
+              505
+            ],
+            [
+              832,
+              505
+            ],
+            [
+              832,
+              622
+            ],
+            [
+              618,
+              622
+            ]
+          ],
+          "period": 2.8,
+          "seed": 11,
+          "scale": 0.7
+        }
+      ],
+      "windows": [
+        [
+          [
+            0,
+            0
+          ],
+          [
+            330,
+            0
+          ],
+          [
+            330,
+            820
+          ],
+          [
+            0,
+            820
+          ]
+        ]
+      ],
+      "doors": [
+        {
+          "x": 588,
+          "y": 372,
+          "w": 252,
+          "h": 380
+        }
+      ],
+      "monitor": {
+        "box": {
+          "x": 1316,
+          "y": 541,
+          "w": 154,
+          "h": 111
+        },
+        "video": "rooms/monitor.mp4"
+      }
+    },
+    "sala": {
+      "image": "rooms/sala.png",
+      "sky": [
+        {
+          "poly": [
+            [
+              0,
+              0
+            ],
+            [
+              660,
+              262
+            ],
+            [
+              660,
+              540
+            ],
+            [
+              0,
+              492
+            ]
+          ],
+          "period": 7.5,
+          "seed": 3
+        }
+      ],
+      "windows": [
+        [
+          [
+            0,
+            0
+          ],
+          [
+            660,
+            170
+          ],
+          [
+            660,
+            600
+          ],
+          [
+            0,
+            760
+          ]
+        ]
+      ]
+    }
+  },
+  "brand": {
+    "text": "DENTRO I VERSI",
+    "icon": "bolt"
+  },
+  "metadata": {
+    "source": "CreativeStudio formats/poesie-museo-long runtime v10 (K, guidePalette, COSTUME2, POSES, ATRIO_*, SALA_SKY, WINDOW); room images are placeholders until avg-dcf.5"
+  }
+}

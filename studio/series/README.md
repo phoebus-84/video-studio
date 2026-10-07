@@ -25,7 +25,11 @@ Everything arrives already read, checked and hashed — in the studio, by
 `compileEpisode` in `@studio/episode` (`studio/episode/src/series-compile.ts`), which also decides
 the asset ids (`image-<name>` for `assets/images/<name>.<ext>`,
 `sound-<name>` for `assets/sounds/<name>.<ext>`, `narration-<take>` for each
-take's audio). A timeline the validators refuse
+take's audio, `theme-<room>` for the rooms of the channel theme the release
+pins). With a pinned theme, `input.theme` is the `ChannelTheme` (ADR-0040):
+a compiler passes its `look` and characters through to channel-neutral kits
+untouched; `test/theme-alignment.test.ts` holds the contract and the kits'
+props schemas together. A timeline the validators refuse
 comes back with problem codes prefixed `timeline:` — a compiler bug, not bad
 input.
 
