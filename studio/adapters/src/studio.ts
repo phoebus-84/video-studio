@@ -12,7 +12,7 @@ import { illustrationsFromAssets } from "./adapters/illustrations.js";
 import { narrationCaptions } from "./adapters/captions.js";
 import { narrationTiming } from "./adapters/timing.js";
 import { renderQa } from "./adapters/render-qa.js";
-import { seriesCheck, seriesRender, seriesTimeline } from "./adapters/series.js";
+import { seriesCheck, seriesRender, seriesSheet, seriesTimeline } from "./adapters/series.js";
 
 export const STUDIO_ADAPTERS: readonly StageAdapter[] = Object.freeze([
   illustrationsFromAssets,
@@ -21,6 +21,7 @@ export const STUDIO_ADAPTERS: readonly StageAdapter[] = Object.freeze([
   renderQa,
   seriesTimeline,
   seriesCheck,
+  seriesSheet,
   seriesRender,
 ]);
 
