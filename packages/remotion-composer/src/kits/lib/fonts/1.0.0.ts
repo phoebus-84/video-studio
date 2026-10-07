@@ -5,7 +5,7 @@
 // bundler made them URLs — and every frame waits for them.
 
 import {useEffect, useState} from 'react';
-import {continueRender, delayRender} from 'remotion';
+import {cancelRender, continueRender, delayRender} from 'remotion';
 
 export const ANTON = 'Studio Anton';
 export const SERIF = 'Studio Fraunces';
@@ -30,16 +30,20 @@ function loadAll(): Promise<void> {
     await face.load();
     // FontFaceSet is set-like; the DOM typings here lack its add().
     (document.fonts as unknown as Set<FontFace>).add(face);
-  })).then(() => undefined);
+  })).then(() => undefined, (error: unknown) => {
+    // Forget the failure, so a later attempt loads again.
+    loading = null;
+    throw error;
+  });
   return loading;
 }
 
-/** Hold the frame until every face is loaded. */
+/** Hold the frame until every face is loaded; a face that fails stops the render with its error. */
 export function useFonts(): void {
   const [handle] = useState(() => delayRender('fonts@1.0.0'));
   useEffect(() => {
     loadAll().then(() => continueRender(handle), (error: unknown) => {
-      throw error instanceof Error ? error : new Error(String(error));
+      cancelRender(error instanceof Error ? error : new Error(String(error)));
     });
   }, [handle]);
 }
