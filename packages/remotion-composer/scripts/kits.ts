@@ -2,30 +2,30 @@
 // npm run kits:previews  render previews/<name>@<version>.<profile>.png: the first
 //                        example in every output profile, at a third of its size
 
-import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {copyFile, mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {renderStill, selectComposition} from '@remotion/renderer';
-import {KIT_VERSIONS, previewCompositionId, previewPath} from '../src/kits/index.js';
+import {KIT_VERSIONS, drawnFor, previewCompositionId, previewPath} from '../src/kits/index.js';
 import {bundlePreviews} from '../src/preview-bundle.js';
 import {outputProfiles} from '../test/helpers.js';
+import {kitSourceHash} from './kit-source.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lockFile = path.join(root, 'kits.lock.json');
 const sourceOf = (name: string, version: string) => path.join(root, 'src/kits', name, `${version}.tsx`);
-const hash = (file: string) => `sha256:${createHash('sha256').update(readFileSync(file)).digest('hex')}`;
 
 async function lock() {
   const current: Record<string, string> = existsSync(lockFile) ? JSON.parse(readFileSync(lockFile, 'utf8')) : {};
   const next = {...current};
   for (const kit of KIT_VERSIONS) {
     const id = `${kit.name}@${kit.version}`;
-    const actual = hash(sourceOf(kit.name, kit.version));
+    // The kit's file and the library modules it draws with (ADR-0039).
+    const actual = kitSourceHash(sourceOf(kit.name, kit.version));
     if (current[id] && current[id] !== actual) {
-      throw new Error(`${id} is released and its file changed: restore it and add a new version instead`);
+      throw new Error(`${id} is released and its file or a library module it uses changed: restore it and add a new version instead`);
     }
     if (!current[id]) {
       next[id] = actual;
@@ -43,7 +43,7 @@ async function previews() {
     // Render all first, then copy: a failure halfway leaves previews/ as it was.
     const rendered: [string, string][] = [];
     for (const profile of outputProfiles()) {
-      for (const kit of KIT_VERSIONS) {
+      for (const kit of KIT_VERSIONS.filter((k) => drawnFor(k, profile.id))) {
         const example = kit.examples[0]!;
         const id = previewCompositionId(kit.name, kit.version, example.id);
         const inputProps = {profile};

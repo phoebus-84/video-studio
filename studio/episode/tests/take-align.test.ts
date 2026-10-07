@@ -85,6 +85,14 @@ describe("alignTake with the local aligner", () => {
     for (const w of timing.words) expect(w.end <= pauseStart + 0.001 || w.start >= pauseEnd - 0.001).toBe(true);
     expect(result.pauses).toHaveLength(1);
     expect(result.pauses[0]).toBeGreaterThan(0.5);
+    // The voice's energy, 30 samples a second, for the actor's mouth: loud in the tones, nothing in the pause.
+    expect(timing.energy.rate).toBe(30);
+    expect(timing.energy.values).toHaveLength(Math.round(timing.audio.durationSeconds * 30));
+    expect(Math.max(...timing.energy.values)).toBe(1);
+    const sample = (t: number) => timing.energy.values[Math.floor(t * 30)];
+    expect(sample(0.5)).toBeGreaterThan(0.5);
+    expect(sample((pauseStart + pauseEnd) / 2)).toBe(0);
+    expect(sample(2.2)).toBeGreaterThan(0.5);
 
     const after = takes();
     expect(after.takes[0].timing).toEqual({ path: "artifacts/timing/light.json", hash: sha256(readFileSync(at(result.path))) });

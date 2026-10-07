@@ -18,7 +18,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { ELEVENLABS_PROFILES, ElevenLabsError, forcedAlignment } from "@av/elevenlabs";
 import { validateNarrationTakes } from "@studio/contracts/src/narration-takes.mjs";
 import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
-import { AlignError, mapToText, measureSilences, snapToSilences, type RawWord } from "./speech-align.js";
+import { AlignError, mapToText, measureEnergy, measureSilences, snapToSilences, type RawWord } from "./speech-align.js";
 
 export const TAKES_PATH = "artifacts/narration/takes.json";
 /** Where a take's timing goes when takes.json names none. */
@@ -165,6 +165,7 @@ export async function alignTake(episodeDir: string, options: AlignTakeOptions): 
   const { words, unmapped } = mapToText(take.text, aligned.words);
   const measured = await measureSilences(audioPath);
   const timed = snapToSilences(words, measured.silences, measured.durationSeconds);
+  const energy = await measureEnergy(audioPath, take.audio.durationSeconds);
 
   const timing = {
     apiVersion: "studio.video/v1alpha1",
@@ -177,6 +178,7 @@ export async function alignTake(episodeDir: string, options: AlignTakeOptions): 
     alignment: { provider, model: aligned.model, method: "forced", createdAt: new Date().toISOString() },
     words: timed,
     speech: measured.speech,
+    energy,
   };
   const timingProblems = validateWordTiming(timing, { audioHash: take.audio.hash });
   if (timingProblems.length > 0) {

@@ -54,6 +54,14 @@ export function validateTimeline(doc: unknown): {ok: true; timeline: EditTimelin
         problems.push({code: 'unknown-kit', message: `${item.kit.name}@${item.kit.version}: ${known}`, path: `${p}.kit`});
         return;
       }
+      if (kit.profiles && !kit.profiles.includes(profile.id)) {
+        problems.push({
+          code: 'wrong-profile',
+          message: `${item.kit.name}@${item.kit.version} is drawn for ${kit.profiles.join(', ')}, not ${profile.id}`,
+          path: `${p}.kit`,
+        });
+        return;
+      }
       const props = kit.props.safeParse(item.props);
       if (!props.success) {
         for (const issue of props.error.issues) {

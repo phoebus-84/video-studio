@@ -2,6 +2,7 @@ export type ComposerErrorCode =
   | 'invalid-timeline'
   | 'unknown-kit'
   | 'bad-props'
+  | 'wrong-profile'
   | 'missing-asset'
   | 'hash-mismatch'
   | 'render-failed'

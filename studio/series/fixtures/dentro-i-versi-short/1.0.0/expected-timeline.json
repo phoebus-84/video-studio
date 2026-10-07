@@ -1,0 +1,3722 @@
+{
+  "apiVersion": "studio.video/v1alpha2",
+  "kind": "EditTimeline",
+  "episodeRef": {
+    "channel": "dentro-i-versi",
+    "series": "short",
+    "episode": "san-martino"
+  },
+  "revision": 1,
+  "derivedFrom": {
+    "spec": {
+      "path": "episode-spec.json",
+      "hash": "sha256:66adb3c37f7c66aea6b3c75f778fe1d710dbd0fa85f1e4da43d780202cfb0c7b",
+      "revision": 1
+    },
+    "compiler": {
+      "id": "dentro-i-versi-short",
+      "version": "1.0.0"
+    }
+  },
+  "fps": 30,
+  "durationInFrames": 1129,
+  "resolution": {
+    "width": 1080,
+    "height": 1920
+  },
+  "profile": {
+    "id": "vertical-1080x1920",
+    "width": 1080,
+    "height": 1920,
+    "safeZone": {
+      "top": 120,
+      "right": 140,
+      "bottom": 380,
+      "left": 60
+    },
+    "loudness": {
+      "integrated": -14,
+      "truePeak": -1,
+      "range": 11
+    }
+  },
+  "assets": {
+    "image-sm-01c-nebbia-irti-colli": {
+      "path": "assets/images/sm-01c-nebbia-irti-colli.png",
+      "hash": "sha256:9c29a5b7627421fd60cf18de33983e1f205799ff067e61eb2902789d6e959d8d",
+      "kind": "image"
+    },
+    "image-sm-02-mare-maestrale": {
+      "path": "assets/images/sm-02-mare-maestrale.png",
+      "hash": "sha256:b1bd7cf375837730d17a934b3526583a8695205526576551249c4a1f8652ca8b",
+      "kind": "image"
+    },
+    "image-sm-03-borgo": {
+      "path": "assets/images/sm-03-borgo.png",
+      "hash": "sha256:016105082cf5ea84b0de7abc48093be167273d41fa621a964e70f83e861a6748",
+      "kind": "image"
+    },
+    "image-sm-04-tini-vino": {
+      "path": "assets/images/sm-04-tini-vino.png",
+      "hash": "sha256:12ce33bf0bb7011b203878e2c21be91df6fe2ca919bb765dded3209d369401e6",
+      "kind": "image"
+    },
+    "image-sm-05-spiedo-ceppi": {
+      "path": "assets/images/sm-05-spiedo-ceppi.png",
+      "hash": "sha256:fbf65b3a6647360e3d9429a57c4c3dc364134f0670187fd8342cfd5875af474a",
+      "kind": "image"
+    },
+    "image-sm-06-cacciatore-uscio": {
+      "path": "assets/images/sm-06-cacciatore-uscio.png",
+      "hash": "sha256:ea66c12f10daa489a15f5f1d88ca4e6f3362676898019a168d616b8b62e3e2bd",
+      "kind": "image"
+    },
+    "image-sm-07-stormi-nubi": {
+      "path": "assets/images/sm-07-stormi-nubi.png",
+      "hash": "sha256:9a5fcd542f79751eec0ae06e24e6f36b4e6ba112a98e203fb95a4986c166895e",
+      "kind": "image"
+    },
+    "image-sm-08-vespero": {
+      "path": "assets/images/sm-08-vespero.png",
+      "hash": "sha256:ef160894918215ea50bc092f71c2b7f3c4eec2af106369fbf9c7175893a23e71",
+      "kind": "image"
+    },
+    "image-nebbia-texture": {
+      "path": "assets/images/nebbia-texture.png",
+      "hash": "sha256:46772ef9d12050d2ffacc8436943af6082186bb0077d0d22d16b0edf1efe6027",
+      "kind": "image"
+    },
+    "image-vs-sala-chiusa": {
+      "path": "assets/images/vs-sala-chiusa.png",
+      "hash": "sha256:30a21e3737a030c4a905b605ac25a33a2be25ef15f10eaf6e04b11c52dae8c91",
+      "kind": "image"
+    },
+    "image-sm-sagoma-calice-crop": {
+      "path": "assets/images/sm-sagoma-calice-crop.png",
+      "hash": "sha256:54876b3582242f46adaac6c64402d81cfffdb552f1b9ce8ab92b99f62710937a",
+      "kind": "image"
+    },
+    "image-sm-sagoma-cacciatore-crop": {
+      "path": "assets/images/sm-sagoma-cacciatore-crop.png",
+      "hash": "sha256:7dcfa5103b0f3b9488ecc79cbc77f9489a662bb56b27701b0189d55019f066ea",
+      "kind": "image"
+    },
+    "narration-titolo": {
+      "path": "assets/takes/titolo.wav",
+      "hash": "sha256:6b75acfd8acd81091172febaf3680c038eaefe1f172db0326778b596cafa330e",
+      "kind": "audio"
+    },
+    "narration-recita": {
+      "path": "assets/takes/recita.wav",
+      "hash": "sha256:1fa1ed6f8a6ca20ca29862fa689e19d5c1ca43d1153d42ae7528212427f9e643",
+      "kind": "audio"
+    },
+    "sound-pioggerella-leggera": {
+      "path": "assets/sounds/pioggerella-leggera.mp3",
+      "hash": "sha256:72c0459fd57ae0cf1935176d213c242abdc72888635e383cb1c16a37eec0d58f",
+      "kind": "audio"
+    },
+    "sound-sfx-vento": {
+      "path": "assets/sounds/sfx-vento.mp3",
+      "hash": "sha256:ecb81aea62cbf758d636e0323e04202ccdb228ab887736369503fa84efc3b049",
+      "kind": "audio"
+    },
+    "sound-onde-schiuma": {
+      "path": "assets/sounds/onde-schiuma.mp3",
+      "hash": "sha256:561fa02beaaf965b37c586984852c995b9ac24485399f517a13251a3161f4501",
+      "kind": "audio"
+    },
+    "sound-ribollire-pentola": {
+      "path": "assets/sounds/ribollire-pentola.mp3",
+      "hash": "sha256:3c0ac24b22d8a7940eee6832839ac373902220345b2031745925008019dadeea",
+      "kind": "audio"
+    },
+    "sound-fuoco-crepitio": {
+      "path": "assets/sounds/fuoco-crepitio.mp3",
+      "hash": "sha256:996623846845929df10744464fb0a24a73b677fb435bf90724480b41544c79cf",
+      "kind": "audio"
+    },
+    "sound-fischio-uomo": {
+      "path": "assets/sounds/fischio-uomo.mp3",
+      "hash": "sha256:0e8345c38f51de56cf94aff673c78a95ff73d8d50f418905493950a9b8d810ad",
+      "kind": "audio"
+    },
+    "sound-corvi-uccelli": {
+      "path": "assets/sounds/corvi-uccelli.mp3",
+      "hash": "sha256:b142ff6e9ec9596d75de04672ddd8e1892c35ed58c844f11b08af258bf5c2414",
+      "kind": "audio"
+    },
+    "sound-stormo-piccioni-volo": {
+      "path": "assets/sounds/stormo-piccioni-volo.mp3",
+      "hash": "sha256:272c05717f2a2983f5a3fb453ccba6b3d680c0379abc6a138f01bdaad973e87e",
+      "kind": "audio"
+    },
+    "sound-sfx-campana": {
+      "path": "assets/sounds/sfx-campana.mp3",
+      "hash": "sha256:748ad5ff0351812b6bd01cfa24a428058dafa73f508433814ecedcda21b69c9a",
+      "kind": "audio"
+    },
+    "sound-magia-incantatore": {
+      "path": "assets/sounds/magia-incantatore.mp3",
+      "hash": "sha256:336f31eddd00927e88f4f475e10ae1bf386465e0b835b0f3c980250934a91c54",
+      "kind": "audio"
+    },
+    "sound-vento-breve": {
+      "path": "assets/sounds/vento-breve.mp3",
+      "hash": "sha256:a63067d4c24b6a18a49e7355bd072ff957d4974abfaba9250fd24ae21682ab99",
+      "kind": "audio"
+    },
+    "sound-arpa-glissando": {
+      "path": "assets/sounds/arpa-glissando.mp3",
+      "hash": "sha256:52c141d47fd1e96f081fde953c43713815c36623b650d075c872c24ebd492877",
+      "kind": "audio"
+    },
+    "sound-magia-shimmer": {
+      "path": "assets/sounds/magia-shimmer.mp3",
+      "hash": "sha256:e99f60332adcccf47d23a949d4ed19150eaf8e4ca736e3173f719eb48cabc2c9",
+      "kind": "audio"
+    },
+    "sound-foglie-secche": {
+      "path": "assets/sounds/foglie-secche.mp3",
+      "hash": "sha256:bb046a8b6942898200471aa72d69fe43d26213ca20eb1b0ebd87dc7d83bd37d1",
+      "kind": "audio"
+    },
+    "sound-applauso-sala-caldo": {
+      "path": "assets/sounds/applauso-sala-caldo.mp3",
+      "hash": "sha256:133e08b1ca43b70e496ce2d03326583986e33851156f383e8e439ad59d027459",
+      "kind": "audio"
+    },
+    "sound-reverie-small-theme": {
+      "path": "assets/sounds/reverie-small-theme.mp3",
+      "hash": "sha256:6d4ffa85e28febcee04d7b425d11a3ccdc44846824b9cf9618d8c2619f0a43c3",
+      "kind": "audio"
+    }
+  },
+  "tracks": [
+    {
+      "id": "hall",
+      "type": "visual",
+      "z": 0,
+      "items": [
+        {
+          "id": "hall",
+          "from": 0,
+          "duration": 1129,
+          "kit": {
+            "name": "museum-hall",
+            "version": "1.0.0"
+          },
+          "source": "hall",
+          "props": {
+            "room": {
+              "$asset": "image-vs-sala-chiusa"
+            },
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "pictures": [
+              {
+                "src": {
+                  "$asset": "image-sm-01c-nebbia-irti-colli"
+                },
+                "at": 0,
+                "scale": 1.08,
+                "origin": "50% 45%",
+                "move": {
+                  "dx": -10,
+                  "dy": -14,
+                  "z": 0.17,
+                  "r": -0.18
+                },
+                "fx": [
+                  "nebbia"
+                ],
+                "spill": "#b8c8e0"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-02-mare-maestrale"
+                },
+                "at": 7.53,
+                "scale": 1.08,
+                "origin": "60% 50%",
+                "move": {
+                  "dx": 14,
+                  "dy": -8,
+                  "z": 0.13,
+                  "r": 0.14
+                },
+                "fx": [
+                  "vento",
+                  "acqua"
+                ],
+                "spill": "#4f8fe0"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-03-borgo"
+                },
+                "at": 11.39,
+                "scale": 1.06,
+                "origin": "50% 60%",
+                "move": {
+                  "dx": -12,
+                  "dy": 12,
+                  "z": 0.16,
+                  "r": -0.12
+                },
+                "fx": [
+                  "bagliore"
+                ],
+                "spill": "#ffb347"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-04-tini-vino"
+                },
+                "at": 14.56,
+                "scale": 1.08,
+                "origin": "45% 55%",
+                "move": {
+                  "dx": 0,
+                  "dy": -16,
+                  "z": 0.12,
+                  "r": 0.1
+                },
+                "fx": [
+                  "bagliore"
+                ],
+                "spill": "#c2185b"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-05-spiedo-ceppi"
+                },
+                "at": 18.86,
+                "scale": 1.1,
+                "origin": "40% 55%",
+                "move": {
+                  "dx": 14,
+                  "dy": 10,
+                  "z": 0.15,
+                  "r": -0.15
+                },
+                "fx": [
+                  "fuoco"
+                ],
+                "spill": "#ff7a1a"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-06-cacciatore-uscio"
+                },
+                "at": 22.27,
+                "scale": 1.06,
+                "origin": "40% 40%",
+                "move": {
+                  "dx": -16,
+                  "dy": -10,
+                  "z": 0.14,
+                  "r": 0.13
+                },
+                "fx": [
+                  "riflesso"
+                ],
+                "spill": "#ffb27a"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-07-stormi-nubi"
+                },
+                "at": 26.02,
+                "scale": 1.06,
+                "origin": "55% 35%",
+                "move": {
+                  "dx": 10,
+                  "dy": -12,
+                  "z": 0.18,
+                  "r": -0.12
+                },
+                "fx": [
+                  "bagliore",
+                  "uccelli"
+                ],
+                "spill": "#ff5a3a"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-08-vespero"
+                },
+                "at": 29.27,
+                "scale": 1.06,
+                "origin": "40% 50%",
+                "move": {
+                  "dx": -14,
+                  "dy": 8,
+                  "z": 0.13,
+                  "r": 0.1
+                },
+                "fx": [
+                  "nebbia"
+                ],
+                "spill": "#8a6cff"
+              },
+              {
+                "src": {
+                  "$asset": "image-sm-01c-nebbia-irti-colli"
+                },
+                "at": 35.93,
+                "scale": 1.08,
+                "origin": "50% 45%",
+                "move": {
+                  "dx": -10,
+                  "dy": -14,
+                  "z": 0.17,
+                  "r": -0.18
+                },
+                "fx": [
+                  "nebbia"
+                ],
+                "spill": "#b8c8e0"
+              }
+            ],
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": 4.09,
+                  "to": 33.43,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": 3.84,
+                  "to": 7.95,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 18.61,
+                  "to": 22.74,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 25.77,
+                  "to": 29.78,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": 8.57,
+                  "to": 9.57,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            },
+            "flash": {
+              "strikes": [
+                7.48,
+                11.34,
+                14.51,
+                18.81,
+                22.22,
+                25.97,
+                29.22
+              ]
+            },
+            "lights": [
+              {
+                "at": 0,
+                "dark": 0.06,
+                "spot": "#fff1d8",
+                "w": 1
+              },
+              {
+                "at": 3.39,
+                "dark": 0.06,
+                "spot": "#fff1d8",
+                "w": 1
+              },
+              {
+                "at": 4.59,
+                "dark": 0.3,
+                "spot": "#a9c2ff",
+                "w": 1
+              },
+              {
+                "at": 7.93,
+                "dark": 0.38,
+                "spot": "#6f9cff",
+                "w": 0.92
+              },
+              {
+                "at": 11.09,
+                "dark": 0.38,
+                "spot": "#6f9cff",
+                "w": 0.92
+              },
+              {
+                "at": 11.99,
+                "dark": 0.24,
+                "spot": "#ffb84a",
+                "w": 1.02
+              },
+              {
+                "at": 15.06,
+                "dark": 0.32,
+                "spot": "#e8456e",
+                "w": 1
+              },
+              {
+                "at": 18.56,
+                "dark": 0.32,
+                "spot": "#e8456e",
+                "w": 1
+              },
+              {
+                "at": 19.36,
+                "dark": 0.34,
+                "spot": "#ff8a3a",
+                "w": 1
+              },
+              {
+                "at": 22.77,
+                "dark": 0.26,
+                "spot": "#ffb070",
+                "w": 1.04
+              },
+              {
+                "at": 25.72,
+                "dark": 0.26,
+                "spot": "#ffb070",
+                "w": 1.04
+              },
+              {
+                "at": 26.52,
+                "dark": 0.36,
+                "spot": "#ff4a3a",
+                "w": 0.95
+              },
+              {
+                "at": 29.67,
+                "dark": 0.42,
+                "spot": "#8a7cff",
+                "w": 0.88
+              },
+              {
+                "at": 32.23,
+                "dark": 0.36,
+                "spot": "#8a7cff",
+                "w": 0.95
+              },
+              {
+                "at": 33.43,
+                "dark": 0.03,
+                "spot": "#fff3dd",
+                "w": 1.1
+              },
+              {
+                "at": 36.23,
+                "dark": 0.06,
+                "spot": "#fff1d8",
+                "w": 1
+              }
+            ],
+            "wind": [
+              {
+                "from": 7.79,
+                "to": 11.65,
+                "rampIn": 0.6,
+                "rampOut": 0.8,
+                "amount": 0.75
+              }
+            ],
+            "pedestal": true,
+            "actor": {
+              "x": 770,
+              "scale": 0.95,
+              "liveFrom": 3.09,
+              "liveTo": 3.89
+            },
+            "textures": {
+              "fog": {
+                "$asset": "image-nebbia-texture"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "room-1",
+      "type": "visual",
+      "z": 10,
+      "items": [
+        {
+          "id": "room-1",
+          "from": 129,
+          "duration": 133,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "nebbia-sala",
+            "color": "#dfe8ff",
+            "start": 0,
+            "end": 4.43,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -0.21,
+                  "to": 29.13,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -0.46,
+                  "to": 3.65,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 14.31,
+                  "to": 18.44,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 21.47,
+                  "to": 25.48,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": 4.27,
+                  "to": 5.27,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            },
+            "textures": {
+              "fog": {
+                "$asset": "image-nebbia-texture"
+              }
+            }
+          },
+          "source": "roomFx[0]"
+        },
+        {
+          "id": "room-2",
+          "from": 389,
+          "duration": 120,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "vapore",
+            "color": "#c2185b",
+            "start": 0,
+            "end": 3.993,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -8.877,
+                  "to": 20.463,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -9.127,
+                  "to": -5.017,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 5.643,
+                  "to": 9.773,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 12.803,
+                  "to": 16.813,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -4.397,
+                  "to": -3.397,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            }
+          },
+          "source": "roomFx[1]"
+        },
+        {
+          "id": "room-5",
+          "from": 671,
+          "duration": 228,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "apparizione",
+            "start": 0.003,
+            "end": 6.603,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -18.277,
+                  "to": 11.063,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -18.527,
+                  "to": -14.417,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -3.757,
+                  "to": 0.373,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 3.403,
+                  "to": 7.413,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -13.797,
+                  "to": -12.797,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            },
+            "figure": {
+              "src": {
+                "$asset": "image-sm-sagoma-cacciatore-crop"
+              },
+              "x": 190,
+              "y": 900,
+              "w": 560,
+              "mode": "scende",
+              "exit": "rientra",
+              "glow": "#ffb27a"
+            }
+          },
+          "source": "roomFx[4]"
+        },
+        {
+          "id": "room-9",
+          "from": 921,
+          "duration": 136,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "nebbia-sala",
+            "color": "#cdb8ff",
+            "start": 0.01,
+            "end": 4.53,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -26.61,
+                  "to": 2.73,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -26.86,
+                  "to": -22.75,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -12.09,
+                  "to": -7.96,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -4.93,
+                  "to": -0.92,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -22.13,
+                  "to": -21.13,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            },
+            "textures": {
+              "fog": {
+                "$asset": "image-nebbia-texture"
+              }
+            }
+          },
+          "source": "roomFx[8]"
+        }
+      ]
+    },
+    {
+      "id": "room-2",
+      "type": "visual",
+      "z": 11,
+      "items": [
+        {
+          "id": "room-3",
+          "from": 443,
+          "duration": 207,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "apparizione",
+            "start": 0,
+            "end": 5.893,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -10.677,
+                  "to": 18.663,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -10.927,
+                  "to": -6.817,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 3.843,
+                  "to": 7.973,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 11.003,
+                  "to": 15.013,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -6.197,
+                  "to": -5.197,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            },
+            "figure": {
+              "src": {
+                "$asset": "image-sm-sagoma-calice-crop"
+              },
+              "x": 190,
+              "y": 760,
+              "w": 360,
+              "mode": "sale",
+              "exit": "rientra",
+              "glow": "#ff6a8a"
+            }
+          },
+          "source": "roomFx[2]"
+        },
+        {
+          "id": "room-6",
+          "from": 689,
+          "duration": 134,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "note",
+            "color": "#ffd38a",
+            "start": 0,
+            "end": 3.453,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -18.877,
+                  "to": 10.463,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -19.127,
+                  "to": -15.017,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -4.357,
+                  "to": -0.227,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 2.803,
+                  "to": 6.813,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -14.397,
+                  "to": -13.397,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            },
+            "figure": {
+              "x": 230,
+              "y": 640
+            }
+          },
+          "source": "roomFx[5]"
+        },
+        {
+          "id": "room-7",
+          "from": 872,
+          "duration": 149,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "uccelli",
+            "start": 0.003,
+            "end": 4.963,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -24.977,
+                  "to": 4.363,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -25.227,
+                  "to": -21.117,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -10.457,
+                  "to": -6.327,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -3.297,
+                  "to": 0.713,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -20.497,
+                  "to": -19.497,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            }
+          },
+          "source": "roomFx[6]"
+        }
+      ]
+    },
+    {
+      "id": "room-3",
+      "type": "visual",
+      "z": 12,
+      "items": [
+        {
+          "id": "room-4",
+          "from": 497,
+          "duration": 93,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "incanto",
+            "color": "#ffb347",
+            "start": 0.013,
+            "end": 3.093,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -12.477,
+                  "to": 16.863,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -12.727,
+                  "to": -8.617,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 2.043,
+                  "to": 6.173,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 9.203,
+                  "to": 13.213,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -7.997,
+                  "to": -6.997,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            }
+          },
+          "source": "roomFx[3]"
+        },
+        {
+          "id": "room-8",
+          "from": 887,
+          "duration": 134,
+          "kit": {
+            "name": "room-effect",
+            "version": "1.0.0"
+          },
+          "props": {
+            "effect": "foglie",
+            "start": 0.003,
+            "end": 4.463,
+            "screen": {
+              "x": 360,
+              "y": 215,
+              "w": 620,
+              "h": 910
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": -25.477,
+                  "to": 3.863,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": -25.727,
+                  "to": -21.617,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -10.957,
+                  "to": -6.827,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": -3.797,
+                  "to": 0.213,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": -20.997,
+                  "to": -19.997,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            }
+          },
+          "source": "roomFx[7]"
+        }
+      ]
+    },
+    {
+      "id": "verses-1",
+      "type": "visual",
+      "z": 20,
+      "items": [
+        {
+          "id": "verse-1",
+          "from": 114,
+          "duration": 110,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "La nebbia agli irti colli piovigginando sale,",
+            "words": [
+              {
+                "text": "La",
+                "at": 0.29
+              },
+              {
+                "text": "nebbia",
+                "at": 0.41
+              },
+              {
+                "text": "agli",
+                "at": 0.81
+              },
+              {
+                "text": "irti",
+                "at": 1.05
+              },
+              {
+                "text": "colli",
+                "at": 1.31
+              },
+              {
+                "text": "piovigginando",
+                "at": 1.71
+              },
+              {
+                "text": "sale,",
+                "at": 2.55
+              }
+            ],
+            "strong": [
+              "nebbia",
+              "colli"
+            ],
+            "gloss": "La nebbia sale sui colli spogli, con una pioggia fine,",
+            "start": 0.29
+          },
+          "source": "verses[0]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 8
+          }
+        },
+        {
+          "id": "verse-3",
+          "from": 333,
+          "duration": 102,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "ma per le vie del borgo dal ribollir de’ tini",
+            "words": [
+              {
+                "text": "ma",
+                "at": 0.29
+              },
+              {
+                "text": "per",
+                "at": 0.41
+              },
+              {
+                "text": "le",
+                "at": 0.57
+              },
+              {
+                "text": "vie",
+                "at": 0.67
+              },
+              {
+                "text": "del",
+                "at": 0.85
+              },
+              {
+                "text": "borgo",
+                "at": 1.03
+              },
+              {
+                "text": "dal",
+                "at": 1.79
+              },
+              {
+                "text": "ribollir",
+                "at": 2.05
+              },
+              {
+                "text": "de’",
+                "at": 2.57
+              },
+              {
+                "text": "tini",
+                "at": 2.71
+              }
+            ],
+            "strong": [
+              "borgo",
+              "ribollir",
+              "tini"
+            ],
+            "gloss": "ma per le vie del paese, dai tini dove il mosto fermenta,",
+            "start": 0.29
+          },
+          "source": "verses[2]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 8
+          }
+        },
+        {
+          "id": "verse-5",
+          "from": 557,
+          "duration": 110,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "Gira su’ ceppi accesi lo spiedo scoppiettando:",
+            "words": [
+              {
+                "text": "Gira",
+                "at": 0.293
+              },
+              {
+                "text": "su’",
+                "at": 0.613
+              },
+              {
+                "text": "ceppi",
+                "at": 0.773
+              },
+              {
+                "text": "accesi",
+                "at": 1.093
+              },
+              {
+                "text": "lo",
+                "at": 1.573
+              },
+              {
+                "text": "spiedo",
+                "at": 1.733
+              },
+              {
+                "text": "scoppiettando:",
+                "at": 2.073
+              }
+            ],
+            "strong": [
+              "ceppi",
+              "spiedo",
+              "scoppiettando"
+            ],
+            "gloss": "Sui ceppi accesi gira lo spiedo, scoppiettando;",
+            "start": 0.293
+          },
+          "source": "verses[4]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 8
+          }
+        },
+        {
+          "id": "verse-7",
+          "from": 772,
+          "duration": 105,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "tra le rossastre nubi stormi d’uccelli neri,",
+            "words": [
+              {
+                "text": "tra",
+                "at": 0.287
+              },
+              {
+                "text": "le",
+                "at": 0.447
+              },
+              {
+                "text": "rossastre",
+                "at": 0.567
+              },
+              {
+                "text": "nubi",
+                "at": 1.147
+              },
+              {
+                "text": "stormi",
+                "at": 1.507
+              },
+              {
+                "text": "d’uccelli",
+                "at": 1.987
+              },
+              {
+                "text": "neri,",
+                "at": 2.487
+              }
+            ],
+            "strong": [
+              "rossastre",
+              "stormi",
+              "neri"
+            ],
+            "gloss": "tra le nuvole rossastre stormi di uccelli neri",
+            "start": 0.287
+          },
+          "source": "verses[6]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": "verses-2",
+      "type": "visual",
+      "z": 21,
+      "items": [
+        {
+          "id": "verse-2",
+          "from": 218,
+          "duration": 122,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "e sotto il maestrale urla e biancheggia il mar;",
+            "words": [
+              {
+                "text": "e",
+                "at": 0.263
+              },
+              {
+                "text": "sotto",
+                "at": 0.383
+              },
+              {
+                "text": "il",
+                "at": 0.623
+              },
+              {
+                "text": "maestrale",
+                "at": 0.723
+              },
+              {
+                "text": "urla",
+                "at": 1.403
+              },
+              {
+                "text": "e",
+                "at": 1.723
+              },
+              {
+                "text": "biancheggia",
+                "at": 1.843
+              },
+              {
+                "text": "il",
+                "at": 2.423
+              },
+              {
+                "text": "mar;",
+                "at": 2.583
+              }
+            ],
+            "strong": [
+              "maestrale",
+              "urla",
+              "mar"
+            ],
+            "gloss": "e il mare, sotto il maestrale, ruggisce e si copre di schiuma;",
+            "start": 0.263
+          },
+          "source": "verses[1]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 8
+          }
+        },
+        {
+          "id": "verse-4",
+          "from": 428,
+          "duration": 136,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "va l’aspro odor de i vini l’anime a rallegrar.",
+            "words": [
+              {
+                "text": "va",
+                "at": 0.293
+              },
+              {
+                "text": "l’aspro",
+                "at": 0.453
+              },
+              {
+                "text": "odor",
+                "at": 0.873
+              },
+              {
+                "text": "de",
+                "at": 1.153
+              },
+              {
+                "text": "i",
+                "at": 1.253
+              },
+              {
+                "text": "vini",
+                "at": 1.373
+              },
+              {
+                "text": "l’anime",
+                "at": 2.013
+              },
+              {
+                "text": "a",
+                "at": 2.473
+              },
+              {
+                "text": "rallegrar.",
+                "at": 2.613
+              }
+            ],
+            "strong": [
+              "laspro",
+              "vini",
+              "rallegrar"
+            ],
+            "gloss": "l’odore aspro del vino nuovo va a rallegrare gli animi.",
+            "start": 0.293
+          },
+          "source": "verses[3]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 8
+          }
+        },
+        {
+          "id": "verse-6",
+          "from": 660,
+          "duration": 119,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "sta il cacciator fischiando su l’uscio a rimirar",
+            "words": [
+              {
+                "text": "sta",
+                "at": 0.27
+              },
+              {
+                "text": "il",
+                "at": 0.45
+              },
+              {
+                "text": "cacciator",
+                "at": 0.57
+              },
+              {
+                "text": "fischiando",
+                "at": 1.05
+              },
+              {
+                "text": "su",
+                "at": 1.57
+              },
+              {
+                "text": "l’uscio",
+                "at": 1.69
+              },
+              {
+                "text": "a",
+                "at": 2.41
+              },
+              {
+                "text": "rimirar",
+                "at": 2.59
+              }
+            ],
+            "strong": [
+              "cacciator",
+              "fischiando"
+            ],
+            "gloss": "il cacciatore, fischiettando, sta sulla porta a guardare",
+            "start": 0.27
+          },
+          "source": "verses[5]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 8
+          }
+        },
+        {
+          "id": "verse-8",
+          "from": 870,
+          "duration": 109,
+          "kit": {
+            "name": "verse-plate",
+            "version": "1.0.0"
+          },
+          "props": {
+            "text": "com’esuli pensieri, nel vespero migrar.",
+            "words": [
+              {
+                "text": "com’esuli",
+                "at": 0.27
+              },
+              {
+                "text": "pensieri,",
+                "at": 0.81
+              },
+              {
+                "text": "nel",
+                "at": 1.71
+              },
+              {
+                "text": "vespero",
+                "at": 1.91
+              },
+              {
+                "text": "migrar.",
+                "at": 2.31
+              }
+            ],
+            "strong": [
+              "comesuli",
+              "pensieri",
+              "migrar"
+            ],
+            "gloss": "migrare nella sera, come pensieri in esilio.",
+            "start": 0.27
+          },
+          "source": "verses[7]",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "actor",
+      "type": "visual",
+      "z": 30,
+      "items": [
+        {
+          "id": "actor",
+          "from": 0,
+          "duration": 1129,
+          "kit": {
+            "name": "interprete",
+            "version": "1.0.0"
+          },
+          "source": "actor",
+          "props": {
+            "variant": "attore",
+            "outfit": "gilet",
+            "palette": {
+              "ink": "#2e2620",
+              "shirt": "#eef2ff",
+              "shirtDark": "#c3cbe8",
+              "vest": "#eef2ff",
+              "vestLight": "#ffffff",
+              "button": "#5fdcff",
+              "inner": "#ffbf5e",
+              "innerDark": "#e09a2e",
+              "skin": "#f6b386",
+              "skinDark": "#cf7c4e",
+              "trousers": "#283066",
+              "shoe": "#fafaf5",
+              "sole": "#dcd8cc"
+            },
+            "x": 770,
+            "footY": 1800,
+            "scale": 0.95,
+            "poses": [
+              {
+                "at": 0,
+                "pose": {
+                  "lu": 7,
+                  "lf": 4,
+                  "ru": 7,
+                  "rf": 4,
+                  "head": 0,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 3.94,
+                "pose": {
+                  "lu": 22,
+                  "lf": 50,
+                  "ru": 22,
+                  "rf": 50,
+                  "head": -2,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 1,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 5.29,
+                "pose": {
+                  "lu": 38,
+                  "lf": 88,
+                  "ru": 38,
+                  "rf": 88,
+                  "head": -4,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 1,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 7.58,
+                "pose": {
+                  "lu": 12,
+                  "lf": 30,
+                  "ru": 126,
+                  "rf": 140,
+                  "head": 4,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 8.83,
+                "pose": {
+                  "lu": 52,
+                  "lf": 70,
+                  "ru": 52,
+                  "rf": 70,
+                  "head": -3,
+                  "lean": -3,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 11.49,
+                "pose": {
+                  "lu": 13,
+                  "lf": 55,
+                  "ru": 10,
+                  "rf": 40,
+                  "head": 2,
+                  "lean": 3,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 14.61,
+                "pose": {
+                  "lu": 7,
+                  "lf": 4,
+                  "ru": 126,
+                  "rf": 140,
+                  "head": 4,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 15.86,
+                "pose": {
+                  "lu": 7,
+                  "lf": 4,
+                  "ru": 30,
+                  "rf": 96,
+                  "head": -2,
+                  "lean": 2,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 18.91,
+                "pose": {
+                  "lu": 10,
+                  "lf": 24,
+                  "ru": 126,
+                  "rf": 140,
+                  "head": 4,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 20.06,
+                "pose": {
+                  "lu": 24,
+                  "lf": 100,
+                  "ru": 18,
+                  "rf": 88,
+                  "head": 0,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 1,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 22.37,
+                "pose": {
+                  "lu": 72,
+                  "lf": 96,
+                  "ru": 10,
+                  "rf": 24,
+                  "head": -3,
+                  "lean": -2,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 26.07,
+                "pose": {
+                  "lu": 7,
+                  "lf": 4,
+                  "ru": 132,
+                  "rf": 146,
+                  "head": 5,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 27.42,
+                "pose": {
+                  "lu": 58,
+                  "lf": 78,
+                  "ru": 58,
+                  "rf": 78,
+                  "head": -5,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 1,
+                  "twist": 0,
+                  "dip": 0
+                }
+              },
+              {
+                "at": 29.37,
+                "pose": {
+                  "lu": 10,
+                  "lf": 26,
+                  "ru": 10,
+                  "rf": 26,
+                  "head": 5,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 1
+                }
+              },
+              {
+                "at": 31.63,
+                "pose": {
+                  "lu": 7,
+                  "lf": 4,
+                  "ru": 7,
+                  "rf": 4,
+                  "head": 0,
+                  "lean": 0,
+                  "grip": 0,
+                  "step": 0,
+                  "twist": 0,
+                  "dip": 0
+                }
+              }
+            ],
+            "expressions": [
+              {
+                "at": 0,
+                "ex": {
+                  "li": 0,
+                  "lo": 0,
+                  "ri": 0,
+                  "ro": 0,
+                  "sm": 0.25
+                }
+              },
+              {
+                "at": 3.94,
+                "ex": {
+                  "li": 7,
+                  "lo": 6,
+                  "ri": 7,
+                  "ro": 6,
+                  "sm": 0
+                }
+              },
+              {
+                "at": 7.38,
+                "ex": {
+                  "li": -6,
+                  "lo": 3,
+                  "ri": -6,
+                  "ro": 3,
+                  "sm": -0.5
+                }
+              },
+              {
+                "at": 11.24,
+                "ex": {
+                  "li": 7,
+                  "lo": 5,
+                  "ri": -2,
+                  "ro": 0,
+                  "sm": 0.8
+                }
+              },
+              {
+                "at": 14.41,
+                "ex": {
+                  "li": 7,
+                  "lo": 5,
+                  "ri": -2,
+                  "ro": 0,
+                  "sm": 0.8
+                }
+              },
+              {
+                "at": 18.71,
+                "ex": {
+                  "li": 0,
+                  "lo": 0,
+                  "ri": 0,
+                  "ro": 0,
+                  "sm": 0.25
+                }
+              },
+              {
+                "at": 22.12,
+                "ex": {
+                  "li": 0,
+                  "lo": 0,
+                  "ri": 0,
+                  "ro": 0,
+                  "sm": 0.25
+                }
+              },
+              {
+                "at": 25.87,
+                "ex": {
+                  "li": 7,
+                  "lo": 6,
+                  "ri": 7,
+                  "ro": 6,
+                  "sm": 0
+                }
+              },
+              {
+                "at": 29.12,
+                "ex": {
+                  "li": 6,
+                  "lo": -3,
+                  "ri": 6,
+                  "ro": -3,
+                  "sm": -0.6
+                }
+              },
+              {
+                "at": 31.93,
+                "ex": {
+                  "li": 0,
+                  "lo": 0,
+                  "ri": 0,
+                  "ro": 0,
+                  "sm": 0.25
+                }
+              }
+            ],
+            "gaze": [
+              {
+                "from": 7.63,
+                "to": 9.03,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 11.49,
+                "to": 12.89,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 14.66,
+                "to": 16.06,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 18.96,
+                "to": 20.36,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 22.37,
+                "to": 23.77,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 26.12,
+                "to": 27.52,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 29.37,
+                "to": 30.77,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 36.03,
+                "to": 37.43,
+                "x": 3.5,
+                "y": -3,
+                "h": 5
+              },
+              {
+                "from": 0.3,
+                "to": 2.2,
+                "x": 3,
+                "y": 4,
+                "h": 4
+              },
+              {
+                "from": 23.87,
+                "to": 25.11,
+                "x": 3,
+                "y": -4.5,
+                "h": 4
+              },
+              {
+                "from": 30.87,
+                "to": 31.93,
+                "x": -3.5,
+                "y": -1.5,
+                "h": -3
+              }
+            ],
+            "blinks": [
+              1.1,
+              3.347,
+              8.308,
+              11.044,
+              14.479,
+              19.049,
+              24.011,
+              26.942,
+              31.594,
+              35.782
+            ],
+            "live": {
+              "from": 3.09,
+              "to": 3.89
+            },
+            "bow": {
+              "from": 34.13,
+              "to": 36.33
+            },
+            "mouth": {
+              "energy": {
+                "rate": 30,
+                "values": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.003,
+                  0.005,
+                  0.019,
+                  0.031,
+                  0.045,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  0.829,
+                  0.233,
+                  0.033,
+                  0.018,
+                  0.065,
+                  0.744,
+                  0.822,
+                  0.915,
+                  1,
+                  0.858,
+                  0.895,
+                  0.909,
+                  0.737,
+                  0.405,
+                  0.119,
+                  0.017,
+                  0.004,
+                  0.004,
+                  0.002,
+                  0.002,
+                  0.001,
+                  0.002,
+                  0.001,
+                  0.001,
+                  0.001,
+                  0.001,
+                  0.002,
+                  0.002,
+                  0.001,
+                  0.001,
+                  0.001,
+                  0.001,
+                  0.001,
+                  0.001,
+                  0.003,
+                  0.186,
+                  0.726,
+                  1,
+                  1,
+                  0.407,
+                  0.271,
+                  0.745,
+                  1,
+                  1,
+                  0.548,
+                  0.186,
+                  0.358,
+                  1,
+                  1,
+                  1,
+                  0.688,
+                  0.033,
+                  0.291,
+                  0.512,
+                  0.971,
+                  0.788,
+                  0.466,
+                  0.156,
+                  0.153,
+                  0.613,
+                  0.537,
+                  0.138,
+                  0.025,
+                  0.011,
+                  0.114,
+                  0.236,
+                  0.194,
+                  0.268,
+                  0.222,
+                  0.177,
+                  0.096,
+                  0.011,
+                  0.004,
+                  0.001,
+                  0.001,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.153,
+                  0.479,
+                  0.581,
+                  0.808,
+                  0.608,
+                  0.855,
+                  0.797,
+                  0.805,
+                  0.681,
+                  0.444,
+                  0.421,
+                  0.435,
+                  0.893,
+                  0.94,
+                  0.85,
+                  0.627,
+                  0.636,
+                  0.61,
+                  0.516,
+                  0.641,
+                  0.658,
+                  0.425,
+                  0.581,
+                  0.901,
+                  0.923,
+                  0.843,
+                  0.473,
+                  0.25,
+                  0.08,
+                  0.352,
+                  0.844,
+                  0.329,
+                  0.114,
+                  0.614,
+                  0.896,
+                  0.674,
+                  0.628,
+                  0.625,
+                  0.598,
+                  0.61,
+                  0.511,
+                  0.689,
+                  0.725,
+                  0.291,
+                  0.088,
+                  0.203,
+                  0.681,
+                  0.77,
+                  0.475,
+                  0.372,
+                  0.898,
+                  0.516,
+                  0.35,
+                  0.339,
+                  0.65,
+                  0.882,
+                  0.734,
+                  0.639,
+                  0.572,
+                  0.561,
+                  0.497,
+                  0.514,
+                  0.505,
+                  0.425,
+                  0.324,
+                  0.348,
+                  0.301,
+                  0.113,
+                  0.065,
+                  0.087,
+                  0.153,
+                  0.45,
+                  0.416,
+                  0.376,
+                  0.283,
+                  0.247,
+                  0.205,
+                  0.18,
+                  0.182,
+                  0.121,
+                  0.035,
+                  0.005,
+                  0.003,
+                  0.003,
+                  0.002,
+                  0.002,
+                  0.001,
+                  0.008,
+                  0.02,
+                  0.02,
+                  0.024,
+                  0.019,
+                  0.01,
+                  0.004,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.069,
+                  0.107,
+                  0.356,
+                  0.08,
+                  0.067,
+                  0.092,
+                  0.53,
+                  0.419,
+                  0.049,
+                  0.092,
+                  0.61,
+                  0.721,
+                  0.631,
+                  0.666,
+                  0.648,
+                  0.622,
+                  0.627,
+                  0.526,
+                  0.523,
+                  0.359,
+                  0.071,
+                  0.03,
+                  0.013,
+                  0.279,
+                  0.432,
+                  0.874,
+                  0.731,
+                  0.624,
+                  0.614,
+                  0.438,
+                  0.594,
+                  0.542,
+                  0.505,
+                  0.515,
+                  0.602,
+                  0.799,
+                  0.853,
+                  0.698,
+                  0.659,
+                  0.383,
+                  0.4,
+                  0.705,
+                  0.629,
+                  0.646,
+                  0.618,
+                  0.636,
+                  0.519,
+                  0.236,
+                  0.248,
+                  0.449,
+                  0.807,
+                  0.679,
+                  0.546,
+                  0.577,
+                  0.386,
+                  0.062,
+                  0.072,
+                  0.687,
+                  0.69,
+                  0.337,
+                  0.271,
+                  0.416,
+                  0.863,
+                  0.544,
+                  0.366,
+                  0.329,
+                  0.33,
+                  0.234,
+                  0.286,
+                  0.331,
+                  0.359,
+                  0.368,
+                  0.293,
+                  0.294,
+                  0.285,
+                  0.349,
+                  0.191,
+                  0.237,
+                  0.109,
+                  0.041,
+                  0.006,
+                  0.003,
+                  0.001,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.011,
+                  0.021,
+                  0.021,
+                  0.012,
+                  0.045,
+                  0.004,
+                  0.49,
+                  0.727,
+                  0.302,
+                  0.028,
+                  0.796,
+                  0.943,
+                  0.466,
+                  0.345,
+                  0.621,
+                  0.729,
+                  0.751,
+                  0.436,
+                  0.601,
+                  0.723,
+                  0.994,
+                  0.495,
+                  0.249,
+                  0.633,
+                  0.816,
+                  0.741,
+                  0.628,
+                  0.413,
+                  0.438,
+                  0.96,
+                  0.917,
+                  0.826,
+                  0.501,
+                  0.564,
+                  0.315,
+                  0.312,
+                  0.885,
+                  0.822,
+                  0.405,
+                  0.07,
+                  0.036,
+                  0.024,
+                  0.019,
+                  0.017,
+                  0.016,
+                  0.012,
+                  0.006,
+                  0.002,
+                  0.001,
+                  0.091,
+                  0.32,
+                  0.568,
+                  0.949,
+                  0.753,
+                  0.64,
+                  0.628,
+                  0.556,
+                  0.846,
+                  0.509,
+                  0.734,
+                  0.885,
+                  0.562,
+                  0.642,
+                  0.793,
+                  0.696,
+                  0.588,
+                  0.451,
+                  0.443,
+                  0.579,
+                  0.83,
+                  0.948,
+                  0.71,
+                  0.552,
+                  0.343,
+                  0.368,
+                  0.738,
+                  0.968,
+                  0.581,
+                  0.079,
+                  0.229,
+                  0.463,
+                  0.503,
+                  0.562,
+                  0.868,
+                  0.83,
+                  0.693,
+                  0.725,
+                  0.385,
+                  0.074,
+                  0.03,
+                  0.012,
+                  0.003,
+                  0.001,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.198,
+                  0.529,
+                  0.433,
+                  0.807,
+                  0.82,
+                  0.606,
+                  0.536,
+                  0.564,
+                  0.536,
+                  0.642,
+                  0.549,
+                  0.34,
+                  0.098,
+                  0.053,
+                  0.011,
+                  0.128,
+                  0.61,
+                  0.766,
+                  0.844,
+                  0.758,
+                  0.78,
+                  0.732,
+                  0.409,
+                  0.899,
+                  0.979,
+                  0.918,
+                  0.632,
+                  0.475,
+                  0.26,
+                  0.538,
+                  0.799,
+                  0.658,
+                  0.529,
+                  0.52,
+                  0.391,
+                  0.302,
+                  0.517,
+                  0.504,
+                  0.464,
+                  0.4,
+                  0.471,
+                  0.468,
+                  0.408,
+                  0.396,
+                  0.371,
+                  0.276,
+                  0.165,
+                  0.052,
+                  0.008,
+                  0.004,
+                  0.001,
+                  0,
+                  0.07,
+                  0.398,
+                  0.522,
+                  0.602,
+                  0.718,
+                  0.583,
+                  0.509,
+                  0.443,
+                  0.44,
+                  0.431,
+                  0.441,
+                  0.462,
+                  0.459,
+                  0.383,
+                  0.434,
+                  0.396,
+                  0.4,
+                  0.456,
+                  0.318,
+                  0.312,
+                  0.342,
+                  0.462,
+                  0.566,
+                  0.445,
+                  0.42,
+                  0.292,
+                  0.336,
+                  0.381,
+                  0.165,
+                  0.148,
+                  0.411,
+                  0.288,
+                  0.429,
+                  0.304,
+                  0.342,
+                  0.329,
+                  0.327,
+                  0.125,
+                  0.195,
+                  0.027,
+                  0.002,
+                  0.001,
+                  0.001,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.046,
+                  0.105,
+                  0.285,
+                  0.275,
+                  0.557,
+                  0.641,
+                  0.684,
+                  0.683,
+                  0.467,
+                  0.658,
+                  0.619,
+                  0.318,
+                  0.076,
+                  0.065,
+                  0.478,
+                  0.236,
+                  0.052,
+                  0.087,
+                  0.216,
+                  0.803,
+                  0.299,
+                  0.052,
+                  0.016,
+                  0.066,
+                  0.316,
+                  0.52,
+                  0.657,
+                  0.563,
+                  0.114,
+                  0.028,
+                  0.07,
+                  0.144,
+                  0.329,
+                  0.597,
+                  0.543,
+                  0.552,
+                  0.489,
+                  0.242,
+                  0.204,
+                  0.51,
+                  0.457,
+                  0.353,
+                  0.399,
+                  0.332,
+                  0.083,
+                  0.03,
+                  0.014,
+                  0.074,
+                  0.322,
+                  0.593,
+                  0.684,
+                  0.593,
+                  0.327,
+                  0.187,
+                  0.342,
+                  0.289,
+                  0.068,
+                  0.066,
+                  0.019,
+                  0.306,
+                  0.395,
+                  0.104,
+                  0.016,
+                  0.048,
+                  0.32,
+                  0.34,
+                  0.204,
+                  0.023,
+                  0.006,
+                  0.002,
+                  0.248,
+                  0.604,
+                  0.518,
+                  0.427,
+                  0.359,
+                  0.361,
+                  0.295,
+                  0.354,
+                  0.315,
+                  0.312,
+                  0.354,
+                  0.188,
+                  0.039,
+                  0.02,
+                  0.023,
+                  0.036,
+                  0.036,
+                  0.034,
+                  0.029,
+                  0.018,
+                  0.01,
+                  0.004,
+                  0.001,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.031,
+                  0.034,
+                  0.002,
+                  0.236,
+                  0.534,
+                  0.364,
+                  0.477,
+                  0.446,
+                  0.346,
+                  0.097,
+                  0.126,
+                  0.307,
+                  0.765,
+                  0.147,
+                  0.078,
+                  0.204,
+                  0.919,
+                  0.516,
+                  0.087,
+                  0.864,
+                  1,
+                  0.651,
+                  0.335,
+                  0.125,
+                  0.019,
+                  0.06,
+                  0.621,
+                  0.469,
+                  0.108,
+                  0.064,
+                  0.014,
+                  0.163,
+                  0.914,
+                  0.708,
+                  0.686,
+                  0.749,
+                  0.848,
+                  0.681,
+                  0.59,
+                  0.233,
+                  0.065,
+                  0.343,
+                  0.564,
+                  0.585,
+                  0.545,
+                  0.35,
+                  0.409,
+                  0.668,
+                  0.569,
+                  0.229,
+                  0.143,
+                  0.148,
+                  0.113,
+                  0.551,
+                  0.746,
+                  0.317,
+                  0.038,
+                  0.027,
+                  0.03,
+                  0.033,
+                  0.029,
+                  0.02,
+                  0.009,
+                  0.003,
+                  0.012,
+                  0.392,
+                  0.754,
+                  0.767,
+                  0.75,
+                  0.383,
+                  0.501,
+                  0.544,
+                  0.877,
+                  0.931,
+                  1,
+                  1,
+                  1,
+                  0.845,
+                  0.732,
+                  0.734,
+                  0.62,
+                  0.52,
+                  0.495,
+                  0.481,
+                  0.312,
+                  0.403,
+                  0.052,
+                  0.015,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.002,
+                  0.277,
+                  0.489,
+                  0.707,
+                  0.45,
+                  0.502,
+                  0.464,
+                  0.692,
+                  0.676,
+                  0.36,
+                  0.453,
+                  0.168,
+                  0.084,
+                  0.076,
+                  0.095,
+                  0.336,
+                  0.68,
+                  0.469,
+                  0.165,
+                  0.054,
+                  0.017,
+                  0.007,
+                  0.411,
+                  0.436,
+                  0.693,
+                  0.715,
+                  0.986,
+                  1,
+                  0.755,
+                  0.671,
+                  0.703,
+                  0.44,
+                  0.683,
+                  0.757,
+                  0.595,
+                  0.165,
+                  0.061,
+                  0.049,
+                  0.015,
+                  0.004,
+                  0.059,
+                  0.768,
+                  0.634,
+                  0.508,
+                  0.363,
+                  0.453,
+                  0.507,
+                  0.732,
+                  0.798,
+                  0.881,
+                  0.873,
+                  0.663,
+                  0.401,
+                  0.749,
+                  0.505,
+                  0.055,
+                  0.028,
+                  0.155,
+                  0.151,
+                  0.71,
+                  0.646,
+                  0.565,
+                  0.577,
+                  0.401,
+                  0.556,
+                  0.585,
+                  0.562,
+                  0.693,
+                  0.694,
+                  0.647,
+                  0.588,
+                  0.519,
+                  0.379,
+                  0.366,
+                  0.405,
+                  0.141,
+                  0.028,
+                  0.017,
+                  0.022,
+                  0.027,
+                  0.028,
+                  0.029,
+                  0.024,
+                  0.012,
+                  0.006,
+                  0.001,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.08,
+                  0.355,
+                  0.422,
+                  0.377,
+                  0.451,
+                  0.435,
+                  0.529,
+                  0.647,
+                  0.454,
+                  0.211,
+                  0.333,
+                  0.473,
+                  0.333,
+                  0.309,
+                  0.304,
+                  0.161,
+                  0.069,
+                  0.294,
+                  0.247,
+                  0.211,
+                  0.198,
+                  0.238,
+                  0.146,
+                  0.049,
+                  0.064,
+                  0.065,
+                  0.342,
+                  0.318,
+                  0.275,
+                  0.25,
+                  0.22,
+                  0.102,
+                  0.122,
+                  0.068,
+                  0.007,
+                  0.002,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0.003,
+                  0.48,
+                  0.559,
+                  0.535,
+                  0.409,
+                  0.416,
+                  0.204,
+                  0.234,
+                  0.457,
+                  0.323,
+                  0.242,
+                  0.061,
+                  0.076,
+                  0.05,
+                  0.071,
+                  0.529,
+                  0.467,
+                  0.373,
+                  0.408,
+                  0.421,
+                  0.478,
+                  0.448,
+                  0.21,
+                  0.175,
+                  0.359,
+                  0.282,
+                  0.187,
+                  0.1,
+                  0.052,
+                  0.025,
+                  0.002,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "speech": [
+                [
+                  0.375,
+                  1.2
+                ],
+                [
+                  1.875,
+                  3.06
+                ],
+                [
+                  4.09,
+                  6.65
+                ],
+                [
+                  7.53,
+                  10.09
+                ],
+                [
+                  11.39,
+                  12.45
+                ],
+                [
+                  12.89,
+                  14.09
+                ],
+                [
+                  14.56,
+                  17.54
+                ],
+                [
+                  18.86,
+                  21.44
+                ],
+                [
+                  22.27,
+                  24.03
+                ],
+                [
+                  24.41,
+                  25.11
+                ],
+                [
+                  26.02,
+                  28.48
+                ],
+                [
+                  29.27,
+                  30.37
+                ],
+                [
+                  30.71,
+                  31.63
+                ]
+              ],
+              "from": 3.99,
+              "to": 31.63
+            },
+            "teleport": {
+              "in": {
+                "at": 0.35,
+                "dur": 1
+              },
+              "out": {
+                "at": 36.48,
+                "dur": 0.95
+              }
+            },
+            "camera": {
+              "origin": [
+                600,
+                1100
+              ],
+              "zoom": [
+                {
+                  "from": 4.09,
+                  "to": 33.43,
+                  "rampIn": 27.54,
+                  "rampOut": 1.4,
+                  "amount": 0.025
+                },
+                {
+                  "from": 3.84,
+                  "to": 7.95,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 18.61,
+                  "to": 22.74,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                },
+                {
+                  "from": 25.77,
+                  "to": 29.78,
+                  "rampIn": 0.8,
+                  "rampOut": 0.8,
+                  "amount": 0.027
+                }
+              ],
+              "shake": [
+                {
+                  "from": 8.57,
+                  "to": 9.57,
+                  "rampIn": 0.2,
+                  "rampOut": 0.3,
+                  "amount": 4
+                }
+              ]
+            },
+            "flash": {
+              "strikes": [
+                7.48,
+                11.34,
+                14.51,
+                18.81,
+                22.22,
+                25.97,
+                29.22
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "card",
+      "type": "visual",
+      "z": 40,
+      "items": [
+        {
+          "id": "card-opening",
+          "from": 0,
+          "duration": 120,
+          "kit": {
+            "name": "lower-third",
+            "version": "1.0.0"
+          },
+          "props": {
+            "kicker": "CARDUCCI · RIME NUOVE",
+            "titleLines": [
+              "SAN",
+              "MARTINO"
+            ],
+            "author": "Giosuè Carducci",
+            "maxWidth": 514,
+            "size": 124
+          },
+          "source": "title",
+          "transitionOut": {
+            "type": "fade",
+            "duration": 24
+          }
+        },
+        {
+          "id": "card-bow",
+          "from": 979,
+          "duration": 150,
+          "kit": {
+            "name": "lower-third",
+            "version": "1.0.0"
+          },
+          "props": {
+            "kicker": "CARDUCCI · RIME NUOVE",
+            "titleLines": [
+              "SAN",
+              "MARTINO"
+            ],
+            "author": "Giosuè Carducci",
+            "maxWidth": 514,
+            "size": 124,
+            "ruleGrow": 0
+          },
+          "source": "title",
+          "transitionIn": {
+            "type": "fade",
+            "duration": 27
+          }
+        }
+      ]
+    },
+    {
+      "id": "chip",
+      "type": "visual",
+      "z": 41,
+      "items": [
+        {
+          "id": "chip",
+          "from": 96,
+          "duration": 910,
+          "kit": {
+            "name": "title-chip",
+            "version": "1.0.0"
+          },
+          "props": {
+            "title": "San Martino",
+            "author": "Giosuè Carducci"
+          },
+          "source": "title",
+          "transitionIn": {
+            "type": "fade",
+            "duration": 24
+          },
+          "transitionOut": {
+            "type": "fade",
+            "duration": 27
+          }
+        }
+      ]
+    },
+    {
+      "id": "brand",
+      "type": "visual",
+      "z": 50,
+      "items": [
+        {
+          "id": "brand",
+          "from": 0,
+          "duration": 1129,
+          "kit": {
+            "name": "brand-mark",
+            "version": "1.0.0"
+          },
+          "props": {},
+          "source": "brand"
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "type": "audio",
+      "items": [
+        {
+          "id": "voice-1",
+          "from": 9,
+          "duration": 90,
+          "asset": "narration-titolo",
+          "source": "narration"
+        },
+        {
+          "id": "voice-2",
+          "from": 120,
+          "duration": 841,
+          "asset": "narration-recita",
+          "source": "narration"
+        }
+      ]
+    },
+    {
+      "id": "sfx-1",
+      "type": "audio",
+      "items": [
+        {
+          "id": "sfx-10",
+          "from": 9,
+          "duration": 54,
+          "asset": "sound-magia-incantatore",
+          "gain": 0.22,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[9]"
+        },
+        {
+          "id": "sfx-1",
+          "from": 111,
+          "duration": 108,
+          "asset": "sound-pioggerella-leggera",
+          "gain": 0.3,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[0]"
+        },
+        {
+          "id": "sfx-12",
+          "from": 231,
+          "duration": 72,
+          "asset": "sound-vento-breve",
+          "gain": 0.35,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[11]"
+        },
+        {
+          "id": "sfx-4",
+          "from": 369,
+          "duration": 102,
+          "asset": "sound-ribollire-pentola",
+          "gain": 0.26,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "trimStart": 111,
+          "source": "sfx[3]"
+        },
+        {
+          "id": "sfx-14",
+          "from": 500,
+          "duration": 60,
+          "asset": "sound-magia-shimmer",
+          "gain": 0.25,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[13]"
+        },
+        {
+          "id": "sfx-15",
+          "from": 671,
+          "duration": 48,
+          "asset": "sound-magia-incantatore",
+          "gain": 0.2,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[14]"
+        },
+        {
+          "id": "sfx-7",
+          "from": 784,
+          "duration": 132,
+          "asset": "sound-corvi-uccelli",
+          "gain": 0.24,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "trimStart": 63,
+          "source": "sfx[6]"
+        },
+        {
+          "id": "sfx-11",
+          "from": 1091,
+          "duration": 38,
+          "asset": "sound-magia-incantatore",
+          "gain": 0.22,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[10]"
+        }
+      ]
+    },
+    {
+      "id": "sfx-2",
+      "type": "audio",
+      "items": [
+        {
+          "id": "sfx-2",
+          "from": 217,
+          "duration": 102,
+          "asset": "sound-sfx-vento",
+          "gain": 0.4,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[1]"
+        },
+        {
+          "id": "sfx-13",
+          "from": 443,
+          "duration": 66,
+          "asset": "sound-arpa-glissando",
+          "gain": 0.3,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[12]"
+        },
+        {
+          "id": "sfx-5",
+          "from": 557,
+          "duration": 108,
+          "asset": "sound-fuoco-crepitio",
+          "gain": 0.42,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[4]"
+        },
+        {
+          "id": "sfx-6",
+          "from": 677,
+          "duration": 90,
+          "asset": "sound-fischio-uomo",
+          "gain": 0.3,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[5]"
+        },
+        {
+          "id": "sfx-8",
+          "from": 802,
+          "duration": 90,
+          "asset": "sound-stormo-piccioni-volo",
+          "gain": 0.38,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[7]"
+        }
+      ]
+    },
+    {
+      "id": "sfx-3",
+      "type": "audio",
+      "items": [
+        {
+          "id": "sfx-3",
+          "from": 241,
+          "duration": 108,
+          "asset": "sound-onde-schiuma",
+          "gain": 0.38,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[2]"
+        },
+        {
+          "id": "sfx-9",
+          "from": 872,
+          "duration": 216,
+          "asset": "sound-sfx-campana",
+          "gain": 0.28,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[8]"
+        }
+      ]
+    },
+    {
+      "id": "sfx-4",
+      "type": "audio",
+      "items": [
+        {
+          "id": "sfx-17",
+          "from": 875,
+          "duration": 90,
+          "asset": "sound-stormo-piccioni-volo",
+          "gain": 0.26,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[16]"
+        }
+      ]
+    },
+    {
+      "id": "sfx-5",
+      "type": "audio",
+      "items": [
+        {
+          "id": "sfx-16",
+          "from": 887,
+          "duration": 108,
+          "asset": "sound-foglie-secche",
+          "gain": 0.2,
+          "fadeIn": 9,
+          "fadeOut": 18,
+          "source": "sfx[15]"
+        }
+      ]
+    },
+    {
+      "id": "applause",
+      "type": "audio",
+      "items": [
+        {
+          "id": "applause",
+          "from": 973,
+          "duration": 156,
+          "asset": "sound-applauso-sala-caldo",
+          "gain": 0.72,
+          "fadeIn": 12,
+          "fadeOut": 40,
+          "source": "applause"
+        }
+      ]
+    },
+    {
+      "id": "music",
+      "type": "audio",
+      "duck": {
+        "under": [
+          "voice"
+        ],
+        "gain": 0.75
+      },
+      "items": [
+        {
+          "id": "music",
+          "from": 0,
+          "duration": 1129,
+          "asset": "sound-reverie-small-theme",
+          "gain": 0.63,
+          "fadeIn": 15,
+          "fadeOut": 45,
+          "source": "music"
+        }
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "title",
+      "from": 0,
+      "duration": 123,
+      "source": "title"
+    },
+    {
+      "id": "verse-1",
+      "from": 123,
+      "duration": 103,
+      "source": "verses[0]"
+    },
+    {
+      "id": "verse-2",
+      "from": 226,
+      "duration": 116,
+      "source": "verses[1]"
+    },
+    {
+      "id": "verse-3",
+      "from": 342,
+      "duration": 95,
+      "source": "verses[2]"
+    },
+    {
+      "id": "verse-4",
+      "from": 437,
+      "duration": 129,
+      "source": "verses[3]"
+    },
+    {
+      "id": "verse-5",
+      "from": 566,
+      "duration": 102,
+      "source": "verses[4]"
+    },
+    {
+      "id": "verse-6",
+      "from": 668,
+      "duration": 113,
+      "source": "verses[5]"
+    },
+    {
+      "id": "verse-7",
+      "from": 781,
+      "duration": 97,
+      "source": "verses[6]"
+    },
+    {
+      "id": "verse-8",
+      "from": 878,
+      "duration": 71,
+      "source": "verses[7]"
+    },
+    {
+      "id": "bow",
+      "from": 949,
+      "duration": 180,
+      "source": "applause"
+    }
+  ],
+  "metadata": {
+    "builtBy": "@studio/series dentro-i-versi-short@1.0.0",
+    "template": {
+      "id": "dentro-i-versi-short",
+      "version": "1.0.0",
+      "hash": "sha256:02fe71afba6da2ada1dd80e313b9a12bbd80e3d89cd84966168e515c9f4b322e"
+    },
+    "inputs": {
+      "../../templates/dentro-i-versi-short/1.0.0/FORMAT.md": "sha256:6f93e27cb5f7203f7134e0dc110ec2f33ca3672423b0ab16b9c286ea82de0f23",
+      "../../templates/dentro-i-versi-short/1.0.0/episode-spec.schema.json": "sha256:da81920478119245f0788905f6d9a38d4059edb1195aefd02932aaa0291f4c0b",
+      "../../templates/dentro-i-versi-short/1.0.0/episode-spec.template.json": "sha256:9063f24a54799015e9014d8bb79e206f27ddc86c4bc17d8218b00676a5e714e1",
+      "../../templates/dentro-i-versi-short/1.0.0/series-template.json": "sha256:02fe71afba6da2ada1dd80e313b9a12bbd80e3d89cd84966168e515c9f4b322e",
+      "artifacts/narration/takes.json": "sha256:16d31c12f6e5945d4e47760158bda849d8690803008ece08e3e3c8cf132de17a",
+      "artifacts/timing/recita.json": "sha256:fc87e0fdd533a1e58f05a5199d2f54de525667809ff8f52343598e128373d912",
+      "artifacts/timing/titolo.json": "sha256:b8148e5e1e3868b9ec88fe891d9549b6de748243f4ef63696f2f4c61155df668",
+      "assets/images/nebbia-texture.png": "sha256:46772ef9d12050d2ffacc8436943af6082186bb0077d0d22d16b0edf1efe6027",
+      "assets/images/sm-01c-nebbia-irti-colli.png": "sha256:9c29a5b7627421fd60cf18de33983e1f205799ff067e61eb2902789d6e959d8d",
+      "assets/images/sm-02-mare-maestrale.png": "sha256:b1bd7cf375837730d17a934b3526583a8695205526576551249c4a1f8652ca8b",
+      "assets/images/sm-03-borgo.png": "sha256:016105082cf5ea84b0de7abc48093be167273d41fa621a964e70f83e861a6748",
+      "assets/images/sm-04-tini-vino.png": "sha256:12ce33bf0bb7011b203878e2c21be91df6fe2ca919bb765dded3209d369401e6",
+      "assets/images/sm-05-spiedo-ceppi.png": "sha256:fbf65b3a6647360e3d9429a57c4c3dc364134f0670187fd8342cfd5875af474a",
+      "assets/images/sm-06-cacciatore-uscio.png": "sha256:ea66c12f10daa489a15f5f1d88ca4e6f3362676898019a168d616b8b62e3e2bd",
+      "assets/images/sm-07-stormi-nubi.png": "sha256:9a5fcd542f79751eec0ae06e24e6f36b4e6ba112a98e203fb95a4986c166895e",
+      "assets/images/sm-08-vespero.png": "sha256:ef160894918215ea50bc092f71c2b7f3c4eec2af106369fbf9c7175893a23e71",
+      "assets/images/sm-sagoma-cacciatore-crop.png": "sha256:7dcfa5103b0f3b9488ecc79cbc77f9489a662bb56b27701b0189d55019f066ea",
+      "assets/images/sm-sagoma-calice-crop.png": "sha256:54876b3582242f46adaac6c64402d81cfffdb552f1b9ce8ab92b99f62710937a",
+      "assets/images/vs-sala-chiusa.png": "sha256:30a21e3737a030c4a905b605ac25a33a2be25ef15f10eaf6e04b11c52dae8c91",
+      "assets/sounds/applauso-sala-caldo.mp3": "sha256:133e08b1ca43b70e496ce2d03326583986e33851156f383e8e439ad59d027459",
+      "assets/sounds/arpa-glissando.mp3": "sha256:52c141d47fd1e96f081fde953c43713815c36623b650d075c872c24ebd492877",
+      "assets/sounds/corvi-uccelli.mp3": "sha256:b142ff6e9ec9596d75de04672ddd8e1892c35ed58c844f11b08af258bf5c2414",
+      "assets/sounds/fischio-uomo.mp3": "sha256:0e8345c38f51de56cf94aff673c78a95ff73d8d50f418905493950a9b8d810ad",
+      "assets/sounds/foglie-secche.mp3": "sha256:bb046a8b6942898200471aa72d69fe43d26213ca20eb1b0ebd87dc7d83bd37d1",
+      "assets/sounds/fuoco-crepitio.mp3": "sha256:996623846845929df10744464fb0a24a73b677fb435bf90724480b41544c79cf",
+      "assets/sounds/magia-incantatore.mp3": "sha256:336f31eddd00927e88f4f475e10ae1bf386465e0b835b0f3c980250934a91c54",
+      "assets/sounds/magia-shimmer.mp3": "sha256:e99f60332adcccf47d23a949d4ed19150eaf8e4ca736e3173f719eb48cabc2c9",
+      "assets/sounds/onde-schiuma.mp3": "sha256:561fa02beaaf965b37c586984852c995b9ac24485399f517a13251a3161f4501",
+      "assets/sounds/pioggerella-leggera.mp3": "sha256:72c0459fd57ae0cf1935176d213c242abdc72888635e383cb1c16a37eec0d58f",
+      "assets/sounds/reverie-small-theme.mp3": "sha256:6d4ffa85e28febcee04d7b425d11a3ccdc44846824b9cf9618d8c2619f0a43c3",
+      "assets/sounds/ribollire-pentola.mp3": "sha256:3c0ac24b22d8a7940eee6832839ac373902220345b2031745925008019dadeea",
+      "assets/sounds/sfx-campana.mp3": "sha256:748ad5ff0351812b6bd01cfa24a428058dafa73f508433814ecedcda21b69c9a",
+      "assets/sounds/sfx-vento.mp3": "sha256:ecb81aea62cbf758d636e0323e04202ccdb228ab887736369503fa84efc3b049",
+      "assets/sounds/stormo-piccioni-volo.mp3": "sha256:272c05717f2a2983f5a3fb453ccba6b3d680c0379abc6a138f01bdaad973e87e",
+      "assets/sounds/vento-breve.mp3": "sha256:a63067d4c24b6a18a49e7355bd072ff957d4974abfaba9250fd24ae21682ab99",
+      "assets/takes/recita.wav": "sha256:1fa1ed6f8a6ca20ca29862fa689e19d5c1ca43d1153d42ae7528212427f9e643",
+      "assets/takes/titolo.wav": "sha256:6b75acfd8acd81091172febaf3680c038eaefe1f172db0326778b596cafa330e",
+      "episode-spec.json": "sha256:66adb3c37f7c66aea6b3c75f778fe1d710dbd0fa85f1e4da43d780202cfb0c7b"
+    },
+    "voiceEnd": 31.63,
+    "end": 37.633
+  }
+}

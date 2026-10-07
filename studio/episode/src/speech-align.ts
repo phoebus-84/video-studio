@@ -243,3 +243,41 @@ export async function measureSilences(audioPath: string): Promise<{ silences: [n
   if (durationSeconds - at > 0.02) speech.push([ms(at), ms(durationSeconds)]);
   return { silences, speech, durationSeconds };
 }
+
+/** Samples per second of a take's energy envelope. */
+export const ENERGY_RATE = 30;
+/** Decoded at this sample rate to measure it. */
+const ENERGY_SAMPLE_RATE = 24000;
+/** Frames quieter than this RMS (−50 dBFS) carry no voice: they neither set the scale nor move. */
+const ENERGY_FLOOR = 10 ** (-50 / 20);
+/** The scale is this percentile of the voiced frames, so one click or plosive does not flatten the rest. */
+const ENERGY_PERCENTILE = 0.95;
+
+/**
+ * The voice's loudness over time — RMS per 1/30 s, divided by the 95th
+ * percentile of the voiced frames and capped at 1 — for what moves with the
+ * voice (an actor's mouth). Frames under −50 dBFS are 0; a take with none
+ * above it is all 0. As many samples as the take lasts at ENERGY_RATE, the
+ * last padded with silence.
+ */
+export async function measureEnergy(audioPath: string, durationSeconds: number): Promise<{ rate: number; values: number[] }> {
+  let pcm: Buffer;
+  try {
+    ({ stdout: pcm } = await exec("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", audioPath, "-ac", "1", "-ar", String(ENERGY_SAMPLE_RATE), "-f", "s16le", "-"],
+      { encoding: "buffer", maxBuffer: 1024 * 1024 * 1024 }));
+  } catch (error) {
+    throw new AlignError("bad-audio", `ffmpeg could not read ${audioPath}: ${(error as Error).message}`);
+  }
+  const step = ENERGY_SAMPLE_RATE / ENERGY_RATE;
+  const total = pcm.length >> 1;
+  const rms = Array.from({ length: Math.round(durationSeconds * ENERGY_RATE) }, (_, i) => {
+    let sum = 0;
+    const end = Math.min(total, (i + 1) * step);
+    for (let j = i * step; j < end; j++) sum += (pcm.readInt16LE(j * 2) / 32768) ** 2;
+    return end > i * step ? Math.sqrt(sum / (end - i * step)) : 0;
+  });
+  const voiced = rms.filter((v) => v >= ENERGY_FLOOR).sort((a, b) => a - b);
+  const scale = voiced.length > 0 ? voiced[Math.min(voiced.length - 1, Math.floor(ENERGY_PERCENTILE * voiced.length))]! : 0;
+  return { rate: ENERGY_RATE, values: rms.map((v) => (scale > 0 && v >= ENERGY_FLOOR ? ms(Math.min(1, v / scale)) : 0)) };
+}
+

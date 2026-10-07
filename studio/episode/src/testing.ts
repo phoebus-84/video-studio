@@ -1,7 +1,8 @@
-// A spec-driven episode on disk, made from @studio/series's poetry-short
-// fixture: the contracts' example release copied into the series, the
-// fixture's spec, two narration takes with their word timing, three images.
-// Media are small placeholder files unless the caller writes real ones.
+// Spec-driven episodes on disk, made from @studio/series's fixtures: a
+// poetry-short episode (the contracts' example release copied into the
+// series, the fixture's spec, two narration takes with their word timing,
+// three images) and the dentro-i-versi-short golden San Martino. Media are
+// small placeholder files unless the caller writes real ones.
 
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,6 +12,7 @@ import { dirname, join } from "node:path";
 const require = createRequire(import.meta.url);
 const RELEASE = dirname(require.resolve("@studio/contracts/fixtures/series-template/example/templates/poetry-short/1.0.0/series-template.json"));
 const INPUT = require.resolve("@studio/series/fixtures/poetry-short/1.0.0/input.json");
+const DIV_INPUT = require.resolve("@studio/series/fixtures/dentro-i-versi-short/1.0.0/input.json");
 
 export const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
@@ -27,20 +29,55 @@ export function specEpisode(
   episodeRef: { channel: string; series: string; episode: string },
   options: SpecEpisodeOptions = {},
 ): void {
-  const input = JSON.parse(readFileSync(INPUT, "utf-8"));
+  layOut(episodeDir, episodeRef, INPUT, RELEASE, "poetry-short", options);
+}
+
+export interface DivShortEpisodeOptions extends SpecEpisodeOptions {
+  /** Write the sound at `path` (absolute); placeholder bytes by default. */
+  sound?: (path: string, assetId: string) => void;
+}
+
+/**
+ * Lay out the dentro-i-versi-short golden episode — a synthetic San Martino:
+ * its release, spec, two takes with their word timing and energy, every
+ * picture and sound the spec names — at `episodeDir`.
+ */
+export function divShortEpisode(
+  episodeDir: string,
+  episodeRef: { channel: string; series: string; episode: string },
+  options: DivShortEpisodeOptions = {},
+): void {
+  layOut(episodeDir, episodeRef, DIV_INPUT, join(dirname(DIV_INPUT), "release"), "dentro-i-versi-short", options);
+}
+
+function layOut(
+  episodeDir: string,
+  episodeRef: { channel: string; series: string; episode: string },
+  inputPath: string,
+  release: string,
+  templateId: string,
+  options: DivShortEpisodeOptions,
+): void {
+  const input = JSON.parse(readFileSync(inputPath, "utf-8"));
   const seriesDir = dirname(dirname(episodeDir));
   const write = (relative: string, content: string | Buffer) => {
     mkdirSync(dirname(join(episodeDir, relative)), { recursive: true });
     writeFileSync(join(episodeDir, relative), content);
   };
 
-  cpSync(RELEASE, join(seriesDir, "templates", "poetry-short", "1.0.0"), { recursive: true });
+  cpSync(release, join(seriesDir, "templates", templateId, input.template.version), { recursive: true });
 
-  for (const panel of input.spec.data.panels as { assetId: string }[]) {
-    const path = join(episodeDir, "assets", "images", `${panel.assetId}.png`);
+  // Every picture and sound the fixture names, by its asset id.
+  for (const [id, asset] of Object.entries<{ path: string; kind: string }>(input.assets)) {
+    const path = join(episodeDir, asset.path);
     mkdirSync(dirname(path), { recursive: true });
-    if (options.image) options.image(path, panel.assetId);
-    else writeFileSync(path, `image ${panel.assetId}`);
+    if (id.startsWith("image-")) {
+      if (options.image) options.image(path, id.slice(6));
+      else writeFileSync(path, `image ${id.slice(6)}`);
+    } else if (id.startsWith("sound-")) {
+      if (options.sound) options.sound(path, id.slice(6));
+      else writeFileSync(path, `sound ${id.slice(6)}`);
+    }
   }
 
   // Each take's audio, then its timing (bound to that audio's real hash),

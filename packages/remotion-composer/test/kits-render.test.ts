@@ -12,7 +12,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {renderStill, selectComposition} from '@remotion/renderer';
-import {KIT_VERSIONS, previewCompositionId} from '../src/kits/index.js';
+import {KIT_VERSIONS, drawnFor, previewCompositionId} from '../src/kits/index.js';
 import {bundlePreviews} from '../src/preview-bundle.js';
 import {drawnBox, overflow} from './drawn-box.js';
 import {outputProfiles} from './helpers.js';
@@ -45,7 +45,7 @@ describe('every kit example renders a real frame in every output profile', () =>
   });
 
   for (const profile of outputProfiles()) {
-    for (const kit of KIT_VERSIONS) {
+    for (const kit of KIT_VERSIONS.filter((k) => drawnFor(k, profile.id))) {
       for (const example of kit.examples) {
         const id = previewCompositionId(kit.name, kit.version, example.id);
         const name = `${kit.name}@${kit.version} ${example.id} in ${profile.id}`;

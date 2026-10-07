@@ -1,0 +1,2340 @@
+{
+  "spec": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "EpisodeSpec",
+    "episodeRef": {
+      "channel": "dentro-i-versi",
+      "series": "short",
+      "episode": "san-martino"
+    },
+    "revision": 1,
+    "template": {
+      "id": "dentro-i-versi-short",
+      "version": "1.0.0",
+      "hash": "sha256:02fe71afba6da2ada1dd80e313b9a12bbd80e3d89cd84966168e515c9f4b322e"
+    },
+    "data": {
+      "title": "San Martino",
+      "author": "Giosuè Carducci",
+      "kicker": "CARDUCCI · RIME NUOVE",
+      "titleLines": [
+        "San",
+        "Martino"
+      ],
+      "voiceEndWord": "migrar.",
+      "verses": [
+        {
+          "text": "La nebbia agli irti colli piovigginando sale,",
+          "strong": [
+            "nebbia",
+            "colli"
+          ],
+          "gloss": "La nebbia sale sui colli spogli, con una pioggia fine,"
+        },
+        {
+          "text": "e sotto il maestrale urla e biancheggia il mar;",
+          "strong": [
+            "maestrale",
+            "urla",
+            "mar"
+          ],
+          "gloss": "e il mare, sotto il maestrale, ruggisce e si copre di schiuma;"
+        },
+        {
+          "text": "ma per le vie del borgo dal ribollir de’ tini",
+          "strong": [
+            "borgo",
+            "ribollir",
+            "tini"
+          ],
+          "gloss": "ma per le vie del paese, dai tini dove il mosto fermenta,"
+        },
+        {
+          "text": "va l’aspro odor de i vini l’anime a rallegrar.",
+          "strong": [
+            "aspro",
+            "vini",
+            "rallegrar"
+          ],
+          "gloss": "l’odore aspro del vino nuovo va a rallegrare gli animi."
+        },
+        {
+          "text": "Gira su’ ceppi accesi lo spiedo scoppiettando:",
+          "strong": [
+            "ceppi",
+            "spiedo",
+            "scoppiettando"
+          ],
+          "gloss": "Sui ceppi accesi gira lo spiedo, scoppiettando;"
+        },
+        {
+          "text": "sta il cacciator fischiando su l’uscio a rimirar",
+          "strong": [
+            "cacciator",
+            "fischiando"
+          ],
+          "gloss": "il cacciatore, fischiettando, sta sulla porta a guardare"
+        },
+        {
+          "text": "tra le rossastre nubi stormi d’uccelli neri,",
+          "strong": [
+            "rossastre",
+            "stormi",
+            "neri"
+          ],
+          "gloss": "tra le nuvole rossastre stormi di uccelli neri"
+        },
+        {
+          "text": "com’esuli pensieri, nel vespero migrar.",
+          "strong": [
+            "esuli",
+            "pensieri",
+            "migrar"
+          ],
+          "gloss": "migrare nella sera, come pensieri in esilio."
+        }
+      ],
+      "pictures": [
+        {
+          "assetId": "sm-01c-nebbia-irti-colli",
+          "sc": 1.08,
+          "org": "50% 45%",
+          "spill": "#b8c8e0",
+          "cam": {
+            "dx": -10,
+            "dy": -14,
+            "z": 0.17,
+            "r": -0.18
+          },
+          "fx": [
+            "nebbia"
+          ]
+        },
+        {
+          "assetId": "sm-02-mare-maestrale",
+          "at": "verse:2",
+          "sc": 1.08,
+          "org": "60% 50%",
+          "spill": "#4f8fe0",
+          "cam": {
+            "dx": 14,
+            "dy": -8,
+            "z": 0.13,
+            "r": 0.14
+          },
+          "fx": [
+            "vento",
+            "acqua"
+          ]
+        },
+        {
+          "assetId": "sm-03-borgo",
+          "at": "verse:3",
+          "sc": 1.06,
+          "org": "50% 60%",
+          "spill": "#ffb347",
+          "cam": {
+            "dx": -12,
+            "dy": 12,
+            "z": 0.16,
+            "r": -0.12
+          },
+          "fx": [
+            "bagliore"
+          ]
+        },
+        {
+          "assetId": "sm-04-tini-vino",
+          "at": "verse:4",
+          "sc": 1.08,
+          "org": "45% 55%",
+          "spill": "#c2185b",
+          "cam": {
+            "dx": 0,
+            "dy": -16,
+            "z": 0.12,
+            "r": 0.1
+          },
+          "fx": [
+            "bagliore"
+          ]
+        },
+        {
+          "assetId": "sm-05-spiedo-ceppi",
+          "at": "verse:5",
+          "sc": 1.1,
+          "org": "40% 55%",
+          "spill": "#ff7a1a",
+          "cam": {
+            "dx": 14,
+            "dy": 10,
+            "z": 0.15,
+            "r": -0.15
+          },
+          "fx": [
+            "fuoco"
+          ]
+        },
+        {
+          "assetId": "sm-06-cacciatore-uscio",
+          "at": "verse:6",
+          "sc": 1.06,
+          "org": "40% 40%",
+          "spill": "#ffb27a",
+          "cam": {
+            "dx": -16,
+            "dy": -10,
+            "z": 0.14,
+            "r": 0.13
+          },
+          "fx": [
+            "riflesso"
+          ]
+        },
+        {
+          "assetId": "sm-07-stormi-nubi",
+          "at": "verse:7",
+          "sc": 1.06,
+          "org": "55% 35%",
+          "spill": "#ff5a3a",
+          "cam": {
+            "dx": 10,
+            "dy": -12,
+            "z": 0.18,
+            "r": -0.12
+          },
+          "fx": [
+            "bagliore",
+            "uccelli"
+          ]
+        },
+        {
+          "assetId": "sm-08-vespero",
+          "at": "verse:8",
+          "sc": 1.06,
+          "org": "40% 50%",
+          "spill": "#8a6cff",
+          "cam": {
+            "dx": -14,
+            "dy": 8,
+            "z": 0.13,
+            "r": 0.1
+          },
+          "fx": [
+            "nebbia"
+          ]
+        },
+        {
+          "assetId": "sm-01c-nebbia-irti-colli",
+          "at": "end+4.3",
+          "sc": 1.08,
+          "org": "50% 45%",
+          "spill": "#b8c8e0",
+          "cam": {
+            "dx": -10,
+            "dy": -14,
+            "z": 0.17,
+            "r": -0.18
+          },
+          "fx": [
+            "nebbia"
+          ]
+        }
+      ],
+      "actor": {
+        "variant": "attore",
+        "outfit": "gilet",
+        "base": "attore-saffo",
+        "palette": {
+          "shirt": "#eef2ff",
+          "shirtDark": "#c3cbe8",
+          "vest": "#eef2ff",
+          "vestLight": "#ffffff",
+          "button": "#5fdcff",
+          "inner": "#ffbf5e",
+          "innerDark": "#e09a2e",
+          "trousers": "#283066"
+        }
+      },
+      "poses": [
+        {
+          "at": "verse:1-0.15",
+          "lu": 22,
+          "lf": 50,
+          "ru": 22,
+          "rf": 50,
+          "head": -2,
+          "step": 1
+        },
+        {
+          "at": "verse:1+1.2",
+          "lu": 38,
+          "lf": 88,
+          "ru": 38,
+          "rf": 88,
+          "head": -4,
+          "step": 1
+        },
+        {
+          "at": "verse:2+0.05",
+          "preset": "indica",
+          "lu": 12,
+          "lf": 30
+        },
+        {
+          "at": "verse:2+1.3",
+          "lu": 52,
+          "lf": 70,
+          "ru": 52,
+          "rf": 70,
+          "head": -3,
+          "lean": -3
+        },
+        {
+          "at": "verse:3+0.1",
+          "lu": 13,
+          "lf": 55,
+          "ru": 10,
+          "rf": 40,
+          "head": 2,
+          "lean": 3
+        },
+        {
+          "at": "verse:4+0.05",
+          "preset": "indica"
+        },
+        {
+          "at": "verse:4+1.3",
+          "ru": 30,
+          "rf": 96,
+          "head": -2,
+          "lean": 2
+        },
+        {
+          "at": "verse:5+0.05",
+          "preset": "indica",
+          "lu": 10,
+          "lf": 24
+        },
+        {
+          "at": "verse:5+1.2",
+          "lu": 24,
+          "lf": 100,
+          "ru": 18,
+          "rf": 88,
+          "twist": 1
+        },
+        {
+          "at": "verse:6+0.1",
+          "lu": 72,
+          "lf": 96,
+          "ru": 10,
+          "rf": 24,
+          "head": -3,
+          "lean": -2
+        },
+        {
+          "at": "verse:7+0.05",
+          "preset": "indica",
+          "ru": 132,
+          "rf": 146,
+          "head": 5
+        },
+        {
+          "at": "verse:7+1.4",
+          "lu": 58,
+          "lf": 78,
+          "ru": 58,
+          "rf": 78,
+          "head": -5,
+          "step": 1
+        },
+        {
+          "at": "verse:8+0.1",
+          "lu": 10,
+          "lf": 26,
+          "ru": 10,
+          "rf": 26,
+          "head": 5,
+          "dip": 1
+        }
+      ],
+      "expressions": "WAIINNWM",
+      "gaze": [
+        {
+          "from": 0.3,
+          "to": 2.2,
+          "x": 3,
+          "y": 4,
+          "h": 4
+        },
+        {
+          "from": "verse:6+1.6",
+          "to": "verseEnd:6",
+          "x": 3,
+          "y": -4.5,
+          "h": 4
+        },
+        {
+          "from": "verse:8+1.6",
+          "to": "verseEnd:8+0.3",
+          "x": -3.5,
+          "y": -1.5,
+          "h": -3
+        }
+      ],
+      "pushVerses": [
+        1,
+        5,
+        7
+      ],
+      "lights": [
+        {
+          "at": 0,
+          "dark": 0.06,
+          "spot": "#fff1d8",
+          "tint": "#1a120c",
+          "w": 1
+        },
+        {
+          "at": "verse:1-0.7",
+          "dark": 0.06,
+          "spot": "#fff1d8",
+          "tint": "#1a120c",
+          "w": 1
+        },
+        {
+          "at": "verse:1+0.5",
+          "dark": 0.3,
+          "spot": "#a9c2ff",
+          "tint": "#0e1424",
+          "w": 1
+        },
+        {
+          "at": "verse:2+0.4",
+          "dark": 0.38,
+          "spot": "#6f9cff",
+          "tint": "#0a1428",
+          "w": 0.92
+        },
+        {
+          "at": "verse:3-0.3",
+          "dark": 0.38,
+          "spot": "#6f9cff",
+          "tint": "#0a1428",
+          "w": 0.92
+        },
+        {
+          "at": "verse:3+0.6",
+          "dark": 0.24,
+          "spot": "#ffb84a",
+          "tint": "#24140a",
+          "w": 1.02
+        },
+        {
+          "at": "verse:4+0.5",
+          "dark": 0.32,
+          "spot": "#e8456e",
+          "tint": "#220a14",
+          "w": 1
+        },
+        {
+          "at": "verse:5-0.3",
+          "dark": 0.32,
+          "spot": "#e8456e",
+          "tint": "#220a14",
+          "w": 1
+        },
+        {
+          "at": "verse:5+0.5",
+          "dark": 0.34,
+          "spot": "#ff8a3a",
+          "tint": "#24100a",
+          "w": 1
+        },
+        {
+          "at": "verse:6+0.5",
+          "dark": 0.26,
+          "spot": "#ffb070",
+          "tint": "#24140a",
+          "w": 1.04
+        },
+        {
+          "at": "verse:7-0.3",
+          "dark": 0.26,
+          "spot": "#ffb070",
+          "tint": "#24140a",
+          "w": 1.04
+        },
+        {
+          "at": "verse:7+0.5",
+          "dark": 0.36,
+          "spot": "#ff4a3a",
+          "tint": "#260a0a",
+          "w": 0.95
+        },
+        {
+          "at": "verse:8+0.4",
+          "dark": 0.42,
+          "spot": "#8a7cff",
+          "tint": "#0e0c2a",
+          "w": 0.88
+        },
+        {
+          "at": "end+0.6",
+          "dark": 0.36,
+          "spot": "#8a7cff",
+          "tint": "#0e0c2a",
+          "w": 0.95
+        },
+        {
+          "at": "end+1.8",
+          "dark": 0.03,
+          "spot": "#fff3dd",
+          "tint": "#1a120c",
+          "w": 1.1
+        },
+        {
+          "at": "end+4.6",
+          "dark": 0.06,
+          "spot": "#fff1d8",
+          "tint": "#1a120c",
+          "w": 1
+        }
+      ],
+      "hall": {
+        "room": "vs-sala-chiusa",
+        "textures": {
+          "fog": "nebbia-texture"
+        },
+        "pedestal": true,
+        "teleport": {
+          "in": [
+            0.35,
+            1.0
+          ],
+          "out": [
+            "end+4.85",
+            0.95
+          ]
+        },
+        "wind": [
+          {
+            "from": "word:maestrale-0.2",
+            "to": "word:mar+1.8",
+            "strength": 0.75
+          }
+        ],
+        "shake": [
+          {
+            "from": "word:urla-0.1",
+            "to": "word:urla+0.9",
+            "amp": 4
+          }
+        ],
+        "shatter": []
+      },
+      "roomFx": [
+        {
+          "fx": "nebbia-sala",
+          "at": "verse:1+0.2",
+          "to": "verse:2+1.2",
+          "color": "#dfe8ff"
+        },
+        {
+          "fx": "vapore",
+          "at": "word:ribollir-0.2",
+          "to": "verse:4+2.4",
+          "color": "#c2185b"
+        },
+        {
+          "fx": "apparizione",
+          "at": "verse:4+0.2",
+          "to": "verse:5+1.8",
+          "x": 190,
+          "y": 760,
+          "w": 360,
+          "mode": "sale",
+          "exit": "rientra",
+          "glow": "#ff6a8a",
+          "assetId": "sm-sagoma-calice-crop"
+        },
+        {
+          "fx": "incanto",
+          "at": "word:rallegrar-0.3",
+          "to": "verse:5+0.8",
+          "color": "#ffb347"
+        },
+        {
+          "fx": "apparizione",
+          "at": "word:cacciator-0.2",
+          "to": "verse:8-0.3",
+          "x": 190,
+          "y": 900,
+          "w": 560,
+          "mode": "scende",
+          "exit": "rientra",
+          "glow": "#ffb27a",
+          "assetId": "sm-sagoma-cacciatore-crop"
+        },
+        {
+          "fx": "note",
+          "at": "word:fischiando-0.1",
+          "to": "verse:7+0.4",
+          "x": 230,
+          "y": 640,
+          "color": "#ffd38a"
+        },
+        {
+          "fx": "uccelli",
+          "at": "verse:8-0.2",
+          "to": "end+2.4"
+        },
+        {
+          "fx": "foglie",
+          "at": "verse:8+0.3",
+          "to": "end+2.4"
+        },
+        {
+          "fx": "nebbia-sala",
+          "at": "word:vespero-0.2",
+          "to": "end+3.6",
+          "color": "#cdb8ff"
+        }
+      ],
+      "sfx": [
+        {
+          "assetId": "pioggerella-leggera",
+          "at": "verse:1-0.4",
+          "dur": 3.6,
+          "gain": 0.3
+        },
+        {
+          "assetId": "sfx-vento",
+          "at": "verse:2-0.3",
+          "dur": 3.4,
+          "gain": 0.4
+        },
+        {
+          "assetId": "onde-schiuma",
+          "at": "verse:2+0.5",
+          "dur": 3.6,
+          "gain": 0.38
+        },
+        {
+          "assetId": "ribollire-pentola",
+          "at": "verse:3+0.9",
+          "dur": 3.4,
+          "gain": 0.26,
+          "offset": 3.7
+        },
+        {
+          "assetId": "fuoco-crepitio",
+          "at": "verse:5-0.3",
+          "dur": 3.6,
+          "gain": 0.42
+        },
+        {
+          "assetId": "fischio-uomo",
+          "at": "verse:6+0.3",
+          "dur": 3.0,
+          "gain": 0.3
+        },
+        {
+          "assetId": "corvi-uccelli",
+          "at": "verse:7+0.1",
+          "dur": 4.4,
+          "gain": 0.24,
+          "offset": 2.1
+        },
+        {
+          "assetId": "stormo-piccioni-volo",
+          "at": "verse:7+0.7",
+          "dur": 3.0,
+          "gain": 0.38
+        },
+        {
+          "assetId": "sfx-campana",
+          "at": "verse:8-0.2",
+          "dur": 7.2,
+          "gain": 0.28
+        },
+        {
+          "assetId": "magia-incantatore",
+          "at": 0.3,
+          "dur": 1.8,
+          "gain": 0.22
+        },
+        {
+          "assetId": "magia-incantatore",
+          "at": "end+4.75",
+          "dur": 1.4,
+          "gain": 0.22
+        },
+        {
+          "assetId": "vento-breve",
+          "at": "word:maestrale-0.3",
+          "dur": 2.4,
+          "gain": 0.35
+        },
+        {
+          "assetId": "arpa-glissando",
+          "at": "verse:4+0.2",
+          "dur": 2.2,
+          "gain": 0.3
+        },
+        {
+          "assetId": "magia-shimmer",
+          "at": "word:rallegrar-0.2",
+          "dur": 2.0,
+          "gain": 0.25
+        },
+        {
+          "assetId": "magia-incantatore",
+          "at": "word:cacciator-0.2",
+          "dur": 1.6,
+          "gain": 0.2
+        },
+        {
+          "assetId": "foglie-secche",
+          "at": "verse:8+0.3",
+          "dur": 3.6,
+          "gain": 0.2
+        },
+        {
+          "assetId": "stormo-piccioni-volo",
+          "at": "verse:8-0.1",
+          "dur": 3.0,
+          "gain": 0.26
+        }
+      ],
+      "applause": {
+        "assetId": "applauso-sala-caldo"
+      },
+      "music": {
+        "assetId": "reverie-small-theme",
+        "gain": 0.63,
+        "duck": 0.75
+      }
+    }
+  },
+  "template": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "SeriesTemplate",
+    "id": "dentro-i-versi-short",
+    "version": "1.0.0",
+    "compiler": {
+      "id": "dentro-i-versi-short",
+      "version": "1.0.0"
+    },
+    "validator": {
+      "id": "dentro-i-versi-short",
+      "version": "1.0.0"
+    },
+    "files": {
+      "schema": {
+        "path": "episode-spec.schema.json",
+        "hash": "sha256:da81920478119245f0788905f6d9a38d4059edb1195aefd02932aaa0291f4c0b"
+      },
+      "template": {
+        "path": "episode-spec.template.json",
+        "hash": "sha256:9063f24a54799015e9014d8bb79e206f27ddc86c4bc17d8218b00676a5e714e1"
+      },
+      "standard": {
+        "path": "FORMAT.md",
+        "hash": "sha256:6f93e27cb5f7203f7134e0dc110ec2f33ca3672423b0ab16b9c286ea82de0f23"
+      }
+    },
+    "sheet": {
+      "instants": [
+        {
+          "at": "start",
+          "offsetSeconds": 0.85,
+          "sections": [
+            "title"
+          ]
+        },
+        {
+          "at": "middle",
+          "sections": [
+            "verse-*"
+          ]
+        },
+        {
+          "at": "end",
+          "offsetSeconds": -0.7,
+          "sections": [
+            "bow"
+          ]
+        }
+      ]
+    }
+  },
+  "narration": {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "NarrationTakes",
+    "takes": [
+      {
+        "id": "titolo",
+        "audio": {
+          "path": "assets/takes/titolo.wav",
+          "hash": "sha256:6b75acfd8acd81091172febaf3680c038eaefe1f172db0326778b596cafa330e",
+          "durationSeconds": 3.0
+        },
+        "text": "San Martino, di Giosuè Carducci.",
+        "voice": {
+          "provider": "elevenlabs",
+          "voiceId": "Alessandra"
+        },
+        "timing": {
+          "path": "artifacts/timing/titolo.json",
+          "hash": "sha256:b8148e5e1e3868b9ec88fe891d9549b6de748243f4ef63696f2f4c61155df668"
+        }
+      },
+      {
+        "id": "recita",
+        "audio": {
+          "path": "assets/takes/recita.wav",
+          "hash": "sha256:1fa1ed6f8a6ca20ca29862fa689e19d5c1ca43d1153d42ae7528212427f9e643",
+          "durationSeconds": 28.04
+        },
+        "text": "La nebbia agli irti colli piovigginando sale, e sotto il maestrale urla e biancheggia il mar; ma per le vie del borgo dal ribollir de’ tini va l’aspro odor de i vini l’anime a rallegrar. Gira su’ ceppi accesi lo spiedo scoppiettando: sta il cacciator fischiando su l’uscio a rimirar tra le rossastre nubi stormi d’uccelli neri, com’esuli pensieri, nel vespero migrar.",
+        "voice": {
+          "provider": "elevenlabs",
+          "voiceId": "Marcello"
+        },
+        "timing": {
+          "path": "artifacts/timing/recita.json",
+          "hash": "sha256:fc87e0fdd533a1e58f05a5199d2f54de525667809ff8f52343598e128373d912"
+        }
+      }
+    ],
+    "units": [
+      {
+        "id": "recital",
+        "source": "title, then the poem",
+        "sequence": [
+          {
+            "take": "titolo"
+          },
+          {
+            "take": "recita",
+            "pauseBefore": 0.69
+          }
+        ]
+      }
+    ]
+  },
+  "timings": {
+    "titolo": {
+      "apiVersion": "studio.video/v1alpha1",
+      "kind": "WordTiming",
+      "take": {
+        "id": "titolo"
+      },
+      "audio": {
+        "path": "assets/takes/titolo.wav",
+        "hash": "sha256:6b75acfd8acd81091172febaf3680c038eaefe1f172db0326778b596cafa330e",
+        "durationSeconds": 3.0
+      },
+      "text": "San Martino, di Giosuè Carducci.",
+      "language": "it",
+      "alignment": {
+        "provider": "fixture",
+        "method": "forced",
+        "createdAt": "2026-10-07T00:00:00Z"
+      },
+      "words": [
+        {
+          "text": "San",
+          "start": 0.075,
+          "end": 0.42
+        },
+        {
+          "text": "Martino,",
+          "start": 0.45,
+          "end": 0.9
+        },
+        {
+          "text": "di",
+          "start": 1.575,
+          "end": 1.68
+        },
+        {
+          "text": "Giosuè",
+          "start": 1.72,
+          "end": 2.2
+        },
+        {
+          "text": "Carducci.",
+          "start": 2.25,
+          "end": 2.76
+        }
+      ],
+      "energy": {
+        "rate": 30,
+        "values": [
+          0.003,
+          0.005,
+          0.019,
+          0.031,
+          0.045,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.829,
+          0.233,
+          0.033,
+          0.018,
+          0.065,
+          0.744,
+          0.822,
+          0.915,
+          1.0,
+          0.858,
+          0.895,
+          0.909,
+          0.737,
+          0.405,
+          0.119,
+          0.017,
+          0.004,
+          0.004,
+          0.002,
+          0.002,
+          0.001,
+          0.002,
+          0.001,
+          0.001,
+          0.001,
+          0.001,
+          0.002,
+          0.002,
+          0.001,
+          0.001,
+          0.001,
+          0.001,
+          0.001,
+          0.001,
+          0.003,
+          0.186,
+          0.726,
+          1.0,
+          1.0,
+          0.407,
+          0.271,
+          0.745,
+          1.0,
+          1.0,
+          0.548,
+          0.186,
+          0.358,
+          1.0,
+          1.0,
+          1.0,
+          0.688,
+          0.033,
+          0.291,
+          0.512,
+          0.971,
+          0.788,
+          0.466,
+          0.156,
+          0.153,
+          0.613,
+          0.537,
+          0.138,
+          0.025,
+          0.011,
+          0.114,
+          0.236,
+          0.194,
+          0.268,
+          0.222,
+          0.177,
+          0.096,
+          0.011,
+          0.004,
+          0.001,
+          0.001,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "recita": {
+      "apiVersion": "studio.video/v1alpha1",
+      "kind": "WordTiming",
+      "take": {
+        "id": "recita"
+      },
+      "audio": {
+        "path": "assets/takes/recita.wav",
+        "hash": "sha256:1fa1ed6f8a6ca20ca29862fa689e19d5c1ca43d1153d42ae7528212427f9e643",
+        "durationSeconds": 28.04
+      },
+      "text": "La nebbia agli irti colli piovigginando sale, e sotto il maestrale urla e biancheggia il mar; ma per le vie del borgo dal ribollir de’ tini va l’aspro odor de i vini l’anime a rallegrar. Gira su’ ceppi accesi lo spiedo scoppiettando: sta il cacciator fischiando su l’uscio a rimirar tra le rossastre nubi stormi d’uccelli neri, com’esuli pensieri, nel vespero migrar.",
+      "language": "it",
+      "alignment": {
+        "provider": "fixture",
+        "method": "forced",
+        "createdAt": "2026-10-07T00:00:00Z"
+      },
+      "words": [
+        {
+          "text": "La",
+          "start": 0.1,
+          "end": 0.18
+        },
+        {
+          "text": "nebbia",
+          "start": 0.22,
+          "end": 0.56
+        },
+        {
+          "text": "agli",
+          "start": 0.62,
+          "end": 0.82
+        },
+        {
+          "text": "irti",
+          "start": 0.86,
+          "end": 1.08
+        },
+        {
+          "text": "colli",
+          "start": 1.12,
+          "end": 1.48
+        },
+        {
+          "text": "piovigginando",
+          "start": 1.52,
+          "end": 2.28
+        },
+        {
+          "text": "sale,",
+          "start": 2.36,
+          "end": 2.66
+        },
+        {
+          "text": "e",
+          "start": 3.54,
+          "end": 3.6
+        },
+        {
+          "text": "sotto",
+          "start": 3.66,
+          "end": 3.84
+        },
+        {
+          "text": "il",
+          "start": 3.9,
+          "end": 3.96
+        },
+        {
+          "text": "maestrale",
+          "start": 4.0,
+          "end": 4.6
+        },
+        {
+          "text": "urla",
+          "start": 4.68,
+          "end": 4.96
+        },
+        {
+          "text": "e",
+          "start": 5.0,
+          "end": 5.06
+        },
+        {
+          "text": "biancheggia",
+          "start": 5.12,
+          "end": 5.66
+        },
+        {
+          "text": "il",
+          "start": 5.7,
+          "end": 5.8
+        },
+        {
+          "text": "mar;",
+          "start": 5.86,
+          "end": 6.1
+        },
+        {
+          "text": "ma",
+          "start": 7.4,
+          "end": 7.48
+        },
+        {
+          "text": "per",
+          "start": 7.52,
+          "end": 7.64
+        },
+        {
+          "text": "le",
+          "start": 7.68,
+          "end": 7.74
+        },
+        {
+          "text": "vie",
+          "start": 7.78,
+          "end": 7.9
+        },
+        {
+          "text": "del",
+          "start": 7.96,
+          "end": 8.1
+        },
+        {
+          "text": "borgo",
+          "start": 8.14,
+          "end": 8.46
+        },
+        {
+          "text": "dal",
+          "start": 8.9,
+          "end": 9.04
+        },
+        {
+          "text": "ribollir",
+          "start": 9.16,
+          "end": 9.64
+        },
+        {
+          "text": "de’",
+          "start": 9.68,
+          "end": 9.78
+        },
+        {
+          "text": "tini",
+          "start": 9.82,
+          "end": 10.1
+        },
+        {
+          "text": "va",
+          "start": 10.57,
+          "end": 10.63
+        },
+        {
+          "text": "l’aspro",
+          "start": 10.73,
+          "end": 11.09
+        },
+        {
+          "text": "odor",
+          "start": 11.15,
+          "end": 11.39
+        },
+        {
+          "text": "de",
+          "start": 11.43,
+          "end": 11.51
+        },
+        {
+          "text": "i",
+          "start": 11.53,
+          "end": 11.61
+        },
+        {
+          "text": "vini",
+          "start": 11.65,
+          "end": 12.19
+        },
+        {
+          "text": "l’anime",
+          "start": 12.29,
+          "end": 12.67
+        },
+        {
+          "text": "a",
+          "start": 12.75,
+          "end": 12.79
+        },
+        {
+          "text": "rallegrar.",
+          "start": 12.89,
+          "end": 13.55
+        },
+        {
+          "text": "Gira",
+          "start": 14.87,
+          "end": 15.15
+        },
+        {
+          "text": "su’",
+          "start": 15.19,
+          "end": 15.29
+        },
+        {
+          "text": "ceppi",
+          "start": 15.35,
+          "end": 15.61
+        },
+        {
+          "text": "accesi",
+          "start": 15.67,
+          "end": 16.11
+        },
+        {
+          "text": "lo",
+          "start": 16.15,
+          "end": 16.23
+        },
+        {
+          "text": "spiedo",
+          "start": 16.31,
+          "end": 16.61
+        },
+        {
+          "text": "scoppiettando:",
+          "start": 16.65,
+          "end": 17.45
+        },
+        {
+          "text": "sta",
+          "start": 18.28,
+          "end": 18.42
+        },
+        {
+          "text": "il",
+          "start": 18.46,
+          "end": 18.54
+        },
+        {
+          "text": "cacciator",
+          "start": 18.58,
+          "end": 19.0
+        },
+        {
+          "text": "fischiando",
+          "start": 19.06,
+          "end": 19.54
+        },
+        {
+          "text": "su",
+          "start": 19.58,
+          "end": 19.66
+        },
+        {
+          "text": "l’uscio",
+          "start": 19.7,
+          "end": 20.04
+        },
+        {
+          "text": "a",
+          "start": 20.42,
+          "end": 20.48
+        },
+        {
+          "text": "rimirar",
+          "start": 20.6,
+          "end": 21.12
+        },
+        {
+          "text": "tra",
+          "start": 22.03,
+          "end": 22.15
+        },
+        {
+          "text": "le",
+          "start": 22.19,
+          "end": 22.27
+        },
+        {
+          "text": "rossastre",
+          "start": 22.31,
+          "end": 22.85
+        },
+        {
+          "text": "nubi",
+          "start": 22.89,
+          "end": 23.19
+        },
+        {
+          "text": "stormi",
+          "start": 23.25,
+          "end": 23.69
+        },
+        {
+          "text": "d’uccelli",
+          "start": 23.73,
+          "end": 24.19
+        },
+        {
+          "text": "neri,",
+          "start": 24.23,
+          "end": 24.49
+        },
+        {
+          "text": "com’esuli",
+          "start": 25.28,
+          "end": 25.78
+        },
+        {
+          "text": "pensieri,",
+          "start": 25.82,
+          "end": 26.38
+        },
+        {
+          "text": "nel",
+          "start": 26.72,
+          "end": 26.88
+        },
+        {
+          "text": "vespero",
+          "start": 26.92,
+          "end": 27.28
+        },
+        {
+          "text": "migrar.",
+          "start": 27.32,
+          "end": 27.64
+        }
+      ],
+      "energy": {
+        "rate": 30,
+        "values": [
+          0.153,
+          0.479,
+          0.581,
+          0.808,
+          0.608,
+          0.855,
+          0.797,
+          0.805,
+          0.681,
+          0.444,
+          0.421,
+          0.435,
+          0.893,
+          0.94,
+          0.85,
+          0.627,
+          0.636,
+          0.61,
+          0.516,
+          0.641,
+          0.658,
+          0.425,
+          0.581,
+          0.901,
+          0.923,
+          0.843,
+          0.473,
+          0.25,
+          0.08,
+          0.352,
+          0.844,
+          0.329,
+          0.114,
+          0.614,
+          0.896,
+          0.674,
+          0.628,
+          0.625,
+          0.598,
+          0.61,
+          0.511,
+          0.689,
+          0.725,
+          0.291,
+          0.088,
+          0.203,
+          0.681,
+          0.77,
+          0.475,
+          0.372,
+          0.898,
+          0.516,
+          0.35,
+          0.339,
+          0.65,
+          0.882,
+          0.734,
+          0.639,
+          0.572,
+          0.561,
+          0.497,
+          0.514,
+          0.505,
+          0.425,
+          0.324,
+          0.348,
+          0.301,
+          0.113,
+          0.065,
+          0.087,
+          0.153,
+          0.45,
+          0.416,
+          0.376,
+          0.283,
+          0.247,
+          0.205,
+          0.18,
+          0.182,
+          0.121,
+          0.035,
+          0.005,
+          0.003,
+          0.003,
+          0.002,
+          0.002,
+          0.001,
+          0.008,
+          0.02,
+          0.02,
+          0.024,
+          0.019,
+          0.01,
+          0.004,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.069,
+          0.107,
+          0.356,
+          0.08,
+          0.067,
+          0.092,
+          0.53,
+          0.419,
+          0.049,
+          0.092,
+          0.61,
+          0.721,
+          0.631,
+          0.666,
+          0.648,
+          0.622,
+          0.627,
+          0.526,
+          0.523,
+          0.359,
+          0.071,
+          0.03,
+          0.013,
+          0.279,
+          0.432,
+          0.874,
+          0.731,
+          0.624,
+          0.614,
+          0.438,
+          0.594,
+          0.542,
+          0.505,
+          0.515,
+          0.602,
+          0.799,
+          0.853,
+          0.698,
+          0.659,
+          0.383,
+          0.4,
+          0.705,
+          0.629,
+          0.646,
+          0.618,
+          0.636,
+          0.519,
+          0.236,
+          0.248,
+          0.449,
+          0.807,
+          0.679,
+          0.546,
+          0.577,
+          0.386,
+          0.062,
+          0.072,
+          0.687,
+          0.69,
+          0.337,
+          0.271,
+          0.416,
+          0.863,
+          0.544,
+          0.366,
+          0.329,
+          0.33,
+          0.234,
+          0.286,
+          0.331,
+          0.359,
+          0.368,
+          0.293,
+          0.294,
+          0.285,
+          0.349,
+          0.191,
+          0.237,
+          0.109,
+          0.041,
+          0.006,
+          0.003,
+          0.001,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.011,
+          0.021,
+          0.021,
+          0.012,
+          0.045,
+          0.004,
+          0.49,
+          0.727,
+          0.302,
+          0.028,
+          0.796,
+          0.943,
+          0.466,
+          0.345,
+          0.621,
+          0.729,
+          0.751,
+          0.436,
+          0.601,
+          0.723,
+          0.994,
+          0.495,
+          0.249,
+          0.633,
+          0.816,
+          0.741,
+          0.628,
+          0.413,
+          0.438,
+          0.96,
+          0.917,
+          0.826,
+          0.501,
+          0.564,
+          0.315,
+          0.312,
+          0.885,
+          0.822,
+          0.405,
+          0.07,
+          0.036,
+          0.024,
+          0.019,
+          0.017,
+          0.016,
+          0.012,
+          0.006,
+          0.002,
+          0.001,
+          0.091,
+          0.32,
+          0.568,
+          0.949,
+          0.753,
+          0.64,
+          0.628,
+          0.556,
+          0.846,
+          0.509,
+          0.734,
+          0.885,
+          0.562,
+          0.642,
+          0.793,
+          0.696,
+          0.588,
+          0.451,
+          0.443,
+          0.579,
+          0.83,
+          0.948,
+          0.71,
+          0.552,
+          0.343,
+          0.368,
+          0.738,
+          0.968,
+          0.581,
+          0.079,
+          0.229,
+          0.463,
+          0.503,
+          0.562,
+          0.868,
+          0.83,
+          0.693,
+          0.725,
+          0.385,
+          0.074,
+          0.03,
+          0.012,
+          0.003,
+          0.001,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.198,
+          0.529,
+          0.433,
+          0.807,
+          0.82,
+          0.606,
+          0.536,
+          0.564,
+          0.536,
+          0.642,
+          0.549,
+          0.34,
+          0.098,
+          0.053,
+          0.011,
+          0.128,
+          0.61,
+          0.766,
+          0.844,
+          0.758,
+          0.78,
+          0.732,
+          0.409,
+          0.899,
+          0.979,
+          0.918,
+          0.632,
+          0.475,
+          0.26,
+          0.538,
+          0.799,
+          0.658,
+          0.529,
+          0.52,
+          0.391,
+          0.302,
+          0.517,
+          0.504,
+          0.464,
+          0.4,
+          0.471,
+          0.468,
+          0.408,
+          0.396,
+          0.371,
+          0.276,
+          0.165,
+          0.052,
+          0.008,
+          0.004,
+          0.001,
+          0.0,
+          0.07,
+          0.398,
+          0.522,
+          0.602,
+          0.718,
+          0.583,
+          0.509,
+          0.443,
+          0.44,
+          0.431,
+          0.441,
+          0.462,
+          0.459,
+          0.383,
+          0.434,
+          0.396,
+          0.4,
+          0.456,
+          0.318,
+          0.312,
+          0.342,
+          0.462,
+          0.566,
+          0.445,
+          0.42,
+          0.292,
+          0.336,
+          0.381,
+          0.165,
+          0.148,
+          0.411,
+          0.288,
+          0.429,
+          0.304,
+          0.342,
+          0.329,
+          0.327,
+          0.125,
+          0.195,
+          0.027,
+          0.002,
+          0.001,
+          0.001,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.046,
+          0.105,
+          0.285,
+          0.275,
+          0.557,
+          0.641,
+          0.684,
+          0.683,
+          0.467,
+          0.658,
+          0.619,
+          0.318,
+          0.076,
+          0.065,
+          0.478,
+          0.236,
+          0.052,
+          0.087,
+          0.216,
+          0.803,
+          0.299,
+          0.052,
+          0.016,
+          0.066,
+          0.316,
+          0.52,
+          0.657,
+          0.563,
+          0.114,
+          0.028,
+          0.07,
+          0.144,
+          0.329,
+          0.597,
+          0.543,
+          0.552,
+          0.489,
+          0.242,
+          0.204,
+          0.51,
+          0.457,
+          0.353,
+          0.399,
+          0.332,
+          0.083,
+          0.03,
+          0.014,
+          0.074,
+          0.322,
+          0.593,
+          0.684,
+          0.593,
+          0.327,
+          0.187,
+          0.342,
+          0.289,
+          0.068,
+          0.066,
+          0.019,
+          0.306,
+          0.395,
+          0.104,
+          0.016,
+          0.048,
+          0.32,
+          0.34,
+          0.204,
+          0.023,
+          0.006,
+          0.002,
+          0.248,
+          0.604,
+          0.518,
+          0.427,
+          0.359,
+          0.361,
+          0.295,
+          0.354,
+          0.315,
+          0.312,
+          0.354,
+          0.188,
+          0.039,
+          0.02,
+          0.023,
+          0.036,
+          0.036,
+          0.034,
+          0.029,
+          0.018,
+          0.01,
+          0.004,
+          0.001,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.031,
+          0.034,
+          0.002,
+          0.236,
+          0.534,
+          0.364,
+          0.477,
+          0.446,
+          0.346,
+          0.097,
+          0.126,
+          0.307,
+          0.765,
+          0.147,
+          0.078,
+          0.204,
+          0.919,
+          0.516,
+          0.087,
+          0.864,
+          1.0,
+          0.651,
+          0.335,
+          0.125,
+          0.019,
+          0.06,
+          0.621,
+          0.469,
+          0.108,
+          0.064,
+          0.014,
+          0.163,
+          0.914,
+          0.708,
+          0.686,
+          0.749,
+          0.848,
+          0.681,
+          0.59,
+          0.233,
+          0.065,
+          0.343,
+          0.564,
+          0.585,
+          0.545,
+          0.35,
+          0.409,
+          0.668,
+          0.569,
+          0.229,
+          0.143,
+          0.148,
+          0.113,
+          0.551,
+          0.746,
+          0.317,
+          0.038,
+          0.027,
+          0.03,
+          0.033,
+          0.029,
+          0.02,
+          0.009,
+          0.003,
+          0.012,
+          0.392,
+          0.754,
+          0.767,
+          0.75,
+          0.383,
+          0.501,
+          0.544,
+          0.877,
+          0.931,
+          1.0,
+          1.0,
+          1.0,
+          0.845,
+          0.732,
+          0.734,
+          0.62,
+          0.52,
+          0.495,
+          0.481,
+          0.312,
+          0.403,
+          0.052,
+          0.015,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.002,
+          0.277,
+          0.489,
+          0.707,
+          0.45,
+          0.502,
+          0.464,
+          0.692,
+          0.676,
+          0.36,
+          0.453,
+          0.168,
+          0.084,
+          0.076,
+          0.095,
+          0.336,
+          0.68,
+          0.469,
+          0.165,
+          0.054,
+          0.017,
+          0.007,
+          0.411,
+          0.436,
+          0.693,
+          0.715,
+          0.986,
+          1.0,
+          0.755,
+          0.671,
+          0.703,
+          0.44,
+          0.683,
+          0.757,
+          0.595,
+          0.165,
+          0.061,
+          0.049,
+          0.015,
+          0.004,
+          0.059,
+          0.768,
+          0.634,
+          0.508,
+          0.363,
+          0.453,
+          0.507,
+          0.732,
+          0.798,
+          0.881,
+          0.873,
+          0.663,
+          0.401,
+          0.749,
+          0.505,
+          0.055,
+          0.028,
+          0.155,
+          0.151,
+          0.71,
+          0.646,
+          0.565,
+          0.577,
+          0.401,
+          0.556,
+          0.585,
+          0.562,
+          0.693,
+          0.694,
+          0.647,
+          0.588,
+          0.519,
+          0.379,
+          0.366,
+          0.405,
+          0.141,
+          0.028,
+          0.017,
+          0.022,
+          0.027,
+          0.028,
+          0.029,
+          0.024,
+          0.012,
+          0.006,
+          0.001,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.08,
+          0.355,
+          0.422,
+          0.377,
+          0.451,
+          0.435,
+          0.529,
+          0.647,
+          0.454,
+          0.211,
+          0.333,
+          0.473,
+          0.333,
+          0.309,
+          0.304,
+          0.161,
+          0.069,
+          0.294,
+          0.247,
+          0.211,
+          0.198,
+          0.238,
+          0.146,
+          0.049,
+          0.064,
+          0.065,
+          0.342,
+          0.318,
+          0.275,
+          0.25,
+          0.22,
+          0.102,
+          0.122,
+          0.068,
+          0.007,
+          0.002,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.003,
+          0.48,
+          0.559,
+          0.535,
+          0.409,
+          0.416,
+          0.204,
+          0.234,
+          0.457,
+          0.323,
+          0.242,
+          0.061,
+          0.076,
+          0.05,
+          0.071,
+          0.529,
+          0.467,
+          0.373,
+          0.408,
+          0.421,
+          0.478,
+          0.448,
+          0.21,
+          0.175,
+          0.359,
+          0.282,
+          0.187,
+          0.1,
+          0.052,
+          0.025,
+          0.002,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    }
+  },
+  "assets": {
+    "image-nebbia-texture": {
+      "path": "assets/images/nebbia-texture.png",
+      "hash": "sha256:46772ef9d12050d2ffacc8436943af6082186bb0077d0d22d16b0edf1efe6027",
+      "kind": "image"
+    },
+    "image-sm-01c-nebbia-irti-colli": {
+      "path": "assets/images/sm-01c-nebbia-irti-colli.png",
+      "hash": "sha256:9c29a5b7627421fd60cf18de33983e1f205799ff067e61eb2902789d6e959d8d",
+      "kind": "image"
+    },
+    "image-sm-02-mare-maestrale": {
+      "path": "assets/images/sm-02-mare-maestrale.png",
+      "hash": "sha256:b1bd7cf375837730d17a934b3526583a8695205526576551249c4a1f8652ca8b",
+      "kind": "image"
+    },
+    "image-sm-03-borgo": {
+      "path": "assets/images/sm-03-borgo.png",
+      "hash": "sha256:016105082cf5ea84b0de7abc48093be167273d41fa621a964e70f83e861a6748",
+      "kind": "image"
+    },
+    "image-sm-04-tini-vino": {
+      "path": "assets/images/sm-04-tini-vino.png",
+      "hash": "sha256:12ce33bf0bb7011b203878e2c21be91df6fe2ca919bb765dded3209d369401e6",
+      "kind": "image"
+    },
+    "image-sm-05-spiedo-ceppi": {
+      "path": "assets/images/sm-05-spiedo-ceppi.png",
+      "hash": "sha256:fbf65b3a6647360e3d9429a57c4c3dc364134f0670187fd8342cfd5875af474a",
+      "kind": "image"
+    },
+    "image-sm-06-cacciatore-uscio": {
+      "path": "assets/images/sm-06-cacciatore-uscio.png",
+      "hash": "sha256:ea66c12f10daa489a15f5f1d88ca4e6f3362676898019a168d616b8b62e3e2bd",
+      "kind": "image"
+    },
+    "image-sm-07-stormi-nubi": {
+      "path": "assets/images/sm-07-stormi-nubi.png",
+      "hash": "sha256:9a5fcd542f79751eec0ae06e24e6f36b4e6ba112a98e203fb95a4986c166895e",
+      "kind": "image"
+    },
+    "image-sm-08-vespero": {
+      "path": "assets/images/sm-08-vespero.png",
+      "hash": "sha256:ef160894918215ea50bc092f71c2b7f3c4eec2af106369fbf9c7175893a23e71",
+      "kind": "image"
+    },
+    "image-sm-sagoma-cacciatore-crop": {
+      "path": "assets/images/sm-sagoma-cacciatore-crop.png",
+      "hash": "sha256:7dcfa5103b0f3b9488ecc79cbc77f9489a662bb56b27701b0189d55019f066ea",
+      "kind": "image"
+    },
+    "image-sm-sagoma-calice-crop": {
+      "path": "assets/images/sm-sagoma-calice-crop.png",
+      "hash": "sha256:54876b3582242f46adaac6c64402d81cfffdb552f1b9ce8ab92b99f62710937a",
+      "kind": "image"
+    },
+    "image-vs-sala-chiusa": {
+      "path": "assets/images/vs-sala-chiusa.png",
+      "hash": "sha256:30a21e3737a030c4a905b605ac25a33a2be25ef15f10eaf6e04b11c52dae8c91",
+      "kind": "image"
+    },
+    "narration-recita": {
+      "path": "assets/takes/recita.wav",
+      "hash": "sha256:1fa1ed6f8a6ca20ca29862fa689e19d5c1ca43d1153d42ae7528212427f9e643",
+      "kind": "audio"
+    },
+    "narration-titolo": {
+      "path": "assets/takes/titolo.wav",
+      "hash": "sha256:6b75acfd8acd81091172febaf3680c038eaefe1f172db0326778b596cafa330e",
+      "kind": "audio"
+    },
+    "sound-applauso-sala-caldo": {
+      "path": "assets/sounds/applauso-sala-caldo.mp3",
+      "hash": "sha256:133e08b1ca43b70e496ce2d03326583986e33851156f383e8e439ad59d027459",
+      "kind": "audio"
+    },
+    "sound-arpa-glissando": {
+      "path": "assets/sounds/arpa-glissando.mp3",
+      "hash": "sha256:52c141d47fd1e96f081fde953c43713815c36623b650d075c872c24ebd492877",
+      "kind": "audio"
+    },
+    "sound-corvi-uccelli": {
+      "path": "assets/sounds/corvi-uccelli.mp3",
+      "hash": "sha256:b142ff6e9ec9596d75de04672ddd8e1892c35ed58c844f11b08af258bf5c2414",
+      "kind": "audio"
+    },
+    "sound-fischio-uomo": {
+      "path": "assets/sounds/fischio-uomo.mp3",
+      "hash": "sha256:0e8345c38f51de56cf94aff673c78a95ff73d8d50f418905493950a9b8d810ad",
+      "kind": "audio"
+    },
+    "sound-foglie-secche": {
+      "path": "assets/sounds/foglie-secche.mp3",
+      "hash": "sha256:bb046a8b6942898200471aa72d69fe43d26213ca20eb1b0ebd87dc7d83bd37d1",
+      "kind": "audio"
+    },
+    "sound-fuoco-crepitio": {
+      "path": "assets/sounds/fuoco-crepitio.mp3",
+      "hash": "sha256:996623846845929df10744464fb0a24a73b677fb435bf90724480b41544c79cf",
+      "kind": "audio"
+    },
+    "sound-magia-incantatore": {
+      "path": "assets/sounds/magia-incantatore.mp3",
+      "hash": "sha256:336f31eddd00927e88f4f475e10ae1bf386465e0b835b0f3c980250934a91c54",
+      "kind": "audio"
+    },
+    "sound-magia-shimmer": {
+      "path": "assets/sounds/magia-shimmer.mp3",
+      "hash": "sha256:e99f60332adcccf47d23a949d4ed19150eaf8e4ca736e3173f719eb48cabc2c9",
+      "kind": "audio"
+    },
+    "sound-onde-schiuma": {
+      "path": "assets/sounds/onde-schiuma.mp3",
+      "hash": "sha256:561fa02beaaf965b37c586984852c995b9ac24485399f517a13251a3161f4501",
+      "kind": "audio"
+    },
+    "sound-pioggerella-leggera": {
+      "path": "assets/sounds/pioggerella-leggera.mp3",
+      "hash": "sha256:72c0459fd57ae0cf1935176d213c242abdc72888635e383cb1c16a37eec0d58f",
+      "kind": "audio"
+    },
+    "sound-reverie-small-theme": {
+      "path": "assets/sounds/reverie-small-theme.mp3",
+      "hash": "sha256:6d4ffa85e28febcee04d7b425d11a3ccdc44846824b9cf9618d8c2619f0a43c3",
+      "kind": "audio"
+    },
+    "sound-ribollire-pentola": {
+      "path": "assets/sounds/ribollire-pentola.mp3",
+      "hash": "sha256:3c0ac24b22d8a7940eee6832839ac373902220345b2031745925008019dadeea",
+      "kind": "audio"
+    },
+    "sound-sfx-campana": {
+      "path": "assets/sounds/sfx-campana.mp3",
+      "hash": "sha256:748ad5ff0351812b6bd01cfa24a428058dafa73f508433814ecedcda21b69c9a",
+      "kind": "audio"
+    },
+    "sound-sfx-vento": {
+      "path": "assets/sounds/sfx-vento.mp3",
+      "hash": "sha256:ecb81aea62cbf758d636e0323e04202ccdb228ab887736369503fa84efc3b049",
+      "kind": "audio"
+    },
+    "sound-stormo-piccioni-volo": {
+      "path": "assets/sounds/stormo-piccioni-volo.mp3",
+      "hash": "sha256:272c05717f2a2983f5a3fb453ccba6b3d680c0379abc6a138f01bdaad973e87e",
+      "kind": "audio"
+    },
+    "sound-vento-breve": {
+      "path": "assets/sounds/vento-breve.mp3",
+      "hash": "sha256:a63067d4c24b6a18a49e7355bd072ff957d4974abfaba9250fd24ae21682ab99",
+      "kind": "audio"
+    }
+  },
+  "inputs": {
+    "../../templates/dentro-i-versi-short/1.0.0/FORMAT.md": "sha256:6f93e27cb5f7203f7134e0dc110ec2f33ca3672423b0ab16b9c286ea82de0f23",
+    "../../templates/dentro-i-versi-short/1.0.0/episode-spec.schema.json": "sha256:da81920478119245f0788905f6d9a38d4059edb1195aefd02932aaa0291f4c0b",
+    "../../templates/dentro-i-versi-short/1.0.0/episode-spec.template.json": "sha256:9063f24a54799015e9014d8bb79e206f27ddc86c4bc17d8218b00676a5e714e1",
+    "../../templates/dentro-i-versi-short/1.0.0/series-template.json": "sha256:02fe71afba6da2ada1dd80e313b9a12bbd80e3d89cd84966168e515c9f4b322e",
+    "artifacts/narration/takes.json": "sha256:16d31c12f6e5945d4e47760158bda849d8690803008ece08e3e3c8cf132de17a",
+    "artifacts/timing/recita.json": "sha256:fc87e0fdd533a1e58f05a5199d2f54de525667809ff8f52343598e128373d912",
+    "artifacts/timing/titolo.json": "sha256:b8148e5e1e3868b9ec88fe891d9549b6de748243f4ef63696f2f4c61155df668",
+    "assets/images/nebbia-texture.png": "sha256:46772ef9d12050d2ffacc8436943af6082186bb0077d0d22d16b0edf1efe6027",
+    "assets/images/sm-01c-nebbia-irti-colli.png": "sha256:9c29a5b7627421fd60cf18de33983e1f205799ff067e61eb2902789d6e959d8d",
+    "assets/images/sm-02-mare-maestrale.png": "sha256:b1bd7cf375837730d17a934b3526583a8695205526576551249c4a1f8652ca8b",
+    "assets/images/sm-03-borgo.png": "sha256:016105082cf5ea84b0de7abc48093be167273d41fa621a964e70f83e861a6748",
+    "assets/images/sm-04-tini-vino.png": "sha256:12ce33bf0bb7011b203878e2c21be91df6fe2ca919bb765dded3209d369401e6",
+    "assets/images/sm-05-spiedo-ceppi.png": "sha256:fbf65b3a6647360e3d9429a57c4c3dc364134f0670187fd8342cfd5875af474a",
+    "assets/images/sm-06-cacciatore-uscio.png": "sha256:ea66c12f10daa489a15f5f1d88ca4e6f3362676898019a168d616b8b62e3e2bd",
+    "assets/images/sm-07-stormi-nubi.png": "sha256:9a5fcd542f79751eec0ae06e24e6f36b4e6ba112a98e203fb95a4986c166895e",
+    "assets/images/sm-08-vespero.png": "sha256:ef160894918215ea50bc092f71c2b7f3c4eec2af106369fbf9c7175893a23e71",
+    "assets/images/sm-sagoma-cacciatore-crop.png": "sha256:7dcfa5103b0f3b9488ecc79cbc77f9489a662bb56b27701b0189d55019f066ea",
+    "assets/images/sm-sagoma-calice-crop.png": "sha256:54876b3582242f46adaac6c64402d81cfffdb552f1b9ce8ab92b99f62710937a",
+    "assets/images/vs-sala-chiusa.png": "sha256:30a21e3737a030c4a905b605ac25a33a2be25ef15f10eaf6e04b11c52dae8c91",
+    "assets/sounds/applauso-sala-caldo.mp3": "sha256:133e08b1ca43b70e496ce2d03326583986e33851156f383e8e439ad59d027459",
+    "assets/sounds/arpa-glissando.mp3": "sha256:52c141d47fd1e96f081fde953c43713815c36623b650d075c872c24ebd492877",
+    "assets/sounds/corvi-uccelli.mp3": "sha256:b142ff6e9ec9596d75de04672ddd8e1892c35ed58c844f11b08af258bf5c2414",
+    "assets/sounds/fischio-uomo.mp3": "sha256:0e8345c38f51de56cf94aff673c78a95ff73d8d50f418905493950a9b8d810ad",
+    "assets/sounds/foglie-secche.mp3": "sha256:bb046a8b6942898200471aa72d69fe43d26213ca20eb1b0ebd87dc7d83bd37d1",
+    "assets/sounds/fuoco-crepitio.mp3": "sha256:996623846845929df10744464fb0a24a73b677fb435bf90724480b41544c79cf",
+    "assets/sounds/magia-incantatore.mp3": "sha256:336f31eddd00927e88f4f475e10ae1bf386465e0b835b0f3c980250934a91c54",
+    "assets/sounds/magia-shimmer.mp3": "sha256:e99f60332adcccf47d23a949d4ed19150eaf8e4ca736e3173f719eb48cabc2c9",
+    "assets/sounds/onde-schiuma.mp3": "sha256:561fa02beaaf965b37c586984852c995b9ac24485399f517a13251a3161f4501",
+    "assets/sounds/pioggerella-leggera.mp3": "sha256:72c0459fd57ae0cf1935176d213c242abdc72888635e383cb1c16a37eec0d58f",
+    "assets/sounds/reverie-small-theme.mp3": "sha256:6d4ffa85e28febcee04d7b425d11a3ccdc44846824b9cf9618d8c2619f0a43c3",
+    "assets/sounds/ribollire-pentola.mp3": "sha256:3c0ac24b22d8a7940eee6832839ac373902220345b2031745925008019dadeea",
+    "assets/sounds/sfx-campana.mp3": "sha256:748ad5ff0351812b6bd01cfa24a428058dafa73f508433814ecedcda21b69c9a",
+    "assets/sounds/sfx-vento.mp3": "sha256:ecb81aea62cbf758d636e0323e04202ccdb228ab887736369503fa84efc3b049",
+    "assets/sounds/stormo-piccioni-volo.mp3": "sha256:272c05717f2a2983f5a3fb453ccba6b3d680c0379abc6a138f01bdaad973e87e",
+    "assets/sounds/vento-breve.mp3": "sha256:a63067d4c24b6a18a49e7355bd072ff957d4974abfaba9250fd24ae21682ab99",
+    "assets/takes/recita.wav": "sha256:1fa1ed6f8a6ca20ca29862fa689e19d5c1ca43d1153d42ae7528212427f9e643",
+    "assets/takes/titolo.wav": "sha256:6b75acfd8acd81091172febaf3680c038eaefe1f172db0326778b596cafa330e",
+    "episode-spec.json": "sha256:66adb3c37f7c66aea6b3c75f778fe1d710dbd0fa85f1e4da43d780202cfb0c7b"
+  }
+}

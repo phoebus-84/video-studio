@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { AlignError, mapToText, snapToSilences } from "../src/speech-align.js";
+import { afterAll, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { AlignError, mapToText, measureEnergy, snapToSilences } from "../src/speech-align.js";
 
 /**
  * Turning a provider's words into a take's WordTiming words (avg-8hs.2):
@@ -116,5 +120,31 @@ describe("snapToSilences", () => {
   it("rounds to the millisecond and keeps the order", () => {
     const words = snapToSilences([w("a", 0.12345, 0.45678), w("b", 0.45678, 0.91234)], [], 2);
     expect(words).toEqual([w("a", 0.123, 0.457), w("b", 0.457, 0.912)]);
+  });
+});
+
+describe("measureEnergy", () => {
+  const dir = mkdtempSync(join(tmpdir(), "energy-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  /** `seconds` of audio from an ffmpeg aevalsrc expression of t. */
+  const take = (name: string, expr: string, seconds: number) => {
+    const path = join(dir, `${name}.wav`);
+    execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `aevalsrc=${expr}:s=24000:d=${seconds}`, path]);
+    return path;
+  };
+
+  it("is not flattened by one click: the voice still reaches the top", async () => {
+    // A steady voice-like tone, and a full-scale click at 1 s.
+    const path = take("click", "0.2*sin(2*PI*220*t)+if(between(t\\,1\\,1.004)\\,0.95\\,0)", 2);
+    const { rate, values } = await measureEnergy(path, 2);
+    expect(rate).toBe(30);
+    expect(values).toHaveLength(60);
+    expect(values[15]).toBeGreaterThan(0.9);
+    expect(Math.max(...values)).toBe(1);
+  });
+
+  it("leaves a silent or near-silent take at zero, never amplifying its noise", async () => {
+    expect((await measureEnergy(take("silent", "0", 1), 1)).values.every((v) => v === 0)).toBe(true);
+    expect((await measureEnergy(take("hiss", "0.0005*sin(2*PI*3000*t)", 1), 1)).values.every((v) => v === 0)).toBe(true);
   });
 });
