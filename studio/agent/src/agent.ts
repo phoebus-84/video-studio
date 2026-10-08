@@ -58,9 +58,11 @@ const CAPABILITIES = {
     "qa-check",
   ],
   pipelines: [
+    "blender-animation",
     "fairy-tale-adaptation",
     "narrated-illustrated-video",
     "repository-documentation",
+    "series-production",
   ],
 };
 

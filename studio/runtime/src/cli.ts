@@ -34,6 +34,8 @@ import { reviewSheet, sheetReviewStatus } from "./sheet-review.js";
 import { releaseTemplate, sealTheme, ThemeReleaseError } from "./theme-release.js";
 import { verifySeriesReference } from "@studio/contracts/src/series-references.mjs";
 import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
+import { createRequire } from "node:module";
+import { declaredPipeline, PipelineDeclarationError } from "./pipeline/declared.js";
 import type { RerunMode } from "./rerun/index.js";
 import { err, ok } from "./result.js";
 import type { Result } from "./result.js";
@@ -45,6 +47,7 @@ const EX_USAGE = 1;
 const EX_RUNTIME = 2;
 const EX_INVALID = 3;
 
+/** The pipeline of an episode that neither `--pipeline` nor the library names. */
 const DEFAULT_PIPELINE = "narrated-illustrated-video";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -121,7 +124,7 @@ function makeSnapshotStore(libraryRoot: string): FileSystemSnapshotStore {
 function makeLoader(args: string[] = []): PipelineLoader {
   const libraryRoot = libraryFrom(args);
   if (libraryRoot) {
-    return createDefaultLoader(libraryRoot) as unknown as PipelineLoader;
+    return createDefaultLoader(libraryRoot, builtinPipelines()) as unknown as PipelineLoader;
   }
   return new InMemoryPipelineLoader() as unknown as PipelineLoader;
 }
@@ -274,6 +277,8 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: `Invalid path "${remaining[0]}". Expected: <channel>/<series>/<episode>` });
     return EX_USAGE;
   }
+  const pipelineId = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipelineId === "number") return pipelineId;
   try {
     const { settings, report } = resolveSettings({
       channel: emptyLayer(),
@@ -281,7 +286,7 @@ async function cmdResolve(ctx: CliContext, args: string[]): Promise<number> {
       episode: emptyLayer(),
     });
     const loader = makeLoader(args);
-    const pipeline = await resolvePipeline(loader, pipelineName ?? DEFAULT_PIPELINE);
+    const pipeline = await resolvePipeline(loader, pipelineId);
     const episodeSlug = `${parsed.channel}/${parsed.series}/${parsed.episode}`;
     const libraryRoot = libraryFrom(args);
     const store = libraryRoot ? makeSnapshotStore(libraryRoot) : null;
@@ -340,8 +345,10 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
 
   const operatorKey = cliOperatorKey(ctx);
   if (typeof operatorKey === "number") return operatorKey;
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
   const service = makeService(args, ttl.value, operatorKey);
-  const status = await service.status(parsed, pipelineName ?? DEFAULT_PIPELINE);
+  const status = await service.status(parsed, pipeline);
   if (!status.ok) {
     emit(ctx, { error: `${status.error.code}: ${status.error.message}` });
     return exitCodeFor(status.error);
@@ -407,7 +414,8 @@ async function cmdPin(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
   const service = makeService(args, ttl.value, null);
-  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
 
   if (sub === "verify") {
     const pins = await service.verifyPins(parsed);
@@ -555,7 +563,9 @@ async function cmdValidate(ctx: CliContext, args: string[]): Promise<number> {
     try {
       resolveSettings({ channel: emptyLayer(), series: emptyLayer(), episode: emptyLayer() });
       const loader = makeLoader(args);
-      const pipeline = await resolvePipeline(loader, DEFAULT_PIPELINE);
+      const pipelineId = pipelineFor(ctx, args, parsed, extractPipeline(args).pipeline);
+      if (typeof pipelineId === "number") return pipelineId;
+      const pipeline = await resolvePipeline(loader, pipelineId);
       emit(ctx, {
         message: "Pipeline validation passed",
         valid: true,
@@ -642,7 +652,8 @@ async function cmdRerun(ctx: CliContext, args: string[]): Promise<number> {
   const operatorKey = cliOperatorKey(ctx);
   if (typeof operatorKey === "number") return operatorKey;
   const service = makeService(args, ttl.value, operatorKey);
-  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
 
   const plan = await service.planRerun(parsed, pipeline, mode as RerunMode, selected);
   if (!plan.ok) {
@@ -741,7 +752,8 @@ async function cmdReview(ctx: CliContext, args: string[], decision: "approved" |
 
   const service = makeService(args, ttl.value, credential.operatorKey);
   const { pipeline: pipelineName } = extractPipeline(args);
-  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
   const out = await service.review(parsed, pipeline, stageId, { decision, principal: credential.principal, note });
   if (!out.ok) {
     emit(ctx, { error: out.error.message, code: out.error.code });
@@ -1023,8 +1035,10 @@ async function cmdTakes(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: ttl.error });
     return EX_USAGE;
   }
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
   const service = makeService(args, ttl.value, operatorKey);
-  const takes = await service.takes(parsed, pipelineName ?? DEFAULT_PIPELINE);
+  const takes = await service.takes(parsed, pipeline);
   if (!takes.ok) {
     emit(ctx, { error: `${takes.error.code}: ${takes.error.message}` });
     return exitCodeFor(takes.error);
@@ -1083,8 +1097,10 @@ async function cmdSelect(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { error: ttl.error });
     return EX_USAGE;
   }
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
   const service = makeService(args, ttl.value, credential.operatorKey);
-  const out = await service.select(parsed, pipelineName ?? DEFAULT_PIPELINE, stageId, {
+  const out = await service.select(parsed, pipeline, stageId, {
     attemptNumber, principal: credential.principal, ...(expected !== undefined ? { expected } : {}),
   });
   if (!out.ok) {
@@ -1122,6 +1138,46 @@ function cliOperatorKey(ctx: CliContext): string | null | number {
 }
 
 /**
+ * The pipeline a command runs on an episode (avg-sxk): `--pipeline`, else
+ * the one the library declares (`pipeline.yaml` in the episode, series or
+ * channel — what the gateway reads too), else `DEFAULT_PIPELINE`. A
+ * declaration that can't be read is an error, never the default: the default
+ * would run another pipeline's stages on the episode.
+ */
+function pipelineFor(
+  ctx: CliContext,
+  args: string[],
+  ref: { channel: string; series: string; episode: string },
+  explicit: string | undefined,
+): string | number {
+  if (explicit) return explicit;
+  try {
+    return declaredPipeline(libraryFrom(args) || ".", ref)?.name ?? DEFAULT_PIPELINE;
+  } catch (e) {
+    if (!(e instanceof PipelineDeclarationError)) throw e;
+    emit(ctx, { error: `${e.message}. Nothing was recorded.`, code: e.code });
+    return EX_RUNTIME;
+  }
+}
+
+/**
+ * Where the built-in pipeline manifests live: `AVG_BUILTIN_PIPELINES` when
+ * the operator sets it, else `@studio/pipelines`' directory, resolved through
+ * the package as the gateway resolves it (ADR-0026). The CLI is a
+ * composition root, like the gateway; the runtime library itself still takes
+ * the path as a parameter (`createDefaultLoader`).
+ */
+function builtinPipelines(): string | undefined {
+  if (process.env.AVG_BUILTIN_PIPELINES) return process.env.AVG_BUILTIN_PIPELINES;
+  try {
+    const manifest = createRequire(import.meta.url).resolve("@studio/pipelines/package.json");
+    return manifest.replace(/package\.json$/, "pipelines");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The execution service, composed for the CLI.
  *
  * The CLI injects no dispatcher: the adapters that perform stages
@@ -1137,7 +1193,7 @@ function makeService(args: string[], leaseTtlMs: number, operatorKey: string | n
     // gateway's production.ts: an empty string is not nullish, so it does not
     // trigger `createDefaultLoader`'s `??` fallback — the operator's escape
     // hatch would be dead exactly when it is reached for.
-    builtinPipelines: process.env.AVG_BUILTIN_PIPELINES || undefined,
+    builtinPipelines: builtinPipelines(),
     // The journal's spend ledger (avg-91o), the same guard the gateway
     // composes: a stage that declares a paid capability is refused once the
     // episode's budget is used up. It reserves nothing — the paid call does.
@@ -1166,7 +1222,7 @@ function makeService(args: string[], leaseTtlMs: number, operatorKey: string | n
 function serviceLoader(args: string[]): PipelineLoader {
   return createDefaultLoader(
     libraryFrom(args) || ".",
-    process.env.AVG_BUILTIN_PIPELINES || undefined,
+    builtinPipelines(),
   ) as unknown as PipelineLoader;
 }
 
@@ -1374,8 +1430,10 @@ async function cmdRun(ctx: CliContext, args: string[]): Promise<number> {
     return EX_RUNTIME;
   }
 
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
   const service = makeService(args, ttl.value, credential.operatorKey);
-  const claimed = await service.claim(parsed, pipelineName ?? DEFAULT_PIPELINE, {
+  const claimed = await service.claim(parsed, pipeline, {
     ...(stage ? { stage } : {}),
     dryRun: ctx.dryRun,
     principal: credential.principal,
@@ -1465,7 +1523,8 @@ async function cmdComplete(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
   const stageId = positional[1]!;
-  const pipeline = pipelineName ?? DEFAULT_PIPELINE;
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
 
   const flag = (name: string): string | undefined => {
     const i = remaining.indexOf(name);
