@@ -344,6 +344,21 @@ node studio/runtime/dist/src/cli.js reference withdraw my-channel/my-series my-t
   --reason "the recital was re-recorded" --library "$PWD/library"
 ```
 
+**`vpr sheet`** records the operator's review of an episode's layout sheet
+(avg-3th.2). A spec-driven episode renders only when its current sheet was
+approved: making the sheet again clears the review, and an edit that changes
+what the sheet would show makes it stale. `approve` and `reject` sign with the
+operator key exactly the sheet on disk (`artifacts/layout-sheet/review.json`);
+a rejection needs a note. `status` exits 0 only for an approval. Pi only makes
+and reads the sheet.
+
+```bash
+node studio/runtime/dist/src/cli.js sheet approve my-channel/my-series/ep001 --library "$PWD/library"
+node studio/runtime/dist/src/cli.js sheet reject my-channel/my-series/ep001 \
+  --note "the verse bar covers the hand at 0:12" --library "$PWD/library"
+node studio/runtime/dist/src/cli.js sheet status my-channel/my-series/ep001 --library "$PWD/library"
+```
+
 **`vpr select`** puts an earlier candidate back in place. The gateway offers
 the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`
 lists the candidates.

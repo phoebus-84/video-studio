@@ -30,6 +30,7 @@ import type { SourceRef } from "@studio/contracts/src/source-pins.mjs";
 import type { ExecutionError, StageOutcome } from "./execution/index.js";
 import { resolveCliCredential } from "./execution/principal.js";
 import { approveReference, listReferences, withdrawReference } from "./references.js";
+import { reviewSheet, sheetReviewStatus } from "./sheet-review.js";
 import { verifySeriesReference } from "@studio/contracts/src/series-references.mjs";
 import { seriesPath } from "@studio/contracts/src/layout.mjs";
 import type { RerunMode } from "./rerun/index.js";
@@ -868,6 +869,63 @@ async function cmdReference(ctx: CliContext, args: string[]): Promise<number> {
   return EX_USAGE;
 }
 
+// ── sheet (avg-3th.2) ───────────────────────────────────────────────────────
+
+/**
+ * `vpr sheet approve | reject | status`: the operator's signed review of an
+ * episode's layout sheet. A spec-driven episode does not render without an
+ * approval of its current sheet.
+ */
+async function cmdSheet(ctx: CliContext, args: string[]): Promise<number> {
+  const usage =
+    "Usage: vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | " +
+    "vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode> [--library <path>]";
+  const libraryRoot = libraryFrom(args);
+  const [sub, target] = positionalArgs(args);
+  if (!libraryRoot) {
+    emit(ctx, { error: "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
+    return EX_USAGE;
+  }
+  const ref = target ? parsePath(target) : null;
+  if (!ref || !["approve", "reject", "status"].includes(sub ?? "")) {
+    emit(ctx, { error: usage });
+    return EX_USAGE;
+  }
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+  const key = credential.operatorKey;
+
+  if (sub === "status") {
+    const status = sheetReviewStatus({ libraryRoot, ref, key });
+    emit(ctx, { ...status, message: `${target}: ${status.message}` });
+    return status.state === "approved" ? EX_OK : EX_RUNTIME;
+  }
+
+  const note = flagValue(args, "--note");
+  if (sub === "reject" && !note) {
+    emit(ctx, { error: usage });
+    return EX_USAGE;
+  }
+  const out = reviewSheet({ libraryRoot, ref, key, decision: sub === "approve" ? "approved" : "rejected", dryRun: ctx.dryRun, ...(note !== undefined ? { note } : {}) });
+  if (!out.ok) {
+    emit(ctx, { error: out.message, code: out.code });
+    return EX_RUNTIME;
+  }
+  const { path, review, written } = out.value;
+  emit(ctx, {
+    message: `${written ? "" : "[DRY RUN] "}${target}'s sheet ${written ? "is" : "would be"} ${review.decision}: ${path}`,
+    path,
+    review,
+    dryRun: !written,
+  });
+  return EX_OK;
+}
+
 // ── takes / select (avg-qr4.6) ──────────────────────────────────────────────
 
 async function cmdTakes(ctx: CliContext, args: string[]): Promise<number> {
@@ -1485,6 +1543,7 @@ const COMMANDS: Record<string, CliCommand> = {
   reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },
   pin: { name: "pin", description: "Pin shared material (a channel source or another episode), verify it, or renew it to accept a new version", usage: "vpr pin add <channel>/<series>/<episode> <id> --source channel:<name>|episode:<series>/<episode> --used-by <stage>[,<stage>...] [--path <p>]... | vpr pin verify <channel>/<series>/<episode> | vpr pin renew <channel>/<series>/<episode> <id> [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr pin add dentro-i-versi/long/il-lampo poesia --source channel:il-lampo --used-by narration", "vpr pin verify dentro-i-versi/long/il-lampo", "vpr pin renew dentro-i-versi/long/il-lampo poesia"], run: cmdPin },
   budget: { name: "budget", description: "Show the episode's spend ledger; the operator can release an open reservation", usage: "vpr budget <channel>/<series>/<episode> [release <reservation-id> [--note <why>]] [--json] [--dry-run]", examples: ["vpr budget my-channel/my-series/ep001", "vpr budget my-channel/my-series/ep001 release rsv_01J9Z… --note 'fal dashboard shows no charge'"], run: cmdBudget },
+  sheet: { name: "sheet", description: "Review an episode's layout sheet: approve it, reject it with a note, or see its review; a spec-driven episode renders only with an approval of its current sheet", usage: "vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode>", examples: ["vpr sheet approve dentro-i-versi/short/san-martino", "vpr sheet reject dentro-i-versi/short/san-martino --note 'the verse bar covers the hand at 0:12'", "vpr sheet status dentro-i-versi/short/san-martino"], run: cmdSheet },
   reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve dentro-i-versi/short/san-martino san-martino-v1 --dry-run", "vpr reference verify dentro-i-versi/short short-room san-martino-v1", "vpr reference withdraw dentro-i-versi/short short-room san-martino-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
