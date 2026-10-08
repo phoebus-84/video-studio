@@ -162,6 +162,30 @@ Failures throw `ComposerError` with a `code` (`invalid-timeline`,
 `render-failed`, `loudness-failed`, `bad-sheet`, `sheet-failed`) and, for
 validation, `problems` with JSON paths.
 
+### Render audit
+
+`auditRender(file, expectation)` says whether a rendered file is what its
+timeline promised (avg-3th.3); `auditExpectation(timeline)` reads that promise
+from a validated timeline:
+
+```ts
+const audit = await auditRender('out.mp4', auditExpectation(timeline));
+// audit = {passed, checks: ['decode', 'streams', 'duration', 'loudness'?, 'loop'?], findings}
+```
+
+| Check | Finding | Passes when |
+|---|---|---|
+| decode | `decode-errors` | FFmpeg decodes the whole file without an error (nothing else is checked otherwise) |
+| streams | `wrong-video`, `wrong-audio` | H.264 `yuv420p` at the timeline's size and frame rate; AAC at 48 kHz when the timeline has sound |
+| duration | `wrong-duration` | the video lasts the timeline's frames, ± 1 |
+| loudness | `loudness-off` | with sound: integrated loudness within 1 LU of the profile's target, true peak at most 0.3 dB over it |
+| loop | `loop-broken` | when the timeline sets `loop: true`: first and last frame, at 64×36 grey, differ by at most 2 levels on average |
+
+A bad file gives findings, never an exception; it throws only when FFmpeg or
+FFprobe cannot run (their paths are the optional third argument). What a
+failed audit means is the caller's: `@studio/episode` never makes such a
+render current.
+
 ### Layout sheet
 
 `renderLayoutSheet` renders a timeline's stills at the frames the caller
