@@ -5,8 +5,9 @@ import type { SeriesCompiler } from "./types.js";
 import { compiler as poetryShort100 } from "./compilers/poetry-short/1.0.0.js";
 import { compiler as dentroIVersiShort100 } from "./compilers/dentro-i-versi-short/1.0.0.js";
 import { compiler as dentroIVersiLong100 } from "./compilers/dentro-i-versi-long/1.0.0.js";
+import { compiler as dentroIVersiLong110 } from "./compilers/dentro-i-versi-long/1.1.0.js";
 
-export const COMPILERS: readonly SeriesCompiler[] = Object.freeze([poetryShort100, dentroIVersiShort100, dentroIVersiLong100]);
+export const COMPILERS: readonly SeriesCompiler[] = Object.freeze([poetryShort100, dentroIVersiShort100, dentroIVersiLong100, dentroIVersiLong110]);
 
 /** The compiler with exactly this id and version, or undefined. */
 export function resolveCompiler(id: string, version: string): SeriesCompiler | undefined {
