@@ -187,12 +187,17 @@ function readReport(episodeDir: string): { ok: true; report: LayoutSheetReport }
  * now? Reads only.
  */
 export function layoutSheetStatus(episodeDir: string, options: BuildOptions): LayoutSheetStatus {
+  return layoutSheetStatusOf(episodeDir, options, () => decideEditTimeline(episodeDir, options));
+}
+
+/** layoutSheetStatus against a timeline decision already made (the render's). */
+export function layoutSheetStatusOf(episodeDir: string, options: BuildOptions, decide: () => TimelineDecision): LayoutSheetStatus {
   const read = readReport(episodeDir);
   if (!read.ok) return { state: "missing", reason: read.reason };
   const { report } = read;
   let now;
   try {
-    now = inputsOf(episodeDir, options, decideEditTimeline(episodeDir, options));
+    now = inputsOf(episodeDir, options, decide());
   } catch (error) {
     return { state: "stale", reasons: [`the timeline a render would use cannot be decided: ${(error as Error).message}`] };
   }

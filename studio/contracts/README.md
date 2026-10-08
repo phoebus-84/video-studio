@@ -55,6 +55,13 @@ Filesystem mutation, pipeline execution, creative skills, provider calls, render
   bindings, **not** a signature/file trust check or approval operation.
 - `placeholderPaths(data)`: JSON paths of unresolved content.
 
+`src/sheet-reviews.mjs` (`avg-3th.2`) is the review of a layout sheet: a
+gate review of stage `layout-sheet`, signed with the operator key, bound to
+the sheet's `inputsHash` (its plan) and to `sheet.json` and the grid (its
+outputs). `buildSheetReview` builds it unsigned; `verifySheetReview` answers
+`approved`, `rejected`, `stale` (another sheet) or `invalid`, checking the
+signature only when given the key.
+
 `src/series-references.mjs` (`avg-jao.6`) is where a descriptor becomes a
 verdict: `verifySeriesReference({seriesDir, templateId, referenceId, key})`
 reads the descriptor, its signature, a withdrawal, the files, the pinned

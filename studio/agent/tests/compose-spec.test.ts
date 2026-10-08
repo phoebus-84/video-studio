@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { editSpec, sha256, specEpisode } from "@studio/episode/testing";
+import { makeLayoutSheet } from "@studio/episode";
+import { approveSheet, editSpec, sha256, specEpisode } from "@studio/episode/testing";
 
 /**
  * pva_build_timeline and pva_compose_video on an episode with an
@@ -32,8 +33,27 @@ vi.mock("@av/remotion-composer", async (importOriginal) => {
         cache: { wholeVideoReused: false, segmentsReused: 0, segmentsRendered: 1, totalSegments: 1, warnings: [] },
       };
     },
+    // The file is fake: its audit is @av/remotion-composer's and @studio/episode's to test.
+    auditRender: async () => ({ passed: true, checks: ["decode"], findings: [] }),
+    renderLayoutSheet: async (options: { timeline: any; picks: { frame: number; label: string }[]; outDir: string }) => {
+      mkdirSync(join(options.outDir, "frames"), { recursive: true });
+      const frames = options.picks.map((p, index) => {
+        const path = join(options.outDir, "frames", `${String(index).padStart(3, "0")}.jpg`);
+        writeFileSync(path, `still ${p.frame}`);
+        return { index, frame: p.frame, seconds: p.frame / options.timeline.fps, label: p.label, path, hash: sha256(`still ${p.frame}`) };
+      });
+      const path = join(options.outDir, "sheet.jpg");
+      writeFileSync(path, `sheet of ${frames.length}`);
+      return { frames, sheet: { path, hash: sha256(`sheet of ${frames.length}`), columns: 8, rows: 1, width: 2160, height: 1600 }, kits: actual.timelineKits(options.timeline)! };
+    },
   };
 });
+
+/** A person read the sheet of the timeline about to be rendered, and approved it (avg-3th.2). */
+async function sheetApproved(): Promise<void> {
+  await makeLayoutSheet(dir(), { episodeRef: REF });
+  approveSheet(dir(), REF);
+}
 
 const REF = { channel: "sample", series: "poetry", episode: "morning" };
 let root: string;
@@ -97,6 +117,7 @@ describe("pva_build_timeline on a spec-driven episode", () => {
 
 describe("pva_compose_video on a spec-driven episode", () => {
   it("compiles a missing timeline, renders its template's profile and records the compiler in the report", async () => {
+    await sheetApproved();
     const result = await tool("pva_compose_video");
     expect(result.isError).toBeFalsy();
     expect(result.content[0].text).toMatch(/compiled by poetry-short@1\.0\.0 from episode-spec\.json revision 2/);
@@ -122,6 +143,7 @@ describe("pva_compose_video on a spec-driven episode", () => {
   it("recompiles after the spec is edited, and names the spec as the reason", async () => {
     await tool("pva_build_timeline");
     editSpec(dir(), (spec) => { spec.data.holdSeconds = 2; spec.revision = 3; });
+    await sheetApproved();
     const result = await tool("pva_compose_video");
     expect(result.isError).toBeFalsy();
     expect(result.content[0].text).toMatch(/timeline rebuilt: episode-spec\.json changed/);
@@ -140,6 +162,7 @@ describe("pva_compose_video on a spec-driven episode", () => {
     panels[1].duration = 110;
     const edited = `${JSON.stringify(timeline, null, 2)}\n`;
     writeFileSync(at("artifacts/edit-timeline.json"), edited);
+    await sheetApproved();
     const result = await tool("pva_compose_video");
     expect(result.isError).toBeFalsy();
     expect(result.content[0].text).toMatch(/rendered artifacts\/edit-timeline\.json as it stands/);
@@ -214,6 +237,7 @@ describe("series rules (poetry-short@1.0.0) on a spec-driven episode", () => {
   it("pva_compose_video renders a timeline with only warnings, and records them in the report", async () => {
     // A 5 s hold keeps the cat on screen for 7.7 s.
     editSpec(dir(), (spec) => { spec.data.holdSeconds = 5; });
+    await sheetApproved();
     const result = await tool("pva_compose_video");
     expect(result.isError).toBeFalsy();
     expect(result.content[0].text).toMatch(/⚠️ panel-long at artifacts\/edit-timeline\.json#\$\.tracks\[0\]\.items\[2\]/);

@@ -85,7 +85,7 @@ pipeline's.
 | `timeline` → `edit-timeline.json` | adapter `series-timeline` (the release's compiler) | — |
 | `check` → `series-check.json` | adapter `series-check` (the release's validator); errors fail it | human |
 | `sheet` → `layout-sheet.json` | adapter `series-sheet` (Remotion): stills at the series' instants and a labelled grid; the `review-layout-sheet` skill | human |
-| `render` → `output.mp4` | adapter `series-render` (`video.compose`, Remotion); refuses a missing or stale sheet | human |
+| `render` → `output.mp4` | adapter `series-render` (`video.compose`, Remotion); refuses a missing or stale sheet. The person's approval of the `sheet` stage at its gate is the sheet's review here; outside the pipeline a render needs `vpr sheet approve` (avg-3th.2) | human |
 
 A series extends it and replaces stages by id (ADR-0001). The example
 `studio/pipelines/fixtures/valid/series-local/poetry-short.yaml` keeps every

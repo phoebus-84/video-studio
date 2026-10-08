@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderEpisode } from "../src/episode-render.js";
 import { layoutSheetStatus, makeLayoutSheet } from "../src/layout-sheet.js";
-import { divShortEpisode } from "../src/testing.js";
+import { approveSheet, divShortEpisode } from "../src/testing.js";
 
 /**
  * The dentro-i-versi-short golden episode (avg-dcf.3), rendered for real
@@ -48,7 +48,8 @@ describe.skipIf(!enabled)("the dentro-i-versi-short golden episode, rendered", (
   }, 300_000);
 
   it("renders the whole video: 1129 frames, 1080x1920", async () => {
-    const render = await renderEpisode(dir(), { episodeRef: REF, label: "e2e" });
+    approveSheet(dir(), REF, "e2e-operator-key");
+    const render = await renderEpisode(dir(), { episodeRef: REF, label: "e2e", operatorKey: "e2e-operator-key" });
     const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v", "-count_packets", "-show_entries", "stream=width,height,nb_read_packets", "-of", "json", render.outputPath]).toString());
     expect(probe.streams[0]).toMatchObject({ width: 1080, height: 1920, nb_read_packets: "1129" });
     expect(JSON.parse(readFileSync(join(dir(), "output", `${render.renderId}.timeline.json`), "utf-8")).durationInFrames).toBe(1129);

@@ -170,7 +170,8 @@ export const seriesRender: StageAdapter = {
       throw new Error(`the layout sheet is ${why}: run the sheet stage again (${LAYOUT_SHEET_REPORT})`);
     }
     try {
-      const render = await renderEpisode(ctx.episodeDir, { episodeRef: ctx.ref });
+      // The execution service runs `render` only after a person approved the `sheet` stage at its gate.
+      const render = await renderEpisode(ctx.episodeDir, { episodeRef: ctx.ref, sheetApproval: "pipeline-gate" });
       ctx.log(`  render: output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${render.result.profile}`
         + (render.rebuilt ? `; timeline rebuilt: ${render.rebuilt}` : ""));
       return [render.outputPath];

@@ -25,6 +25,7 @@ import {
   type EditTimelineDoc,
 } from "./edit-timeline-builder.js";
 import { checkEpisode, compileEpisode, isSpecDriven, sharedRootsOf, type SeriesFinding } from "./series-compile.js";
+import { requireSheetReview } from "./sheet-review.js";
 
 const LABEL = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -325,6 +326,21 @@ export function currentEditTimeline(episodeDir: string, options: BuildOptions): 
 export interface EpisodeRenderOptions extends BuildOptions {
   /** Lowercase kebab-case; the render id starts with it. */
   label?: string;
+  /**
+   * The operator key, when this process holds it: the sheet review's
+   * signature is then verified. Without it (Pi) the review is held to its
+   * binding alone (avg-3th.2).
+   */
+  operatorKey?: string | null;
+  /**
+   * What stands for a person's reading of the sheet. "review" (the default):
+   * artifacts/layout-sheet/review.json, signed by `vpr sheet approve`.
+   * "pipeline-gate": the series-production pipeline's human gate on its
+   * `sheet` stage, signed and bound to layout-sheet.json's hash — only the
+   * execution service, which runs `render` after that gate, may claim it. The
+   * sheet must be current either way.
+   */
+  sheetApproval?: "review" | "pipeline-gate";
   onProgress?: (progress: number) => void;
 }
 
@@ -358,6 +374,8 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   if (errors.length > 0) {
     throw new SeriesRulesError(decision.validation!.validator, errors, hintFor(errors, decision.rebuilt === null));
   }
+  // A spec-driven episode renders only the timeline whose sheet a person approved.
+  requireSheetReview(episodeDir, options, decision, options.operatorKey ?? null, options.sheetApproval ?? "review");
   const current = applyDecision(episodeDir, decision);
 
   const outputDir = join(episodeDir, "output");
