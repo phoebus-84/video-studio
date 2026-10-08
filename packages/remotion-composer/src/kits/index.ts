@@ -33,6 +33,11 @@ import {kit as interlinear100} from './interlinear/1.0.0.js';
 import {kit as monitorWall100} from './monitor-wall/1.0.0.js';
 import {kit as summary100} from './summary/1.0.0.js';
 import {kit as progress100} from './progress/1.0.0.js';
+import {kit as merge100} from './merge/1.0.0.js';
+import {kit as cards100} from './cards/1.0.0.js';
+import {kit as stack100} from './stack/1.0.0.js';
+import {kit as oxymoron100} from './oxymoron/1.0.0.js';
+import {kit as simile100} from './simile/1.0.0.js';
 
 export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 
@@ -42,6 +47,7 @@ export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([
   brandMark100, lowerThird100, titleChip100, versePlate100, museumHall100, interprete100, roomEffect100,
   brandMark200, blockTitle100, figureTitle100, verseBar100, cover100, chapterOpener100, warp100, room100, panel100, interprete110,
   panel110, textStack100, timeline100, storyFx100, wordTracks100, interlinear100, monitorWall100, summary100, progress100,
+  merge100, cards100, stack100, oxymoron100, simile100,
 ]);
 
 const key = (name: string, version: string) => `${name}@${version}`;

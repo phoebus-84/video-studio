@@ -121,6 +121,13 @@ describe('validateTimeline', () => {
     assert.deepEqual(refused('monitor-wall', {cells: []}), at('cells'));
     const row = {...pic, keyword: 'K', figure: 'F', at: 0};
     assert.deepEqual(refused('summary', {rows: Array.from({length: 9}, () => row)}), at('rows'));
+    const times = {a: 2, b: 1, tear: 3, verb: 4, result: 5, end: 6};
+    const labels = {a: 'A', b: 'B', verb: 'V', result: 'R'};
+    assert.deepEqual(refused('merge', {picture: pic, times, labels}), at('times'));
+    const card = {word: 'W', gloss: 'g', icon: 'bruise', at: 0};
+    assert.deepEqual(refused('cards', {picture: pic, cards: [card, card, card, card], times: {human: 1, end: 2}}), at('cards'));
+    const step = {word: 'W', gloss: 'g'};
+    assert.deepEqual(refused('stack', {picture: pic, steps: [step, step], labels: {weight: 'W'}, times: {w1: 0, w2: 1, w3: 2, stairs: 3, s1: 4, s2: 5, s3: 6, collapse: 7}}), at('steps'));
   });
 
   it('refuses a 16:9 lesson kit in a 9:16 timeline', () => {
@@ -151,6 +158,7 @@ describe('validateTimeline', () => {
       ['brand-mark', '2.0.0', 'overlay'],
       ['captions', '1.0.0', 'fill'],
       ['captions', '1.1.0', 'overlay'],
+      ['cards', '1.0.0', 'fill'],
       ['chapter-opener', '1.0.0', 'fill'],
       ['clip', '1.0.0', 'fill'],
       ['cover', '1.0.0', 'fill'],
@@ -159,13 +167,17 @@ describe('validateTimeline', () => {
       ['interprete', '1.0.0', 'fill'],
       ['interprete', '1.1.0', 'fill'],
       ['lower-third', '1.0.0', 'overlay'],
+      ['merge', '1.0.0', 'fill'],
       ['monitor-wall', '1.0.0', 'fill'],
       ['museum-hall', '1.0.0', 'fill'],
+      ['oxymoron', '1.0.0', 'fill'],
       ['panel', '1.0.0', 'fill'],
       ['panel', '1.1.0', 'fill'],
       ['progress', '1.0.0', 'overlay'],
       ['room', '1.0.0', 'fill'],
       ['room-effect', '1.0.0', 'fill'],
+      ['simile', '1.0.0', 'fill'],
+      ['stack', '1.0.0', 'fill'],
       ['still', '1.0.0', 'fill'],
       ['story-fx', '1.0.0', 'fill'],
       ['summary', '1.0.0', 'fill'],
