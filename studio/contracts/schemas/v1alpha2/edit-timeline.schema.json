@@ -261,6 +261,10 @@
           "type": "array",
           "items": { "$ref": "#/$defs/Section" }
         },
+        "loop": {
+          "type": "boolean",
+          "description": "The last frame is the first; the render audit checks it (avg-3th.3)."
+        },
         "metadata": { "type": "object" }
       }
     }
