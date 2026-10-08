@@ -6,13 +6,14 @@
 // otherwise rendered exactly as it stands — a hand edit, on the web or on
 // disk, is never overwritten. Renders are immutable: output/<render-id>.mp4
 // with the timeline it rendered (<render-id>.timeline.json, avg-jao.5) and a
-// report beside it, and output/current.json moved last.
+// report beside it, and output/current.json moved last — only once the file
+// passed its audit (avg-3th.3).
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { renderTimeline, type RenderResult } from "@av/remotion-composer";
+import { auditExpectation, auditRender, EditTimelineSchema, renderTimeline, type AuditFinding, type AuditResult, type RenderResult } from "@av/remotion-composer";
 import { validateEditTimeline } from "@studio/contracts/src/edit-timeline.mjs";
 import { outputProfile } from "@studio/contracts/src/output-profiles.mjs";
 import {
@@ -53,6 +54,21 @@ export class SeriesRulesError extends TimelineBuildError {
   constructor(readonly validator: string | null, errors: SeriesFinding[], hint = "") {
     super(errors, `the series rules (${validator}) refuse this timeline${hint}`);
     this.name = "SeriesRulesError";
+  }
+}
+
+/**
+ * The rendered file is not what its timeline promised (avg-3th.3). The video,
+ * its timeline and its report stay in output/ to be looked at; current.json
+ * was not moved.
+ */
+export class RenderAuditError extends Error {
+  readonly code = "render-audit";
+  readonly problems: { code: string; message: string; path: string }[];
+  constructor(readonly renderId: string, readonly findings: AuditFinding[]) {
+    super(`the render ${renderId} failed its audit, so it did not become current: ${findings.map((f) => `${f.code}: ${f.message}`).join("; ")}`);
+    this.name = "RenderAuditError";
+    this.problems = findings.map((f) => ({ code: f.code, message: f.message, path: `output/${renderId}.mp4` }));
   }
 }
 
@@ -322,6 +338,8 @@ export interface EpisodeRender {
   compiledBy: CompiledBy | null;
   validation: Validation | null;
   result: RenderResult;
+  /** What the audit checked; it passed, or the render would have thrown RenderAuditError. */
+  audit: AuditResult;
 }
 
 /**
@@ -366,6 +384,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     throw error;
   }
   result = { ...result, path: outputPath };
+  const audit = await auditRender(outputPath, auditExpectation(EditTimelineSchema.parse(current.timeline)));
 
   // The exact text rendered: a later version is compared with it section by section.
   writeAtomically(join(outputDir, snapshot), decision.text);
@@ -378,7 +397,9 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     ...(current.rebuilt ? { rebuilt: current.rebuilt } : {}),
     ...(current.warnings.length > 0 ? { warnings: current.warnings } : {}),
     render: { ...result, path: `${renderId}.mp4` },
+    audit: audit.passed ? { passed: true, checks: audit.checks } : { passed: false, checks: audit.checks, findings: audit.findings },
   }));
+  if (!audit.passed) throw new RenderAuditError(renderId, audit.findings);
   writeAtomically(join(outputDir, "current.json"), serialize({ renderId, path: `${renderId}.mp4` }));
 
   return {
@@ -391,5 +412,6 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     compiledBy: current.compiledBy,
     validation: current.validation,
     result,
+    audit,
   };
 }

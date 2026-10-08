@@ -111,7 +111,7 @@ are `seriesTemplatePath` and `seriesReferencePath` in `layout.mjs`;
 
 ## Editing rules
 
-Canonical text writes use compare-and-swap revisions plus atomic rename. A direct edit increments the revision and triggers dependency staleness. Generated attempts are never overwritten. `output/current.json` points to the current render rather than relying on an ambiguous filename or symlink.
+Canonical text writes use compare-and-swap revisions plus atomic rename. A direct edit increments the revision and triggers dependency staleness. Generated attempts are never overwritten. `output/current.json` points to the current render rather than relying on an ambiguous filename or symlink. A render becomes current only after its file passes the render audit (decode, streams, duration, loudness, and the loop when the timeline declares one); a render that fails stays in `output/` with its report, which says why.
 
 ## Git and storage
 
