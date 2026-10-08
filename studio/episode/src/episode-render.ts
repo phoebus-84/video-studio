@@ -6,13 +6,14 @@
 // otherwise rendered exactly as it stands — a hand edit, on the web or on
 // disk, is never overwritten. Renders are immutable: output/<render-id>.mp4
 // with the timeline it rendered (<render-id>.timeline.json, avg-jao.5) and a
-// report beside it, and output/current.json moved last.
+// report beside it, and output/current.json moved last — only once the file
+// passed its audit (avg-3th.3).
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { renderTimeline, type RenderResult } from "@av/remotion-composer";
+import { auditExpectation, auditRender, EditTimelineSchema, renderTimeline, type AuditFinding, type AuditResult, type RenderResult } from "@av/remotion-composer";
 import { validateEditTimeline } from "@studio/contracts/src/edit-timeline.mjs";
 import { outputProfile } from "@studio/contracts/src/output-profiles.mjs";
 import {
@@ -53,6 +54,21 @@ export class SeriesRulesError extends TimelineBuildError {
   constructor(readonly validator: string | null, errors: SeriesFinding[], hint = "") {
     super(errors, `the series rules (${validator}) refuse this timeline${hint}`);
     this.name = "SeriesRulesError";
+  }
+}
+
+/**
+ * The rendered file is not what its timeline promised (avg-3th.3). The video,
+ * its timeline and its report stay in output/ to be looked at; current.json
+ * was not moved.
+ */
+export class RenderAuditError extends Error {
+  readonly code = "render-audit";
+  readonly problems: { code: string; message: string; path: string }[];
+  constructor(readonly renderId: string, readonly findings: (AuditFinding | { code: "audit-unavailable"; message: string })[]) {
+    super(`the render ${renderId} failed its audit (${findings.length} finding${findings.length === 1 ? "" : "s"}), so it did not become current`);
+    this.name = "RenderAuditError";
+    this.problems = findings.map((f) => ({ code: f.code, message: f.message, path: `output/${renderId}.mp4` }));
   }
 }
 
@@ -322,6 +338,8 @@ export interface EpisodeRender {
   compiledBy: CompiledBy | null;
   validation: Validation | null;
   result: RenderResult;
+  /** What the audit checked; it passed, or the render would have thrown RenderAuditError. */
+  audit: AuditResult;
 }
 
 /**
@@ -349,6 +367,8 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   const partialPath = join(outputDir, `.${renderId}.partial.mp4`);
   const reportPath = join(outputDir, `${renderId}.report.json`);
   const snapshot = `${renderId}.timeline.json`;
+  // What the file must be, read before minutes of render: a timeline the audit cannot read is refused here.
+  const expectation = auditExpectation(EditTimelineSchema.parse(current.timeline));
 
   let result: RenderResult;
   try {
@@ -366,6 +386,14 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     throw error;
   }
   result = { ...result, path: outputPath };
+  // An audit that cannot run (FFmpeg missing or failing) is recorded like a failed one: the render stays, never current.
+  let audit: AuditResult | null = null;
+  let auditError: string | null = null;
+  try {
+    audit = await auditRender(outputPath, expectation);
+  } catch (error) {
+    auditError = error instanceof Error ? error.message : String(error);
+  }
 
   // The exact text rendered: a later version is compared with it section by section.
   writeAtomically(join(outputDir, snapshot), decision.text);
@@ -378,7 +406,10 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     ...(current.rebuilt ? { rebuilt: current.rebuilt } : {}),
     ...(current.warnings.length > 0 ? { warnings: current.warnings } : {}),
     render: { ...result, path: `${renderId}.mp4` },
+    audit: audit === null ? { passed: false, error: auditError } : audit.passed ? { passed: true, checks: audit.checks } : { passed: false, checks: audit.checks, findings: audit.findings },
   }));
+  if (audit === null) throw new RenderAuditError(renderId, [{ code: "audit-unavailable", message: `the audit could not run: ${auditError}` }]);
+  if (!audit.passed) throw new RenderAuditError(renderId, audit.findings);
   writeAtomically(join(outputDir, "current.json"), serialize({ renderId, path: `${renderId}.mp4` }));
 
   return {
@@ -391,5 +422,6 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     compiledBy: current.compiledBy,
     validation: current.validation,
     result,
+    audit,
   };
 }

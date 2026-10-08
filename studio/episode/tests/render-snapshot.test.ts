@@ -31,6 +31,7 @@ vi.mock("@av/remotion-composer", async (importOriginal) => {
         loudness: null,
       };
     },
+    auditRender: async () => ({ passed: true, checks: ["decode", "streams", "duration"], findings: [] }),
   };
 });
 

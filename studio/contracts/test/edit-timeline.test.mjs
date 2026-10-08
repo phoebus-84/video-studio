@@ -42,6 +42,14 @@ describe("validateEditTimeline", () => {
     assert.ok(problems.some((p) => p.path === "$.tracks[2].items[0].from"));
   });
 
+  it("accepts a timeline that declares its loop, and refuses a loop that is not a boolean", () => {
+    const doc = lesson();
+    doc.loop = true;
+    assert.deepEqual(validateEditTimeline(doc), []);
+    doc.loop = "yes";
+    assert.ok(validateEditTimeline(doc).some((p) => p.code === "schema" && p.path === "$.loop"));
+  });
+
   it("reports a resolution that is not its profile's, and a safe zone that leaves nothing", () => {
     const doc = lesson();
     doc.resolution = { width: 1280, height: 720 };

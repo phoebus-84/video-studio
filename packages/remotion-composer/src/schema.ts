@@ -108,6 +108,8 @@ export const EditTimelineSchema = z.object({
     source: specPath.optional(),
     chapter: z.object({number: z.number().int().min(1).optional(), title: z.string().min(1)}).strict().optional(),
   }).strict()).optional(),
+  /** The last frame is the first: the render audit checks it (avg-3th.3). */
+  loop: z.boolean().optional(),
   metadata: z.record(z.unknown()).optional(),
 }).strict();
 

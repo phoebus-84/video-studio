@@ -8,4 +8,5 @@ export {listKits, previewPath, resolveKit, kitVersions, KIT_VERSIONS, type KitLi
 export {ComposerError, type ComposerErrorCode, type ComposerProblem} from './errors.js';
 export {BUNDLED_FAMILIES} from './kits/lib/fonts/1.1.0.js';
 export {type LoudnessTarget, type LoudnessResult} from './loudness.js';
+export {auditRender, auditExpectation, LOUDNESS_TOLERANCE, TRUE_PEAK_TOLERANCE, LOOP_TOLERANCE, SOUND_DURATION_TOLERANCE, type AuditExpectation, type AuditFinding, type AuditResult, type AuditTools} from './audit.js';
 export {EditTimelineSchema, OutputProfileSchema, type EditTimeline, type OutputProfile} from './schema.js';

@@ -153,5 +153,7 @@ export interface EditTimeline {
   assets: Record<string, Asset>;
   tracks: Track[];
   sections?: Section[];
+  /** The last frame is the first; the render audit checks it (avg-3th.3). */
+  loop?: boolean;
   metadata?: Record<string, unknown>;
 }
