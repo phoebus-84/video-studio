@@ -36,17 +36,24 @@ def _default_models_dir() -> Path:
     return Settings().models_dir
 
 
-def serve_environment(environ: Mapping[str, str], system: str, home: Path | None = None) -> dict[str, str]:
-    """The data directories ``serve`` adds on macOS: the service's, where ``install`` puts the models.
+def serve_environment(
+    environ: Mapping[str, str], system: str, home: Path | None = None, dotenv: Mapping[str, str | None] | None = None,
+) -> dict[str, str]:
+    """The data directories ``serve`` exports: on macOS the service's, where ``install`` puts the models.
 
     A foreground worker started from the repository otherwise looked in ``./models``, found
-    nothing, and failed its first synthesis while ``/health`` said ready (avg-07q). A
-    directory already set in the environment is kept.
+    nothing, and failed its first synthesis while ``/health`` said ready (avg-07q). A directory
+    set in the environment is kept; one set in ``.env`` is exported as it is, since
+    ``/synthesize`` reads the process environment and not ``.env``.
     """
-    if system != "darwin": return {}
-    paths = service_paths(home)
-    wanted = {"QTW_MODELS_DIR": paths["models"], "QTW_VOICES_DIR": paths["voices"], "QTW_OUTPUTS_DIR": paths["outputs"]}
-    return {name: str(path) for name, path in wanted.items() if not environ.get(name)}
+    dotenv = dotenv or {}
+    service = service_paths(home) if system == "darwin" else {}
+    out: dict[str, str] = {}
+    for name, key in (("QTW_MODELS_DIR", "models"), ("QTW_VOICES_DIR", "voices"), ("QTW_OUTPUTS_DIR", "outputs")):
+        if environ.get(name): continue
+        if dotenv.get(name): out[name] = str(dotenv[name])
+        elif key in service: out[name] = str(service[key])
+    return out
 
 
 def _api(base_url: str, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
@@ -175,7 +182,8 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "doctor": return _doctor(args)
     if args.command == "serve":
         from qwen_tts_worker.__main__ import main as serve
-        os.environ.update(serve_environment(os.environ, sys.platform))
+        from dotenv import dotenv_values
+        os.environ.update(serve_environment(os.environ, sys.platform, dotenv=dotenv_values(".env")))
         serve(); return 0
     if args.command == "models":
         print(json.dumps(_api(args.url, "GET", "/models"), indent=2)); return 0

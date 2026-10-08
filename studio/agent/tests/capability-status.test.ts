@@ -54,8 +54,15 @@ describe("voiceWorkerStatus", () => {
     const url = await fakeWorker({ "/health": HEALTHY, "/models": [200, [model("1.7B", "not_installed")]] });
     const speech = (await voiceWorkerStatus(url))["text-to-speech"];
     expect(speech.available).toBe(false);
-    expect(speech.detail).toContain("no CustomVoice model installed in /repo/packages/voice/models");
+    expect(speech.detail).toContain("no 1.7B CustomVoice model installed in /repo/packages/voice/models");
     expect(speech.detail).toContain("mise run voice-serve");
+  });
+
+  it("does not speak with only the 0.6B model: /synthesize loads the 1.7B one", async () => {
+    const url = await fakeWorker({ "/health": HEALTHY, "/models": [200, [model("0.6B", "complete"), model("1.7B", "not_installed")]] });
+    const speech = (await voiceWorkerStatus(url))["text-to-speech"];
+    expect(speech.available).toBe(false);
+    expect(speech.detail).toContain("1.7B");
   });
 
   it("does not align on a worker without /align, though it answers", async () => {
@@ -98,6 +105,12 @@ describe("imageGenerationStatus", () => {
   it("reports the fal route as not ready without FAL_KEY, whatever the login", async () => {
     const status = await imageGenerationStatus({ libraryRoot: library("fal-ai/flux/dev"), series: SERIES, falConfigured: false, codexLoggedIn: async () => true });
     expect(status).toEqual({ available: false, detail: "dentro-i-versi/long uses fal fal-ai/flux/dev: fal.ai not ready (FAL_KEY not set)" });
+  });
+
+  it("refuses a channel or series that is not a slug", async () => {
+    await expect(imageGenerationStatus({
+      libraryRoot: library("openai-codex"), series: { channel: "..", series: "long" }, falConfigured: true, codexLoggedIn: async () => true,
+    })).rejects.toThrow(/slug/);
   });
 
   it("reports both routes without a series, and a failed login check as no login", async () => {

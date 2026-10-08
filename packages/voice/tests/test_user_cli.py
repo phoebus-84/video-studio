@@ -88,3 +88,6 @@ def test_serve_uses_the_service_data_directories_on_macos(tmp_path: Path) -> Non
     # A directory the caller set is kept; elsewhere nothing changes.
     assert "QTW_MODELS_DIR" not in serve_environment({"QTW_MODELS_DIR": "/elsewhere"}, "darwin", tmp_path)
     assert serve_environment({}, "linux", tmp_path) == {}
+    # One set in .env is exported as it is: /synthesize reads only the process environment.
+    assert serve_environment({}, "darwin", tmp_path, {"QTW_MODELS_DIR": "/from-dotenv"})["QTW_MODELS_DIR"] == "/from-dotenv"
+    assert serve_environment({}, "linux", tmp_path, {"QTW_MODELS_DIR": "/from-dotenv"}) == {"QTW_MODELS_DIR": "/from-dotenv"}

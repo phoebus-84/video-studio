@@ -9,6 +9,10 @@
 
 import { CODEX_PROVIDER, resolveImageProvider } from "./image-provider.js";
 
+/** The CustomVoice size the worker's /synthesize loads. */
+const SYNTHESIS_MODEL_SIZE = "1.7B";
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 export interface CapabilityReport {
   available: boolean;
   detail: string;
@@ -50,17 +54,20 @@ export async function voiceWorkerStatus(workerUrl: string): Promise<{
       const models = await getJson(`${workerUrl}/models`);
       const entries = Array.isArray(models.body) ? (models.body as ModelEntry[]) : [];
       const voices = entries.filter((m) => m.profile === "custom_voice");
-      const installed = voices.filter((m) => m.status === "complete");
+      // /synthesize loads one checkpoint, the 1.7B CustomVoice (the worker's DEFAULT_CUSTOMVOICE_MODEL);
+      // another size installed beside it doesn't make it speak.
+      const used = voices.find((m) => m.size === SYNTHESIS_MODEL_SIZE);
       if (models.status !== 200) {
         speech = { available: false, detail: `${version}: /models answered HTTP ${models.status}, so its speech models are unknown` };
-      } else if (installed.length === 0) {
-        const where = voices[0]?.path ? voices[0].path.replace(/\/[^/]*$/, "") : "its models directory";
+      } else if (used?.status !== "complete") {
+        const where = (used ?? voices[0])?.path?.replace(/\/[^/]*$/, "") ?? "its models directory";
         speech = {
           available: false,
-          detail: `${version} has no CustomVoice model installed in ${where}: start it with \`mise run voice-serve\`, or set QTW_MODELS_DIR to where the models are`,
+          detail: `${version} has no ${SYNTHESIS_MODEL_SIZE} CustomVoice model installed in ${where}, the one /synthesize loads: ` +
+            "start it with `mise run voice-serve`, or set QTW_MODELS_DIR to where the models are",
         };
       } else {
-        speech = { available: true, detail: `${version}, Qwen3-TTS CustomVoice ${installed.map((m) => m.size).join(", ")}` };
+        speech = { available: true, detail: `${version}, Qwen3-TTS CustomVoice ${SYNTHESIS_MODEL_SIZE}` };
       }
     }
   } catch {
@@ -98,6 +105,9 @@ export async function imageGenerationStatus(options: {
   const codex = codexReady ? "openai-codex ready (logged in)" : "openai-codex not ready (no login in Pi)";
   if (!options.series) {
     return { available: options.falConfigured || codexReady, detail: `${fal}; ${codex}. Pass channel and series for the route a series uses` };
+  }
+  if (!SLUG.test(options.series.channel) || !SLUG.test(options.series.series)) {
+    throw new Error("channel and series must be slugs");
   }
   const provider = resolveImageProvider(options.libraryRoot, options.series.channel, options.series.series);
   const label = `${options.series.channel}/${options.series.series}`;

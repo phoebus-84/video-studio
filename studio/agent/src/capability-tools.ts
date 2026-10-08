@@ -1646,7 +1646,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         ...(params.channel && params.series ? { series: { channel: params.channel, series: params.series } } : {}),
         falConfigured,
         codexLoggedIn: async () => Boolean(registry && await registry.getApiKeyForProvider(CODEX_PROVIDER)),
-      });
+      }).catch((e: unknown) => ({ available: false, detail: e instanceof Error ? e.message : String(e) }));
       caps["video-generation"] = falConfigured
         ? { available: true, detail: "fal.ai MiniMax H3 configured" }
         : { available: false, detail: "FAL_KEY not set" };
