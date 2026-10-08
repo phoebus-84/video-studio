@@ -34,7 +34,7 @@ export class SheetReviewError extends Error {
 const sha256 = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
 /** Throws SheetReviewError unless the current sheet of `decision`'s timeline is approved. */
-export function requireSheetReview(episodeDir: string, options: BuildOptions, decision: TimelineDecision, key: string | null): void {
+export function requireSheetReview(episodeDir: string, options: BuildOptions, decision: TimelineDecision, key: string | null, approval: "review" | "pipeline-gate" = "review"): void {
   if (!isSpecDriven(episodeDir)) return;
   const status = layoutSheetStatusOf(episodeDir, options, () => decision);
   if (status.state === "missing") {
@@ -43,6 +43,8 @@ export function requireSheetReview(episodeDir: string, options: BuildOptions, de
   if (status.state === "stale") {
     throw new SheetReviewError("sheet-stale", `the layout sheet no longer pictures the timeline (${status.reasons.join("; ")}): make it again, read it, approve it`, LAYOUT_SHEET_REPORT);
   }
+  // The pipeline's gate on its sheet stage was the person's reading (see EpisodeRenderOptions.sheetApproval).
+  if (approval === "pipeline-gate") return;
   const file = join(episodeDir, SHEET_REVIEW_PATH);
   if (!existsSync(file)) {
     throw new SheetReviewError("review-missing", "nobody has approved the current layout sheet: read it, then `vpr sheet approve`", SHEET_REVIEW_PATH);

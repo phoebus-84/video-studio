@@ -19,6 +19,8 @@ vi.mock("@av/remotion-composer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@av/remotion-composer")>();
   return {
     ...actual,
+    // The file is fake: its audit is @av/remotion-composer's and @studio/episode's to test.
+    auditRender: async () => ({ passed: true, checks: ["decode"], findings: [] }),
     renderTimeline: async (options: { timeline: any; outputPath: string; cacheDir?: string }) => {
       renders.push({ timeline: options.timeline, outputPath: options.outputPath, cacheDir: options.cacheDir });
       mkdirSync(dirname(options.outputPath), { recursive: true });

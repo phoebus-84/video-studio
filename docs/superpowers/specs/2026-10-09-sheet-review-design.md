@@ -45,7 +45,12 @@ The series-production pipeline puts a human review on its `sheet` stage. `render
    | `review-invalid` | the signature does not verify (only with the key), or the record is malformed |
 
    Episodes without a spec (the legacy explainer builder) are not gated, since their pipelines review differently.
-6. **The key reaches `renderEpisode` as an option** (`operatorKey?: string | null`). Pi's tool and the series adapter pass none and get the hash-bound check. A process holding the key passes it.
+6. **The pipeline's own gate counts as the review.** In series-production, `render` runs only after a person approved the `sheet` stage at its gate, and that approval is a receipt signed with the operator key and bound to `layout-sheet.json`'s hash. Asking for a second approval would be redundant. So `renderEpisode` takes `sheetApproval: "review" | "pipeline-gate"`:
+   - the series adapter passes `"pipeline-gate"`, which still requires a current sheet but no `review.json`;
+   - every other caller, Pi's tool included, needs `review.json`.
+
+   Settled by the final review, 2026-10-09.
+7. **The key reaches `renderEpisode` as an option** (`operatorKey?: string | null`). Pi's tool and the series adapter pass none and get the hash-bound check. A process holding the key passes it.
 
 ## Design
 

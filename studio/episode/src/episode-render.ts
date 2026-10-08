@@ -332,6 +332,15 @@ export interface EpisodeRenderOptions extends BuildOptions {
    * binding alone (avg-3th.2).
    */
   operatorKey?: string | null;
+  /**
+   * What stands for a person's reading of the sheet. "review" (the default):
+   * artifacts/layout-sheet/review.json, signed by `vpr sheet approve`.
+   * "pipeline-gate": the series-production pipeline's human gate on its
+   * `sheet` stage, signed and bound to layout-sheet.json's hash — only the
+   * execution service, which runs `render` after that gate, may claim it. The
+   * sheet must be current either way.
+   */
+  sheetApproval?: "review" | "pipeline-gate";
   onProgress?: (progress: number) => void;
 }
 
@@ -366,7 +375,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     throw new SeriesRulesError(decision.validation!.validator, errors, hintFor(errors, decision.rebuilt === null));
   }
   // A spec-driven episode renders only the timeline whose sheet a person approved.
-  requireSheetReview(episodeDir, options, decision, options.operatorKey ?? null);
+  requireSheetReview(episodeDir, options, decision, options.operatorKey ?? null, options.sheetApproval ?? "review");
   const current = applyDecision(episodeDir, decision);
 
   const outputDir = join(episodeDir, "output");

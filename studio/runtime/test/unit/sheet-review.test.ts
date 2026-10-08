@@ -21,7 +21,7 @@ const dir = () => join(episodePath(root, REF.channel, REF.series, REF.episode), 
 function laySheet(image = "grid pixels") {
   mkdirSync(dir(), { recursive: true });
   writeFileSync(join(dir(), "sheet.jpg"), image);
-  writeFileSync(join(dir(), "sheet.json"), JSON.stringify({ inputsHash: sha("inputs"), sheet: { path: "sheet.jpg", hash: sha("grid pixels") } }));
+  writeFileSync(join(dir(), "sheet.json"), JSON.stringify({ inputsHash: sha("inputs"), sheet: { path: "sheet.jpg", hash: sha("grid pixels") }, frames: [] }));
 }
 
 beforeEach(() => {
@@ -76,7 +76,7 @@ describe("sheetReviewStatus", () => {
     reviewSheet({ libraryRoot: root, ref: REF, key: KEY, decision: "approved" });
     expect(sheetReviewStatus({ libraryRoot: root, ref: REF, key: KEY })).toMatchObject({ state: "approved", verified: true });
     expect(sheetReviewStatus({ libraryRoot: root, ref: REF, key: null })).toMatchObject({ state: "approved", verified: null });
-    writeFileSync(join(dir(), "sheet.json"), JSON.stringify({ inputsHash: sha("new inputs"), sheet: { path: "sheet.jpg", hash: sha("grid pixels") } }));
+    writeFileSync(join(dir(), "sheet.json"), JSON.stringify({ inputsHash: sha("new inputs"), sheet: { path: "sheet.jpg", hash: sha("grid pixels") }, frames: [] }));
     expect(sheetReviewStatus({ libraryRoot: root, ref: REF, key: KEY }).state).toBe("stale");
   });
 

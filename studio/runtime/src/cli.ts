@@ -138,10 +138,14 @@ function extractPipeline(args: string[]): { pipeline?: string; remaining: string
   return { remaining: args };
 }
 
-/** One value-taking flag's value, or undefined when it is absent. Used by `cmdReview` for `--note`. */
+/**
+ * One value-taking flag's value, or undefined when it is absent — or followed
+ * by another flag, which is never a value (`--note --dry-run` has no note).
+ */
 function flagValue(args: string[], name: string): string | undefined {
   const idx = args.indexOf(name);
-  return idx >= 0 ? args[idx + 1] : undefined;
+  const value = idx >= 0 ? args[idx + 1] : undefined;
+  return value === undefined || value.startsWith("--") ? undefined : value;
 }
 
 // ── doctor ──────────────────────────────────────────────────────────────────
@@ -895,7 +899,7 @@ async function cmdSheet(ctx: CliContext, args: string[]): Promise<number> {
   try {
     credential = resolveCliCredential();
   } catch (e) {
-    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}${sub === "status" ? "" : ". Nothing was recorded."}` });
     return EX_RUNTIME;
   }
   const key = credential.operatorKey;
@@ -918,7 +922,7 @@ async function cmdSheet(ctx: CliContext, args: string[]): Promise<number> {
   }
   const { path, review, written } = out.value;
   emit(ctx, {
-    message: `${written ? "" : "[DRY RUN] "}${target}'s sheet ${written ? "is" : "would be"} ${review.decision}: ${path}`,
+    message: `${written ? "" : "[DRY RUN] "}${target}'s sheet ${written ? "is" : "would be"} ${review.decision}: ${path} (the render checks that it still pictures the timeline)`,
     path,
     review,
     dryRun: !written,

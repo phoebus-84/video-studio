@@ -24,6 +24,8 @@ import {
   type SheetReviewVerdict,
 } from "@studio/contracts/src/sheet-reviews.mjs";
 
+const SHEET_IMAGE = /^sheet\.jpg$/;
+const STILL = /^frames\/\d{3}\.jpg$/;
 const sha256 = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const bare = (hash: unknown) => String(hash).replace(/^sha256:/, "");
 
@@ -47,7 +49,7 @@ function sheetOnDisk(episodeDir: string): SheetOutcome<SheetOnDisk> {
   const reportFile = join(episodeDir, LAYOUT_SHEET_REPORT);
   if (!existsSync(reportFile)) return refuse("no-sheet", `${LAYOUT_SHEET_REPORT} does not exist: make the layout sheet first`);
   const bytes = readFileSync(reportFile);
-  let report: { inputsHash?: unknown; sheet?: { path?: unknown; hash?: unknown } };
+  let report: { inputsHash?: unknown; sheet?: { path?: unknown; hash?: unknown }; frames?: unknown };
   try {
     report = JSON.parse(bytes.toString("utf-8"));
   } catch (error) {
@@ -56,9 +58,16 @@ function sheetOnDisk(episodeDir: string): SheetOutcome<SheetOnDisk> {
   if (typeof report.inputsHash !== "string" || typeof report.sheet?.path !== "string" || typeof report.sheet?.hash !== "string") {
     return refuse("bad-sheet", `${LAYOUT_SHEET_REPORT} does not name its inputs hash and its sheet`);
   }
-  const image = join(episodeDir, LAYOUT_SHEET_DIR, report.sheet.path);
-  if (!existsSync(image) || bare(sha256(readFileSync(image))) !== bare(report.sheet.hash)) {
-    return refuse("sheet-changed", `${LAYOUT_SHEET_DIR}/${report.sheet.path} is not the image ${LAYOUT_SHEET_REPORT} describes: make the sheet again`);
+  // The same files the render checks (@studio/episode's readReport): the grid and every still, by name and hash.
+  const frames = Array.isArray(report.frames) ? report.frames as { path?: unknown; hash?: unknown }[] : null;
+  if (!SHEET_IMAGE.test(report.sheet.path) || !frames || !frames.every((f) => typeof f?.path === "string" && STILL.test(f.path) && typeof f.hash === "string")) {
+    return refuse("bad-sheet", `${LAYOUT_SHEET_REPORT} names files outside the sheet`);
+  }
+  for (const file of [report.sheet as { path: string; hash: string }, ...(frames as { path: string; hash: string }[])]) {
+    const on = join(episodeDir, LAYOUT_SHEET_DIR, file.path);
+    if (!existsSync(on) || bare(sha256(readFileSync(on))) !== bare(file.hash)) {
+      return refuse("sheet-changed", `${LAYOUT_SHEET_DIR}/${file.path} is not the one ${LAYOUT_SHEET_REPORT} describes: make the sheet again`);
+    }
   }
   return {
     ok: true,
@@ -134,7 +143,7 @@ export function sheetReviewStatus(input: { libraryRoot: string; ref: EpisodeRef;
   });
   const by = (review as { at?: string } | null)?.at;
   const message = verdict.state === "approved" || verdict.state === "rejected"
-    ? `${verdict.state}${by ? ` at ${by}` : ""}${verdict.verified === null ? " (signature not checked: no operator key)" : ""}`
+    ? `${verdict.state}${by ? ` at ${by}` : ""}${verdict.verified === null ? " (signature not checked: no operator key)" : ""}; the render checks that the sheet still pictures the timeline`
     : `${verdict.state}: ${verdict.problem?.message ?? ""}`;
   return { ...verdict, message };
 }

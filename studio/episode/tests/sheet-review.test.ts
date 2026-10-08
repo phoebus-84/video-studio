@@ -110,6 +110,33 @@ describe("renderEpisode needs an approval of the current layout sheet", () => {
     expect(await refused()).toBe("review-stale");
   });
 
+  it("accepts the pipeline's sheet gate in place of a review file, but never a stale sheet", async () => {
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    await renderEpisode(dir(), { episodeRef: REF, sheetApproval: "pipeline-gate" });
+    expect(rendered).toBe(1);
+    editSpec(dir(), (spec) => { spec.data.title = `${spec.data.title} (revised)`; spec.revision += 1; });
+    const error = (await renderEpisode(dir(), { episodeRef: REF, sheetApproval: "pipeline-gate" }).catch((e: unknown) => e)) as SheetReviewError;
+    expect(error.problems[0]!.code).toBe("sheet-stale");
+  });
+
+  it("refuses a review that is not JSON, and, with the key, one with no signature or a changed note", async () => {
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    writeFileSync(at("artifacts/layout-sheet/review.json"), "{ not json");
+    expect(await refused()).toBe("review-invalid");
+    const review = approveSheet(dir(), REF, KEY) as Record<string, unknown>;
+    const { signature: _drop, ...unsigned } = review;
+    writeFileSync(at("artifacts/layout-sheet/review.json"), JSON.stringify(unsigned));
+    expect(await refused({ operatorKey: KEY })).toBe("review-invalid");
+    writeFileSync(at("artifacts/layout-sheet/review.json"), JSON.stringify({ ...review, note: "added later" }));
+    expect(await refused({ operatorKey: KEY })).toBe("review-invalid");
+  });
+
+  it("refuses another episode's review", async () => {
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    approveSheet(dir(), { ...REF, episode: "evening" }, KEY);
+    expect(await refused()).toBe("review-invalid");
+  });
+
   it("does not gate an episode without a spec", () => {
     const legacy = join(root, "legacy");
     mkdirSync(legacy, { recursive: true });
