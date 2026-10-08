@@ -114,6 +114,77 @@
      "path": "$.tracks"
     }
    ]
+  },
+  {
+   "name": "the opening guide moved off the first frame",
+   "set": [
+    {
+     "path": "$.tracks[5].items[0].from",
+     "value": 1
+    }
+   ],
+   "expect": [
+    {
+     "code": "missing-guide",
+     "severity": "error",
+     "path": "$.tracks"
+    },
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  },
+  {
+   "name": "the lesson cut to three minutes: too short, and a guide of the middle now at the last frame without leaving",
+   "set": [
+    {
+     "path": "$.durationInFrames",
+     "value": 5400
+    }
+   ],
+   "expect": [
+    {
+     "code": "duration",
+     "severity": "error",
+     "path": "$.durationInFrames"
+    },
+    {
+     "code": "missing-teleport",
+     "severity": "error",
+     "path": "$.tracks[5].items[6].props.teleport"
+    },
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  },
+  {
+   "name": "a stage item drawn with a kit of another format",
+   "set": [
+    {
+     "path": "$.tracks[1].items[0].kit",
+     "value": {
+      "name": "museum-hall",
+      "version": "1.0.0"
+     }
+    }
+   ],
+   "expect": [
+    {
+     "code": "unknown-kit",
+     "severity": "error",
+     "path": "$.tracks[1].items[0].kit"
+    },
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
   }
  ]
 }

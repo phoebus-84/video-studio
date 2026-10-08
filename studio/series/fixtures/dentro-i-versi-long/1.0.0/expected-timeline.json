@@ -10,7 +10,7 @@
   "derivedFrom": {
     "spec": {
       "path": "episode-spec.json",
-      "hash": "sha256:5ecc60c80ca539e94ed80fa2c37766dea4b2cf1fb9851f6fcc17e0a0761df8b7",
+      "hash": "sha256:0e59d626989fc9630c22982d549c121acc2125eb619437e9032b5e0c96961e77",
       "revision": 1
     },
     "compiler": {
@@ -19261,10 +19261,10 @@
     "template": {
       "id": "dentro-i-versi-long",
       "version": "1.0.0",
-      "hash": "sha256:2ef7a3c95e3b9113ea20b817028228e407714f22fafba6faafca2beee1a25759"
+      "hash": "sha256:49adf598d7a799eb841a3ce3cf12bb961b9d01de0a141b4c127cf6d02de2b8b6"
     },
     "inputs": {
-      "episode-spec.json": "sha256:5ecc60c80ca539e94ed80fa2c37766dea4b2cf1fb9851f6fcc17e0a0761df8b7"
+      "episode-spec.json": "sha256:0e59d626989fc9630c22982d549c121acc2125eb619437e9032b5e0c96961e77"
     },
     "blocks": [
       {

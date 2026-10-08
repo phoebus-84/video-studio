@@ -123,7 +123,10 @@ export function sharedRootsOf(episodeDir: string): string[] {
     const pinsDir = join(dir, PINS_DIR);
     for (const name of existsSync(pinsDir) ? readdirSync(pinsDir).filter((n) => n.endsWith(".json")).sort() : []) {
       try {
-        const source = JSON.parse(readFileSync(join(pinsDir, name), "utf-8"))?.source;
+        const pinDoc = JSON.parse(readFileSync(join(pinsDir, name), "utf-8"));
+        // only a pin that holds names a root
+        if (validateSourcePin(pinDoc).length > 0 || `${pinDoc.id}.json` !== name) continue;
+        const source = pinDoc.source;
         if (source?.kind !== "episode") continue;
         const srcDir = sourceDir(dirname(channelDir), basename(channelDir), source);
         if (existsSync(srcDir)) roots.push(srcDir);
@@ -359,6 +362,8 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
     const pinProblems = validateSourcePin(pinDoc);
     if (pinProblems.length > 0) throw new Stop(at(pinKey, pinProblems));
+    // A pin's file is named by its id: two pins never claim one id.
+    if (`${pinDoc.id}.json` !== name) stop("bad-pin", `${pinKey}#$.id`, `${pinKey} says its id is "${pinDoc.id}": name it ${pinDoc.id}.json`);
     // Only episodes are compile material; a channel source pins texts and references for people.
     if (pinDoc.source.kind !== "episode") continue;
     const id = pinDoc.id as string;
@@ -387,7 +392,9 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
         if (sha256(audio) !== take.audio.hash) stop("hash-mismatch", `${where}.audio.hash`, `pinned take "${take.id}": ${take.audio.path} is not the audio the take recorded`);
         assets[`source-${id}-narration-${take.id}`] = { path: keyOf(take.audio.path), hash: take.audio.hash, kind: "audio" };
         if (!take.timing) return;
-        const timing = JSON.parse(fromSource(take.timing.path, `${where}.timing.path`).toString("utf-8"));
+        const timingBytes = fromSource(take.timing.path, `${where}.timing.path`);
+        if (sha256(timingBytes) !== take.timing.hash) stop("hash-mismatch", `${where}.timing.hash`, `pinned take "${take.id}": ${take.timing.path} is not the timing the take recorded`);
+        const timing = JSON.parse(timingBytes.toString("utf-8"));
         const timingProblems = validateWordTiming(timing, { audioHash: take.audio.hash });
         if (timingProblems.length > 0) throw new Stop(at(keyOf(take.timing.path), timingProblems));
         sourceTimings[take.id] = timing;

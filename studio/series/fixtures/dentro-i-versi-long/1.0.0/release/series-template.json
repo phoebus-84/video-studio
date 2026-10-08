@@ -14,7 +14,7 @@
   "files": {
     "schema": {
       "path": "episode-spec.schema.json",
-      "hash": "sha256:9c4c59b42198242adc8e44769d60a9789f24f7e4dddb3f7de4ca2134a4d7b4fe"
+      "hash": "sha256:51cf2c95db7aef14f6af871dbf986f6b3c718c60ef953b26f00014b991a407fb"
     },
     "template": {
       "path": "episode-spec.template.json",

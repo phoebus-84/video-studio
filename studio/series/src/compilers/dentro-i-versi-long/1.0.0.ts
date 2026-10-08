@@ -118,13 +118,28 @@ function compile(input: CompileInput): CompileResult {
   const look = theme.look;
   const source = input.sources?.[data.source.pin];
   if (!source) {
-    return { ok: false, problems: [{ code: "missing-source", path: "$.data.source.pin", message: `no pinned episode "${data.source.pin}": pin the poem's source (vpr pin) as source/pins/${data.source.pin}.json` }] };
+    return { ok: false, problems: [{ code: "missing-source", path: "$.data.source.pin", message: `no pinned episode "${data.source.pin}" with takes: pin the poem's source (vpr pin) as source/pins/${data.source.pin}.json, an episode whose artifacts/narration/takes.json the pin inventories` }] };
   }
   const assets: Record<string, { path: string; hash: string; kind: "image" | "audio" | "video" }> = {};
   const use = (id: string) => {
     assets[id] = { ...input.assets[id]! };
     return { $asset: id };
   };
+
+  // ── The lesson's shape ────────────────────────────────────────────────────
+  const blockList = data.blocks;
+  if (blockList[0]?.kind !== "opening") problems.push({ code: "opening-first", path: "$.data.blocks[0].kind", message: "the lesson opens with its opening (in the atrio, on the cover)" });
+  if (blockList[blockList.length - 1]?.kind !== "end") problems.push({ code: "end-last", path: `$.data.blocks[${blockList.length - 1}].kind`, message: "the lesson ends with its exit (back to the atrio and the cover: the loop)" });
+  const seen = new Set<string>();
+  blockList.forEach((b, i) => {
+    if (seen.has(b.id)) problems.push({ code: "duplicate-block", path: `$.data.blocks[${i}].id`, message: `"${b.id}" names two blocks` });
+    seen.add(b.id);
+  });
+  if (blockList[blockList.length - 1]?.chapterAfter) problems.push({ code: "chapter-after-end", path: `$.data.blocks[${blockList.length - 1}].chapterAfter`, message: "no chapter comes after the exit" });
+  data.pictures.forEach((pic, i) => pic.verses.forEach((v, j) => {
+    if (v >= data.verses.length) problems.push({ code: "no-such-verse", path: `$.data.pictures[${i}].verses[${j}]`, message: `there is no verse ${v} (the poem has ${data.verses.length})` });
+  }));
+  if (problems.length > 0) return { ok: false, problems };
 
   // ── Takes ─────────────────────────────────────────────────────────────────
   interface Take { id: string; asset: string; duration: number; timing: WordTiming }
@@ -187,13 +202,19 @@ function compile(input: CompileInput): CompileResult {
     let k = 0;
     const words = recitalTake.timing.words;
     data.verses.forEach((v, i) => {
-      const n = tokens(v.text).length;
+      const written = tokens(v.text);
+      const n = written.length;
       const slice = words.slice(k, k + n);
       if (slice.length < n) problems.push({ code: "verse-mismatch", path: `$.data.verses[${i}].text`, message: `the recital's timing has ${words.length} words; verse ${i + 1} needs words ${k + 1}–${k + n}` });
+      else {
+        // the recital says the verse as written, word for word
+        const j = written.findIndex((w, x) => norm(w) !== norm(slice[x]!.text));
+        if (j >= 0) problems.push({ code: "verse-mismatch", path: `$.data.verses[${i}].text`, message: `verse ${i + 1}'s word "${written[j]}" is "${slice[j]!.text}" in the recital` });
+      }
       verseWords.push(slice);
       k += n;
     });
-    if (k !== words.length && problems.length === 0) {
+    if (k !== words.length && !problems.some((p) => p.code === "verse-mismatch")) {
       problems.push({ code: "verse-mismatch", path: "$.data.verses", message: `the verses have ${k} words, the recital's timing ${words.length}` });
     }
   }
@@ -222,8 +243,16 @@ function compile(input: CompileInput): CompileResult {
   const total = placed[placed.length - 1]!.end;
   const durationInFrames = frames(total);
 
-  /** A cue of a block, in seconds from the block's start. */
+  /** A cue of a block, in seconds from the block's start; within the block, or a problem. */
   const cueOf = (p: Placed, cue: unknown, path: string): number => {
+    const seconds = cueIn(p, cue, path);
+    if (seconds < 0 || seconds > p.end - p.start + 1e-6) {
+      problems.push({ code: "cue-out-of-block", path, message: `${round3(seconds)} s is outside block "${p.block.id}" (0–${round3(p.end - p.start)} s)` });
+      return Math.min(Math.max(seconds, 0), p.end - p.start);
+    }
+    return seconds;
+  };
+  const cueIn = (p: Placed, cue: unknown, path: string): number => {
     const lead = p.speech - p.start;
     if (typeof cue === "number") return cue;
     if (cue === "end") return p.take ? lead + p.take.duration : p.end - p.start;
@@ -260,6 +289,18 @@ function compile(input: CompileInput): CompileResult {
     return value;
   };
 
+  /** Resolved props whose times are from the block's start, made relative to an item starting `by` seconds into it. */
+  const rebaseBy = (by: number) => {
+    const rebase = (v: unknown, key = ""): unknown => {
+      if (typeof v === "number" && CUE_KEYS.has(key)) return round3(v - by);
+      if ((key === "read" || key === "strikes") && Array.isArray(v)) return v.map((x) => (typeof x === "number" ? round3(x - by) : x));
+      if (key === "times" && isObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === "number" ? round3(x - by) : x]));
+      if (Array.isArray(v)) return v.map((x) => rebase(x));
+      if (isObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rebase(x, k)]));
+      return v;
+    };
+    return (v: unknown) => rebase(v);
+  };
   const items: { room: Item[]; stage: Item[]; people: Item[]; overlay: Item[]; cards: Item[] } = { room: [], stage: [], people: [], overlay: [], cards: [] };
   const audio: { voice: Record<string, unknown>[]; recital: Record<string, unknown>[]; music: Record<string, unknown>[]; sfx: Record<string, unknown>[] } = { voice: [], recital: [], music: [], sfx: [] };
   const fade = (seconds: number) => ({ type: "fade" as const, duration: frames(seconds) });
@@ -375,6 +416,14 @@ function compile(input: CompileInput): CompileResult {
 
   // ── Each block's stage and overlays ───────────────────────────────────────
   const specimens = placed.filter((p) => p.block.kind === "specimen");
+  /** Verse i's words, or nothing (and a problem) when the poem has no such verse. */
+  const verseAt = (i: number, path: string) => {
+    if (!Number.isInteger(i) || i < 0 || i >= data.verses.length) {
+      problems.push({ code: "no-such-verse", path, message: `there is no verse ${i} (the poem has ${data.verses.length})` });
+      return null;
+    }
+    return data.verses[i]!;
+  };
   const verseLine = (i: number, at0?: number) => tokens(data.verses[i]!.text).map((text, j) => {
     const hot = (data.verses[i]!.strong ?? []).some((s) => norm(s) === norm(text));
     const w = at0 !== undefined ? verseWords[i]?.[j] : undefined;
@@ -425,6 +474,8 @@ function compile(input: CompileInput): CompileResult {
           if (!words?.length) return;
           const from = afterLower(p.speech + words[0]!.start - 0.3);
           const until = i < data.verses.length - 1 ? p.speech + (verseWords[i + 1]?.[0]?.start ?? words[words.length - 1]!.end) - 0.3 : p.speech + words[words.length - 1]!.end + 1.2;
+          // a verse said while the block's title shows gets no bar of its own
+          if (until - from < 0.5) return;
           items.overlay.push({ id: `verse-${b.id}-${i + 1}`, ...span(from, until), kit: KIT("verse-bar"), source: `verses[${i}]`, props: { look, width: VERSE_WIDTH, kicker: `${data.title.toUpperCase()} · ${i + 1}/${data.verses.length}`, lines: [verseLine(i, from - p.speech)] } });
           if (b.annotated && data.verses[i]!.figure) {
             items.overlay.push({ id: `figure-${b.id}-${i + 1}`, ...span(from, until), kit: KIT("figure-title"), source: `verses[${i}].figure`, props: { look, kicker: data.title.toUpperCase(), text: data.verses[i]!.figure!.toUpperCase(), x: PANEL.x + PANEL.w / 2, y: PANEL.y + 60 }, transitionIn: fade(0.3), transitionOut: fade(0.3) });
@@ -462,7 +513,7 @@ function compile(input: CompileInput): CompileResult {
           if (pic) items.stage.push({ id: `quote-${b.id}`, ...span(p.start + quoteAt, to), kit: KIT("panel", "1.1.0"), source: `${src}.quote`, props: { look, appear: { at: 0, dur: 0.8 }, phases: [{ at: 0, layers: [{ picture: pic, shade: "quote" }] }] } });
           // the interlinear's times are from the quote's start
           const lin = resolve(p, quote.interlinear, `${path}.quote.interlinear`) as Record<string, unknown>;
-          const rebase = (v: unknown): unknown => (Array.isArray(v) ? v.map(rebase) : isObject(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, (k === "at" || k === "glossAt") && typeof x === "number" ? round3(x - quoteAt) : rebase(x)])) : v);
+          const rebase = rebaseBy(quoteAt);
           items.overlay.push({ id: `interlinear-${b.id}`, ...span(p.start + quoteAt, to), kit: KIT("interlinear"), source: `${src}.quote.interlinear`, props: { look, ...(rebase(lin) as object) }, transitionIn: fade(0.4) });
           if (quote.title) items.overlay.push({ id: `quote-title-${b.id}`, ...span(p.start + quoteAt, to), kit: KIT("text-stack"), source: `${src}.quote.title`, props: { look, ...(rebase(resolve(p, quote.title, `${path}.quote.title`)) as object) } });
         }
@@ -478,8 +529,8 @@ function compile(input: CompileInput): CompileResult {
         }
         const k = specimens.indexOf(p);
         items.overlay.push({ id: `progress-${b.id}`, ...whole, kit: KIT("progress"), source: src, props: { look, steps: specimens.map((s) => ({ label: s.block.keyword as string })), current: k, done: k } });
-        const verses = b.verses as number[];
-        items.overlay.push({ id: `verses-${b.id}`, ...span(afterLower(p.start), to), kit: KIT("verse-bar"), source: `${src}.verses`, props: { look, width: VERSE_WIDTH, kicker: `${data.title.toUpperCase()} · ${(b.keyword as string).toUpperCase()}`, lines: verses.slice(0, 3).map((v) => verseLine(v)), ...(verses.length > 1 ? { size: 46 } : {}) } });
+        const verses = (b.verses as number[]).filter((v, j) => verseAt(v, `${path}.verses[${j}]`));
+        if (verses.length) items.overlay.push({ id: `verses-${b.id}`, ...span(afterLower(p.start), to), kit: KIT("verse-bar"), source: `${src}.verses`, props: { look, width: VERSE_WIDTH, kicker: `${data.title.toUpperCase()} · ${(b.keyword as string).toUpperCase()}`, lines: verses.slice(0, 3).map((v) => verseLine(v)), ...(verses.length > 1 ? { size: 46 } : {}) } });
         const headline = b.headline as { kicker?: string; text: string; at: Cue; until?: Cue } | undefined;
         if (headline) {
           const from = cueOf(p, headline.at, `${path}.headline.at`);
@@ -491,10 +542,9 @@ function compile(input: CompileInput): CompileResult {
       case "meter": {
         const split = cueOf(p, b.rhymesAt, `${path}.rhymesAt`);
         items.stage.push({ id: `syllables-${b.id}`, ...span(p.start, p.start + split), kit: KIT("syllables"), source: `${src}.syllables`, props: { look, ...(resolve(p, b.syllables, `${path}.syllables`) as object) }, transitionOut: fade(0.4) });
-        const rhymes = resolve(p, b.rhymes, `${path}.rhymes`) as Record<string, unknown>;
-        const rebased = { ...rhymes, times: Object.fromEntries(Object.entries((rhymes.times ?? {}) as Record<string, number>).map(([k, v]) => [k, round3(v - split)])) };
+        const rebased = rebaseBy(split)(resolve(p, b.rhymes, `${path}.rhymes`)) as Record<string, unknown>;
         items.stage.push({ id: `rhymes-${b.id}`, ...span(p.start + split, to), kit: KIT("rhymes"), source: `${src}.rhymes`, props: { look, ...rebased }, transitionIn: fade(0.4) });
-        if (typeof b.verse === "number") items.overlay.push({ id: `verses-${b.id}`, ...span(afterLower(p.start), p.start + split), kit: KIT("verse-bar"), source: `${src}.verse`, props: { look, width: VERSE_WIDTH, lines: [verseLine(b.verse)] } });
+        if (typeof b.verse === "number" && verseAt(b.verse, `${path}.verse`)) items.overlay.push({ id: `verses-${b.id}`, ...span(afterLower(p.start), p.start + split), kit: KIT("verse-bar"), source: `${src}.verse`, props: { look, width: VERSE_WIDTH, lines: [verseLine(b.verse)] } });
         break;
       }
       case "invite": {

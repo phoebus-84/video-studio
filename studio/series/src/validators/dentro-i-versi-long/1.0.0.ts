@@ -74,9 +74,11 @@ function validate(input: ValidateInput): Finding[] {
   // The guide arrives at the opening and leaves at the exit: the first and the last frame are the empty atrio.
   const guides = visual.filter(({ item }) => item.kit?.name === "interprete");
   const first = guides.find(({ item }) => item.from === 0);
-  if (first && !first.item.props?.teleport?.in) error("missing-teleport", `${first.path}.props.teleport`, "the guide must teleport in at the opening: the first frame is the empty atrio");
+  if (!first) error("missing-guide", "$.tracks", "no guide from the first frame: she arrives at the opening by teleport");
+  else if (!first.item.props?.teleport?.in) error("missing-teleport", `${first.path}.props.teleport`, "the guide must teleport in at the opening: the first frame is the empty atrio");
   const last = guides.find(({ item }) => item.from + item.duration >= timeline.durationInFrames);
-  if (last && !last.item.props?.teleport?.out) error("missing-teleport", `${last.path}.props.teleport`, "the guide must teleport out at the exit: the last frame is the empty atrio");
+  if (!last) error("missing-guide", "$.tracks", "no guide until the last frame: she leaves at the exit by teleport");
+  else if (!last.item.props?.teleport?.out) error("missing-teleport", `${last.path}.props.teleport`, "the guide must teleport out at the exit: the last frame is the empty atrio");
 
   // ── Warnings ──────────────────────────────────────────────────────────────
   const chapters = visual.filter(({ item }) => item.kit?.name === "chapter-opener").length;

@@ -1023,7 +1023,7 @@
    }
   },
   "Timed": {
-   "description": "Kit props whose times are cues: every key ending in At, at, until, and the members of times, read, strikes are resolved.",
+   "description": "Kit props whose times are cues: the keys at, until, glossAt, lineFrom, appear, lit, point and merge, every member of times, and every element of read and strikes, wherever they sit; a one-key object {asset} names a picture.",
    "type": "object"
   }
  }

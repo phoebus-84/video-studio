@@ -11,7 +11,7 @@
   "template": {
    "id": "dentro-i-versi-long",
    "version": "1.0.0",
-   "hash": "sha256:2ef7a3c95e3b9113ea20b817028228e407714f22fafba6faafca2beee1a25759"
+   "hash": "sha256:49adf598d7a799eb841a3ce3cf12bb961b9d01de0a141b4c127cf6d02de2b8b6"
   },
   "data": {
    "title": "Il lampo",
@@ -2240,7 +2240,7 @@
   "files": {
    "schema": {
     "path": "episode-spec.schema.json",
-    "hash": "sha256:9c4c59b42198242adc8e44769d60a9789f24f7e4dddb3f7de4ca2134a4d7b4fe"
+    "hash": "sha256:51cf2c95db7aef14f6af871dbf986f6b3c718c60ef953b26f00014b991a407fb"
    },
    "template": {
     "path": "episode-spec.template.json",
@@ -14096,7 +14096,7 @@
   }
  },
  "inputs": {
-  "episode-spec.json": "sha256:5ecc60c80ca539e94ed80fa2c37766dea4b2cf1fb9851f6fcc17e0a0761df8b7"
+  "episode-spec.json": "sha256:0e59d626989fc9630c22982d549c121acc2125eb619437e9032b5e0c96961e77"
  },
  "sources": {
   "fonte": {

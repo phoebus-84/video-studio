@@ -63,6 +63,33 @@ describe("pinned episodes in loadEpisode", () => {
     expect(loaded.ok ? null : loaded.problems[0]!.code).toBe("pin-mismatch");
   });
 
+  it("refuses a pin whose file is not named by its id, and two pins of one id", async () => {
+    await pin();
+    const pins = join(dirOf(REF), "source", "pins");
+    writeFileSync(join(pins, "other.json"), readFileSync(join(pins, "fonte.json")));
+    const loaded = loadEpisode(dirOf(REF), { episodeRef: REF });
+    expect(loaded.ok ? null : loaded.problems[0]).toMatchObject({ code: "bad-pin", path: "source/pins/other.json#$.id" });
+  });
+
+  it("refuses a pinned timing that is not the one its take recorded", async () => {
+    const takesPath = join(dirOf(SOURCE), "artifacts", "narration", "takes.json");
+    const takes = JSON.parse(readFileSync(takesPath, "utf-8"));
+    takes.takes[0].timing.hash = `sha256:${"0".repeat(64)}`;
+    writeFileSync(takesPath, JSON.stringify(takes));
+    await pin();
+    const loaded = loadEpisode(dirOf(REF), { episodeRef: REF });
+    expect(loaded.ok ? null : loaded.problems[0]!.code).toBe("hash-mismatch");
+  });
+
+  it("gives the render no root for a pin that does not hold", async () => {
+    await pin();
+    const file = join(dirOf(REF), "source", "pins", "fonte.json");
+    const doc = JSON.parse(readFileSync(file, "utf-8"));
+    doc.source.series = "../../../elsewhere";
+    writeFileSync(file, JSON.stringify(doc));
+    expect(sharedRootsOf(dirOf(REF)).some((r) => r.includes("elsewhere"))).toBe(false);
+  });
+
   it("offers nothing pinned when there is no pin, and puts the pinned episode among the render's roots", async () => {
     const before = loadEpisode(dirOf(REF), { episodeRef: REF });
     expect(before.ok && before.input.sources).toBeUndefined();
