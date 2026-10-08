@@ -92,7 +92,7 @@ Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_appr
 `pva_plan_rerun`, `pva_check_staleness`, `pva_budget_status`,
 `pva_capability_status`
 
-Production: `pva_generate_image`, `pva_synthesize_speech`,
+Production: `pva_generate_image`, `pva_synthesize_speech`, `pva_register_take`,
 `pva_synthesize_nonverbal_audio`, `pva_render_graphics`,
 `pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
 `pva_propose_reference`,
@@ -185,6 +185,19 @@ plainly running.
 There is no supervisor that starts the worker for you: the agent will report
 `speech.synthesize` as unavailable rather than launching a multi-gigabyte model
 server behind your back.
+
+### Registering a take
+
+A speech tool leaves a file; a series reads takes. `pva_register_take` makes a
+file a take of `artifacts/narration/takes.json` (avg-dcf.6.6):
+- its audio is copied to `assets/takes/<take>.<hash8>.<ext>`, hashed and measured. Naming the file by its content means no take ever overwrites another's;
+- its text, the voice that said it, and its language and role are recorded;
+- it is placed in a unit's sequence. A short's `recital`, for example, is
+  `titolo`, then `recita` with `pauseBefore` 1. `position` puts a take at a
+  given place (0 = first).
+
+Registering a take again replaces it in place. A timing that measured other
+audio or text is dropped, so align the take again.
 
 ### Word timing: aligning a take
 

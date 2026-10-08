@@ -48,6 +48,7 @@ import {
   EDIT_TIMELINE_PATH,
   alignTake,
   AlignError,
+  registerTake,
   elevenLabsAlignmentUsd,
   compareVersions,
   initEpisodeSpec,
@@ -1271,6 +1272,72 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: `❌ ${code ? `${code}: ` : ""}${e.message ?? String(err)}` }],
           details: { code: code ?? null } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  // --- Tool: pva_register_take (avg-dcf.6.6) ----------------------------
+
+  pi.registerTool({
+    name: "pva_register_take",
+    label: "Register Take",
+    description: "Make an audio file a narration take of artifacts/narration/takes.json (what pva_align_take and the series compilers read): copied to assets/takes/<take>.<hash8>.<ext>, hashed, measured, with its text and the voice that said it, and placed in a unit's sequence — e.g. a short's unit \"recital\": titolo, then recita with pauseBefore 1. Registering a take again replaces it in place; a timing that measured other audio or text is dropped (align it again).",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      take: Type.String({ description: "The take's id (letters, digits, . _ -), e.g. titolo, recita" }),
+      audio: Type.String({ description: "The audio file a speech tool made, relative to the episode, e.g. artifacts/narration/titolo.wav" }),
+      text: Type.String({ description: "The written text the take says, exactly as shown on screen" }),
+      spokenText: Type.Optional(Type.String({ description: "What the speech tool was given, when it differs from text (pronunciation spellings)" })),
+      language: Type.Optional(Type.String({ description: "ISO 639-1, e.g. it" })),
+      role: Type.Optional(Type.String({ description: "Who says it, e.g. guida, recitante" })),
+      provider: Type.String({ description: "What made it, e.g. qwen3-tts-local, elevenlabs" }),
+      model: Type.Optional(Type.String()),
+      voiceId: Type.Optional(Type.String({ description: "The preset, designed or cloned voice used" })),
+      direction: Type.Optional(Type.String({ description: "The instruction sent with the text (Qwen's direction)" })),
+      settings: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Provider parameters, as sent" })),
+      unit: Type.Optional(Type.String({ description: "The unit the take plays in, e.g. recital" })),
+      pauseBefore: Type.Optional(Type.Number({ minimum: 0, maximum: 10, description: "Seconds of silence before this take in its unit (0–10; ignored for the unit's first take)" })),
+      position: Type.Optional(Type.Integer({ minimum: 0, description: "Where the take goes in its unit (0 = first); by default appended, or kept in place when already there" })),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      try {
+        const result = await registerTake(dir, {
+          take: params.take,
+          audio: params.audio,
+          text: params.text,
+          ...(params.spokenText !== undefined ? { spokenText: params.spokenText } : {}),
+          ...(params.language !== undefined ? { language: params.language } : {}),
+          ...(params.role !== undefined ? { role: params.role } : {}),
+          voice: {
+            provider: params.provider,
+            ...(params.model !== undefined ? { model: params.model } : {}),
+            ...(params.voiceId !== undefined ? { voiceId: params.voiceId } : {}),
+            ...(params.direction !== undefined ? { direction: params.direction } : {}),
+            ...(params.settings !== undefined ? { settings: params.settings as Record<string, unknown> } : {}),
+          },
+          ...(params.unit !== undefined ? { unit: {
+            id: params.unit,
+            ...(params.pauseBefore !== undefined ? { pauseBefore: params.pauseBefore } : {}),
+            ...(params.position !== undefined ? { position: params.position } : {}),
+          } } : {}),
+        });
+        const audio = result.take.audio as { durationSeconds: number };
+        const lines = [
+          `✅ take ${params.take}: ${audio.durationSeconds.toFixed(2)}s → ${result.audioPath}`,
+          ...(result.sequence ? [`unit ${params.unit}: ${result.sequence.map((e) => (e.pauseBefore !== undefined ? `+${e.pauseBefore}s ${e.take}` : e.take)).join(" → ")}`] : []),
+          ...(result.timingDropped ? ["⚠️ its timing measured other audio or text and was dropped: run pva_align_take"] : []),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
+      } catch (err) {
+        const e = err as { message?: string; code?: string };
+        return {
+          content: [{ type: "text" as const, text: `❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}` }],
+          details: { code: e.code ?? null } as Record<string, unknown>,
           isError: true as unknown as boolean,
         };
       }
