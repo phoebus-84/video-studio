@@ -212,7 +212,11 @@ anything is written. Which frames to pick, and where an episode keeps its
 sheet, are the studio's (`@studio/episode`). `timelineKits(timeline)` lists
 the kits a timeline draws with and their code hashes without rendering. `drawingCodeHash()` names the rest of what draws the pictures —
 this package's built code and its Remotion and React versions — so a sheet
-made before a composer upgrade can be told apart from one made after.
+made before a composer upgrade can be told apart from one made after. The
+modules that never change a frame (`NOT_DRAWING`: `audit`, `loudness`,
+`probe`, `volume`) are left out of it, and out of the render cache's key: a
+fix to the final file's sound keeps the sheet current and the cached segments.
+A new module counts as drawing until it is named there.
 
 ## Partial render cache
 
