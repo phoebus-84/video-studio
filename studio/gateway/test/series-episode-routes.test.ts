@@ -97,6 +97,37 @@ describe("GET layout-sheet", () => {
   });
 });
 
+describe("GET layout-sheet: what sheet.json may say", () => {
+  it("does not call the timeline changed when the render would rebuild it, or there is none yet", async () => {
+    const lib = library();
+    laySheet(lib);
+    const report = JSON.parse(readFileSync(join(lib.dir, "artifacts/layout-sheet/sheet.json"), "utf-8"));
+    lib.write(REF, "artifacts/layout-sheet/sheet.json", JSON.stringify({ ...report, rebuilt: "the stored timeline is stale: the narration changed" }));
+    lib.write(REF, "artifacts/edit-timeline.json", "the stale stored timeline");
+    const app = await appOn(lib.root);
+    expect((await app.inject({ url: `${BASE}/layout-sheet` })).json().timelineChanged).toBe(false);
+    rmSync(join(lib.dir, "artifacts/edit-timeline.json"));
+    lib.write(REF, "artifacts/layout-sheet/sheet.json", JSON.stringify(report));
+    expect((await app.inject({ url: `${BASE}/layout-sheet` })).json().timelineChanged).toBe(false);
+  });
+
+  it("refuses a sheet.json naming files outside the sheet, or another timeline", async () => {
+    const lib = library();
+    laySheet(lib);
+    const report = JSON.parse(readFileSync(join(lib.dir, "artifacts/layout-sheet/sheet.json"), "utf-8"));
+    const app = await appOn(lib.root);
+    for (const bad of [
+      { ...report, frames: [{ ...report.frames[0], path: "../../../../secret.jpg" }] },
+      { ...report, sheet: { ...report.sheet, path: "../sheet.jpg" } },
+      { ...report, timeline: { ...report.timeline, path: "../../../../other.json" } },
+    ]) {
+      lib.write(REF, "artifacts/layout-sheet/sheet.json", JSON.stringify(bad));
+      const body = (await app.inject({ url: `${BASE}/layout-sheet` })).json();
+      expect([body.sheet, body.review.state]).toEqual([null, "invalid"]);
+    }
+  });
+});
+
 describe("POST layout-sheet/review", () => {
   it("refuses the agent, and writes nothing", async () => {
     const lib = library();
@@ -120,6 +151,9 @@ describe("POST layout-sheet/review", () => {
     expect([verdict.state, verdict.verified]).toEqual(["approved", true]);
     const after = (await app.inject({ url: `${BASE}/layout-sheet` })).json();
     expect([after.review.state, after.review.verified]).toEqual(["approved", true]);
+    // when, and by whom, from the signed review itself
+    expect(after.review.at).toBe(review.at);
+    expect(after.review.actor).toBe("human");
   });
 
   it("refuses a sheet that changed since it was shown, and a rejection without a note; records one with a note", async () => {
@@ -136,6 +170,7 @@ describe("POST layout-sheet/review", () => {
     expect(rejected.statusCode, rejected.body).toBe(200);
     const after = (await app.inject({ url: `${BASE}/layout-sheet` })).json();
     expect(after.review.state).toBe("rejected");
+    expect(after.review.note).toBe("the hand covers the gloss at 4:43");
   });
 });
 

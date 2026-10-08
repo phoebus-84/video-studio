@@ -50,6 +50,18 @@ describe("sheetStatusLine", () => {
   });
 });
 
+describe("sheetStatusLine: a sheet that is not the one described, or invalid", () => {
+  test("offers no review", () => {
+    expect(sheetStatusLine(answer({ review: { state: "no-sheet", message: "frames/003.jpg is not the one sheet.json describes" } })))
+      .toMatchObject({ tone: "warn", reviewable: false });
+    expect(sheetStatusLine(answer({ sheet: null, review: { state: "invalid", message: "sheet.json names files outside the sheet" } })))
+      .toMatchObject({ tone: "warn", text: "sheet.json names files outside the sheet", reviewable: false });
+  });
+  test("a review of an earlier sheet: this one is to review", () => {
+    expect(sheetStatusLine(answer({ review: { state: "stale", message: "the review is of another sheet" } }))).toMatchObject({ reviewable: true });
+  });
+});
+
 describe("the stills", () => {
   test("labelled mm:ss.ff at 30 fps", () => {
     expect(formatSheetTime(0)).toBe("00:00.00");

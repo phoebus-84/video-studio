@@ -20,6 +20,7 @@ export interface SheetReviewState {
   state: string;
   verified?: boolean | null;
   at?: string | null;
+  actor?: string | null;
   note?: string | null;
   message: string;
 }
@@ -65,6 +66,10 @@ export function nextStill(i: number, n: number, step: number): number {
 
 /** One line saying where the sheet stands, and whether the person can review it. */
 export function sheetStatusLine(answer: LayoutSheetAnswer): { tone: "muted" | "warn" | "ok" | "bad"; text: string; reviewable: boolean } {
+  // A sheet.json naming files outside the sheet, or stills that are not the ones it describes: nothing to sign.
+  if (answer.review.state === "invalid" || (answer.sheet && answer.review.state === "no-sheet")) {
+    return { tone: "warn", text: answer.review.message, reviewable: false };
+  }
   if (!answer.sheet) return { tone: "muted", text: "No sheet yet: Pi makes it (pva_layout_sheet).", reviewable: false };
   if (answer.timelineChanged) return { tone: "warn", text: "The timeline changed since this sheet: make it again before reviewing.", reviewable: false };
   const { review } = answer;

@@ -70,11 +70,47 @@
     }
   }
 
+  // The lightbox takes the focus while open, keeps Tab inside it, and gives it back to the still it came from.
+  let closeButton = $state<HTMLButtonElement | null>(null);
+  let dialog = $state<HTMLElement | null>(null);
+  let returnTo: HTMLElement | null = null;
+  function show(index: number, from: EventTarget | null) {
+    returnTo = from instanceof HTMLElement ? from : null;
+    open = index;
+  }
+  function close() {
+    open = null;
+    returnTo?.focus();
+    returnTo = null;
+  }
+  $effect(() => {
+    if (open !== null) closeButton?.focus();
+  });
+
   function keys(event: KeyboardEvent) {
     if (open === null) return;
-    if (event.key === "Escape") open = null;
-    else if (event.key === "ArrowRight") open = nextStill(open, frames.length, 1);
-    else if (event.key === "ArrowLeft") open = nextStill(open, frames.length, -1);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      open = nextStill(open, frames.length, 1);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      open = nextStill(open, frames.length, -1);
+    } else if (event.key === "Tab" && dialog) {
+      const stops = [...dialog.querySelectorAll<HTMLElement>("button")];
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
   }
 </script>
 
@@ -127,7 +163,7 @@
     <ol class="sr-grid" style:--sr-columns={answer.sheet?.columns ?? 6}>
       {#each frames as still (still.path)}
         <li class="sr-still">
-          <button class="sr-thumb" onclick={() => (open = still.index)} aria-label={`Still ${still.index}, ${formatSheetTime(still.seconds)}, ${still.label}`}>
+          <button class="sr-thumb" onclick={(event) => show(still.index, event.currentTarget)} aria-label={`Still ${still.index}, ${formatSheetTime(still.seconds)}, ${still.label}`}>
             {#if urls[still.path]}
               <img src={urls[still.path]} alt="" loading="lazy" />
             {:else}
@@ -142,8 +178,8 @@
 
   {#if shown}
     {@const still = shown}
-    <div class="sr-lightbox" role="dialog" aria-modal="true" aria-label={`Still ${still.index}`}>
-      <button class="sr-backdrop" aria-label="Close" onclick={() => (open = null)}></button>
+    <div class="sr-lightbox" role="dialog" aria-modal="true" aria-label={`Still ${still.index}`} bind:this={dialog}>
+      <button class="sr-backdrop" aria-label="Close" tabindex="-1" onclick={close}></button>
       <figure class="sr-figure">
         {#if urls[still.path]}<img src={urls[still.path]} alt={still.label} />{/if}
         <figcaption>
@@ -152,7 +188,7 @@
           <span class="sr-time">{formatSheetTime(still.seconds)}</span>
           <span>{still.label}</span>
           <button class="sr-button" onclick={() => (open = nextStill(open ?? 0, frames.length, 1))} aria-label="Next still">→</button>
-          <button class="sr-button" onclick={() => (open = null)} aria-label="Close">Esc</button>
+          <button class="sr-button" onclick={close} aria-label="Close" bind:this={closeButton}>Esc</button>
         </figcaption>
       </figure>
     </div>

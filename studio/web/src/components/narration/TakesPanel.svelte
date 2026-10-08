@@ -18,13 +18,20 @@
   let error = $state<string | null>(null);
   let audio: HTMLAudioElement | null = null;
   let url: string | null = null;
+  /** Each play asks for a generation; a fetch that comes back after another click, or after the tab closed, is dropped. */
+  let generation = 0;
 
   const keyOf = (take: TakeView) => `${take.audio?.series ?? ""}/${take.audio?.episode ?? ""}/${take.id}`;
   const own = $derived(inOrder(answer.units, answer.takes));
   const totalSeconds = $derived(own.reduce((sum, row) => sum + (row.take.durationSeconds ?? 0) + (row.pauseBefore ?? 0), 0));
 
   function stop() {
-    audio?.pause();
+    generation += 1;
+    if (audio) {
+      audio.ontimeupdate = null;
+      audio.onended = null;
+      audio.pause();
+    }
     audio = null;
     if (url) URL.revokeObjectURL(url);
     url = null;
@@ -39,18 +46,28 @@
     if (!take.audio) return;
     error = null;
     loading = key;
+    const mine = generation;
     const made = await episodeMediaUrl(take.audio, take.audio.path);
+    if (mine !== generation) {
+      if (made) URL.revokeObjectURL(made);
+      return;
+    }
     loading = null;
     if (!made) {
       error = `${take.id}: its audio could not be read (${take.audio.path})`;
       return;
     }
     url = made;
-    audio = new Audio(made);
+    const player = new Audio(made);
+    audio = player;
     playing = key;
-    audio.ontimeupdate = () => (current = wordAt(take.words, audio?.currentTime ?? 0));
-    audio.onended = () => stop();
-    void audio.play();
+    player.ontimeupdate = () => (current = wordAt(take.words, player.currentTime));
+    player.onended = () => stop();
+    player.play().catch((err: unknown) => {
+      if (audio !== player) return;
+      stop();
+      error = `${take.id}: it cannot be played here (${err instanceof Error ? err.message : String(err)})`;
+    });
   }
 
   const seconds = (s: number | null) => (s === null ? "—" : `${s.toFixed(2)} s`);
@@ -96,16 +113,16 @@
     <p class="tp-note">No registered takes yet: Pi makes them (pva_synthesize_speech, then pva_register_take and pva_align_take).</p>
   {:else}
     <ol class="tp-list">
-      {#each own as row (row.take.id)}
+      {#each own as row, i (`${row.unit ?? ""}#${i}`)}
         {@render takeRow(row.take, row.pauseBefore, false)}
       {/each}
     </ol>
   {/if}
 
-  {#each answer.sources as source (source.pin)}
+  {#each answer.sources as source, s (`${source.pin}#${s}`)}
     <h5 class="tp-source">From {source.pin} <span>({source.episode.series}/{source.episode.episode})</span></h5>
     <ol class="tp-list">
-      {#each inOrder(source.units, source.takes) as row (row.take.id)}
+      {#each inOrder(source.units, source.takes) as row, i (`${row.unit ?? ""}#${i}`)}
         {@render takeRow(row.take, row.pauseBefore, true)}
       {/each}
     </ol>

@@ -69,6 +69,19 @@ So the person opens `sheet.jpg` from the file system and approves it with `vpr s
    - `lib/sheet-review.ts`: `sheetStatusLine(answer)`, `formatSheetTime(seconds)` (`mm:ss.ff`), `nextStill(i, n, step)`;
    - `lib/narration-takes.ts`: `wordAt(words, t)`, the index of the word being said at `t`, or −1 between words.
 
+## Settled by the review (2026-10-08)
+
+- **The review's when, who and why.** The runtime's verdict says whether a review holds, not when or why. The route adds `at`, `actor` and `note` from the signed `review.json` for an approved or rejected sheet, so a rejection shows its note.
+- **"The timeline changed" only when it did.** A sheet made for a timeline the render would rebuild (`rebuilt`), or before any timeline was stored, pictured no stored file, so neither counts as a change.
+- **`sheet.json` is held to the sheet's names.**
+  - The grid must be `sheet.jpg` and the stills `frames/NNN.jpg`.
+  - The timeline must be `artifacts/edit-timeline.json`.
+  - Anything else is `invalid`, with no sheet, so there is nothing to review.
+- **Not reviewable:** an invalid sheet, or stills that aren't the ones described (`no-sheet` with a sheet). A review of an earlier sheet (`stale`) leaves this one to review.
+- **The tabs fall back.** A gateway error shows the episode's other view under a note, and a reload keeps the shown answer until the new one comes.
+- **Playback can't overlap.** A play that resolves after another click, or after the tab closed, is dropped and its blob revoked; `play()` failures are reported. Rows are keyed by their place, not the take id, which may repeat.
+- **The lightbox takes the focus,** keeps Tab inside, and gives the focus back to the still it came from.
+
 ## Testing
 
 - **Gateway** (vitest, a bare Fastify with the test principal hook, as `take-routes.test.ts`):

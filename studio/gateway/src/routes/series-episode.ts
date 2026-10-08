@@ -44,12 +44,30 @@ const readJson = (file: string): any => {
   }
 };
 
-/** The layout sheet as the web shows it: its stills, and whether the timeline moved since. */
-export function layoutSheetOf(dir: string) {
+// The names a sheet's files may have, as the runtime's review holds them; and
+// the one timeline a sheet pictures.
+const SHEET_IMAGE = /^sheet\.jpg$/;
+const STILL = /^frames\/\d{3}\.jpg$/;
+const TIMELINE = "artifacts/edit-timeline.json";
+
+/**
+ * The layout sheet as the web shows it: its stills, and whether the stored
+ * timeline moved since. A sheet made for a timeline the render would rebuild
+ * (`rebuilt`), or before any was stored, pictured no stored file: that is
+ * not a change — the render gate checks the rest. A sheet.json naming files
+ * outside the sheet, or another timeline, is no sheet (`invalid`).
+ */
+export function layoutSheetOf(dir: string): { sheet: null; timelineChanged: false; invalid?: string } | { sheet: SheetView; timelineChanged: boolean } {
   const report = readJson(join(dir, SHEET_DIR, "sheet.json"));
   if (!report?.sheet || !Array.isArray(report.frames)) return { sheet: null, timelineChanged: false };
-  const timelineFile = join(dir, report.timeline?.path ?? "artifacts/edit-timeline.json");
-  const timelineChanged = !existsSync(timelineFile) || sha256(readFileSync(timelineFile)) !== report.timeline?.hash;
+  const frames = report.frames as { index: number; frame: number; seconds: number; label: string; path: unknown }[];
+  if (typeof report.sheet.path !== "string" || !SHEET_IMAGE.test(report.sheet.path)
+    || !frames.every((f) => typeof f?.path === "string" && STILL.test(f.path))
+    || (report.timeline?.path !== undefined && report.timeline.path !== TIMELINE)) {
+    return { sheet: null, timelineChanged: false, invalid: "sheet.json names files outside the sheet: make the sheet again" };
+  }
+  const timelineFile = join(dir, TIMELINE);
+  const timelineChanged = !report.rebuilt && existsSync(timelineFile) && sha256(readFileSync(timelineFile)) !== report.timeline?.hash;
   return {
     sheet: {
       createdAt: report.createdAt ?? null,
@@ -58,11 +76,20 @@ export function layoutSheetOf(dir: string) {
       rows: report.sheet.rows ?? null,
       grid: { path: `${SHEET_DIR}/${report.sheet.path}`, hash: report.sheet.hash },
       rules: report.rules?.source ?? null,
-      frames: (report.frames as { index: number; frame: number; seconds: number; label: string; path: string }[])
-        .map(({ index, frame, seconds, label, path }) => ({ index, frame, seconds, label, path: `${SHEET_DIR}/${path}` })),
+      frames: frames.map(({ index, frame, seconds, label, path }) => ({ index, frame, seconds, label, path: `${SHEET_DIR}/${path as string}` })),
     },
     timelineChanged,
   };
+}
+
+interface SheetView {
+  createdAt: string | null;
+  scale: number | null;
+  columns: number | null;
+  rows: number | null;
+  grid: { path: string; hash: string };
+  rules: string | null;
+  frames: { index: number; frame: number; seconds: number; label: string; path: string }[];
 }
 
 interface TakeView {
@@ -131,9 +158,19 @@ export function registerSeriesEpisodeRoutes(app: FastifyInstance, options: { lib
     const ref = parseEpisode(request.params as Record<string, string>);
     const dir = dirOf(ref);
     const specDriven = existsSync(join(dir, "episode-spec.json"));
-    const { sheet, timelineChanged } = layoutSheetOf(dir);
-    const review = sheet ? sheetReviewStatus({ libraryRoot, ref, key: operatorKey }) : { state: "no-sheet", message: "no layout sheet yet" };
-    return { specDriven, sheet, timelineChanged, review };
+    const shown = layoutSheetOf(dir);
+    if (!shown.sheet) {
+      const invalid = "invalid" in shown ? shown.invalid : undefined;
+      return { specDriven, sheet: null, timelineChanged: false, review: invalid ? { state: "invalid", message: invalid } : { state: "no-sheet", message: "no layout sheet yet" } };
+    }
+    // The verdict says whether the review holds; the review itself says when, by whom, and why.
+    const status = sheetReviewStatus({ libraryRoot, ref, key: operatorKey });
+    const signed = status.state === "approved" || status.state === "rejected" ? readJson(join(dir, SHEET_DIR, "review.json")) : null;
+    const review = {
+      ...status,
+      ...(signed ? { at: signed.at ?? null, actor: signed.actor ?? null, note: signed.note ?? null } : {}),
+    };
+    return { specDriven, sheet: shown.sheet, timelineChanged: shown.timelineChanged, review };
   });
 
   app.post("/api/channels/:channel/series/:series/episodes/:episode/layout-sheet/review", {

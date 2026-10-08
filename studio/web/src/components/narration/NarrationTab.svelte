@@ -13,15 +13,17 @@
   const ref = $derived(parseEpisodeKey(library.selectedEpisode));
   let answer = $state<NarrationTakesAnswer | null>(null);
   let error = $state<string | null>(null);
+  let shownFor: { channel: string; series: string; episode: string } | null = null;
 
   $effect(() => {
     const at = ref;
-    answer = null;
+    // a reload keeps what is shown until the new answer comes; another episode starts afresh
+    if (at?.channel !== shownFor?.channel || at?.series !== shownFor?.series || at?.episode !== shownFor?.episode) answer = null;
     error = null;
     if (!at) return;
     let live = true;
     getGatewayClient().fetchJSON<NarrationTakesAnswer>(`${episodeApi(at)}/narration-takes`)
-      .then((a) => { if (live) answer = a; })
+      .then((a) => { if (live) { answer = a; shownFor = at; } })
       .catch((err) => { if (live) error = err instanceof Error ? err.message : String(err); });
     return () => { live = false; };
   });
@@ -30,7 +32,9 @@
 {#if answer?.specDriven}
   <TakesPanel {answer} />
 {:else if error}
+  <!-- an older gateway, or one that failed: the episode's other view, as before -->
   <p class="tab-note" role="alert">{error}</p>
+  <NarrationPanel />
 {:else if !ref || answer}
   <NarrationPanel />
 {:else}
