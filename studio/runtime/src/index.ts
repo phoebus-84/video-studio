@@ -290,7 +290,7 @@ export type {
   BudgetReport,
   DispatchContext, StageDispatcher, BudgetGuard, Reservation, ReviewGate, ReviewGateState, ReviewVerdict, ReviewContext,
   OutcomeStatus, StageOutcome, StageStatusReport, StageState, EpisodeStatus,
-  ExecutionError, ExecutionServiceOptions, Principal, ReviewInput,
+  ExecutionError, ExecutionServiceOptions, Principal, ReviewInput, StageEvidence, StageEvidenceVerdict,
   TakeSummary, SelectInput, CandidateReport, StageTakesReport, EpisodeTakes,
 } from "./execution/index.js";
 

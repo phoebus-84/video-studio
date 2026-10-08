@@ -7,3 +7,4 @@ export { AdapterRegistry, AdapterDispatcher, AdapterRegistryError } from "./regi
 export { STUDIO_ADAPTERS, createStudioRegistry, createStudioDispatcher } from "./studio.js";
 export { loadNarrationManifest, naturalSceneOrder } from "./narration-manifest.js";
 export type { NarrationTimingEntry, LoadedNarrationManifest } from "./narration-manifest.js";
+export { createStudioStageEvidence } from "./stage-evidence.js";

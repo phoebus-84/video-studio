@@ -301,6 +301,27 @@ still passes over such a file. The built-in
 pipelines are found through `@studio/pipelines`; `AVG_BUILTIN_PIPELINES`
 points elsewhere.
 
+**A series episode's stages follow its files.** An episode with an
+`episode-spec.json` is made with the studio's tools (`pva_init_spec`,
+`pva_generate_image`, `pva_register_take`, `pva_align_take`,
+`pva_build_timeline`, `pva_layout_sheet`, `pva_compose_video`), which write
+files, not the journal. So `vpr status`, the gateway's `/status`, Pi's
+`pva_gather_context` and the web studio read its `series-production` stages
+from those files (`"source": "files"`):
+- the spec is done when it has no `__FILL__` left and loads;
+- pictures when every asset it names is in `assets/`;
+- takes when they are registered and aligned;
+- the timeline when it matches what the compiler makes of them;
+- the check when the series rules pass;
+- the sheet when it pictures that timeline and the operator approved it (web
+  Storyboard, or `vpr sheet approve`);
+- the render when `output/current.json` names an audited render of that
+  timeline.
+
+A changed file makes its stage stale by itself. Each stage's `stateReason`
+says what is missing and which tool makes it. Claims still go through the
+journal, for the stages the gateway can perform itself.
+
 **`vpr run`** claims the next runnable stage — or the one named by `--stage` —
 and prints the command that closes it:
 

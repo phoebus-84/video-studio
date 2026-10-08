@@ -451,7 +451,8 @@ export function registerProductionRoutes(
     // deliberately — Fastify strips properties a response schema does not
     // declare, and an out-of-date one here would silently delete `state` and
     // `stateReason`, which is what a caller switches on.
-    return { ok: true, data: { pipeline: status.value.pipeline, stages: status.value.stages } };
+    // `source`: whether the stages were read from the episode's files (a spec-driven series episode, avg-qwc) or the journal.
+    return { ok: true, data: { pipeline: status.value.pipeline, source: status.value.source ?? "journal", stages: status.value.stages } };
   });
 
   // ── Staleness ─────────────────────────────────────────────────────────────

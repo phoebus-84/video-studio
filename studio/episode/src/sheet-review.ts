@@ -45,10 +45,38 @@ export function requireSheetReview(episodeDir: string, options: BuildOptions, de
   }
   // The pipeline's gate on its sheet stage was the person's reading (see EpisodeRenderOptions.sheetApproval).
   if (approval === "pipeline-gate") return;
-  const file = join(episodeDir, SHEET_REVIEW_PATH);
-  if (!existsSync(file)) {
+  const review = sheetReviewOf(episodeDir, options, status, key);
+  if (review.state === "approved") return;
+  if (review.state === "missing") {
     throw new SheetReviewError("review-missing", "nobody has approved the current layout sheet: read it, then `vpr sheet approve`", SHEET_REVIEW_PATH);
   }
+  if (review.state === "rejected") {
+    throw new SheetReviewError("review-rejected", `the layout sheet was rejected: "${review.note}"`, SHEET_REVIEW_PATH);
+  }
+  if (review.state === "stale") {
+    throw new SheetReviewError("review-stale", "the review is of another layout sheet: read the current one, then `vpr sheet approve`", SHEET_REVIEW_PATH);
+  }
+  throw new SheetReviewError("review-invalid", review.message, SHEET_REVIEW_PATH);
+}
+
+export type SheetReview =
+  | { state: "approved"; at: string | null; message: string }
+  | { state: "rejected"; note: string; at: string | null; message: string }
+  | { state: "missing" | "stale" | "invalid"; message: string };
+
+/**
+ * The operator's review of a current layout sheet (`vpr sheet approve|reject`):
+ * approved or rejected, and when; missing; of another sheet (stale); or not
+ * to be trusted (invalid). Reads only.
+ */
+export function sheetReviewOf(
+  episodeDir: string,
+  options: BuildOptions,
+  status: { inputsHash: string; sheetHash: string },
+  key: string | null,
+): SheetReview {
+  const file = join(episodeDir, SHEET_REVIEW_PATH);
+  if (!existsSync(file)) return { state: "missing", message: "nobody has reviewed the current layout sheet" };
   let review: unknown;
   try {
     review = JSON.parse(readFileSync(file, "utf-8"));
@@ -64,12 +92,11 @@ export function requireSheetReview(episodeDir: string, options: BuildOptions, de
     sheetHash: status.sheetHash,
     reportHash: sha256(readFileSync(join(episodeDir, LAYOUT_SHEET_REPORT))),
   });
-  if (verdict.state === "approved") return;
+  const at = typeof (review as { at?: unknown } | null)?.at === "string" ? (review as { at: string }).at : null;
+  if (verdict.state === "approved") return { state: "approved", at, message: "approved" };
   if (verdict.state === "rejected") {
-    throw new SheetReviewError("review-rejected", `the layout sheet was rejected: "${(review as { note?: string }).note}"`, SHEET_REVIEW_PATH);
+    return { state: "rejected", note: String((review as { note?: unknown }).note ?? ""), at, message: "rejected" };
   }
-  if (verdict.state === "stale") {
-    throw new SheetReviewError("review-stale", "the review is of another layout sheet: read the current one, then `vpr sheet approve`", SHEET_REVIEW_PATH);
-  }
-  throw new SheetReviewError("review-invalid", `the review cannot be trusted: ${verdict.problem?.message ?? "malformed"}`, SHEET_REVIEW_PATH);
+  if (verdict.state === "stale") return { state: "stale", message: "the review is of another layout sheet" };
+  return { state: "invalid", message: `the review cannot be trusted: ${verdict.problem?.message ?? "malformed"}` };
 }

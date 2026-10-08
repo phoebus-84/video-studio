@@ -27,7 +27,7 @@ import { initChannel, initSeries, initEpisode } from "./workspace/init.js";
 import { ExecutionService, JournalReviewGate, JournalBudgetGuard, readEpisodeBudget } from "./execution/index.js";
 import { releaseSpend } from "@studio/contracts/src/budget.mjs";
 import type { SourceRef } from "@studio/contracts/src/source-pins.mjs";
-import type { ExecutionError, StageOutcome } from "./execution/index.js";
+import type { ExecutionError, StageEvidence, StageOutcome } from "./execution/index.js";
 import { resolveCliCredential } from "./execution/principal.js";
 import { approveReference, listReferences, withdrawReference } from "./references.js";
 import { reviewSheet, sheetReviewStatus } from "./sheet-review.js";
@@ -347,6 +347,8 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
   if (typeof operatorKey === "number") return operatorKey;
   const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
   if (typeof pipeline === "number") return pipeline;
+  // Only status reads a series episode's stages from its files: the bridge loads the composer, which nothing else here needs.
+  await loadStageEvidence();
   const service = makeService(args, ttl.value, operatorKey);
   const status = await service.status(parsed, pipeline);
   if (!status.ok) {
@@ -361,10 +363,13 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
   try {
     budget = await readEpisodeBudget(libraryFrom(args) || ".", parsed);
   } catch { /* reported as null rather than failing the status */ }
+  const fromFiles = status.value.source === "files";
   emit(ctx, {
-    message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}`,
+    message: `Status for ${parsed.channel}/${parsed.series}/${parsed.episode}` +
+      (fromFiles ? " (read from its files)" : ""),
     episode: parsed,
     pipeline: status.value.pipeline,
+    source: status.value.source ?? "journal",
     stages: status.value.stages,
     budget,
   });
@@ -1189,8 +1194,27 @@ function builtinPipelines(): string | undefined {
  * process has no adapter to hand the stage to, and pretending otherwise would
  * be a lie about where work happens.
  */
+/**
+ * Where a spec-driven series episode's stages are read from (avg-qwc): its
+ * files, through @studio/adapters' bridge to @studio/episode. Loaded at run
+ * time, as the gateway composes it: those packages depend on this one, so
+ * the runtime cannot name them at build time. Absent (the runtime installed
+ * alone), status follows the journal for every episode.
+ */
+let stageEvidence: StageEvidence | undefined;
+async function loadStageEvidence(): Promise<void> {
+  const adapters = "@studio/adapters";
+  try {
+    const mod = (await import(adapters)) as { createStudioStageEvidence?: () => StageEvidence };
+    stageEvidence = mod.createStudioStageEvidence?.();
+  } catch {
+    stageEvidence = undefined;
+  }
+}
+
 function makeService(args: string[], leaseTtlMs: number, operatorKey: string | null): ExecutionService {
   return new ExecutionService({
+    ...(stageEvidence ? { stageEvidence } : {}),
     libraryRoot: libraryFrom(args) || ".",
     // `|| undefined`, not a bare read, for the reason documented in the
     // gateway's production.ts: an empty string is not nullish, so it does not

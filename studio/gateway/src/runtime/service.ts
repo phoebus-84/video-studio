@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { ExecutionService, JournalReviewGate, JournalBudgetGuard } from "@studio/runtime";
-import { createStudioDispatcher } from "@studio/adapters";
+import { createStudioDispatcher, createStudioStageEvidence } from "@studio/adapters";
 import { builtinPipelinesPath } from "./client.js";
 
 /**
@@ -65,6 +65,9 @@ export function makeExecutionService(
     // The studio's adapters perform the stages that run here; the gateway
     // only carries the request to them (ADR-0027, avg-qr4.4).
     dispatcher: createStudioDispatcher(),
+    // A spec-driven series episode is made with the studio's tools, which write
+    // files and no journal: its status is read from them (avg-qwc).
+    stageEvidence: createStudioStageEvidence(),
     // The same gate the CLI composes (avg-qr4.3). It needs the key to
     // verify a human receipt: composed with `null`, every human approval
     // reads as unverifiable and its dependents stay blocked.
