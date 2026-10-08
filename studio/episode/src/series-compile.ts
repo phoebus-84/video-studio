@@ -52,7 +52,7 @@ export interface SeriesFinding extends SeriesCompileProblem {
 }
 
 export type EpisodeLoadResult =
-  | { ok: true; input: CompileInput; releaseKey: string }
+  | { ok: true; input: CompileInput; releaseKey: string; /** What loads but should not stay so (theme-unsealed). */ warnings: SeriesCompileProblem[] }
   | { ok: false; problems: SeriesCompileProblem[] };
 
 export type EpisodeCheckResult =
@@ -151,7 +151,7 @@ export function compileEpisode(
   return {
     ok: true,
     timeline: result.timeline,
-    warnings: result.warnings,
+    warnings: [...loaded.warnings.map((w) => `${w.code} at ${w.path}: ${w.message}`), ...result.warnings],
     compiler: `${input.template.compiler.id}@${input.template.compiler.version}`,
     template: { ...input.spec.template },
     revision: input.spec.revision,
@@ -176,13 +176,17 @@ export function checkEpisode(
     ok: true,
     compiled: result.timeline,
     validator: checked.validator,
-    findings: checked.findings.map((f: Finding) => ({ ...locate(f, releaseKey), severity: f.severity })),
+    findings: [
+      ...loaded.warnings.map((w) => ({ ...w, severity: "warning" as const })),
+      ...checked.findings.map((f: Finding) => ({ ...locate(f, releaseKey), severity: f.severity })),
+    ],
   };
 }
 
 function load(episodeDir: string, episodeRef: { channel: string; series: string; episode: string }): EpisodeLoadResult {
   const seriesDir = dirname(dirname(episodeDir));
   const inputs: Record<string, string> = {};
+  const warnings: SeriesCompileProblem[] = [];
 
   /** Read a file that must stay inside `within` once symlinks are followed. */
   const read = (file: string, within: string, missing: () => never): Buffer => {
@@ -331,9 +335,22 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
         stop("theme-mismatch", `${themeKey}/${THEME_FILE}#$.${field}`, `${themeKey}/${THEME_FILE} says ${field} ${theme![field]}, not the pinned ${template.theme[field]}`);
       }
     }
+    // A sealed release is held to its files; an unsealed one (made before
+    // releases were sealed) loads as before, with a warning.
+    const sealed = theme!.files;
+    if (!sealed) {
+      warnings.push({
+        code: "theme-unsealed",
+        path: `${themeKey}/${THEME_FILE}`,
+        message: `${template.theme.id}@${template.theme.version} lists no files, so its rooms can change under the release: seal a new release (vpr theme seal) and pin it`,
+      });
+    }
     const offer = (id: string, file: string, kind: CompileAsset["kind"]) => {
       const path = `${themeKey}/${file}`;
       read(join(themeDir, file), themeDir, () => stop("missing-asset", path, `${path} is missing`));
+      if (sealed && sealed[file] !== inputs[path]) {
+        stop("theme-mismatch", path, `${path} is not the file ${template.theme.id}@${template.theme.version} sealed (${sealed[file]}): a release never changes, make a new one`);
+      }
       assets[id] = { path, hash: inputs[path]!, kind };
     };
     for (const [name, room] of Object.entries(theme!.rooms).sort(([a], [b]) => (a < b ? -1 : 1))) {
@@ -411,7 +428,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
   }
 
-  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}), ...(Object.keys(sources).length > 0 ? { sources } : {}) }, releaseKey };
+  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}), ...(Object.keys(sources).length > 0 ? { sources } : {}) }, releaseKey, warnings };
 }
 
 const IN_TIMELINE = /^\$\.(tracks|profile|durationInFrames|resolution|assets|sections)\b/;
