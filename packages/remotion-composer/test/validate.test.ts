@@ -103,6 +103,26 @@ describe('validateTimeline', () => {
     assert.deepEqual(problems(doc), [['bad-props', '$.tracks[0].items[0].props.room.sky[0].period']]);
   });
 
+  it('refuses malformed teaching tools at their paths', () => {
+    const doc = clone(fixture('explainer.json'));
+    const item = doc.tracks[0].items[0];
+    const pic = {src: {$asset: 'scene-01-woods'}};
+    const look = clone(DEMO_LOOK);
+    const refused = (name: string, props: Record<string, unknown>, version = '1.0.0') => {
+      item.kit = {name, version};
+      item.props = {look, ...props};
+      return problems(doc);
+    };
+    const at = (path: string) => [['bad-props', `$.tracks[0].items[0].props.${path}`]];
+    assert.deepEqual(refused('panel', {phases: [{at: 0, layers: [{split: {items: [pic]}}]}]}, '1.1.0'), at('phases[0].layers[0].split.items'));
+    assert.deepEqual(refused('text-stack', {x: 0, y: 0, items: [{kind: 'title', text: 'A', at: 0, color: 'red'}]}), at('items[0]'));
+    assert.deepEqual(refused('word-tracks', {lines: ['a b.'], read: [2, 1]}), at('read'));
+    assert.deepEqual(refused('interlinear', {x: 960, y: 300, width: 900, words: [{text: 'Non', gloss: 'not', at: 0, glossAt: 1}], strike: {indices: [1], at: 2}}), at('strike.indices'));
+    assert.deepEqual(refused('monitor-wall', {cells: []}), at('cells'));
+    const row = {...pic, keyword: 'K', figure: 'F', at: 0};
+    assert.deepEqual(refused('summary', {rows: Array.from({length: 9}, () => row)}), at('rows'));
+  });
+
   it('refuses a 16:9 lesson kit in a 9:16 timeline', () => {
     const doc = clone(fixture('vertical-short.json'));
     doc.tracks[0].items[0].kit = {name: 'chapter-opener', version: '1.0.0'};
@@ -135,18 +155,27 @@ describe('validateTimeline', () => {
       ['clip', '1.0.0', 'fill'],
       ['cover', '1.0.0', 'fill'],
       ['figure-title', '1.0.0', 'overlay'],
+      ['interlinear', '1.0.0', 'overlay'],
       ['interprete', '1.0.0', 'fill'],
       ['interprete', '1.1.0', 'fill'],
       ['lower-third', '1.0.0', 'overlay'],
+      ['monitor-wall', '1.0.0', 'fill'],
       ['museum-hall', '1.0.0', 'fill'],
       ['panel', '1.0.0', 'fill'],
+      ['panel', '1.1.0', 'fill'],
+      ['progress', '1.0.0', 'overlay'],
       ['room', '1.0.0', 'fill'],
       ['room-effect', '1.0.0', 'fill'],
       ['still', '1.0.0', 'fill'],
+      ['story-fx', '1.0.0', 'fill'],
+      ['summary', '1.0.0', 'fill'],
+      ['text-stack', '1.0.0', 'overlay'],
+      ['timeline', '1.0.0', 'fill'],
       ['title-chip', '1.0.0', 'overlay'],
       ['verse-bar', '1.0.0', 'overlay'],
       ['verse-plate', '1.0.0', 'overlay'],
       ['warp', '1.0.0', 'fill'],
+      ['word-tracks', '1.0.0', 'fill'],
     ]);
     const captions = listKits(ids).find((k) => k.name === 'captions' && k.version === '1.1.0')!;
     assert.deepEqual(captions.examples, ['bottom', 'top', 'center', 'long', 'overflowing']);
