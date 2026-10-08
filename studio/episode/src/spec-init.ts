@@ -197,8 +197,13 @@ export function upgradeEpisodeSpec(
   }
   const draft = instantiateEpisodeSpec(bundle, spec.episodeRef);
   const upgraded = { ...spec, revision: spec.revision + 1, template: draft.template };
-  // A draft stays a draft: only what the new release refuses stops the move.
-  const problems = validateEpisodeSpec(upgraded, bundle).filter((p: SpecInitProblem) => p.code !== "unfilled");
+  // A draft stays a draft: only what the new release refuses stops the move —
+  // not an unfilled value, nor what the schema says of one (an id's pattern
+  // refusing "__FILL__"). The schema's paths spell indices as strings.
+  const same = (path: string) => path.replace(/\["(\d+)"\]/g, "[$1]");
+  const unfilled = new Set(placeholderPaths(upgraded.data, "$.data").map(same));
+  const problems = validateEpisodeSpec(upgraded, bundle)
+    .filter((p: SpecInitProblem) => p.code !== "unfilled" && !(p.code === "spec-data" && unfilled.has(same(p.path))));
   if (problems.length > 0) {
     return { ok: false, problems: problems.map((p: SpecInitProblem) => ({ code: "bad-spec", message: `${p.code}: ${p.message}`, path: `${EPISODE_SPEC_PATH}#${p.path}` })) };
   }

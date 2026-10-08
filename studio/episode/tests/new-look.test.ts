@@ -81,6 +81,15 @@ describe("upgradeEpisodeSpec onto a sealed theme", () => {
       .toEqual([["theme-mismatch", "../../../../themes/dentro-i-versi/1.1.0/rooms/atrio.png"]]);
   });
 
+  it("moves a draft too: its unfilled values, and what the schema says of them, do not stop it", () => {
+    newLook("1.1.0");
+    // an asset id's pattern refuses "__FILL__": still a draft, not bad data
+    editSpec(episodeDir, (spec) => { spec.data.title = "__FILL__"; spec.data.pictures[0].asset = "__FILL__"; });
+    const upgraded = upgradeEpisodeSpec(episodeDir, { episodeRef, version: "1.1.0" });
+    if (!upgraded.ok) throw new Error(JSON.stringify(upgraded.problems));
+    expect((upgraded.spec.data as { pictures: { asset: string }[] }).pictures[0]!.asset).toBe("__FILL__");
+  });
+
   it("refuses a version not after the pin, a missing release, another episode's spec, data the release refuses, no spec", () => {
     newLook("1.1.0");
     const codes = (version: string, ref = episodeRef) => {

@@ -37,6 +37,15 @@ describe("the dentro-i-versi-long episode", () => {
     expect(checked.findings.map((f) => [f.code, f.severity])).toEqual([["theme-unsealed", "warning"], ["no-theme-sound", "warning"]]);
   });
 
+  it("compiles on compiler 1.1.0, with its text on the glass", async () => {
+    const { episodeDir, episodeRef } = await divLongEpisode(root, { version: "1.1.0" });
+    const compiled = compileEpisode(episodeDir, { episodeRef });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.problems));
+    expect(compiled.compiler).toBe("dentro-i-versi-long@1.1.0");
+    const glass = compiled.timeline.tracks.flatMap((t) => t.items as { id: string; kit?: unknown }[]).find((i) => i.id === "glass-scheda");
+    expect(glass?.kit).toEqual({ name: "panel", version: "1.1.0" });
+  });
+
   it("stops when the source changed since it was pinned", async () => {
     const { episodeDir, episodeRef } = await divLongEpisode(root);
     writeFileSync(join(root, "dentro-i-versi", "series", "short", "episodes", "il-lampo", "assets", "images", "lampo-04-casa.png"), "repainted");
