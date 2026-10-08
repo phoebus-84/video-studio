@@ -9,13 +9,13 @@ import React, {useId} from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 import {z} from 'zod';
 import type {KitExample, KitVersion} from '../types.js';
-import {COLOR_ROLES, DEMO_LOOK, LookSchema, alpha, type ColorRole, type Look} from '../lib/look/1.0.0.js';
+import {DEMO_LOOK, LookSchema, alpha, type ColorRole, type Look} from '../lib/look/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
 import {fitSize} from '../lib/font-metrics/1.0.0.js';
 import {clamp, ease, ramp, rnd} from '../lib/stage-math/1.0.0.js';
 import {AssetUrl, BoxSchema} from '../lib/stage-props/1.0.0.js';
 import {Cover, Glass, LoopClip, strikeAt, type Box} from '../lib/lesson-stage/1.0.0.js';
-import {PANEL, PictureSchema, Shards, Smoke, SvgText, type Picture} from '../lib/lesson-tools/1.0.0.js';
+import {PANEL, PictureSchema, Shards, Smoke, SvgText, TEXT_ROLES, type Picture} from '../lib/lesson-tools/1.0.0.js';
 
 interface Step {word: string; gloss: string; color?: ColorRole}
 interface Times {w1: number; w2: number; w3: number; stairs: number; s1: number; s2: number; s3: number; collapse: number}
@@ -50,7 +50,8 @@ const Stack: KitVersion['component'] = ({props, context}) => {
   const jolt = (rnd(Math.floor(t * 25)) - 0.5) * 14 * strikeAt(t, [T.s2]);
   const fallen = t >= T.collapse;
   const rowSize = fitSize({family: look.fonts.display, weight: 400}, row, (P.w - 80 - 2 * 56) / 3, 68, (s) => s * 0.04);
-  const bw = Math.min(280, (P.w - 200) / 3 - 20);
+  const bw = Math.max(60, Math.min(280, (P.w - 200) / 3 - 20));
+  const weightSize = fitSize({family: look.fonts.sans, weight: 600}, [labels.weight], 160, 26);
   return (
     <AbsoluteFill>
       <Glass look={look} box={P} t={t} tilt={0} flash={strikeAt(t, [T.s2]) + strikeAt(t, [T.collapse])}>
@@ -97,10 +98,10 @@ const Stack: KitVersion['component'] = ({props, context}) => {
           <g opacity={toStairs * (1 - ramp(t, T.collapse, T.collapse + 0.3))}>
             <rect x={P.x + P.w - 70} y={P.y + 120} width={34} height={400} rx={17} fill={alpha(c.plate, 0.92)} stroke={alpha(c.text, 0.7)} />
             <rect x={P.x + P.w - 66} y={P.y + 516 - 392 * level} width={26} height={392 * level} rx={13} fill={weight > 0.9 ? colOf(2) : weight > 0.5 ? colOf(1) : colOf(0)} />
-            <SvgText look={look} fonts={fonts} x={P.x + P.w - 53} y={P.y + 100} size={26} anchor="middle" weight={600}>{labels.weight}</SvgText>
+            <SvgText look={look} fonts={fonts} x={P.x + P.w - 30} y={P.y + 100} size={weightSize} anchor="end" weight={600}>{labels.weight}</SvgText>
           </g>
         ) : null}
-        <g opacity={ramp(t, T.collapse + 0.2, T.collapse + 0.7)}><Smoke look={look} t={t} box={{x: 300, y: 760, w: 1400, h: 200}} opacity={0.5 * (1 - ramp(t, T.collapse + 3, T.collapse + 4))} /></g>
+        <g opacity={ramp(t, T.collapse + 0.2, T.collapse + 0.7)}><Smoke look={look} t={t} box={{x: P.x - 140, y: P.y + P.h + 14, w: P.w + 340, h: 200}} opacity={0.5 * (1 - ramp(t, T.collapse + 3, T.collapse + 4))} /></g>
         <rect x={P.x} y={P.y} width={P.w} height={P.h} fill="#fff" opacity={strikeAt(t, [T.collapse - 0.02]) * 0.7} />
       </svg>
       <div style={{position: 'absolute', left: P.x + 40, top: P.y + P.h - 190, width: P.w - 80, height: 120, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 56, opacity: 1 - toStairs}}>
@@ -122,7 +123,7 @@ export const kit: KitVersion = {
     box: BoxSchema.optional(),
     picture: PictureSchema,
     /** The three words of the climax, lightest first; colours default to glow, highlight, signal. */
-    steps: z.array(z.object({word: Word, gloss: z.string().min(1).max(24), color: z.enum(COLOR_ROLES).optional()}).strict()).length(3),
+    steps: z.array(z.object({word: Word, gloss: z.string().min(1).max(24), color: z.enum(TEXT_ROLES).optional()}).strict()).length(3),
     /** The words of the row, as first read (default the steps' words). */
     row: z.array(Word).length(3).optional(),
     /** A clip of clouds blended over the picture, then left behind it after the collapse. */
@@ -140,6 +141,7 @@ export const kit: KitVersion = {
       {id: 'row', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 45},
       {id: 'stairs', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 130},
       {id: 'shattering', props: {...base, clip: {$asset: 'clip'}}, samples: {a: 'picture-a.png', clip: 'clip.mp4'}, durationInFrames: 240, frame: 168},
+      {id: 'long-words', props: {...base, steps: [{word: 'MMMMMMMMMMMMMMMMMMMM', gloss: 'MMMMMMMMMMMMMMMMMMMMMMMM'}, {word: 'TRAGIC', gloss: 'a gloss of twenty-four c'}, {word: 'WORN', gloss: 'broken'}], labels: {weight: 'MMMMMMMMMM'}}, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 130},
       {id: 'rebuilt', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 230},
     ];
   })(),

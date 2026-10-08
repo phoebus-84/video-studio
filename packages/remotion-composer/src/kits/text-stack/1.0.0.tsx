@@ -9,10 +9,10 @@ import React from 'react';
 import {useCurrentFrame, useVideoConfig} from 'remotion';
 import {z} from 'zod';
 import type {KitVersion} from '../types.js';
-import {COLOR_ROLES, DEMO_LOOK, LookSchema, alpha, type ColorRole, type Look} from '../lib/look/1.0.0.js';
+import {DEMO_LOOK, LookSchema, alpha, type ColorRole, type Look} from '../lib/look/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
 import type {Face} from '../lib/font-metrics/1.0.0.js';
-import {fitLine} from '../lib/lesson-tools/1.0.0.js';
+import {TEXT_ROLES, fitLine} from '../lib/lesson-tools/1.0.0.js';
 import {clamp, ease} from '../lib/stage-math/1.0.0.js';
 
 type Kind = 'big' | 'year' | 'title' | 'chip' | 'quote' | 'kicker' | 'note';
@@ -82,7 +82,7 @@ const TextStack: KitVersion['component'] = ({props}) => {
   );
 };
 
-const Role = z.enum(COLOR_ROLES);
+const Role = z.enum(TEXT_ROLES);
 const TextItemSchema = z.object({
   kind: z.enum(['big', 'year', 'title', 'chip', 'quote', 'kicker', 'note']),
   text: z.string().min(1).max(200),
@@ -92,7 +92,7 @@ const TextItemSchema = z.object({
   color: Role.optional(),
   /** Wrap onto several lines (notes, quotes) instead of fitting one line to the width. */
   wrap: z.boolean().optional(),
-}).strict();
+}).strict().refine((it) => it.until === undefined || it.until > it.at, {message: 'an item leaves after it arrives', path: ['until']});
 const ItemSchema: z.ZodType<Item> = z.lazy(() => z.union([
   TextItemSchema,
   z.object({row: z.array(ItemSchema).min(1).max(6), gap: z.number().min(0).optional()}).strict(),

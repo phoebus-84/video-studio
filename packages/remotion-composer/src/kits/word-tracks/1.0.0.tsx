@@ -12,6 +12,7 @@ import {DEMO_LOOK, LookSchema, alpha, type Look} from '../lib/look/1.0.0.js';
 import {clamp, ease, ramp} from '../lib/stage-math/1.0.0.js';
 import {BoxSchema} from '../lib/stage-props/1.0.0.js';
 import type {Box} from '../lib/lesson-stage/1.0.0.js';
+import {verseTokens} from '../lib/lesson-tools/1.0.0.js';
 
 const WordTracks: KitVersion['component'] = ({props}) => {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
@@ -23,14 +24,18 @@ const WordTracks: KitVersion['component'] = ({props}) => {
   const [readFrom, readTo] = props.read as [number, number];
   const point = props.point as number | undefined;
   const merge = props.merge as number | undefined;
-  const rows = lines.map((line) => line.split(/\s+/).filter(Boolean).map((tok) => ({len: Math.max(1, tok.replace(/[^\p{L}'’]/gu, '').length), p: /[,;:.!?]$/u.exec(tok)?.[0] ?? ''})));
-  const U = 14;
-  const GAP = 9;
+  const rows = lines.map(verseTokens);
+  // a letter is 14 px and words 9 px apart, unless the longest verse would not fit the panel
+  const natural = Math.max(1, ...rows.map((r) => r.reduce((s, x) => s + x.len * 14 + 9 + (x.p ? 16 : 0), 0)));
+  const fit = Math.min(1, (P.w - 140) / natural);
+  const U = 14 * fit;
+  const GAP = 9 * fit;
+  const PUNCT = 16 * fit;
   const X0 = P.x + 70;
   const Y0 = P.y + 92;
   const DY = Math.min(66, (P.h - 140) / Math.max(1, rows.length - 1));
   const H = 24;
-  const rowW = rows.map((r) => r.reduce((s, x) => s + x.len * U + GAP + (x.p ? 16 : 0), 0));
+  const rowW = rows.map((r) => r.reduce((s, x) => s + x.len * U + GAP + (x.p ? PUNCT : 0), 0));
   const total = rowW.reduce((s, x) => s + x, 0);
   // merged, the whole poem fits one line inside the panel
   const S = Math.min(1, (P.w - 140) / total);
@@ -52,7 +57,7 @@ const WordTracks: KitVersion['component'] = ({props}) => {
       const pw = tok.len * U * (1 + (S - 1) * m);
       const lit = clamp(read - i - j / r.length) > 0;
       const last = i === rows.length - 1 && j === r.length - 1;
-      x += tok.len * U + GAP + (tok.p ? 16 : 0);
+      x += tok.len * U + GAP + (tok.p ? PUNCT : 0);
       return {key: `${i}-${j}`, px, py, pw, lit, p: tok.p, last, show: ramp(t, 0.1 + i * 0.06, 0.4 + i * 0.06)};
     });
   });
@@ -111,6 +116,7 @@ export const kit: KitVersion = {
     return [
       {id: 'reading', props: {look: DEMO_LOOK, lines, read: [0, 3]}, durationInFrames: 150, frame: 50},
       {id: 'full-stop', props: {look: DEMO_LOOK, lines, read: [0, 2], point: 2.2}, durationInFrames: 150, frame: 90},
+      {id: 'long-verse', props: {look: DEMO_LOOK, lines: [...lines.slice(0, 6), 'a verse of a hundred and twenty characters, far longer than any the poem has, so that the tracks must close up to fit.'], read: [0, 2]}, durationInFrames: 90, frame: 80},
       {id: 'one-sentence', props: {look: DEMO_LOOK, lines, read: [0, 2], point: 2.2, merge: 3}, durationInFrames: 150, frame: 140},
     ];
   })(),

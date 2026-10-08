@@ -103,12 +103,16 @@ export const kit: KitVersion = {
     merges: z.array(z.object({a: z.number().int().min(0), b: z.number().int().min(1), label: z.string().min(1).max(8), vowels: z.string().min(1).max(8), text: z.string().min(1).max(40), at: z.number()}).strict()).max(2).optional(),
     /** The count once the vowels have merged. */
     metric: z.number().int().positive(),
-    times: z.object({sample: z.number(), vowel: z.number(), breath: z.number(), figure: z.number(), metric: z.number()}).strict(),
+    times: z.object({sample: z.number(), vowel: z.number(), breath: z.number(), figure: z.number(), metric: z.number()}).strict()
+      .refine((x) => x.sample <= x.vowel && x.vowel <= x.breath && x.figure <= x.metric, {message: 'the syllables, the vowels, the breath come in order, and the figure before the metric count'}),
     labels: z.object({counted: z.string().min(1).max(40), metric: z.string().min(1).max(40), rule: z.string().min(1).max(60), ruleResult: z.string().min(1).max(60), figure: z.string().min(1).max(20).optional()}).strict(),
   }).strict().superRefine((p, ctx) => {
-    (p.merges ?? []).forEach((m, j) => {
+    const merges = p.merges ?? [];
+    merges.forEach((m, j) => {
       if (m.b !== m.a + 1 || m.b >= p.syllables.length) ctx.addIssue({code: 'custom', message: 'a merge joins a syllable with the next one', path: ['merges', j, 'b']});
+      else if (j > 0 && m.a <= merges[j - 1]!.b) ctx.addIssue({code: 'custom', message: 'merges come in order and share no syllable', path: ['merges', j, 'a']});
     });
+    if (p.metric !== p.syllables.length - merges.length) ctx.addIssue({code: 'custom', message: 'the metric count is the syllables less one per merge', path: ['metric']});
   }),
   component: Syllables,
   examples: ((): KitExample[] => {
@@ -119,6 +123,7 @@ export const kit: KitVersion = {
     return [
       {id: 'counted', props: base, samples: {}, durationInFrames: 240, frame: 70},
       {id: 'merging', props: base, samples: {}, durationInFrames: 240, frame: 125},
+      {id: 'twenty', props: {...base, syllables: Array.from({length: 20}, (_, i) => (i % 3 ? 'mmmmmm' : 'la')), merges: [{a: 2, b: 3, label: 'mmmmmmmm', vowels: 'a + a', text: 'terra ansimosa → terransimosa', at: 3.4}], metric: 19}, samples: {}, durationInFrames: 240, frame: 125},
       {id: 'metric', props: base, samples: {}, durationInFrames: 240, frame: 200},
     ];
   })(),

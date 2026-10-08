@@ -58,10 +58,10 @@ const Merge: KitVersion['component'] = ({props}) => {
             return <LiveBolt key={j} look={look} t={t} x0={xx} y0={P.y} x1={xx + (rnd(j + 4) - 0.5) * 300} y1={P.y + P.h * (0.35 + rnd(j + 2) * 0.2)} op={strikeAt(t, [tj])} grow={clamp((t - tj) / 0.12)} seed={j * 7} />;
           })}
         </g>
-        <g transform={`translate(0 ${m * 150})`}><GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 150} text={L.a} op={ramp(t, T.a, T.a + 0.3) * (1 - m)} size={44} /></g>
-        <g transform={`translate(0 ${-m * 150})`}><GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 450} text={L.b} op={ramp(t, T.b, T.b + 0.3) * (1 - m)} size={44} /></g>
-        <GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 300} text={L.verb} sub={L.verbSub} op={win(t, T.verb - 0.1, T.result + 0.2)} size={40} color={c.highlight} />
-        <GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 300} text={L.result} op={ramp(t, T.result, T.result + 0.4) * (1 - ramp(t, T.end - 0.4, T.end - 0.1))} size={48} color={c.glow} />
+        <g transform={`translate(0 ${m * 150})`}><GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 150} text={L.a} op={ramp(t, T.a, T.a + 0.3) * (1 - m)} size={44} room={P.w - 80} /></g>
+        <g transform={`translate(0 ${-m * 150})`}><GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 450} text={L.b} op={ramp(t, T.b, T.b + 0.3) * (1 - m)} size={44} room={P.w - 80} /></g>
+        <GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 300} text={L.verb} sub={L.verbSub} op={win(t, T.verb - 0.1, T.result + 0.2)} size={40} color={c.highlight} room={P.w - 80} />
+        <GlassChip look={look} fonts={fonts} x={pcx} y={P.y + 300} text={L.result} op={ramp(t, T.result, T.result + 0.4) * (1 - ramp(t, T.end - 0.4, T.end - 0.1))} size={48} color={c.glow} room={P.w - 80} />
       </svg>
     </AbsoluteFill>
   );
@@ -80,7 +80,7 @@ export const kit: KitVersion = {
     picture: PictureSchema,
     /** The first word, the second, the tear, the verb, the result, and when the chips leave. */
     times: z.object({a: z.number(), b: z.number(), tear: z.number(), verb: z.number(), result: z.number(), end: z.number()}).strict()
-      .refine((x) => x.b >= x.a && x.verb < x.result && x.result < x.end, {message: 'the second word follows the first, and the verb comes before the result, before the end'}),
+      .refine((x) => x.b >= x.a && x.tear >= x.b && x.verb >= x.tear && x.verb < x.result && x.result < x.end, {message: 'the two words, the tear, the verb, the result and the end come in order'}),
     labels: z.object({a: Label, b: Label, verb: Label, verbSub: z.string().min(1).max(30).optional(), result: Label}).strict(),
   }).strict(),
   component: Merge,
@@ -89,6 +89,7 @@ export const kit: KitVersion = {
     return [
       {id: 'words', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 180, frame: 40},
       {id: 'torn', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 180, frame: 100},
+      {id: 'long-labels', props: {...base, labels: {a: 'MMMMMMMMMMMMMMMMMMMMMM', b: 'WWWWWWWWWWWWWWWWWWWWWW', verb: 'SHOWED', verbSub: 'a sub-line of thirty characters'.slice(0, 30), result: 'MMMMMMMMMMMMMMMMMMMMMM'}}, samples: {a: 'picture-a.png'}, durationInFrames: 180, frame: 40},
       {id: 'result', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 180, frame: 150},
     ];
   })(),

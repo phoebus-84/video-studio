@@ -8,12 +8,13 @@ import React from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 import {z} from 'zod';
 import type {KitVersion} from '../types.js';
-import {COLOR_ROLES, DEMO_LOOK, LookSchema, alpha, type ColorRole, type Look} from '../lib/look/1.0.0.js';
+import {DEMO_LOOK, LookSchema, alpha, type ColorRole, type Look} from '../lib/look/1.0.0.js';
+import {fitSize} from '../lib/font-metrics/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
 import {clamp, ramp} from '../lib/stage-math/1.0.0.js';
 import {BoxSchema} from '../lib/stage-props/1.0.0.js';
 import {LiveBolt, boltPoints, strikeAt, type Box} from '../lib/lesson-stage/1.0.0.js';
-import {LightLine, SvgText, ptsPath} from '../lib/lesson-tools/1.0.0.js';
+import {LightLine, SvgText, TEXT_ROLES, ptsPath} from '../lib/lesson-tools/1.0.0.js';
 
 type Effect =
   | {people: {at: number; total?: number; lit?: number; extra?: {at: number}; x0?: number; y?: number; step?: number}}
@@ -63,10 +64,11 @@ const StoryFx: KitVersion['component'] = ({props}) => {
     if ('badge' in e) {
       const cx = P.x + e.badge.x;
       const cy = P.y + e.badge.y;
+      const size = fitSize({family: look.fonts.sans, weight: 200}, [e.badge.text], 96, 60);
       return (
         <g key={key}>
           <circle cx={cx} cy={cy} r={62} fill={alpha(c.plate, 0.8)} stroke={alpha(c.text, 0.7)} />
-          <SvgText look={look} fonts={fonts} x={cx} y={cy + 22} size={60} anchor="middle" weight={200}>{e.badge.text}</SvgText>
+          <SvgText look={look} fonts={fonts} x={cx} y={cy + size * 0.36} size={size} anchor="middle" weight={200}>{e.badge.text}</SvgText>
         </g>
       );
     }
@@ -84,10 +86,10 @@ const StoryFx: KitVersion['component'] = ({props}) => {
 const Path4 = z.tuple([z.number(), z.number(), z.number(), z.number()]);
 const EffectSchema = z.union([
   z.object({people: z.object({at: z.number(), total: z.number().int().min(1).max(14).optional(), lit: z.number().int().min(0).optional(), extra: z.object({at: z.number()}).strict().optional(), x0: z.number().optional(), y: z.number().optional(), step: z.number().positive().optional()}).strict()}).strict(),
-  z.object({arc: z.object({at: z.number(), path: z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number()]), color: z.enum(COLOR_ROLES).optional()}).strict()}).strict(),
+  z.object({arc: z.object({at: z.number(), path: z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number()]), color: z.enum(TEXT_ROLES).optional()}).strict()}).strict(),
   z.object({badge: z.object({text: z.string().min(1).max(4), x: z.number(), y: z.number()}).strict()}).strict(),
   z.object({bolt: z.object({strikes: z.array(z.number()).min(1), path: Path4.optional(), seed: z.number().int().optional()}).strict()}).strict(),
-  z.object({lightline: z.object({at: z.number(), until: z.number(), path: Path4.optional()}).strict()}).strict(),
+  z.object({lightline: z.object({at: z.number(), until: z.number(), path: Path4.optional()}).strict().refine((l) => l.until > l.at, {message: 'the line goes out after it strikes', path: ['until']})}).strict(),
 ]);
 
 export const kit: KitVersion = {

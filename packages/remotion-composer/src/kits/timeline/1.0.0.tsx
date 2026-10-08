@@ -13,10 +13,10 @@ import {z} from 'zod';
 import type {KitVersion} from '../types.js';
 import {DEMO_LOOK, LookSchema, alpha, type Look} from '../lib/look/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
-import {textWidth} from '../lib/font-metrics/1.0.0.js';
+import {fitSize, textWidth} from '../lib/font-metrics/1.0.0.js';
 import {ease, ramp} from '../lib/stage-math/1.0.0.js';
 import {BoxSchema} from '../lib/stage-props/1.0.0.js';
-import {SvgText} from '../lib/lesson-tools/1.0.0.js';
+import {SvgText, labelLines} from '../lib/lesson-tools/1.0.0.js';
 import type {Box} from '../lib/lesson-stage/1.0.0.js';
 
 interface Axis {from: number; to: number; marks: {year: number; label?: string; at: number}[]}
@@ -41,17 +41,9 @@ const Timeline: KitVersion['component'] = ({props}) => {
     const last = lit.at(-1);
     const prev = lit.at(-2);
     const cur = last ? (prev ? X(prev.year) + (X(last.year) - X(prev.year)) * ease((t - last.at) / 0.8) : X(last.year)) : x0;
-    // each label goes on the first line, above then below, where it does not touch the one before it there
-    const LEVELS = [-20, 42, -52, 74];
-    const ends = LEVELS.map(() => -1e9);
-    const level = axis.marks.map((m) => {
-      const half = textWidth({family: look.fonts.sans, weight: 600}, m.label ?? String(m.year), 26, 1) / 2;
-      const xx = X(m.year);
-      const free = LEVELS.findIndex((_, j) => xx - half > ends[j]! + 10);
-      const j = free < 0 ? ends.indexOf(Math.min(...ends)) : free;
-      ends[j] = xx + half;
-      return LEVELS[j]!;
-    });
+    // each label goes on the first line where it does not touch the one before it there: above, below, then further out
+    const lines = labelLines(axis.marks.map((m) => X(m.year)), axis.marks.map((m) => textWidth({family: look.fonts.sans, weight: 600}, m.label ?? String(m.year), 26, 1)), 10);
+    const level = lines.map((j) => (j % 2 ? 42 + ((j - 1) / 2) * 32 : -20 - (j / 2) * 32));
     body = (
       <g>
         <defs><linearGradient id={`${id}f`} x1="0" x2="1"><stop offset="0" stopColor={c.accent} stopOpacity="0" /><stop offset=".08" stopColor={c.accent} stopOpacity=".9" /><stop offset=".92" stopColor={c.accent} stopOpacity=".9" /><stop offset="1" stopColor={c.accent} stopOpacity="0" /></linearGradient></defs>
@@ -79,14 +71,19 @@ const Timeline: KitVersion['component'] = ({props}) => {
     const x0 = box.x + (stops.x0 ?? 110);
     const step = stops.step ?? 205;
     const lineFrom = stops.lineFrom ?? stops.items[0]!.at;
+    // labels and sub-labels fitted to the room between two stops
+    const labelSize = fitSize({family: look.fonts.sans, weight: 600}, stops.items.map((s) => s.label), step - 16, 34, () => 2);
+    const subSize = fitSize({family: look.fonts.sans, weight: 400}, stops.items.map((s) => s.sub ?? ''), step - 16, 30);
+    const lineX = box.x + 70;
+    const lineEnd = x0 + step * (stops.items.length - 1) + 15;
     body = (
       <g>
-        <line x1={box.x + 70} y1={y} x2={x0 + (step * (stops.items.length - 1) + 15) * ramp(t, lineFrom, lineFrom + 2)} y2={y} stroke={alpha(c.text, 0.6)} strokeWidth="1.2" />
+        <line x1={lineX} y1={y} x2={lineX + (lineEnd - lineX) * ramp(t, lineFrom, lineFrom + 2)} y2={y} stroke={alpha(c.text, 0.6)} strokeWidth="1.2" />
         {stops.items.map((s, i) => (
           <g key={i} opacity={ramp(t, s.at, s.at + 0.4)}>
             <circle cx={x0 + i * step} cy={y} r={9} fill={c.glow} />
-            <SvgText look={look} fonts={fonts} x={x0 + i * step} y={y - 34} size={34} anchor="middle" weight={600} ls={2}>{s.label}</SvgText>
-            {s.sub ? <SvgText look={look} fonts={fonts} x={x0 + i * step} y={y + 50} size={30} anchor="middle" color={c.textDim}>{s.sub}</SvgText> : null}
+            <SvgText look={look} fonts={fonts} x={x0 + i * step} y={y - 34} size={labelSize} anchor="middle" weight={600} ls={2}>{s.label}</SvgText>
+            {s.sub ? <SvgText look={look} fonts={fonts} x={x0 + i * step} y={y + 50} size={subSize} anchor="middle" color={c.textDim}>{s.sub}</SvgText> : null}
           </g>
         ))}
       </g>
@@ -108,7 +105,7 @@ export const kit: KitVersion = {
       from: z.number().int(),
       to: z.number().int(),
       marks: z.array(z.object({year: z.number(), label: z.string().min(1).max(12).optional(), at: z.number()}).strict()).min(1).max(12),
-    }).strict().refine((a) => a.to > a.from && a.marks.every((m) => m.year >= a.from && m.year <= a.to), {message: 'an axis runs forward and holds its marks'}).optional(),
+    }).strict().refine((a) => a.to > a.from && a.marks.every((m, i) => m.year >= a.from && m.year <= a.to && (i === 0 || m.year >= a.marks[i - 1]!.year)), {message: 'an axis runs forward and holds its marks, in order of year'}).optional(),
     stops: z.object({
       items: z.array(z.object({label: z.string().min(1).max(12), sub: z.string().min(1).max(20).optional(), at: z.number()}).strict()).min(1).max(5),
       lineFrom: z.number().optional(),
@@ -122,5 +119,7 @@ export const kit: KitVersion = {
     {id: 'axis', props: {look: DEMO_LOOK, box: {x: 430, y: 620, w: 1100, h: 170}, axis: {from: 1860, to: 1900, marks: [{year: 1861, at: 0}, {year: 1867, at: 0.6}, {year: 1891, at: 1.2}, {year: 1894, at: 1.8}]}}, durationInFrames: 90, frame: 75},
     {id: 'axis-close', props: {look: DEMO_LOOK, box: {x: 430, y: 620, w: 1100, h: 170}, axis: {from: 1860, to: 1900, marks: [{year: 1867, at: 0}, {year: 1868, at: 0.3}, {year: 1869, at: 0.6}, {year: 1871, at: 0.9}]}}, durationInFrames: 60, frame: 50},
     {id: 'stops', props: {look: DEMO_LOOK, box: {x: 440, y: 150, w: 1060, h: 596}, stops: {items: [{label: '1867', sub: 'the father', at: 0}, {label: '1868', sub: 'the mother', at: 0.5}, {label: '1871', sub: 'Margherita', at: 1}, {label: '1876', sub: 'Luigi', at: 1.5}]}}, durationInFrames: 90, frame: 70},
+    {id: 'stops-long', props: {look: DEMO_LOOK, box: {x: 440, y: 150, w: 1060, h: 596}, stops: {items: [{label: 'MMMMMMMMMMMM', sub: 'a sub-label, twenty!', at: 0}, {label: '1868', sub: 'MMMMMMMMMMMMMMMMMMMM', at: 0.2}, {label: '1871', sub: 'Margherita', at: 0.4}, {label: '1876', sub: 'Luigi', at: 0.6}, {label: '1880', sub: 'Ida', at: 0.8}]}}, durationInFrames: 90, frame: 80},
+    {id: 'axis-crowded', props: {look: DEMO_LOOK, box: {x: 430, y: 560, w: 1100, h: 300}, axis: {from: 1860, to: 1900, marks: [1866, 1867, 1867, 1868, 1869, 1870].map((year, i) => ({year, at: i * 0.2}))}}, durationInFrames: 60, frame: 50},
   ],
 };

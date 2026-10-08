@@ -93,9 +93,10 @@ export const kit: KitVersion = {
     /** The eye on the picture (0–1), and its iris's radius as a share of the picture's width. */
     eye: z.object({x: z.number().min(0).max(1), y: z.number().min(0).max(1), r: z.number().positive().max(0.5).optional()}).strict(),
     times: z.object({subject: z.number(), etym: z.number(), like: z.number(), open: z.number(), close: z.number(), dark: z.number()}).strict()
-      .refine((x) => x.subject <= x.etym && x.etym < x.like && x.like < x.open && x.open < x.close && x.close < x.dark, {message: 'the subject, the etymology, the bridge, the eye opening and closing and the dark come in order'}),
+      .refine((x) => x.subject <= x.etym && x.etym < x.like && x.open - x.like >= 0.8 && x.open < x.close && x.close < x.dark, {message: 'the subject, the etymology, the bridge (at least 0.8 s), the eye opening and closing and the dark come in order'}),
     labels: z.object({etymWord: z.string().min(1).max(20).optional(), etymOrigin: z.string().min(1).max(40).optional(), etymMeaning: z.string().min(1).max(40).optional(),
-      like: z.string().min(1).max(12), open: z.string().min(1).max(16), close: z.string().min(1).max(16)}).strict(),
+      like: z.string().min(1).max(12), open: z.string().min(1).max(16), close: z.string().min(1).max(16)}).strict()
+      .refine((l) => l.etymWord !== undefined || (l.etymOrigin === undefined && l.etymMeaning === undefined), {message: 'an etymology names its word', path: ['etymWord']}),
     /** The compared thing, shown in the bridge. */
     bridgeImage: AssetUrl.optional(),
   }).strict(),
@@ -108,6 +109,7 @@ export const kit: KitVersion = {
       {id: 'iris', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 270, frame: 45},
       {id: 'etymology', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 270, frame: 75},
       {id: 'bridge', props: {...base, bridgeImage: {$asset: 'b'}}, samples: {a: 'picture-a.png', b: 'picture-b.png'}, durationInFrames: 270, frame: 125},
+      {id: 'long-etymology', props: {...base, labels: {...base.labels, etymWord: 'MMMMMMMMMMMMMMMMMMMM', etymOrigin: 'from a word whose origin takes forty ch.', etymMeaning: 'A MEANING WRITTEN OUT IN FORTY CHARACTERS'.slice(0, 40)}}, samples: {a: 'picture-a.png'}, durationInFrames: 270, frame: 75},
       {id: 'closing', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 270, frame: 200},
       {id: 'darkening', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 270, frame: 228},
     ];

@@ -55,7 +55,7 @@ const Oxymoron: KitVersion['component'] = ({props}) => {
           <clipPath id={`${id}p`}><rect x={P.x} y={P.y} width={P.w} height={P.h} rx={look.measures.plateRadius + 2} /></clipPath>
         </defs>
         <circle cx={px} cy={py} r={110 + 14 * Math.sin(t * 4)} fill={`url(#${id}g)`} opacity={ramp(t, T.glow, T.glow + 0.4) * (1 - ramp(t, T.a, T.a + 0.4))} />
-        <GlassChip look={look} fonts={fonts} x={px} y={Math.max(P.y + 70, py - 140)} text={L.glow} sub={L.glowSub} op={ramp(t, T.glow + 0.3, T.glow + 0.6) * (1 - ramp(t, T.a - 0.2, T.a + 0.1))} size={30} />
+        <GlassChip look={look} fonts={fonts} x={px} y={Math.max(P.y + 70, py - 140)} text={L.glow} room={P.w - 80} sub={L.glowSub} op={ramp(t, T.glow + 0.3, T.glow + 0.6) * (1 - ramp(t, T.a - 0.2, T.a + 0.1))} size={30} />
         <g opacity={split} clipPath={`url(#${id}p)`}>
           <rect x={P.x} y={P.y} width={P.w / 2} height={P.h} fill={alpha(c.backdrop, 0.78)} />
           <rect x={pcx} y={P.y} width={P.w / 2} height={P.h} fill={alpha(c.signal, 0.25)} />
@@ -109,6 +109,7 @@ export const kit: KitVersion = {
     return [
       {id: 'glow', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 30},
       {id: 'halves', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 80},
+      {id: 'long-labels', props: {...base, labels: {...base.labels, glow: 'WWWWWWWWWWWWWWWWWWWW', glowSub: 'a sub-line of thirty characters'.slice(0, 30), a: 'MMMMMMMMMMMMMMMM', aSub: 'a sub-line of thirty characters'.slice(0, 30), b: 'WWWWWWWWWWWWWWWW', bSub: 'a sub-line of thirty characters'.slice(0, 30)}}, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 80},
       {id: 'struck', props: base, samples: {a: 'picture-a.png'}, durationInFrames: 240, frame: 160},
     ];
   })(),

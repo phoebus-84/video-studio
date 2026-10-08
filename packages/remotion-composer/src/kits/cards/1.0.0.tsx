@@ -103,7 +103,7 @@ export const kit: KitVersion = {
     human: z.array(z.string().min(1).max(20)).max(4).optional(),
     /** When the human words come, and when the cards and words leave. */
     times: z.object({human: z.number(), end: z.number()}).strict(),
-  }).strict(),
+  }).strict().refine((p) => p.times.end > p.times.human && p.times.end > p.cards.at(-1)!.at, {message: 'the cards and the human words show before the end', path: ['times']}),
   component: Cards,
   examples: ((): KitExample[] => {
     const cards = [

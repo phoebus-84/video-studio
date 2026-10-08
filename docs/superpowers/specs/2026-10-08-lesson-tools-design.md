@@ -150,7 +150,12 @@ The props schemas refuse, at their paths:
 - `read`, phase times and each tool's `times` out of order;
 - 1–8 monitor cells and summary rows;
 - a syllable merge whose `b` is not the syllable after `a`;
-- colours that are not look roles.
+- colours that are not look roles meant for text and marks (never `plate`, `plateLine`, `shadow`, `backdrop` or `ink`);
+- an item that leaves before it arrives, a translation given before its word, a light line that goes out before it strikes;
+- syllable merges that share a syllable, and a metric count other than the syllables less one per merge;
+- an etymology without its word, and a simile bridge shorter than 0.8 s.
+
+Fitting never enlarges a text past its room: `SvgText` draws the size it is given, chips are measured (`chipSize`), and rows, tracks and tiles scale with how many there are.
 
 ## Verifying the look
 

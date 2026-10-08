@@ -33,13 +33,13 @@ export const back = (x: number): number => {
   return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 };
 
-/** SVG text with a dark outline under light colours, never under the look's minimum size. */
+/** SVG text with a dark outline under light colours, at the size given: kits fit it, and nothing enlarges it past its room. */
 export const SvgText: React.FC<{
   look: Look; fonts: Families; x: number; y: number; size: number; children: React.ReactNode;
   role?: 'display' | 'serif' | 'sans'; color?: string; anchor?: 'start' | 'middle' | 'end'; op?: number; weight?: number; ls?: number; italic?: boolean;
 }> = ({look, fonts, x, y, size, children, role = 'sans', color, anchor = 'start', op = 1, weight = 400, ls = 0, italic = false}) => {
   const fill = color ?? look.colors.text;
-  const px = Math.max(size, look.measures.minTextPx);
+  const px = size;
   const dark = fill === look.colors.ink;
   return (
     <text x={x} y={y} fontSize={px} fontFamily={fonts[role]} fill={fill} textAnchor={anchor} opacity={op} fontWeight={weight} letterSpacing={ls} fontStyle={italic ? 'italic' : undefined}
@@ -47,12 +47,21 @@ export const SvgText: React.FC<{
   );
 };
 
-/** A chip of text on dark glass with an accent line on top, and an optional second line. */
-export const GlassChip: React.FC<{look: Look; fonts: Families; x: number; y: number; text: string; op?: number; size?: number; color?: string; anchor?: 'start' | 'middle'; sub?: string}> =
-  ({look, fonts, x, y, text, op = 1, size = 34, color, anchor = 'middle', sub}) => {
+/** A chip's size and width: its text measured with its tracking (0.12 em) and padding (0.8 em each side), shrunk to fit `room`. */
+export const chipSize = (face: Face, text: string, size: number, room: number): {size: number; width: number} => {
+  const fit = fitLine(face, [text], room, size, (s) => s * 0.12, (s) => s * 1.6);
+  return {size: fit, width: textWidth(face, text, fit, fit * 0.12) + fit * 1.6};
+};
+
+/** A chip of text on dark glass with an accent line on top, and an optional second line; measured, and never wider than `room`. */
+export const GlassChip: React.FC<{look: Look; fonts: Families; x: number; y: number; text: string; op?: number; size?: number; color?: string; anchor?: 'start' | 'middle'; sub?: string; room?: number}> =
+  ({look, fonts, x, y, text, op = 1, size: nominal = 34, color, anchor = 'middle', sub, room = 900}) => {
     if (op <= 0) return null;
-    const subSize = Math.max(look.measures.minTextPx, size * 0.55);
-    const w = Math.max(text.length * size * 0.66, (sub?.length ?? 0) * subSize * 0.62) + size * 1.6;
+    const main = chipSize({family: look.fonts.sans, weight: 400}, text, nominal, room);
+    const size = main.size;
+    const subFace = {family: look.fonts.sans, weight: 400};
+    const subSize = sub ? fitLine(subFace, [sub], room - size * 1.6, Math.max(look.measures.minTextPx, size * 0.55), () => 2) : 0;
+    const w = Math.max(main.width, sub ? textWidth(subFace, sub, subSize, 2) + size * 1.6 : 0);
     const h = size * (sub ? 2.5 : 1.75);
     const x0 = anchor === 'middle' ? x - w / 2 : x;
     return (
@@ -193,7 +202,7 @@ export const Wind: React.FC<{look: Look; t: number; opacity?: number; strength?:
       const sp = (500 + rnd(i * 23) * 600) * strength;
       const x = ((rnd(i * 29) * 2400 + t * sp) % 2400) - 240;
       const y = y0 + rnd(i * 31) * (y1 - y0) + Math.sin(t * 3 + i) * 50;
-      return <ellipse key={`l${i}`} cx={x} cy={y} rx={14} ry={6} fill={i % 2 ? '#7fae6a' : '#b8a35a'} transform={`rotate(${(t * 360 * (1 + rnd(i))) % 360} ${x} ${y})`} opacity=".85" />;
+      return <ellipse key={`l${i}`} cx={x} cy={y} rx={14} ry={6} fill={i % 2 ? look.colors.glow : look.colors.highlight} transform={`rotate(${(t * 360 * (1 + rnd(i))) % 360} ${x} ${y})`} opacity=".85" />;
     })}
   </g>
 );
@@ -270,6 +279,37 @@ export const fitLine = (face: Face, lines: readonly string[], width: number, max
   }
   return lo;
 };
+
+/**
+ * A verse read as words: each word's length in letters and digits, and the
+ * punctuation after it (seen behind closing quotes and brackets); tokens with
+ * no letter or digit (a dash, a quote) are not words.
+ */
+export const verseTokens = (line: string): {len: number; p: string}[] =>
+  line.split(/\s+/).flatMap((tok) => {
+    const len = tok.replace(/[^\p{L}\p{N}]/gu, '').length;
+    if (!len) return [];
+    const bare = tok.replace(/[»”"’')\]]+$/u, '');
+    return [{len, p: /[,;:.!?]$/u.exec(bare)?.[0] ?? ''}];
+  });
+
+/**
+ * The line each label goes on, in order of x: the first line where it does
+ * not touch the label before it there (`gap` px apart), adding lines as needed.
+ */
+export const labelLines = (xs: readonly number[], widths: readonly number[], gap: number): number[] => {
+  const ends: number[] = [];
+  return xs.map((x, i) => {
+    const half = widths[i]! / 2;
+    let j = ends.findIndex((e) => x - half >= e + gap);
+    if (j < 0) j = ends.push(-Infinity) - 1;
+    ends[j] = x + half;
+    return j;
+  });
+};
+
+/** The colour roles a text or a mark may take (never a plate's or a shadow's). */
+export const TEXT_ROLES = ['text', 'textDim', 'accent', 'highlight', 'glow', 'lightning', 'signal'] as const;
 
 /** The panel's default box in a 16:9 frame. */
 export const PANEL: Box = {x: 440, y: 150, w: 1060, h: 596};

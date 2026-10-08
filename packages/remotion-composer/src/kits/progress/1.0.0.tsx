@@ -63,6 +63,7 @@ export const kit: KitVersion = {
   component: Progress,
   examples: [
     {id: 'third', props: {look: DEMO_LOOK, steps: STEPS, current: 2, done: 2}, durationInFrames: 30, frame: 0},
+    {id: 'eight', props: {look: DEMO_LOOK, steps: [...STEPS, ...STEPS.slice(0, 3)].map((s) => ({label: s.label === 'REVELATION' ? 'MMMMMMMMMMMMMMMMMMMM' : s.label})), current: 6, done: 6}, durationInFrames: 30, frame: 0},
     {id: 'first', props: {look: DEMO_LOOK, steps: STEPS, current: 0, done: 0}, durationInFrames: 30, frame: 0},
   ],
 };

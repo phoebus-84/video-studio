@@ -68,7 +68,8 @@ export const kit: KitVersion = {
     x: z.number(),
     y: z.number(),
     width: z.number().positive().max(1728),
-    words: z.array(z.object({text: z.string().min(1).max(30), gloss: z.string().min(1).max(30), at: z.number(), glossAt: z.number()}).strict()).min(1).max(10),
+    words: z.array(z.object({text: z.string().min(1).max(30), gloss: z.string().min(1).max(30), at: z.number(), glossAt: z.number()}).strict()
+      .refine((w) => w.glossAt >= w.at, {message: 'a translation comes once its word is said', path: ['glossAt']})).min(1).max(10),
     strike: z.object({indices: z.array(z.number().int().min(0)).min(1), at: z.number()}).strict().optional(),
   }).strict().refine((p) => !p.strike || p.strike.indices.every((i) => i < p.words.length), {message: 'a struck word is one of the words', path: ['strike', 'indices']}),
   component: Interlinear,

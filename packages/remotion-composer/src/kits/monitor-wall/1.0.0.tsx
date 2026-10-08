@@ -8,7 +8,8 @@ import React from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 import {z} from 'zod';
 import type {KitVersion} from '../types.js';
-import {COLOR_ROLES, DEMO_LOOK, LookSchema, plateStyle, type ColorRole, type Look} from '../lib/look/1.0.0.js';
+import {DEMO_LOOK, LookSchema, plateStyle, type ColorRole, type Look} from '../lib/look/1.0.0.js';
+import {TEXT_ROLES} from '../lib/lesson-tools/1.0.0.js';
 import {useLookFonts} from '../lib/fonts/1.1.0.js';
 import {fitSize} from '../lib/font-metrics/1.0.0.js';
 import {ramp} from '../lib/stage-math/1.0.0.js';
@@ -68,7 +69,7 @@ export const kit: KitVersion = {
     cells: z.array(z.object({src: AssetUrl, focus: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]).optional(), kind: z.enum(['picture', 'clip']).optional()}).strict()).min(1).max(8),
     /** The monitors appear one after the other from here. */
     appear: z.number().optional(),
-    caption: z.array(z.object({text: z.string().min(1).max(30), at: z.number(), color: z.enum(COLOR_ROLES).optional()}).strict()).max(3).optional(),
+    caption: z.array(z.object({text: z.string().min(1).max(30), at: z.number(), color: z.enum(TEXT_ROLES).optional()}).strict()).max(3).optional(),
   }).strict(),
   component: MonitorWall,
   examples: [
