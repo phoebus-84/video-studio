@@ -1,0 +1,119 @@
+{
+ "compiler": {
+  "id": "dentro-i-versi-long",
+  "version": "1.0.0"
+ },
+ "cases": [
+  {
+   "name": "the compiled timeline, untouched: only the missing sound theme is noted",
+   "set": [],
+   "expect": [
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  },
+  {
+   "name": "a text moved by half a second: within the rules",
+   "set": [
+    {
+     "path": "$.tracks[6].items[0].from",
+     "value": 15
+    }
+   ],
+   "expect": [
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  },
+  {
+   "name": "the loop given up",
+   "set": [
+    {
+     "path": "$.loop",
+     "value": false
+    }
+   ],
+   "expect": [
+    {
+     "code": "loop-broken",
+     "severity": "error",
+     "path": "$.loop"
+    },
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  },
+  {
+   "name": "the brand mark in another colour",
+   "set": [
+    {
+     "path": "$.tracks[16].items[0].props.look.colors.accent",
+     "value": "#ff0000"
+    }
+   ],
+   "expect": [
+    {
+     "code": "look-changed",
+     "severity": "error",
+     "path": "$.tracks[16].items[0].props.look"
+    },
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  },
+  {
+   "name": "a guide take moved by a second",
+   "set": [
+    {
+     "path": "$.tracks[18].items[1].from",
+     "value": 2000
+    }
+   ],
+   "expect": [
+    {
+     "code": "voice-changed",
+     "severity": "error",
+     "path": "$.tracks"
+    },
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  },
+  {
+   "name": "the guide no longer arrives by teleport",
+   "set": [
+    {
+     "path": "$.tracks[5].items[0].props.teleport",
+     "value": {}
+    }
+   ],
+   "expect": [
+    {
+     "code": "missing-teleport",
+     "severity": "error",
+     "path": "$.tracks[5].items[0].props.teleport"
+    },
+    {
+     "code": "no-theme-sound",
+     "severity": "warning",
+     "path": "$.tracks"
+    }
+   ]
+  }
+ ]
+}

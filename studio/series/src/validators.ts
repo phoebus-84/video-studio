@@ -6,8 +6,9 @@
 import type { CheckResult, SeriesValidator, ValidateInput } from "./types.js";
 import { validator as poetryShort100 } from "./validators/poetry-short/1.0.0.js";
 import { validator as dentroIVersiShort100 } from "./validators/dentro-i-versi-short/1.0.0.js";
+import { validator as dentroIVersiLong100 } from "./validators/dentro-i-versi-long/1.0.0.js";
 
-export const VALIDATORS: readonly SeriesValidator[] = Object.freeze([poetryShort100, dentroIVersiShort100]);
+export const VALIDATORS: readonly SeriesValidator[] = Object.freeze([poetryShort100, dentroIVersiShort100, dentroIVersiLong100]);
 
 /** The validator with exactly this id and version, or undefined. */
 export function resolveValidator(id: string, version: string): SeriesValidator | undefined {
