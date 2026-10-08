@@ -24,13 +24,20 @@ The Node side includes the loudness pass, the render audit, the media probe and 
 1. **One list of what never draws, beside `drawingCodeHash`.** In `identity.ts`: `NOT_DRAWING` names the modules whose code never changes a frame:
    - `audit`: the rendered file's checks;
    - `loudness`: the final file's sound;
-   - `probe`: reading media;
    - `volume`: per-frame audio gain.
+
+   (The prototype also listed `probe`; the review showed it draws, see below.)
 
    `drawsPictures(file)` is false for those modules, whatever their extension (`.ts`, `.js`, `.json` map files…), and true for every other code file. A new module counts as drawing until someone names it here.
 2. **The sheet's hash leaves them out.** `drawingCodeHash` hashes only the files that draw. Changing `loudness` or `audit` keeps a sheet current. Changing a kit, `Timeline`, `layers` or `render-cache` still makes it stale.
 3. **The render cache's Node-side hash leaves them out too.** `rendererKey`'s `runtime` part uses the same `drawsPictures`. The browser bundle stays hashed whole: it is the drawing code, and its chunks can't be told apart by module.
 4. **A one-time cost.** Because the hash's definition changes, every existing sheet goes stale once, and the render cache misses once. The long Il lampo's current render is unaffected; only a new render needs a new sheet. That is stated in the PR.
+
+## Settled by the review (2026-10-08)
+
+- **The probe draws.** `videoFrames` counts a clip's frames, and the kits use that count to decide when the clip holds or loops. A layout sheet doesn't record those counts (its inputs are the timeline, kits, renderer, rules and scale), so a probe change must make it stale. `NOT_DRAWING` is `audit`, `loudness` and `volume`.
+- **`volume` keeps the sheet, not the cache.** It is in the browser bundle (`Timeline` sets each `<Audio>`'s volume), which the cache hashes whole.
+- **The cache's Node-side hash is tested** through `runtimeCodeHashes(dir)`: a loudness or audit change keeps it; a probe or kit change moves it.
 
 ## Testing
 

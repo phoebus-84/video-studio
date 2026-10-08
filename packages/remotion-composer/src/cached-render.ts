@@ -21,6 +21,9 @@ const encoding = {
   pixelFormat: 'yuv420p', colorSpace: 'bt709', muted: true,
 } as const;
 
+/** The render cache's hash of the Node-side code: every module but those that never draw. */
+export const runtimeCodeHashes = (dir: string) => codeHashes(dir, drawsPictures);
+
 async function codeHashes(dir: string, keep: (file: string) => boolean = () => true, base = dir): Promise<unknown[]> {
   const rows: unknown[] = [];
   for (const entry of (await readdir(dir, {withFileTypes: true})).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -42,11 +45,12 @@ async function rendererKey(serveUrl: string): Promise<string> {
   return cacheKey({
     cacheVersion: 1, encoding, platform: process.platform, arch: process.arch,
     node: process.version, browser: await sha256(browser.path), dependencies,
-    // The bundle includes the actual kit/React/Remotion code. Node-side code
-    // is also hashed, so a renderer fix invalidates entries without a version
-    // bump — but not the modules that never draw (a loudness fix keeps them).
+    // The bundle includes the actual kit/React/Remotion code, hashed whole (a
+    // volume change, which it holds, still misses). Node-side code is also
+    // hashed, so a renderer fix invalidates entries without a version bump —
+    // but not the modules that never draw (a loudness or audit fix keeps them).
     bundle: await codeHashes(serveUrl),
-    runtime: await codeHashes(path.dirname(fileURLToPath(import.meta.url)), drawsPictures),
+    runtime: await runtimeCodeHashes(path.dirname(fileURLToPath(import.meta.url))),
     ffmpeg: (await exec(ffmpeg(), ['-version'])).stdout,
   });
 }

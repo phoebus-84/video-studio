@@ -15,11 +15,14 @@ const CODE = /\.(js|ts|tsx|json)$/;
 
 /**
  * The modules whose code never changes a frame (avg-dcf.6.13): the rendered
- * file's checks, the final file's sound, reading media, per-frame audio gain.
- * A sheet stays current, and the render cache keeps its segments, when only
- * these change. Every other module counts as drawing until it is named here.
+ * file's checks, the final file's sound, per-frame audio gain. A sheet stays
+ * current when only these change; the render cache keeps its segments when
+ * only the first two do (volume is in the browser bundle, which the cache
+ * hashes whole). Not the probe: it counts a clip's frames, which decide when
+ * the clip holds or loops. Every other module counts as drawing until it is
+ * named here.
  */
-export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'probe', 'volume']);
+export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'volume']);
 
 /**
  * Whether a code file can change what a frame shows. `file` is its path from

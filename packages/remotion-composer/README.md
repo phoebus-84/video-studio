@@ -214,9 +214,12 @@ the kits a timeline draws with and their code hashes without rendering. `drawing
 this package's built code and its Remotion and React versions — so a sheet
 made before a composer upgrade can be told apart from one made after. The
 modules that never change a frame (`NOT_DRAWING`: `audit`, `loudness`,
-`probe`, `volume`) are left out of it, and out of the render cache's key: a
-fix to the final file's sound keeps the sheet current and the cached segments.
-A new module counts as drawing until it is named there.
+`volume`) are left out of it: a fix to the final file's sound keeps the sheet
+current. The render cache leaves `audit` and `loudness` out of its Node-side
+key too, so their fixes keep the cached segments; `volume` lives in the
+browser bundle, which the cache hashes whole. The probe draws: it counts a
+clip's frames, which decide when the clip holds or loops. A new module counts
+as drawing until it is named there.
 
 ## Partial render cache
 
