@@ -7,6 +7,7 @@ import {promisify} from 'node:util';
 import {ensureBrowser, openBrowser, renderMedia} from '@remotion/renderer';
 import type {VideoConfig} from 'remotion';
 import {sha256} from './assets.js';
+import {drawsPictures} from './identity.js';
 import {cachedVideo, cacheKey, planVideo, type CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
 
@@ -20,12 +21,15 @@ const encoding = {
   pixelFormat: 'yuv420p', colorSpace: 'bt709', muted: true,
 } as const;
 
-async function codeHashes(dir: string): Promise<unknown[]> {
+/** The render cache's hash of the Node-side code: every module but those that never draw. */
+export const runtimeCodeHashes = (dir: string) => codeHashes(dir, drawsPictures);
+
+async function codeHashes(dir: string, keep: (file: string) => boolean = () => true, base = dir): Promise<unknown[]> {
   const rows: unknown[] = [];
   for (const entry of (await readdir(dir, {withFileTypes: true})).sort((a, b) => a.name.localeCompare(b.name))) {
     // Never hash staged media as renderer code: it belongs in per-segment keys.
-    if (entry.isDirectory() && entry.name !== 'public') rows.push([entry.name, await codeHashes(path.join(dir, entry.name))]);
-    else if (entry.isFile() && /\.(js|tsx?|json)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+    if (entry.isDirectory() && entry.name !== 'public') rows.push([entry.name, await codeHashes(path.join(dir, entry.name), keep, base)]);
+    else if (entry.isFile() && /\.(js|tsx?|json)$/.test(entry.name) && !entry.name.endsWith('.d.ts') && keep(path.relative(base, path.join(dir, entry.name)))) {
       rows.push([entry.name, await sha256(path.join(dir, entry.name))]);
     }
   }
@@ -41,10 +45,12 @@ async function rendererKey(serveUrl: string): Promise<string> {
   return cacheKey({
     cacheVersion: 1, encoding, platform: process.platform, arch: process.arch,
     node: process.version, browser: await sha256(browser.path), dependencies,
-    // The bundle includes the actual kit/React/Remotion code. Node-side code
-    // is also hashed, so a renderer fix invalidates entries without a version bump.
+    // The bundle includes the actual kit/React/Remotion code, hashed whole (a
+    // volume change, which it holds, still misses). Node-side code is also
+    // hashed, so a renderer fix invalidates entries without a version bump —
+    // but not the modules that never draw (a loudness or audit fix keeps them).
     bundle: await codeHashes(serveUrl),
-    runtime: await codeHashes(path.dirname(fileURLToPath(import.meta.url))),
+    runtime: await runtimeCodeHashes(path.dirname(fileURLToPath(import.meta.url))),
     ffmpeg: (await exec(ffmpeg(), ['-version'])).stdout,
   });
 }

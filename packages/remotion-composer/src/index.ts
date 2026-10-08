@@ -3,7 +3,7 @@ export {type CacheReport} from './render-cache.js';
 export {validateTimeline} from './validate.js';
 export {renderLayoutSheet, sheetTime, MAX_SHEET_PICKS, type LayoutSheetOptions, type LayoutSheetResult, type LayoutSheetFrame} from './layout-sheet.js';
 export {kitLockHash, timelineKits, type LockedKit} from './kit-lock.js';
-export {drawingCodeHash} from './identity.js';
+export {drawingCodeHash, drawsPictures, NOT_DRAWING} from './identity.js';
 export {listKits, previewPath, resolveKit, kitVersions, KIT_VERSIONS, type KitListing, type KitVersion, type KitExample, type KitProfile} from './kits/index.js';
 export {ComposerError, type ComposerErrorCode, type ComposerProblem} from './errors.js';
 export {BUNDLED_FAMILIES} from './kits/lib/fonts/1.1.0.js';
