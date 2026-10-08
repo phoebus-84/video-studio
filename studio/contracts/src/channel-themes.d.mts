@@ -31,10 +31,14 @@ export interface ChannelTheme {
   characters: Record<string, ThemeCharacter>;
   rooms: Record<string, ThemeRoom>;
   brand: { text: string; icon: "bolt" | "none" };
+  /** Sealed: each named file, relative to the release, with its sha256. */
+  files?: Record<string, string>;
   metadata?: Record<string, unknown>;
 }
 export declare const themeReleasePath: (id: string, version: string) => string;
 export declare const THEME_FILE: "theme.json";
 export declare const BUNDLED_FONTS: Readonly<Record<"Anton" | "Fraunces" | "Inter", readonly string[]>>;
 export declare const ROLE_FACES: Readonly<{ display: readonly string[]; serif: readonly string[]; sans: readonly string[] }>;
+/** The files a theme names, relative to its release: each room's image and each monitor's video. */
+export declare function themeFilePaths(doc: ChannelTheme): string[];
 export declare function validateChannelTheme(doc: unknown): { code: string; path: string; message: string }[];
