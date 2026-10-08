@@ -9,7 +9,7 @@ import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-cod
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readFileSync, statSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { extname, join } from "node:path";
 import { resolveConfig, DEFAULT_TTS_WORKER_URL } from "./config.js";
@@ -22,6 +22,7 @@ import {
   NONVERBAL_EMOTIONS,
   synthesizeNonverbalBuzz,
 } from "./nonverbal-audio.js";
+import { MAX_SECONDS, MUSIC_KEYS, SOUND_DESCRIPTIONS, SOUND_KINDS, synthesizeSound } from "./procedural-sound.js";
 import {
   composeMultitrackVideo,
   loadSoundCueSheet,
@@ -379,6 +380,75 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
         details: { audio: result },
       };
+    },
+  });
+
+  // --- Tool: pva_synthesize_sound (avg-jur) ---------------------------------
+
+  pi.registerTool({
+    name: "pva_synthesize_sound",
+    label: "Synthesize Sound",
+    description:
+      "Make a sound effect, ambience, applause or music bed locally at $0, deterministic from its id, as a 48 kHz mono WAV " +
+      "in the episode's assets/sounds/<soundId>.wav, with a receipt beside it (<soundId>.sound.json). Kinds: " +
+      SOUND_KINDS.map((k) => `${k} (${SOUND_DESCRIPTIONS[k]})`).join(", ") +
+      ". They are synthesized stand-ins, not recordings: name one in the spec by its soundId.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      soundId: Type.String({ description: "The asset id the spec names; the WAV's file name" }),
+      kind: StringEnum([...SOUND_KINDS], { description: "What the sound is" }),
+      durationSeconds: Type.Number({ minimum: 0.2, maximum: MAX_SECONDS }),
+      gain: Type.Optional(Type.Number({ default: 0.5, exclusiveMinimum: 0, maximum: 1, description: "Peak level" })),
+      key: Type.Optional(StringEnum([...MUSIC_KEYS], { description: "music-bed: its key (default D)" })),
+      mode: Type.Optional(StringEnum(["major", "minor"], { description: "music-bed: major or minor (default minor)" })),
+    }),
+    async execute(_toolCallId, params) {
+      try {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(params.soundId)) {
+          throw new Error("soundId must contain only letters, numbers, underscores, and hyphens");
+        }
+        const relative = `assets/sounds/${params.soundId}.wav`;
+        const guard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, relative);
+        if (!guard.allowed) throw new Error(guard.reason ?? "Sound output path rejected");
+        const seed = `${params.channel}/${params.series}/${params.episode}/${params.soundId}`;
+        const gain = params.gain ?? 0.5;
+        const wav = synthesizeSound({
+          kind: params.kind, durationSeconds: params.durationSeconds, seed, gain,
+          ...(params.key ? { key: params.key } : {}), ...(params.mode ? { mode: params.mode as "major" | "minor" } : {}),
+        });
+        const dir = join(episodeDir(params.channel, params.series, params.episode), "assets", "sounds");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, `${params.soundId}.wav`), wav);
+        const receipt = {
+          generator: "studio-procedural-sound@1",
+          kind: params.kind,
+          durationSeconds: params.durationSeconds,
+          gain,
+          ...(params.kind === "music-bed" ? { key: params.key ?? "D", mode: params.mode ?? "minor" } : {}),
+          seed,
+          wav: relative,
+          wavSha256: createHash("sha256").update(wav).digest("hex"),
+          createdAt: new Date().toISOString(),
+        };
+        writeFileSync(join(dir, `${params.soundId}.sound.json`), `${JSON.stringify(receipt, null, 2)}\n`);
+        // Two files for one asset id stop the compile (ambiguous-asset): say which to remove.
+        const twins = readdirSync(dir).filter((name) =>
+          name !== `${params.soundId}.wav` && name.toLowerCase().startsWith(`${params.soundId.toLowerCase()}.`) &&
+          /\.(wav|mp3|m4a|aac|flac|ogg)$/i.test(name));
+        const warning = twins.length > 0 ? ` ⚠️ also in assets/sounds: ${twins.join(", ")}; remove ${twins.length === 1 ? "it" : "them"}, or the compiler will find the id ambiguous` : "";
+        return {
+          content: [{ type: "text" as const, text: `✅ ${params.soundId}: ${params.kind}, ${params.durationSeconds}s → ${relative} (receipt ${params.soundId}.sound.json)${warning}` }],
+          details: { path: relative, receipt } as Record<string, unknown>,
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
+          details: {} as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
     },
   });
 
@@ -1698,6 +1768,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
 
       // Local nonverbal synthesis has no external dependency.
       caps["nonverbal-audio"] = { available: true, detail: "Deterministic local PCM buzz synthesis" };
+      // Sound effects, ambiences, applause and a music bed, synthesized here (avg-jur).
+      caps["sound-effects"] = { available: true, detail: `pva_synthesize_sound, local and $0: ${SOUND_KINDS.join(", ")}` };
 
       const allAvailable = Object.values(caps).every(c => c.available);
 
