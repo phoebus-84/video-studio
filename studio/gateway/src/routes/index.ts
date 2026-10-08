@@ -7,6 +7,7 @@ import { ErrorCode, GatewayError } from "../errors/index.js";
 import { canonicalizeRoots } from "../lib/roots.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
 import { registerProductionRoutes } from "./production.js";
+import { registerSeriesEpisodeRoutes } from "./series-episode.js";
 import type { PiRpcHealth } from "../rpc/health.js";
 import type { AdapterBridge } from "../rpc/adapter-bridge.js";
 import type { PiProcessManager } from "../rpc/process-manager.js";
@@ -126,6 +127,7 @@ export function registerRoutes(
 
   // ── Production orchestration ─────────────────────────────────────────────
   registerProductionRoutes(app, runtime, workspace, { libraryRoot, operatorKey });
+  registerSeriesEpisodeRoutes(app, { libraryRoot, operatorKey });
 
   // ── Pi agent lifecycle ───────────────────────────────────────────────────
   if (piHealth) {

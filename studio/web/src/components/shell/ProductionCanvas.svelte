@@ -22,8 +22,8 @@
   import FileViewer from "../workspace/FileViewer.svelte";
   import StageRail from "../episode/StageRail.svelte";
   import StageDetail from "../episode/StageDetail.svelte";
-  import Storyboard from "../storyboard/Storyboard.svelte";
-  import NarrationPanel from "../narration/NarrationPanel.svelte";
+  import StoryboardTab from "../storyboard/StoryboardTab.svelte";
+  import NarrationTab from "../narration/NarrationTab.svelte";
   import RenderViewer from "../render/RenderViewer.svelte";
   import AgentBar from "../agent/AgentBar.svelte";
 
@@ -138,9 +138,9 @@
           <p class="pc-note">No episode loaded.</p>
         {/if}
       {:else if studio.view === "storyboard"}
-        <Storyboard />
+        <StoryboardTab />
       {:else if studio.view === "narration"}
-        <NarrationPanel />
+        <NarrationTab />
       {:else if studio.view === "render"}
         <RenderViewer />
       {/if}

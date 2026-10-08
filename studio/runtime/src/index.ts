@@ -293,3 +293,8 @@ export type {
 
 // Package version (kept in sync with package.json by convention)
 export const VERSION = "0.1.0";
+
+// The operator's review of a layout sheet (avg-3th.2): the CLI's and the web
+// studio's (avg-goz) one way to sign it.
+export { reviewSheet, sheetReviewStatus } from "./sheet-review.js";
+export type { SheetOutcome, SheetReviewStatus } from "./sheet-review.js";

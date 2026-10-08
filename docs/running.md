@@ -363,7 +363,10 @@ approved: making the sheet again clears the review, and an edit that changes
 what the sheet would show makes it stale. `approve` and `reject` sign with the
 operator key exactly the sheet on disk (`artifacts/layout-sheet/review.json`);
 a rejection needs a note. `status` exits 0 only for an approval. Pi only makes
-and reads the sheet.
+and reads the sheet. The web studio does the same from an episode's
+**Storyboard** tab (avg-goz): the stills, their state, and Approve / Reject
+when the browser holds the operator key; its **Narration** tab plays the
+registered takes, their words lit as they are said.
 
 ```bash
 node studio/runtime/dist/src/cli.js sheet approve my-channel/my-series/ep001 --library "$PWD/library"
