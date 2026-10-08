@@ -29,7 +29,7 @@ describe("synthesizeSound", () => {
       expect(wav.readUInt16LE(22)).toBe(1);
       const s = samples(wav);
       expect(s.length).toBe(3 * SAMPLE_RATE);
-      expect(peak(s), kind).toBeCloseTo(0.5, 2);
+      expect(peak(s), kind).toBeCloseTo(0.5, 3);
       expect(rms(s), kind).toBeGreaterThan(0.005);
       // 5 ms fades: nothing clicks at either end.
       expect(Math.abs(s[0]!)).toBeLessThan(0.01);
@@ -44,10 +44,27 @@ describe("synthesizeSound", () => {
     expect(synthesizeSound({ kind: "wind", durationSeconds: 1, seed: "x" }).equals(a)).toBe(false);
   });
 
-  it("plays the music bed in the asked key", () => {
-    const d = synthesizeSound({ kind: "music-bed", durationSeconds: 4, seed: "k", key: "D", mode: "minor" });
-    const a = synthesizeSound({ kind: "music-bed", durationSeconds: 4, seed: "k", key: "A", mode: "minor" });
-    expect(d.equals(a)).toBe(false);
+  it("plays the music bed in the asked key: its first chord's root is the key's note", () => {
+    // Goertzel power at one frequency over the first chord (2–5 s, past the fade-in).
+    const power = (s: Float64Array, hz: number) => {
+      const from = 2 * SAMPLE_RATE, to = 5 * SAMPLE_RATE;
+      const k = 2 * Math.cos((2 * Math.PI * hz) / SAMPLE_RATE);
+      let a = 0, b = 0;
+      for (let i = from; i < to; i++) { const c = s[i]! + k * a - b; b = a; a = c; }
+      return a * a + b * b - k * a * b;
+    };
+    const cases: [string, number][] = [["D", 146.83], ["A", 110], ["C", 130.81]];
+    for (const [key, root] of cases) {
+      const s = samples(synthesizeSound({ kind: "music-bed", durationSeconds: 6, seed: "k", key: key as never, mode: "minor" }));
+      const wrong = root * Math.pow(2, -3 / 12); // a minor third below: the bug this pins
+      expect(power(s, root), key).toBeGreaterThan(power(s, wrong) * 10);
+    }
+  });
+
+  it("never writes silence: a short flock still chirps", () => {
+    for (let seed = 0; seed < 50; seed++) {
+      expect(rms(samples(synthesizeSound({ kind: "birds", durationSeconds: 0.2, seed: String(seed) }))), String(seed)).toBeGreaterThan(0.005);
+    }
   });
 
   it("refuses an unknown kind, a duration out of range, a bad gain or key", () => {
@@ -98,6 +115,15 @@ describe("pva_synthesize_sound", () => {
       wavSha256: createHash("sha256").update(wav).digest("hex"),
     });
     expect(result.content[0].text).toContain("assets/sounds/sm-sea.wav");
+  });
+
+  it("warns when the same id is already there in another format, which the compiler would find ambiguous", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    mkdirSync(sounds(), { recursive: true });
+    writeFileSync(join(sounds(), "sm-rain.mp3"), "an earlier placeholder");
+    const result = await tool({ soundId: "sm-rain", kind: "rain", durationSeconds: 1 });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("sm-rain.mp3");
   });
 
   it("refuses a sound id that is not a plain name, and writes nothing", async () => {

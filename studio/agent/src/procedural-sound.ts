@@ -99,7 +99,8 @@ function drift(rand: () => number, hz: number) {
   };
 }
 
-const NOTE = (key: MusicKey) => MUSIC_KEYS.indexOf(key);
+/** The key's root between A2 and G#3, in semitones from A3 (220 Hz): MUSIC_KEYS counts from C, A is 9. */
+const rootOf = (key: MusicKey) => (((MUSIC_KEYS.indexOf(key) - 9) % 12) + 12) % 12 - 12;
 const hzOf = (semitonesFromA3: number) => 220 * Math.pow(2, semitonesFromA3 / 12);
 
 /** One sample generator per kind; each returns roughly -1..1 before the final normalisation. */
@@ -161,8 +162,9 @@ function generator(req: SoundRequest, rand: () => number, total: number): (i: nu
     case "birds": {
       // Chirps: short upward FM sweeps at random moments.
       const chirps: { start: number; len: number; f0: number; f1: number }[] = [];
-      for (let at = 0; at < total;) {
-        at += Math.floor((0.08 + rand() * 0.6) * SAMPLE_RATE);
+      // The first chirp comes at once, so even a short flock is heard.
+      for (let at = Math.floor(rand() * 0.02 * SAMPLE_RATE), first = true; at < total; first = false) {
+        if (!first) at += Math.floor((0.08 + rand() * 0.6) * SAMPLE_RATE);
         const len = Math.floor((0.05 + rand() * 0.1) * SAMPLE_RATE);
         const f0 = 2200 + rand() * 1800;
         chirps.push({ start: at, len, f0, f1: f0 * (1.15 + rand() * 0.5) });
@@ -239,9 +241,11 @@ function generator(req: SoundRequest, rand: () => number, total: number): (i: nu
     }
     case "music-bed": {
       // A slow i–VI–III–VII (minor) or I–V–vi–IV (major) progression of soft triads, each chord ~6 s, crossfaded.
-      const root = NOTE(req.key ?? "D") - 12; // around A2–G#3
+      const root = rootOf(req.key ?? "D");
       const minor = (req.mode ?? "minor") === "minor";
-      const progression = minor ? [[0, 3, 7], [8, 12, 15], [3, 7, 10], [10, 14, 17]] : [[0, 4, 7], [7, 11, 14], [9, 12, 16], [5, 9, 12]];
+      // Each chord's frequencies once, not per sample.
+      const progression = (minor ? [[0, 3, 7], [8, 12, 15], [3, 7, 10], [10, 14, 17]] : [[0, 4, 7], [7, 11, 14], [9, 12, 16], [5, 9, 12]])
+        .map((chord) => chord.map((n) => 2 * Math.PI * hzOf(root + n)));
       const chordSeconds = 6;
       const breathe = drift(rand, 0.15);
       const soften = lowpass(1800);
@@ -251,10 +255,8 @@ function generator(req: SoundRequest, rand: () => number, total: number): (i: nu
         const k = Math.floor(at);
         const frac = at - k;
         const mix = frac > 0.8 ? (frac - 0.8) / 0.2 : 0;
-        const voice = (chord: number[]) => chord.reduce((sum, n) => {
-          const hz = hzOf(root + n);
-          return sum + Math.sin(2 * Math.PI * hz * t) + 0.3 * Math.sin(2 * Math.PI * hz * 2 * t) + 0.12 * Math.sin(2 * Math.PI * hz * 3 * t);
-        }, 0) / chord.length;
+        const voice = (chord: number[]) => chord.reduce((sum, w) =>
+          sum + Math.sin(w * t) + 0.3 * Math.sin(w * 2 * t) + 0.12 * Math.sin(w * 3 * t), 0) / chord.length;
         const now = voice(progression[k % 4]!);
         const next = voice(progression[(k + 1) % 4]!);
         const fade = Math.min(1, t / 2) * Math.min(1, (req.durationSeconds - t) / 3);
@@ -277,21 +279,22 @@ export function synthesizeSound(req: SoundRequest): Buffer {
   const total = Math.round(req.durationSeconds * SAMPLE_RATE);
   const rand = random(`${req.kind}\u0000${req.seed}`);
   const next = generator(req, rand, total);
+  // 5 ms fades so nothing clicks at the ends, then normalised to the requested peak.
+  const fade = Math.min(Math.floor(0.005 * SAMPLE_RATE), Math.floor(total / 2));
   const samples = new Float32Array(total);
   let peak = 0;
   for (let i = 0; i < total; i++) {
-    const s = next(i);
+    const edge = fade > 0 ? Math.min(1, i / fade, (total - 1 - i) / fade) : 1;
+    const s = next(i) * edge;
     samples[i] = s;
     peak = Math.max(peak, Math.abs(s));
   }
-  // Normalise to the requested peak, with 5 ms fades so nothing clicks at the ends.
-  const scale = peak > 0 ? gain / peak : 0;
-  const fade = Math.min(Math.floor(0.005 * SAMPLE_RATE), Math.floor(total / 2));
+  if (!(peak > 0) || !Number.isFinite(peak)) throw new Error(`the ${req.kind} came out silent: try another duration`);
+  const scale = gain / peak;
   const out = Buffer.alloc(44 + total * 2);
   writeHeader(out, total);
   for (let i = 0; i < total; i++) {
-    const edge = Math.min(1, i / fade, (total - 1 - i) / fade);
-    const v = Math.max(-1, Math.min(1, samples[i]! * scale * (fade > 0 ? edge : 1)));
+    const v = Math.max(-1, Math.min(1, samples[i]! * scale));
     out.writeInt16LE(Math.round(v * 32767), 44 + i * 2);
   }
   return out;

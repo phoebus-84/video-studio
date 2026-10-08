@@ -9,7 +9,7 @@ import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-cod
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readFileSync, statSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { extname, join } from "node:path";
 import { resolveConfig, DEFAULT_TTS_WORKER_URL } from "./config.js";
@@ -433,8 +433,13 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           createdAt: new Date().toISOString(),
         };
         writeFileSync(join(dir, `${params.soundId}.sound.json`), `${JSON.stringify(receipt, null, 2)}\n`);
+        // Two files for one asset id stop the compile (ambiguous-asset): say which to remove.
+        const twins = readdirSync(dir).filter((name) =>
+          name !== `${params.soundId}.wav` && name.toLowerCase().startsWith(`${params.soundId.toLowerCase()}.`) &&
+          /\.(wav|mp3|m4a|aac|flac|ogg)$/i.test(name));
+        const warning = twins.length > 0 ? ` ⚠️ also in assets/sounds: ${twins.join(", ")}; remove ${twins.length === 1 ? "it" : "them"}, or the compiler will find the id ambiguous` : "";
         return {
-          content: [{ type: "text" as const, text: `✅ ${params.soundId}: ${params.kind}, ${params.durationSeconds}s → ${relative} (receipt ${params.soundId}.sound.json)` }],
+          content: [{ type: "text" as const, text: `✅ ${params.soundId}: ${params.kind}, ${params.durationSeconds}s → ${relative} (receipt ${params.soundId}.sound.json)${warning}` }],
           details: { path: relative, receipt } as Record<string, unknown>,
         };
       } catch (err) {
