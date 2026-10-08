@@ -933,6 +933,9 @@ async function cmdSheet(ctx: CliContext, args: string[]): Promise<number> {
 
 // ── theme / template (avg-dcf.6.10) ─────────────────────────────────────────
 
+/** A channel, series, theme or version: one plain path part, never a way out of the library. */
+const isNamePart = (part: string) => part !== "" && part !== "." && part !== ".." && !/[\\/]/.test(part);
+
 /**
  * `vpr theme seal`: list a theme release's files with their hashes in its
  * theme.json, so every episode on it is held to them (ADR-0040). Prints the
@@ -943,20 +946,19 @@ async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
   const libraryRoot = libraryFrom(args);
   const [sub, target] = positionalArgs(args);
   const parts = target?.split("/") ?? [];
-  if (!libraryRoot || sub !== "seal" || parts.length !== 3 || parts.some((p) => p === "")) {
+  if (!libraryRoot || sub !== "seal" || parts.length !== 3 || !parts.every(isNamePart)) {
     emit(ctx, { error: libraryRoot ? usage : "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
     return EX_USAGE;
   }
   const [channel, id, version] = parts as [string, string, string];
-  if (ctx.dryRun) {
-    emit(ctx, { message: `[DRY RUN] would seal ${id}@${version} in ${channel}`, dryRun: true });
-    return EX_OK;
-  }
   try {
-    const sealed = sealTheme(channelPath(libraryRoot, channel), id, version);
+    const sealed = sealTheme(channelPath(libraryRoot, channel), id, version, { dryRun: ctx.dryRun });
     emit(ctx, {
-      message: `${id}@${version} sealed: ${Object.keys(sealed.files).length} file(s); pin it as {"id": "${id}", "version": "${version}", "hash": "${sealed.hash}"} (vpr template release … --theme ${id}@${version})`,
+      message: ctx.dryRun
+        ? `[DRY RUN] ${id}@${version} would be sealed: ${Object.keys(sealed.files).length} file(s), theme.json hash ${sealed.hash}`
+        : `${id}@${version} sealed: ${Object.keys(sealed.files).length} file(s); pin it as {"id": "${id}", "version": "${version}", "hash": "${sealed.hash}"} (vpr template release … --theme ${id}@${version})`,
       ...sealed,
+      dryRun: ctx.dryRun,
     });
     return EX_OK;
   } catch (error) {
@@ -975,22 +977,21 @@ async function cmdTemplate(ctx: CliContext, args: string[]): Promise<number> {
   const from = flagValue(args, "--from");
   const themeArg = flagValue(args, "--theme");
   const theme = themeArg?.match(/^([^@]+)@([^@]+)$/);
-  if (!libraryRoot || sub !== "release" || parts.length !== 2 || parts.some((p) => p === "") || !id || !version || !from || (themeArg !== undefined && !theme)) {
+  // A flag given without its value is a mistake, never "no theme".
+  const flagsComplete = from !== undefined && (!args.includes("--theme") || (theme && isNamePart(theme[1]!) && isNamePart(theme[2]!)));
+  if (!libraryRoot || sub !== "release" || parts.length !== 2 || !parts.every(isNamePart) || !id || !version || !flagsComplete) {
     emit(ctx, { error: libraryRoot ? usage : "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
     return EX_USAGE;
   }
   const [channel, series] = parts as [string, string];
-  if (ctx.dryRun) {
-    emit(ctx, { message: `[DRY RUN] would release ${id}@${version} from ${from} in ${channel}/${series}${theme ? `, pinned to ${themeArg}` : ""}`, dryRun: true });
-    return EX_OK;
-  }
   try {
     const released = releaseTemplate(seriesPath(libraryRoot, channel, series), {
-      id, from, version, ...(theme ? { theme: { id: theme[1]!, version: theme[2]! } } : {}),
+      id, from, version, ...(theme ? { theme: { id: theme[1]!, version: theme[2]! } } : {}), dryRun: ctx.dryRun,
     });
     emit(ctx, {
-      message: `${id}@${version} released at ${released.path}${released.theme ? ` on ${released.theme.id}@${released.theme.version}` : ""}; move an episode onto it with pva_upgrade_spec`,
+      message: `${ctx.dryRun ? "[DRY RUN] " : ""}${id}@${version} ${ctx.dryRun ? "would be released" : "released"} at ${released.path}${released.theme ? ` on ${released.theme.id}@${released.theme.version}` : " (the theme pin copied from " + from + ")"}; move an episode onto it with pva_upgrade_spec`,
       ...released,
+      dryRun: ctx.dryRun,
     });
     return EX_OK;
   } catch (error) {

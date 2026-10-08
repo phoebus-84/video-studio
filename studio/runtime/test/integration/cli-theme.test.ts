@@ -62,7 +62,19 @@ describe("vpr theme seal, then vpr template release", () => {
     expect(existsSync(releaseDir("1.1.0"))).toBe(false);
   });
 
+  it("a dry run reports what the real command would refuse", () => {
+    const pinned = vpr(["theme", "seal", "dentro-i-versi/dentro-i-versi/1.0.0", "--dry-run"]);
+    expect(pinned.status).toBe(2);
+    expect(pinned.out.code).toBe("pinned");
+    const exists = vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.0.0", "--from", "1.0.0", "--dry-run"]);
+    expect(exists.out.code).toBe("bad-version");
+  });
+
   it("refuses a malformed command with its usage", () => {
+    expect(vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.1.0", "--from", "1.0.0", "--theme"]).status).toBe(1);
+    expect(vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.1.0", "--from", "--theme", "dentro-i-versi@1.1.0"]).status).toBe(1);
+    expect(vpr(["theme", "seal", "dentro-i-versi/../1.1.0"]).status).toBe(1);
+    expect(vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.1.0", "--from", "1.0.0", "--theme", "../x@1.1.0"]).status).toBe(1);
     expect(vpr(["theme", "seal", "dentro-i-versi/1.1.0"]).status).toBe(1);
     expect(vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.1.0"]).status).toBe(1);
     expect(vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.1.0", "--from", "1.0.0", "--theme", "dentro-i-versi"]).status).toBe(1);

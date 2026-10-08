@@ -98,6 +98,17 @@ describe("validateChannelTheme (ADR-0040)", () => {
     assert.deepEqual(codes(doc), [["unlisted-file", `$.files[${JSON.stringify(first)}]`], ["unused-file", '$.files["rooms/extra.png"]']]);
   });
 
+  it("seals any name the theme may give a file, and no inherited key passes for a listed one", () => {
+    const doc = theme();
+    const [first] = Object.keys(doc.rooms);
+    doc.rooms[first].image = "rooms/atrio di città + notte.png";
+    doc.files = Object.fromEntries(themeFilePaths(doc).map((p) => [p, `sha256:${"a".repeat(64)}`]));
+    assert.deepEqual(validateChannelTheme(doc), []);
+    doc.rooms[first].image = "constructor";
+    doc.files = Object.fromEntries(themeFilePaths(doc).filter((p) => p !== "constructor").map((p) => [p, `sha256:${"a".repeat(64)}`]));
+    assert.deepEqual(codes(doc), [["unlisted-file", '$.files["constructor"]']]);
+  });
+
   it("refuses a sealed file whose hash is not a sha256", () => {
     const doc = theme();
     doc.files = Object.fromEntries(themeFilePaths(doc).map((p) => [p, "md5:abc"]));

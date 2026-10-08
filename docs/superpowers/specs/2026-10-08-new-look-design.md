@@ -79,6 +79,21 @@ ADR-0040 says a published episode re-renders with the look it had, until a new r
   - The long's golden check now expects it, because the fixture theme stays unsealed.
 - **`upgradeEpisodeSpec` also refuses another episode's spec** (`episode-mismatch`) and a broken release (`bad-template`). A draft's unfilled values don't stop the move.
 
+## Settled by the review (2026-10-08)
+
+- **A sealed file can have any name a room may use.** `files` keys are `PortableRelativePath`s, like the paths they list, and the listed-files check uses only the object's own keys.
+- **A release's `theme.json` names its own folder.**
+  - `sealTheme` refuses a `theme.json` whose `id` or `version` differs from its folder's (`bad-theme`).
+  - `releaseTemplate` refuses such a theme as well.
+- **A sealed theme is pinned only as it was sealed.** `releaseTemplate` re-hashes its rooms first (`theme-mismatch`).
+- **A broken source release is a release error, not a crash.**
+  - A manifest that isn't JSON is `bad-template`.
+  - A missing standard file is `missing-template`.
+- **The CLI:**
+  - a `--from` or `--theme` given without a value is a usage error;
+  - a path part may not be `..` or contain a separator;
+  - `--dry-run` runs every check and writes nothing (`dryRun` on both functions), so a dry run reports the refusal the real command would meet.
+
 ## Testing
 
 - **Contract:**

@@ -65,6 +65,21 @@ describe("sealTheme", () => {
     expect(JSON.parse(readFileSync(join(themeDir("1.0.0"), "theme.json"), "utf-8")).files).toBeUndefined();
   });
 
+  it("refuses a theme.json whose id or version is not its folder's", () => {
+    cpSync(themeDir("1.0.0"), themeDir("1.1.0"), { recursive: true });
+    expect(codeOf(() => sealTheme(channelDir(), "dentro-i-versi", "1.1.0"))).toBe("bad-theme");
+    expect(JSON.parse(readFileSync(join(themeDir("1.1.0"), "theme.json"), "utf-8")).files).toBeUndefined();
+  });
+
+  it("validates without writing on a dry run", () => {
+    copyTheme("1.1.0");
+    const before = readFileSync(join(themeDir("1.1.0"), "theme.json"), "utf-8");
+    const dry = sealTheme(channelDir(), "dentro-i-versi", "1.1.0", { dryRun: true });
+    expect(Object.keys(dry.files)).toHaveLength(3);
+    expect(readFileSync(join(themeDir("1.1.0"), "theme.json"), "utf-8")).toBe(before);
+    expect(codeOf(() => sealTheme(channelDir(), "dentro-i-versi", "1.0.0", { dryRun: true }))).toBe("pinned");
+  });
+
   it("refuses a sealed release, a missing file, a missing release", () => {
     copyTheme("1.1.0");
     sealTheme(channelDir(), "dentro-i-versi", "1.1.0");
@@ -98,6 +113,36 @@ describe("releaseTemplate", () => {
     expect(released.theme).toBeUndefined();
     const pin = (version: string) => JSON.parse(readFileSync(join(releaseDir(version), "series-template.json"), "utf-8")).theme;
     expect(pin("1.0.1")).toEqual(pin("1.0.0"));
+  });
+
+  it("refuses a source release that is broken, as a release error", () => {
+    cpSync(releaseDir("1.0.0"), releaseDir("1.0.1"), { recursive: true });
+    writeFileSync(join(releaseDir("1.0.1"), "series-template.json"), "{ not json");
+    expect(codeOf(() => releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.1", version: "1.1.0" }))).toBe("bad-template");
+    cpSync(releaseDir("1.0.0"), releaseDir("1.0.2"), { recursive: true });
+    rmSync(join(releaseDir("1.0.2"), "FORMAT.md"));
+    expect(codeOf(() => releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.2", version: "1.1.0" }))).toBe("missing-template");
+    expect(existsSync(releaseDir("1.1.0"))).toBe(false);
+  });
+
+  it("refuses a sealed theme whose room changed since, or whose theme.json is not its folder's", () => {
+    copyTheme("1.1.0");
+    sealTheme(channelDir(), "dentro-i-versi", "1.1.0");
+    writeFileSync(join(themeDir("1.1.0"), "rooms/sala.png"), "another sala");
+    const release = (theme: string) => codeOf(() => releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.1.0", theme: { id: "dentro-i-versi", version: theme } }));
+    expect(release("1.1.0")).toBe("theme-mismatch");
+    cpSync(themeDir("1.1.0"), themeDir("1.2.0"), { recursive: true });
+    expect(release("1.2.0")).toBe("bad-theme");
+    expect(existsSync(releaseDir("1.1.0"))).toBe(false);
+  });
+
+  it("validates without writing on a dry run", () => {
+    copyTheme("1.1.0");
+    sealTheme(channelDir(), "dentro-i-versi", "1.1.0");
+    const dry = releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.1.0", theme: { id: "dentro-i-versi", version: "1.1.0" }, dryRun: true });
+    expect(dry.path).toBe("templates/dentro-i-versi-long/1.1.0");
+    expect(existsSync(releaseDir("1.1.0"))).toBe(false);
+    expect(codeOf(() => releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.0.0", dryRun: true }))).toBe("bad-version");
   });
 
   it("refuses an unsealed or missing theme, a version not after its source, a missing source, an existing release", () => {

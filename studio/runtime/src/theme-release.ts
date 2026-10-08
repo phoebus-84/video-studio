@@ -17,7 +17,7 @@ import { SERIES_TEMPLATE_FILES, validateTemplateBundle } from "@studio/contracts
 
 export type ThemeReleaseCode =
   | "missing-theme" | "bad-theme" | "sealed" | "pinned" | "missing-file" | "path-escape"
-  | "missing-template" | "release-exists" | "bad-version" | "theme-unsealed" | "bad-template";
+  | "missing-template" | "release-exists" | "bad-version" | "theme-unsealed" | "theme-mismatch" | "bad-template";
 
 export class ThemeReleaseError extends Error {
   constructor(readonly code: ThemeReleaseCode, message: string) {
@@ -27,6 +27,7 @@ export class ThemeReleaseError extends Error {
 }
 
 const EXACT = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const fail = (code: ThemeReleaseCode, message: string): never => {
   throw new ThemeReleaseError(code, message);
@@ -46,6 +47,54 @@ function writeAtomically(path: string, text: string): void {
   renameSync(temp, path);
 }
 
+const isDirectory = (path: string) => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The theme release's theme.json, parsed and checked: valid, and the release
+ * its folder says it is (a copied folder that kept its old version would be
+ * pinned under a name it does not carry).
+ */
+function readTheme(channelDir: string, id: string, version: string): { theme: any; bytes: Buffer; releaseDir: string } {
+  if (!SLUG.test(id)) fail("bad-theme", `"${id}" is not a theme id`);
+  if (!EXACT.test(version)) fail("bad-version", `"${version}" is not an exact x.y.z release`);
+  const releaseDir = join(channelDir, themeReleasePath(id, version));
+  const themeFile = join(releaseDir, THEME_FILE);
+  if (!existsSync(themeFile)) fail("missing-theme", `${themeReleasePath(id, version)}/${THEME_FILE} is not in this channel`);
+  const bytes = readFileSync(themeFile);
+  let theme: any;
+  try {
+    theme = JSON.parse(bytes.toString("utf-8"));
+  } catch (error) {
+    return fail("bad-theme", `${THEME_FILE} is not JSON: ${(error as Error).message}`);
+  }
+  const problems = validateChannelTheme(theme);
+  if (problems.length > 0) fail("bad-theme", problems.map((p) => `${p.code} at ${p.path}: ${p.message}`).join("; "));
+  if (theme.id !== id || theme.version !== version) {
+    fail("bad-theme", `${themeReleasePath(id, version)}/${THEME_FILE} says ${theme.id}@${theme.version}: a release's theme.json names its own folder`);
+  }
+  return { theme, bytes, releaseDir };
+}
+
+/** Each named file's sha256, read inside the release. */
+function hashFiles(releaseDir: string, theme: any, label: string): Record<string, string> {
+  const root = realpathSync(releaseDir);
+  const files: Record<string, string> = {};
+  for (const path of themeFilePaths(theme)) {
+    const file = join(releaseDir, path);
+    if (!existsSync(file)) fail("missing-file", `${path} is missing from ${label}`);
+    const real = realpathSync(file);
+    if (!real.startsWith(root + sep) || !statSync(real).isFile()) fail("path-escape", `${path} is not a file inside ${label}`);
+    files[path] = sha256(readFileSync(real));
+  }
+  return files;
+}
+
 /** Every template release of the channel that pins this theme release, as "<series>/<template>@<version>". */
 function pinsOf(channelDir: string, id: string, version: string): string[] {
   const pins: string[] = [];
@@ -53,10 +102,10 @@ function pinsOf(channelDir: string, id: string, version: string): string[] {
   if (!existsSync(seriesRoot)) return pins;
   for (const series of readdirSync(seriesRoot).sort()) {
     const templates = join(seriesRoot, series, "templates");
-    if (!existsSync(templates) || !statSync(templates).isDirectory()) continue;
+    if (!isDirectory(templates)) continue;
     for (const template of readdirSync(templates).sort()) {
       const releases = join(templates, template);
-      if (!statSync(releases).isDirectory()) continue;
+      if (!isDirectory(releases)) continue;
       for (const release of readdirSync(releases).sort()) {
         const manifest = join(releases, release, SERIES_TEMPLATE_MANIFEST);
         if (!existsSync(manifest)) continue;
@@ -77,37 +126,17 @@ function pinsOf(channelDir: string, id: string, version: string): string[] {
  * file it names with its sha256 in theme.json. Returns the new theme.json's
  * hash, the one a template release pins.
  */
-export function sealTheme(channelDir: string, id: string, version: string): { hash: string; files: Record<string, string> } {
-  if (!EXACT.test(version)) fail("bad-version", `"${version}" is not an exact x.y.z release`);
-  const releaseDir = join(channelDir, themeReleasePath(id, version));
-  const themeFile = join(releaseDir, THEME_FILE);
-  if (!existsSync(themeFile)) fail("missing-theme", `${themeReleasePath(id, version)}/${THEME_FILE} is not in this channel`);
-  let theme: any;
-  try {
-    theme = JSON.parse(readFileSync(themeFile, "utf-8"));
-  } catch (error) {
-    return fail("bad-theme", `${THEME_FILE} is not JSON: ${(error as Error).message}`);
-  }
+export function sealTheme(channelDir: string, id: string, version: string, options: { dryRun?: boolean } = {}): { hash: string; files: Record<string, string> } {
+  const { theme, releaseDir } = readTheme(channelDir, id, version);
   if (theme.files) fail("sealed", `${id}@${version} is sealed already: a release never changes, make a new one`);
   const pins = pinsOf(channelDir, id, version);
   if (pins.length > 0) fail("pinned", `${id}@${version} is pinned by ${pins.join(", ")}: sealing would change the theme they pinned; make a new release`);
-  const before = validateChannelTheme(theme);
-  if (before.length > 0) fail("bad-theme", before.map((p) => `${p.code} at ${p.path}: ${p.message}`).join("; "));
-
-  const root = realpathSync(releaseDir);
-  const files: Record<string, string> = {};
-  for (const path of themeFilePaths(theme)) {
-    const file = join(releaseDir, path);
-    if (!existsSync(file)) fail("missing-file", `${path} is missing from ${id}@${version}`);
-    const real = realpathSync(file);
-    if (!real.startsWith(root + sep) || !statSync(real).isFile()) fail("path-escape", `${path} is not a file inside ${id}@${version}`);
-    files[path] = sha256(readFileSync(real));
-  }
+  const files = hashFiles(releaseDir, theme, `${id}@${version}`);
   const sealed = { ...theme, files };
   const problems = validateChannelTheme(sealed);
   if (problems.length > 0) fail("bad-theme", problems.map((p) => `${p.code} at ${p.path}: ${p.message}`).join("; "));
   const text = `${JSON.stringify(sealed, null, 2)}\n`;
-  writeAtomically(themeFile, text);
+  if (!options.dryRun) writeAtomically(join(releaseDir, THEME_FILE), text);
   return { hash: sha256(text), files };
 }
 
@@ -119,6 +148,8 @@ export interface ReleaseTemplateOptions {
   version: string;
   /** The sealed theme release the new release pins; without it, the copied pin stays. */
   theme?: { id: string; version: string };
+  /** Check everything, write nothing. */
+  dryRun?: boolean;
 }
 
 /**
@@ -128,6 +159,7 @@ export interface ReleaseTemplateOptions {
  */
 export function releaseTemplate(seriesDir: string, options: ReleaseTemplateOptions): { path: string; hash: string; theme?: { id: string; version: string; hash: string } } {
   const { id, from, version } = options;
+  if (!SLUG.test(id)) fail("missing-template", `"${id}" is not a template id`);
   for (const v of [from, version]) if (!EXACT.test(v)) fail("bad-version", `"${v}" is not an exact x.y.z release`);
   if (compareReleases(version, from) <= 0) fail("bad-version", `${version} does not come after ${from}`);
   const templates = join(seriesDir, "templates", id);
@@ -136,30 +168,41 @@ export function releaseTemplate(seriesDir: string, options: ReleaseTemplateOptio
   if (!existsSync(join(source, SERIES_TEMPLATE_MANIFEST))) fail("missing-template", `${id}@${from} is not in this series`);
   if (existsSync(target)) fail("release-exists", `${id}@${version} exists already: a release never changes`);
 
-  const manifest = JSON.parse(readFileSync(join(source, SERIES_TEMPLATE_MANIFEST), "utf-8"));
+  let manifest: any;
+  try {
+    manifest = JSON.parse(readFileSync(join(source, SERIES_TEMPLATE_MANIFEST), "utf-8"));
+  } catch (error) {
+    return fail("bad-template", `${id}@${from}'s ${SERIES_TEMPLATE_MANIFEST} is not JSON: ${(error as Error).message}`);
+  }
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) fail("bad-template", `${id}@${from}'s ${SERIES_TEMPLATE_MANIFEST} is not a release manifest`);
   manifest.version = version;
   let themePin: { id: string; version: string; hash: string } | undefined;
   if (options.theme) {
     const channelDir = dirname(dirname(seriesDir));
-    const themeFile = join(channelDir, themeReleasePath(options.theme.id, options.theme.version), THEME_FILE);
-    if (!existsSync(themeFile)) fail("missing-theme", `${options.theme.id}@${options.theme.version} is not in this channel`);
-    const bytes = readFileSync(themeFile);
-    let theme: any;
-    try {
-      theme = JSON.parse(bytes.toString("utf-8"));
-    } catch (error) {
-      return fail("bad-theme", `${THEME_FILE} is not JSON: ${(error as Error).message}`);
+    const label = `${options.theme.id}@${options.theme.version}`;
+    const { theme, bytes, releaseDir } = readTheme(channelDir, options.theme.id, options.theme.version);
+    if (!theme.files) fail("theme-unsealed", `${label} is not sealed: vpr theme seal it first`);
+    // Pinned as it is now: every room still the one it sealed.
+    const now = hashFiles(releaseDir, theme, label);
+    for (const [path, hash] of Object.entries(now)) {
+      if (theme.files[path] !== hash) fail("theme-mismatch", `${path} is not the file ${label} sealed: a release never changes, make a new one`);
     }
-    if (!theme.files) fail("theme-unsealed", `${options.theme.id}@${options.theme.version} is not sealed: vpr theme seal it first`);
     themePin = { id: options.theme.id, version: options.theme.version, hash: sha256(bytes) };
     manifest.theme = themePin;
   }
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
   const files: Record<string, string> = {};
-  for (const name of Object.values(SERIES_TEMPLATE_FILES)) files[name] = readFileSync(join(source, name), "utf-8");
+  for (const name of Object.values(SERIES_TEMPLATE_FILES)) {
+    const file = join(source, name);
+    if (!existsSync(file)) fail("missing-template", `${id}@${from} has no ${name}`);
+    files[name] = readFileSync(file, "utf-8");
+  }
   const problems = validateTemplateBundle({ manifest: manifestText, files });
   if (problems.length > 0) fail("bad-template", problems.map((p: { code: string; path: string; message: string }) => `${p.code} at ${p.path}: ${p.message}`).join("; "));
 
+  const path = relative(seriesDir, target).split(sep).join("/");
+  const result = { path, hash: sha256(manifestText), ...(themePin ? { theme: themePin } : {}) };
+  if (options.dryRun) return result;
   // Built beside its name, then moved into place whole.
   const temp = `${target}.${process.pid}.tmp`;
   rmSync(temp, { recursive: true, force: true });
@@ -171,5 +214,5 @@ export function releaseTemplate(seriesDir: string, options: ReleaseTemplateOptio
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
-  return { path: relative(seriesDir, target).split(sep).join("/"), hash: sha256(manifestText), ...(themePin ? { theme: themePin } : {}) };
+  return result;
 }

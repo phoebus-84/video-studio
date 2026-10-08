@@ -81,7 +81,7 @@ export function validateChannelTheme(doc) {
   if (doc.files) {
     const named = themeFilePaths(doc);
     for (const path of named) {
-      if (!(path in doc.files)) problems.push(issue("unlisted-file", member("$.files", path), `${path} is named by the theme but not sealed in files`));
+      if (!Object.hasOwn(doc.files, path)) problems.push(issue("unlisted-file", member("$.files", path), `${path} is named by the theme but not sealed in files`));
     }
     for (const path of Object.keys(doc.files)) {
       if (!named.includes(path)) problems.push(issue("unused-file", member("$.files", path), `${path} is sealed in files but the theme names no such file`));
