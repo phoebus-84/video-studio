@@ -43,6 +43,13 @@ export interface CompileInput {
    * the pin and the contract; its rooms' images are assets theme-<room>.
    */
   theme?: ChannelTheme;
+  /**
+   * Material other episodes of the channel made, pinned by this one
+   * (ADR-0035): pin id → that episode's takes and their timings. Their audio
+   * and pictures are assets source-<pin>-narration-<take> and
+   * source-<pin>-image-<name>.
+   */
+  sources?: Record<string, { narration: NarrationTakes; timings: Record<string, WordTiming> }>;
 }
 
 /** Something in the input that stops compilation, located by a JSON path. */
