@@ -83,6 +83,5 @@ The series-production pipeline puts a human review on its `sheet` stage. `render
 ## Documentation
 
 - `docs/workspace.md`: the review file.
-- The CLI's help.
-- The runtime README's command list.
-- The `review-layout-sheet` skill, if it names the step.
+- The CLI's help, and `docs/running.md`'s command list.
+- The `review-layout-sheet` skill is unchanged: it already hands the sheet to a person, and Pi never approves.

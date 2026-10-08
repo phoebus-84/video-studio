@@ -8,6 +8,8 @@ import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { signReceipt } from "@studio/contracts/src/receipt.mjs";
+import { buildSheetReview, LAYOUT_SHEET_REPORT, SHEET_REVIEW_PATH } from "@studio/contracts/src/sheet-reviews.mjs";
 
 const require = createRequire(import.meta.url);
 const RELEASE = dirname(require.resolve("@studio/contracts/fixtures/series-template/example/templates/poetry-short/1.0.0/series-template.json"));
@@ -103,4 +105,23 @@ export function editSpec(episodeDir: string, change: (spec: any) => void): void 
   const spec = JSON.parse(readFileSync(path, "utf-8"));
   change(spec);
   writeFileSync(path, `${JSON.stringify(spec, null, 2)}\n`);
+}
+
+/**
+ * Sign an approval of the episode's sheet as it is on disk, as
+ * `vpr sheet approve` does, with a test key (avg-3th.2). Returns the review.
+ */
+export function approveSheet(episodeDir: string, episodeRef: { channel: string; series: string; episode: string }, key = "test-operator-key", decision: "approved" | "rejected" = "approved", note?: string): unknown {
+  const reportBytes = readFileSync(join(episodeDir, LAYOUT_SHEET_REPORT));
+  const report = JSON.parse(reportBytes.toString("utf-8"));
+  const review = signReceipt(buildSheetReview({
+    episode: `${episodeRef.channel}/${episodeRef.series}/${episodeRef.episode}`,
+    inputsHash: report.inputsHash,
+    sheet: { path: report.sheet.path, hash: report.sheet.hash },
+    report: { path: "sheet.json", hash: sha256(reportBytes) },
+    decision,
+    ...(note !== undefined ? { note } : {}),
+  }), key);
+  writeFileSync(join(episodeDir, SHEET_REVIEW_PATH), `${JSON.stringify(review, null, 2)}\n`);
+  return review;
 }

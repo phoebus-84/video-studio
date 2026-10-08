@@ -41,6 +41,9 @@ vi.mock("@av/remotion-composer", async (importOriginal) => {
   };
 });
 
+// The sheet-review gate has its own tests (sheet-review.test.ts).
+vi.mock("../src/sheet-review.js", () => ({ requireSheetReview: () => undefined }));
+
 const REF = { channel: "sample", series: "poetry", episode: "morning" };
 let root: string;
 const dir = () => join(root, REF.channel, "series", REF.series, "episodes", REF.episode);
