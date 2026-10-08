@@ -156,7 +156,11 @@ function describeOutcome(outcome: StageOutcomeView): string {
  * than no button: the Run Stage button used to report success for a request
  * that printed advice to a log and executed nothing.
  */
-export function actionsFor(state: string): Array<"run" | "approve" | "reject"> {
+export function actionsFor(state: string, source: "journal" | "files" = "journal"): Array<"run" | "approve" | "reject"> {
+  // A series episode's stages follow its files (avg-qwc): Pi's tools make
+  // them and the operator approves its sheet in the Storyboard. Run, approve
+  // and reject go through the journal, which would refuse every one.
+  if (source === "files") return [];
   switch (state) {
     // Runnable now; completed and failed are reruns, which the service
     // supports for an explicitly named stage. `stale` (avg-qr4.3, task 11)
@@ -183,6 +187,8 @@ class ProductionStore {
   ref = $state<EpisodeRef | null>(null);
   stages = $state<StageStatus[]>([]);
   pipeline = $state<string | null>(null);
+  /** Where the stages' states come from: the journal, or a series episode's files (avg-qwc). */
+  source = $state<"journal" | "files">("journal");
 
   loading = $state(false);
   /** Stage id currently running an action, so the UI can disable it. */
@@ -211,7 +217,7 @@ class ProductionStore {
     try {
       const res = await getGatewayClient().fetchJSON<{
         ok: boolean;
-        data?: { pipeline?: string; stages?: StageStatus[] };
+        data?: { pipeline?: string; source?: "journal" | "files"; stages?: StageStatus[] };
         error?: RouteError;
       }>(`${this.#base()}/status`);
 
@@ -231,6 +237,7 @@ class ProductionStore {
       }
 
       this.pipeline = res.data?.pipeline ?? null;
+      this.source = res.data?.source === "files" ? "files" : "journal";
       this.stages = (res.data?.stages ?? []).map((s) => ({
         ...s,
         produces: (s.produces ?? []).map((p: unknown) =>

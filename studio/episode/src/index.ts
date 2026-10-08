@@ -16,3 +16,4 @@ export * from "./version-compare.js";
 export * from "./speech-align.js";
 export * from "./take-align.js";
 export * from "./take-register.js";
+export * from "./stage-evidence.js";

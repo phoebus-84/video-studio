@@ -381,6 +381,8 @@ export interface EpisodeStatus {
   ref: EpisodeRef;
   pipeline: string;
   stages: StageStatusReport[];
+  /** Where the stages' states come from: the journal, or the episode's files (avg-qwc). */
+  source?: "journal" | "files";
 }
 
 export interface ExecutionError {
@@ -405,7 +407,9 @@ export interface ExecutionError {
      * argument it forgot would reasonably go looking for a typo in a stage id
      * that was never the problem.
      */
-    | "MODE_UNSUPPORTED";
+    | "MODE_UNSUPPORTED"
+    /** An episode whose stages follow its files, and the files could not be read (avg-qwc). */
+    | "EVIDENCE_UNREADABLE";
   message: string;
   /**
    * Set only when a hard error interrupts `rerun` partway through its list.
@@ -416,9 +420,38 @@ export interface ExecutionError {
   partialOutcomes?: StageOutcome[];
 }
 
+/** One stage as an episode's files show it (avg-qwc). */
+export interface StageEvidenceVerdict {
+  state: "pending" | "completed" | "awaiting_review" | "stale" | "failed";
+  reason: string;
+}
+
+/**
+ * Where an episode's stages come from when they are made by tools that write
+ * files, not by claims: a spec-driven series episode (avg-qwc). Injected by
+ * the composition roots, which know the studio's episodes; the runtime does not.
+ */
+export interface StageEvidence {
+  /**
+   * Whether this episode's stages, in this pipeline, follow its files rather
+   * than the journal. Cheap: asked on every status. `stageIds` are the
+   * pipeline's: evidence that does not know them all must say no.
+   */
+  appliesTo(input: { ref: EpisodeRef; episodeDir: string; stageIds: string[] }): boolean;
+  /** Each stage's verdict, by stage id. */
+  stages(input: { ref: EpisodeRef; episodeDir: string; operatorKey: string | null }): Promise<Record<string, StageEvidenceVerdict>>;
+}
+
 export interface ExecutionServiceOptions {
   /** Root of the library tree episodes live under. */
   libraryRoot: string;
+  /**
+   * An episode whose stages follow its files (avg-qwc): `status` reads them
+   * there. Claims and reviews keep the journal: the stages a dispatcher
+   * performs write the same files, so the files stay the truth either way.
+   * Absent, every episode's status follows the journal.
+   */
+  stageEvidence?: StageEvidence;
   /** Where the built-in pipeline manifests are, when not on the default path. */
   builtinPipelines?: string;
   dispatcher?: StageDispatcher;

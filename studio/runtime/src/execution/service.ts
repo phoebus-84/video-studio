@@ -84,6 +84,38 @@ export class ExecutionService {
     return episodePath(this.options.libraryRoot, ref.channel, ref.series, ref.episode);
   }
 
+  /** `status` for an episode whose stages follow its files (avg-qwc). */
+  private async statusFromFiles(
+    ref: EpisodeRef, pipeline: string, stages: ResolvedStage[], episodeDir: string,
+  ): Promise<Result<EpisodeStatus, ExecutionError>> {
+    let verdicts: Record<string, { state: StageState; reason: string }>;
+    try {
+      verdicts = await this.options.stageEvidence!.stages({ ref, episodeDir, operatorKey: this.options.operatorKey ?? null });
+    } catch (e) {
+      return err({ code: "EVIDENCE_UNREADABLE", message: `${episodeSlug(ref)}: its files cannot be read: ${e instanceof Error ? e.message : String(e)}` });
+    }
+    const of = (id: string) => verdicts[id] ?? { state: "pending" as const, reason: "the episode's files say nothing about this stage" };
+    const reports: StageStatusReport[] = stages.map((stage) => {
+      const id = stage.definition.id;
+      const verdict = of(id);
+      const dependsOn = stage.definition.dependsOn ?? [];
+      return {
+        stageId: id,
+        name: stage.definition.name,
+        status: verdict.state === "failed" ? "failed" : verdict.state === "pending" ? "pending" : "completed",
+        attempts: 0,
+        outputArtifacts: [],
+        lease: { state: "none" },
+        dependenciesMet: dependsOn.every((d) => of(d).state === "completed"),
+        state: verdict.state,
+        stateReason: verdict.reason,
+        dependsOn,
+        produces: (stage.definition.produces ?? []).map((artifact) => artifact.label),
+      };
+    });
+    return ok({ ref, pipeline, stages: reports, source: "files" });
+  }
+
   /**
    * The lock the state machine arbitrates a stage with.
    *
@@ -159,6 +191,9 @@ export class ExecutionService {
     if (!resolved.ok) return resolved;
 
     const episodeDir = this.episodeDir(ref);
+    if (this.options.stageEvidence?.appliesTo({ ref, episodeDir, stageIds: resolved.value.stages.map((s) => s.definition.id) })) {
+      return this.statusFromFiles(ref, pipeline, resolved.value.stages, episodeDir);
+    }
     const events = await this.readJournal(episodeDir);
     if (!events.ok) return events;
 

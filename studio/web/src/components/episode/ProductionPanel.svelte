@@ -105,9 +105,13 @@
       <p class="said" role="status">{production.lastMessage}</p>
     {/if}
 
+    {#if production.source === "files"}
+      <p class="said">These stages are read from the episode's files: Pi makes them with its tools, and the layout sheet is approved in the Storyboard tab.</p>
+    {/if}
+
     <ol class="stages">
       {#each production.stages as stage (stage.stageId)}
-        {@const actions = actionsFor(stage.state)}
+        {@const actions = actionsFor(stage.state, production.source)}
         <li>
           <div class="row">
             <span class="state s-{stage.state}">{stage.state}</span>
