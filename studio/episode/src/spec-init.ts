@@ -197,8 +197,24 @@ export function upgradeEpisodeSpec(
   }
   const draft = instantiateEpisodeSpec(bundle, spec.episodeRef);
   const upgraded = { ...spec, revision: spec.revision + 1, template: draft.template };
-  // A draft stays a draft: only what the new release refuses stops the move.
-  const problems = validateEpisodeSpec(upgraded, bundle).filter((p: SpecInitProblem) => p.code !== "unfilled");
+  // A draft stays a draft: only what the new release refuses stops the move —
+  // not an unfilled value, nor what the schema says of one (an id's pattern
+  // refusing "__FILL__"). The schema's paths spell indices as strings.
+  const same = (path: string) => path.replace(/\["(\d+)"\]/g, "[$1]");
+  const unfilled = placeholderPaths(upgraded.data, "$.data").map(same);
+  // An unfilled discriminator or union value (a block's kind, a cue) makes a
+  // union fail at an object holding it, and the schema then reports every
+  // branch's complaints about that object: all of it is the placeholder
+  // speaking. An object with no placeholder in it keeps its errors.
+  const found = validateEpisodeSpec(upgraded, bundle).filter((p: SpecInitProblem) => p.code !== "unfilled");
+  const UNION = /must match (exactly one|a) schema/;
+  const holds = (at: string) => unfilled.some((u) => u === at || u.startsWith(`${at}[`));
+  const excused = found.filter((p: SpecInitProblem) => p.code === "spec-data" && UNION.test(p.message) && holds(same(p.path))).map((p: SpecInitProblem) => same(p.path));
+  const fromPlaceholder = (p: SpecInitProblem) => {
+    const at = same(p.path);
+    return unfilled.includes(at) || excused.some((e) => at === e || at.startsWith(`${e}[`));
+  };
+  const problems = found.filter((p: SpecInitProblem) => !(p.code === "spec-data" && fromPlaceholder(p)));
   if (problems.length > 0) {
     return { ok: false, problems: problems.map((p: SpecInitProblem) => ({ code: "bad-spec", message: `${p.code}: ${p.message}`, path: `${EPISODE_SPEC_PATH}#${p.path}` })) };
   }

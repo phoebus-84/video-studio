@@ -108,6 +108,15 @@ describe("releaseTemplate", () => {
     expect(JSON.parse(readFileSync(join(releaseDir("1.0.0"), "series-template.json"), "utf-8")).version).toBe("1.0.0");
   });
 
+  it("names a new compiler or validator version, and refuses one that is not exact", () => {
+    const released = releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.2.0", compiler: "1.1.0", validator: "1.0.1" });
+    const manifest = JSON.parse(readFileSync(join(releaseDir("1.2.0"), "series-template.json"), "utf-8"));
+    expect(manifest.compiler).toEqual({ id: "dentro-i-versi-long", version: "1.1.0" });
+    expect(manifest.validator).toEqual({ id: "dentro-i-versi-long", version: "1.0.1" });
+    expect(released.hash).toBe(sha(readFileSync(join(releaseDir("1.2.0"), "series-template.json"))));
+    expect(codeOf(() => releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.3.0", compiler: "latest" }))).toBe("bad-version");
+  });
+
   it("keeps the source's theme pin when given no theme", () => {
     const released = releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.0.1" });
     expect(released.theme).toBeUndefined();

@@ -148,6 +148,9 @@ export interface ReleaseTemplateOptions {
   version: string;
   /** The sealed theme release the new release pins; without it, the copied pin stays. */
   theme?: { id: string; version: string };
+  /** The compiler and validator versions the new release names, when they change (registered or not is the loader's check). */
+  compiler?: string;
+  validator?: string;
   /** Check everything, write nothing. */
   dryRun?: boolean;
 }
@@ -160,7 +163,7 @@ export interface ReleaseTemplateOptions {
 export function releaseTemplate(seriesDir: string, options: ReleaseTemplateOptions): { path: string; hash: string; theme?: { id: string; version: string; hash: string } } {
   const { id, from, version } = options;
   if (!SLUG.test(id)) fail("missing-template", `"${id}" is not a template id`);
-  for (const v of [from, version]) if (!EXACT.test(v)) fail("bad-version", `"${v}" is not an exact x.y.z release`);
+  for (const v of [from, version, options.compiler, options.validator]) if (v !== undefined && !EXACT.test(v)) fail("bad-version", `"${v}" is not an exact x.y.z release`);
   if (compareReleases(version, from) <= 0) fail("bad-version", `${version} does not come after ${from}`);
   const templates = join(seriesDir, "templates", id);
   const source = join(templates, from);
@@ -176,6 +179,12 @@ export function releaseTemplate(seriesDir: string, options: ReleaseTemplateOptio
   }
   if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) fail("bad-template", `${id}@${from}'s ${SERIES_TEMPLATE_MANIFEST} is not a release manifest`);
   manifest.version = version;
+  for (const role of ["compiler", "validator"] as const) {
+    const v = options[role];
+    if (v === undefined) continue;
+    if (!manifest[role] || typeof manifest[role] !== "object") fail("bad-template", `${id}@${from} names no ${role} to move to ${v}`);
+    manifest[role] = { ...manifest[role], version: v };
+  }
   let themePin: { id: string; version: string; hash: string } | undefined;
   if (options.theme) {
     const channelDir = dirname(dirname(seriesDir));

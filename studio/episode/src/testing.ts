@@ -16,7 +16,8 @@ const require = createRequire(import.meta.url);
 const RELEASE = dirname(require.resolve("@studio/contracts/fixtures/series-template/example/templates/poetry-short/1.0.0/series-template.json"));
 const INPUT = require.resolve("@studio/series/fixtures/poetry-short/1.0.0/input.json");
 const DIV_INPUT = require.resolve("@studio/series/fixtures/dentro-i-versi-short/1.0.0/input.json");
-const DIV_LONG_INPUT = require.resolve("@studio/series/fixtures/dentro-i-versi-long/1.0.0/input.json");
+/** The long's golden fixture, for each released compiler version. */
+const divLongInput = (version: string) => require.resolve(`@studio/series/fixtures/dentro-i-versi-long/${version}/input.json`);
 const DIV_THEME = dirname(require.resolve("@studio/series/fixtures/themes/dentro-i-versi/1.0.0/theme.json"));
 
 export const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -139,9 +140,10 @@ export function approveSheet(episodeDir: string, episodeRef: { channel: string; 
  */
 export async function divLongEpisode(
   libraryRoot: string,
-  options: DivShortEpisodeOptions = {},
+  options: DivShortEpisodeOptions & { /** The fixture of this compiler version (default 1.0.0). */ version?: string } = {},
 ): Promise<{ episodeDir: string; episodeRef: { channel: string; series: string; episode: string } }> {
-  const input = JSON.parse(readFileSync(DIV_LONG_INPUT, "utf-8"));
+  const fixture = divLongInput(options.version ?? "1.0.0");
+  const input = JSON.parse(readFileSync(fixture, "utf-8"));
   const channelDir = join(libraryRoot, "dentro-i-versi");
   cpSync(DIV_THEME, join(channelDir, "themes", "dentro-i-versi", "1.0.0"), { recursive: true });
   const sourceDir = join(channelDir, "series", "short", "episodes", "il-lampo");
@@ -179,7 +181,7 @@ export async function divLongEpisode(
   takes(sourceDir, input.sources.fonte.narration, input.sources.fonte.timings);
 
   // The lesson.
-  cpSync(join(dirname(DIV_LONG_INPUT), "release"), join(channelDir, "series", "long", "templates", "dentro-i-versi-long", input.template.version), { recursive: true });
+  cpSync(join(dirname(fixture), "release"), join(channelDir, "series", "long", "templates", "dentro-i-versi-long", input.template.version), { recursive: true });
   for (const [id, asset] of Object.entries<{ path: string }>(input.assets)) {
     if (id.startsWith("image-")) picture(episodeDir, asset.path, id.slice(6));
   }

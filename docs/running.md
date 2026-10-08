@@ -377,7 +377,9 @@ node studio/runtime/dist/src/cli.js sheet status my-channel/my-series/ep001 --li
 with its hash, into its `theme.json`, and prints the hash a template release
 pins; it refuses a release already sealed or already pinned. `template release`
 copies a template release to a new version, pinned to a sealed theme with
-`--theme`. Episodes then move onto it with Pi's `pva_upgrade_spec`.
+`--theme`, or naming another compiler or validator version with `--compiler` /
+`--validator` (a new layout is a new compiler version and a new release).
+Episodes then move onto it with Pi's `pva_upgrade_spec`.
 
 ```bash
 node studio/runtime/dist/src/cli.js theme seal my-channel/my-theme/1.1.0 --library "$PWD/library"
