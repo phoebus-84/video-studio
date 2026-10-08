@@ -10,6 +10,8 @@ export type { ResolveOptions } from "./resolver.js";
 
 export { InMemoryPipelineLoader } from "./fixture-loader.js";
 export { FileSystemPipelineLoader, createDefaultLoader } from "./fs-loader.js";
+export { declaredPipeline, PipelineDeclarationError } from "./declared.js";
+export type { DeclaredPipeline } from "./declared.js";
 
 export { InMemorySnapshotStore } from "./fixture-store.js";
 

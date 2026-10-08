@@ -124,6 +124,8 @@ export {
   InMemoryPipelineLoader,
   FileSystemPipelineLoader,
   createDefaultLoader,
+  declaredPipeline,
+  PipelineDeclarationError,
   createSnapshot,
   computeSnapshotHash,
   validateSnapshot,
@@ -132,6 +134,7 @@ export {
   InMemorySnapshotStore,
 } from "./pipeline/index.js";
 export type {
+  DeclaredPipeline,
   ResolveOptions,
   CapabilityRequest,
   ArtifactRef,
