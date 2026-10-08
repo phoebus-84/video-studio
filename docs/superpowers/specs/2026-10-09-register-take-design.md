@@ -17,12 +17,12 @@ Nothing writes a take into a named unit, so Pi cannot complete the takes stage w
 ## Decisions
 
 1. **`registerTake(episodeDir, options)` in `@studio/episode`** (`take-register.ts`, beside `take-align.ts`), and the Pi tool **`pva_register_take`**.
-2. **The audio becomes the take's own file.** The take's audio is copied to `assets/takes/<take>.<ext>` unless it is already there. Then it is hashed, and its duration is measured with FFprobe, as alignment does. The source must be a file inside the episode, and only `.wav`, `.mp3` and `.m4a` are accepted.
+2. **The audio becomes the take's own file, named by its content.** The bytes are read once, then hashed, measured (FFprobe, as alignment does) and written to `assets/takes/<take>.<hash8>.<ext>`. Naming by content means two takes never overwrite each other, even on a case-insensitive disk with ids differing only in case. The new file is written first, then `takes.json`; only then is the take's previous file removed, and only if no take names it. `assets/takes` must stay inside the episode. (Final review, 2026-10-09.) The source must be a file inside the episode, and only `.wav`, `.mp3` and `.m4a` are accepted.
 3. **The take carries the contract's fields.**
    - Required: `text` and `voice` (`provider`, plus optional `model`, `voiceId`, `settings` and `direction`, recorded as provenance).
    - Optional: `spokenText` (when the tool was given a different text), `language` and `role`.
-4. **Re-registering a take replaces it.** If the audio's hash changed, the take's timing reference is dropped, because the old timing measured other audio. If the hash is the same, the timing is kept.
-5. **Units.** `unit: {id, pauseBefore?}` appends the take to that unit's sequence, creating the unit if it doesn't exist. If the take is already in the unit, it stays where it is, and `pauseBefore` is updated when given. The first take of a unit carries no `pauseBefore`.
+4. **Re-registering a take replaces it.** It keeps its language, role and spoken text unless they are given again. Its timing is dropped when the audio, the text, the language or the spoken text changed, and kept otherwise.
+5. **Units.** `unit: {id, pauseBefore?, position?}` appends the take to that unit's sequence, creating the unit if it doesn't exist. If the take is already in the unit, it stays where it is, unless `position` (0-based) puts it elsewhere, so a title registered after the poem can still come first. `pauseBefore` is updated when given. The first take of a unit carries no `pauseBefore`, and every later take has one (0 by default).
 6. **Validation.** The document is checked with `validateNarrationTakes` before anything is written. The audio copy and `takes.json` are written atomically. An invalid result writes nothing.
 7. **Not here:**
    - Qwen voice choice and direction: `pva_synthesize_speech`'s.

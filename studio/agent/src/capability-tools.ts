@@ -1283,7 +1283,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_register_take",
     label: "Register Take",
-    description: "Make an audio file a narration take of artifacts/narration/takes.json (what pva_align_take and the series compilers read): copied to assets/takes/<take>.<ext>, hashed, measured, with its text and the voice that said it, and placed in a unit's sequence — e.g. a short's unit \"recital\": titolo, then recita with pauseBefore 1. Registering a take again replaces it in place; a timing that measured other audio or text is dropped (align it again).",
+    description: "Make an audio file a narration take of artifacts/narration/takes.json (what pva_align_take and the series compilers read): copied to assets/takes/<take>.<hash8>.<ext>, hashed, measured, with its text and the voice that said it, and placed in a unit's sequence — e.g. a short's unit \"recital\": titolo, then recita with pauseBefore 1. Registering a take again replaces it in place; a timing that measured other audio or text is dropped (align it again).",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -1300,7 +1300,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       direction: Type.Optional(Type.String({ description: "The instruction sent with the text (Qwen's direction)" })),
       settings: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Provider parameters, as sent" })),
       unit: Type.Optional(Type.String({ description: "The unit the take plays in, e.g. recital" })),
-      pauseBefore: Type.Optional(Type.Number({ description: "Seconds of silence before this take in its unit (0–10; ignored for the unit's first take)" })),
+      pauseBefore: Type.Optional(Type.Number({ minimum: 0, maximum: 10, description: "Seconds of silence before this take in its unit (0–10; ignored for the unit's first take)" })),
+      position: Type.Optional(Type.Integer({ minimum: 0, description: "Where the take goes in its unit (0 = first); by default appended, or kept in place when already there" })),
     }),
     async execute(_toolCallId, params) {
       const dir = episodeDir(params.channel, params.series, params.episode);
@@ -1319,7 +1320,11 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             ...(params.direction !== undefined ? { direction: params.direction } : {}),
             ...(params.settings !== undefined ? { settings: params.settings as Record<string, unknown> } : {}),
           },
-          ...(params.unit !== undefined ? { unit: { id: params.unit, ...(params.pauseBefore !== undefined ? { pauseBefore: params.pauseBefore } : {}) } } : {}),
+          ...(params.unit !== undefined ? { unit: {
+            id: params.unit,
+            ...(params.pauseBefore !== undefined ? { pauseBefore: params.pauseBefore } : {}),
+            ...(params.position !== undefined ? { position: params.position } : {}),
+          } } : {}),
         });
         const audio = result.take.audio as { durationSeconds: number };
         const lines = [

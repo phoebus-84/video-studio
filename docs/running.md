@@ -190,10 +190,11 @@ server behind your back.
 
 A speech tool leaves a file; a series reads takes. `pva_register_take` makes a
 file a take of `artifacts/narration/takes.json` (avg-dcf.6.6):
-- its audio is copied to `assets/takes/<take>.<ext>`, hashed and measured;
+- its audio is copied to `assets/takes/<take>.<hash8>.<ext>`, hashed and measured. Naming the file by its content means no take ever overwrites another's;
 - its text, the voice that said it, and its language and role are recorded;
 - it is placed in a unit's sequence. A short's `recital`, for example, is
-  `titolo`, then `recita` with `pauseBefore` 1.
+  `titolo`, then `recita` with `pauseBefore` 1. `position` puts a take at a
+  given place (0 = first).
 
 Registering a take again replaces it in place. A timing that measured other
 audio or text is dropped, so align the take again.

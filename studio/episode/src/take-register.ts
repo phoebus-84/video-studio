@@ -10,14 +10,14 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { validateNarrationTakes } from "@studio/contracts/src/narration-takes.mjs";
 import { measureSilences } from "./speech-align.js";
 import { TAKES_PATH } from "./take-align.js";
 
-/** Where a take's audio is kept. */
-export const takeAudioPathFor = (takeId: string, ext: string) => `assets/takes/${takeId}${ext}`;
+/** Where a take's audio is kept: named by its content too, so no other take's file is ever overwritten. */
+export const takeAudioPathFor = (takeId: string, hash: string, ext: string) => `assets/takes/${takeId}.${hash.replace(/^sha256:/, "").slice(0, 8)}${ext}`;
 const AUDIO = new Set([".wav", ".mp3", ".m4a"]);
 
 export class RegisterTakeError extends Error {
@@ -40,8 +40,11 @@ export interface RegisterTakeOptions {
   role?: string;
   /** Provenance only: what made the take. */
   voice: { provider: string; model?: string; voiceId?: string; settings?: Record<string, unknown>; direction?: string };
-  /** The unit the take plays in; appended to its sequence, or kept in place when already there. */
-  unit?: { id: string; pauseBefore?: number };
+  /**
+   * The unit the take plays in: appended to its sequence, or kept in place
+   * when already there — unless `position` (0-based) puts it there.
+   */
+  unit?: { id: string; pauseBefore?: number; position?: number };
 }
 
 export interface RegisteredTake {
@@ -79,15 +82,24 @@ export async function registerTake(episodeDir: string, options: RegisterTakeOpti
   const ext = extname(source).toLowerCase();
   if (!AUDIO.has(ext)) throw new RegisterTakeError("bad-audio", `${options.audio} is not audio this studio takes (${[...AUDIO].join(", ")})`);
 
+  // Read once: the bytes hashed are the bytes measured and kept, whatever the speech tool does to its file meanwhile.
   const bytes = readFileSync(source);
+  const hash = sha256(bytes);
+  const audioPath = takeAudioPathFor(options.take, hash, ext);
+  const takesDir = join(episodeDir, "assets", "takes");
+  mkdirSync(takesDir, { recursive: true });
+  if (outside(root, realpathSync(takesDir))) throw new RegisterTakeError("bad-audio", "assets/takes leads out of this episode");
+  const target = join(episodeDir, audioPath);
+  const temp = `${target}.${process.pid}.${temporaries++}.tmp${ext}`;
+  writeFileSync(temp, bytes);
   let durationSeconds: number;
   try {
-    ({ durationSeconds } = await measureSilences(source));
+    ({ durationSeconds } = await measureSilences(temp));
   } catch (error) {
+    rmSync(temp, { force: true });
     throw new RegisterTakeError("bad-audio", `${options.audio} cannot be measured: ${(error as Error).message}`);
   }
-  const audioPath = takeAudioPathFor(options.take, ext);
-  const audio = { path: audioPath, hash: sha256(bytes), durationSeconds: Math.round(durationSeconds * 1000) / 1000 };
+  const audio = { path: audioPath, hash, durationSeconds: Math.round(durationSeconds * 1000) / 1000 };
 
   const takesFile = join(episodeDir, TAKES_PATH);
   const doc: any = existsSync(takesFile)
@@ -95,15 +107,20 @@ export async function registerTake(episodeDir: string, options: RegisterTakeOpti
     : { apiVersion: "studio.video/v1alpha1", kind: "NarrationTakes", takes: [], units: [] };
 
   const previous = doc.takes.find((t: { id: string }) => t.id === options.take);
-  // A timing measures one audio saying one text: either changed, it no longer holds.
-  const timingDropped = !!previous?.timing && (previous.audio?.hash !== audio.hash || previous.text !== options.text);
+  // What the take said before, unless told otherwise.
+  const spokenText = options.spokenText !== undefined ? options.spokenText : previous?.text === options.text ? previous?.spokenText : undefined;
+  const language = options.language ?? previous?.language;
+  const role = options.role ?? previous?.role;
+  // A timing measures one audio saying one text in one language: any of them changed, it no longer holds.
+  const timingDropped = !!previous?.timing
+    && (previous.audio?.hash !== hash || previous.text !== options.text || previous.language !== language || previous.spokenText !== (spokenText !== options.text ? spokenText : undefined));
   const take: Record<string, unknown> = {
     id: options.take,
     audio,
     text: options.text,
-    ...(options.spokenText !== undefined && options.spokenText !== options.text ? { spokenText: options.spokenText } : {}),
-    ...(options.role !== undefined ? { role: options.role } : {}),
-    ...(options.language !== undefined ? { language: options.language } : {}),
+    ...(spokenText !== undefined && spokenText !== options.text ? { spokenText } : {}),
+    ...(role !== undefined ? { role } : {}),
+    ...(language !== undefined ? { language } : {}),
     voice: options.voice,
     ...(previous?.timing && !timingDropped ? { timing: previous.timing } : {}),
     ...(previous?.source ? { source: previous.source } : {}),
@@ -118,29 +135,29 @@ export async function registerTake(episodeDir: string, options: RegisterTakeOpti
       doc.units.push(unit);
     }
     const at = unit.sequence.findIndex((e: { take: string }) => e.take === options.take);
-    if (at < 0) unit.sequence.push({ take: options.take });
-    const entry = unit.sequence[at < 0 ? unit.sequence.length - 1 : at];
+    const entry = at < 0 ? { take: options.take } : unit.sequence.splice(at, 1)[0];
+    if (options.unit.pauseBefore !== undefined) entry.pauseBefore = options.unit.pauseBefore;
+    const position = options.unit.position ?? (at < 0 ? unit.sequence.length : at);
+    unit.sequence.splice(Math.max(0, Math.min(position, unit.sequence.length)), 0, entry);
     // The first take of a unit starts it; every later one says how long after the one before.
-    if (unit.sequence.indexOf(entry) === 0) delete entry.pauseBefore;
-    else entry.pauseBefore = options.unit.pauseBefore ?? entry.pauseBefore ?? 0;
+    unit.sequence.forEach((e: { pauseBefore?: number }, i: number) => {
+      if (i === 0) delete e.pauseBefore;
+      else e.pauseBefore ??= 0;
+    });
     sequence = unit.sequence;
   }
 
   const problems = validateNarrationTakes(doc);
   if (problems.length > 0) {
+    rmSync(temp, { force: true });
     throw new RegisterTakeError("bad-take", `${TAKES_PATH} would not be valid: ${problems.map((p: { code: string; path: string; message: string }) => `${p.code} at ${p.path}: ${p.message}`).join("; ")}`);
   }
-  const target = join(episodeDir, audioPath);
-  if (resolve(target) !== source) {
-    mkdirSync(dirname(target), { recursive: true });
-    const temp = `${target}.${process.pid}.${temporaries++}.tmp`;
-    copyFileSync(source, temp);
-    renameSync(temp, target);
-  }
-  // A take registered before with another extension: its old file is no longer named anywhere.
-  if (previous?.audio?.path && previous.audio.path !== audioPath && String(previous.audio.path).startsWith("assets/takes/")) {
-    rmSync(join(episodeDir, previous.audio.path), { force: true });
-  }
+  // The new file, then the document that names it; only then the old file, if nothing names it any more.
+  renameSync(temp, target);
   writeAtomically(takesFile, `${JSON.stringify(doc, null, 2)}\n`);
+  const old = previous?.audio?.path;
+  if (typeof old === "string" && old !== audioPath && old.startsWith("assets/takes/") && !doc.takes.some((t: { audio?: { path?: string } }) => t.audio?.path === old)) {
+    rmSync(join(episodeDir, old), { force: true });
+  }
   return { take, audioPath, ...(sequence ? { sequence } : {}), timingDropped };
 }

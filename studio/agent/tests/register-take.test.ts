@@ -41,7 +41,7 @@ describe("pva_register_take", () => {
   it("registers the short's two takes in its recital unit", async () => {
     const first = await tool({ take: "titolo", audio: "artifacts/narration/titolo.wav", text: "Il lampo, di Giovanni Pascoli.", language: "it", provider: "qwen3-tts-local", voiceId: "Serena", unit: "recital" });
     expect(first.isError).toBeUndefined();
-    expect(first.content[0].text).toMatch(/✅ take titolo: 2\.\d\ds → assets\/takes\/titolo\.wav/);
+    expect(first.content[0].text).toMatch(/✅ take titolo: 2\.\d\ds → assets\/takes\/titolo\.[0-9a-f]{8}\.wav/);
     const second = await tool({ take: "recita", audio: "artifacts/narration/recita.wav", text: "E cielo e terra si mostrò qual era:", language: "it", provider: "qwen3-tts-local", voiceId: "Ryan", direction: "warm, unhurried legato", unit: "recital", pauseBefore: 1 });
     expect(second.content[0].text).toMatch(/unit recital: titolo → \+1s recita/);
     const doc = JSON.parse(readFileSync(join(dir(), "artifacts", "narration", "takes.json"), "utf-8"));
