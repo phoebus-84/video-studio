@@ -68,6 +68,22 @@ describe("vpr and the declared pipeline", () => {
     expect(run.json.error).toContain("dentro-i-versi/series/long/pipeline.yaml");
   });
 
+  it("says a read-only command recorded nothing only where it could have", async () => {
+    const root = await library("../escape");
+    const status = vpr(root, ["status", EP], await reviewChainPipeline(roots));
+    expect([status.status, status.json.code]).toEqual([2, "bad-name"]);
+    expect(status.json.error).not.toContain("Nothing was recorded");
+  });
+
+  it("verifies pins without the pipeline, so a bad declaration does not stop it", async () => {
+    const root = await library("../escape");
+    const verified = vpr(root, ["pin", "verify", EP], await reviewChainPipeline(roots));
+    expect(verified.status).toBe(0);
+    expect(verified.json.pins).toEqual([]);
+    const added = vpr(root, ["pin", "add", EP, "poesia", "--source", "channel:il-lampo", "--used-by", "upstream"], await reviewChainPipeline(roots));
+    expect([added.status, added.json.code]).toEqual([2, "bad-name"]);
+  });
+
   it("finds the built-in pipelines without AVG_BUILTIN_PIPELINES", async () => {
     const root = await library("series-production");
     const status = vpr(root, ["status", EP]);

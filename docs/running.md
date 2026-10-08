@@ -277,10 +277,12 @@ Every command below takes `--library <path>` (see section 0) and `--json`.
 
 **Which pipeline.** A command runs the pipeline the library declares for the
 episode: the `pipeline:` key of `pipeline.yaml` in the episode, else its
-series, else its channel, the same lookup the gateway does. With no
+series, else its channel (the files the gateway reads too). The key holds a
+pipeline id, or a pipeline defined inline, which runs by its `id`. With no
 declaration it runs `narrated-illustrated-video`; `--pipeline <name>` overrides
 both. A `pipeline.yaml` that doesn't parse, or names something that isn't a
-pipeline id, fails the command (exit 2) without claiming anything. The built-in
+pipeline id, fails the command (exit 2) without claiming anything; the gateway
+still passes over such a file. The built-in
 pipelines are found through `@studio/pipelines`; `AVG_BUILTIN_PIPELINES`
 points elsewhere.
 

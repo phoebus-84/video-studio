@@ -414,8 +414,6 @@ async function cmdPin(ctx: CliContext, args: string[]): Promise<number> {
     return EX_USAGE;
   }
   const service = makeService(args, ttl.value, null);
-  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
-  if (typeof pipeline === "number") return pipeline;
 
   if (sub === "verify") {
     const pins = await service.verifyPins(parsed);
@@ -423,6 +421,9 @@ async function cmdPin(ctx: CliContext, args: string[]): Promise<number> {
     emit(ctx, { message: `${pins.length} pin(s) for ${episodeArg}, ${changed} with changes or problems`, episode: parsed, pins });
     return EX_OK;
   }
+  // Verifying reads only the pins; adding and renewing check their stages against the pipeline.
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
   if (!id) {
     emit(ctx, { error: usage });
     return EX_USAGE;
@@ -1140,9 +1141,10 @@ function cliOperatorKey(ctx: CliContext): string | null | number {
 /**
  * The pipeline a command runs on an episode (avg-sxk): `--pipeline`, else
  * the one the library declares (`pipeline.yaml` in the episode, series or
- * channel — what the gateway reads too), else `DEFAULT_PIPELINE`. A
- * declaration that can't be read is an error, never the default: the default
- * would run another pipeline's stages on the episode.
+ * channel — the files the gateway reads, though the gateway passes over one
+ * it can't read), else `DEFAULT_PIPELINE`. A declaration that can't be read
+ * is an error here, never the default: the default would run another
+ * pipeline's stages on the episode.
  */
 function pipelineFor(
   ctx: CliContext,
@@ -1155,7 +1157,8 @@ function pipelineFor(
     return declaredPipeline(libraryFrom(args) || ".", ref)?.name ?? DEFAULT_PIPELINE;
   } catch (e) {
     if (!(e instanceof PipelineDeclarationError)) throw e;
-    emit(ctx, { error: `${e.message}. Nothing was recorded.`, code: e.code });
+    // Before the service is asked anything: a command stopped here wrote nothing.
+    emit(ctx, { error: e.message, code: e.code });
     return EX_RUNTIME;
   }
 }

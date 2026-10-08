@@ -25,7 +25,8 @@ Pi's agent manifest (`studio/agent/src/agent.ts`) lists the pipelines without `s
      - a file that doesn't parse (`bad-declaration`);
      - a `pipeline:` value that isn't a slug (`bad-name`).
 
-     A file without the key is skipped.
+     A file without the key is skipped, as is an empty or comment-only file.
+   - A pipeline defined inline under the key (a mapping, as some episodes keep) runs by its `id`: the loader loads that file from the library as a pipeline too.
 2. **`vpr` resolves a pipeline in one place.** `pipelineFor(args, ref)` in the CLI answers `--pipeline`, else the declaration, else `DEFAULT_PIPELINE`.
    - Every command that used `pipelineName ?? DEFAULT_PIPELINE` uses it: `resolve`, `status`, `pin renew`, `validate pipeline`, `rerun`, `review`, `takes`, `select`, `run` and `complete`.
    - A bad declaration fails the command with exit 2 (`EX_RUNTIME`) and the error's message. Nothing is claimed or written.
@@ -35,6 +36,13 @@ Pi's agent manifest (`studio/agent/src/agent.ts`) lists the pipelines without `s
    - Only the CLI, the composition root, resolves the package. The runtime library still takes the path as a parameter (`createDefaultLoader`'s comment).
 4. **The gateway is unchanged.** It already honours the declaration. Moving it onto `declaredPipeline` touches `filesystem-service.ts`, which holds the user's uncommitted work, so that is left to a follow-up.
 5. **Pi's manifest lists every built-in pipeline:** `blender-animation`, `fairy-tale-adaptation`, `narrated-illustrated-video`, `repository-documentation` and `series-production`.
+
+## Settled by the review (2026-10-08)
+
+- **The gateway is more tolerant.** It passes over a file it can't read, and stringifies a non-string value. `vpr` refuses both; the docs say so rather than "the same lookup". Aligning the gateway is the follow-up of decision 4.
+- **`vpr pin verify` doesn't need the pipeline,** so a bad declaration doesn't stop it. `add` and `renew` do need it.
+- **The error names a long value briefly** (60 characters) and doesn't claim "Nothing was recorded" for read-only commands.
+- **`@studio/runtime` doesn't declare `@studio/pipelines`.** Adding it would change the lockfile. In the workspace the package resolves; outside it, `builtinPipelines()` answers `undefined` and `AVG_BUILTIN_PIPELINES` is needed, as before.
 
 ## Testing
 

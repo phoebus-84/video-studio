@@ -69,6 +69,20 @@ describe("declaredPipeline", () => {
     expect(refusal().code).toBe("bad-declaration");
   });
 
+  it("takes the id of a pipeline defined inline under the key", () => {
+    declare("episode", 'pipeline:\n  id: blender-animation\n  version: "0.1.0"\n  stages: []\n');
+    expect(declaredPipeline(root, REF)?.name).toBe("blender-animation");
+    declare("episode", "pipeline:\n  stages: []\n");
+    expect(refusal().code).toBe("bad-name");
+  });
+
+  it("names a long bad value briefly", () => {
+    declare("series", `pipeline: [${Array.from({ length: 200 }, (_, i) => `stage-${i}`).join(", ")}]\n`);
+    const e = refusal();
+    expect(e.code).toBe("bad-name");
+    expect(e.message.length).toBeLessThan(200);
+  });
+
   it("refuses a name that is not a pipeline id", () => {
     for (const name of ["../x", "Series Production", "42"]) {
       declare("series", `pipeline: ${name}\n`);

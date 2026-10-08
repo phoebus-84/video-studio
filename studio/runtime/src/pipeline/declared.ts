@@ -33,6 +33,12 @@ export class PipelineDeclarationError extends Error {
 
 const PIPELINE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/** A value as an error names it: briefly, since it may be a whole manifest. */
+function brief(value: unknown): string {
+  const text = JSON.stringify(value) ?? String(value);
+  return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+}
+
 export function declaredPipeline(
   libraryRoot: string,
   ref: { channel: string; series: string; episode: string },
@@ -63,10 +69,13 @@ export function declaredPipeline(
     if (typeof doc !== "object" || Array.isArray(doc)) {
       throw new PipelineDeclarationError("bad-declaration", `${file} is not a mapping`, file);
     }
-    const name = (doc as Record<string, unknown>).pipeline;
-    if (name === undefined || name === null) continue;
+    const value = (doc as Record<string, unknown>).pipeline;
+    if (value === undefined || value === null) continue;
+    // A pipeline defined inline under the key is a manifest the loader loads
+    // from the library too: the episode runs it, by its id.
+    const name = typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>).id : value;
     if (typeof name !== "string" || !PIPELINE_ID.test(name)) {
-      throw new PipelineDeclarationError("bad-name", `${file} declares pipeline ${JSON.stringify(name)}, which is not a pipeline id`, file);
+      throw new PipelineDeclarationError("bad-name", `${file} declares pipeline ${brief(name)}, which is not a pipeline id`, file);
     }
     return { name, file };
   }
