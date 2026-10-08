@@ -77,6 +77,37 @@ loops, storm, live bolt, teleport, warp). A look's fonts must be bundled
 families with the faces their role is drawn with (display 400, serif 400
 italic, sans 400 and 600).
 
+The lesson's teaching tools are channel-neutral in the same way, drawn for
+`youtube-1920x1080` with times in seconds from the item's start and every text
+a prop. Narrative tools are layers the compiler places over and under the
+panel; the figure tools and the metre kits draw their own glass panel
+(default box 440/150/1060×596), because their effects work on the picture.
+
+| Kit | Layer | What it draws |
+|---|---|---|
+| `panel@1.1.0` | fill | The glass panel as stacked layers per phase: a picture, 2–4 pictures side by side, a clip, a grid of light, a darkening, a portrait beside a dark grid, a framed picture; each shaded or dimmed |
+| `text-stack@1.0.0` | overlay | A column of texts — big numbers, years, titles, chips, quotes, kickers, notes, rows, spaces — each at its time, room reserved so nothing overlaps |
+| `timeline@1.0.0` | fill | An axis of years whose stops light up (labels on as many lines as they need), or a row of dated stops |
+| `story-fx@1.0.0` | fill | Story effects over the panel: people lighting up, a curving arrow, a badge, a live bolt, a line of light |
+| `word-tracks@1.0.0` | fill | One track per verse, one pill per word, punctuation as light, a reading cursor, the tracks merging into one sentence |
+| `interlinear@1.0.0` | overlay | A translation word under word; struck words crossed out in the signal colour and closed up |
+| `monitor-wall@1.0.0` | fill | A grid of 1–8 glass monitors appearing one after another, a caption on a plate under them |
+| `summary@1.0.0` | fill | One row per picture (thumbnail, keyword, figure), a closing line, a flash lighting them all |
+| `progress@1.0.0` | overlay | Where the lesson is among its pictures, on a plate above the panel |
+| `merge@1.0.0` | fill | Two things fused into one: the dark tears along a line of light, bolts strike, the two words meet in the result |
+| `cards@1.0.0` | fill | A thing given a body: wind, up to three cards (icon, word, meaning), the last jolting the picture, the human words stacked |
+| `stack@1.0.0` | fill | A climax: three words in a row, a staircase of growing weight with its gauge, the picture shattering, smoke, the glass rebuilt dimmed |
+| `oxymoron@1.0.0` | fill | A glow on a point of the picture, calm and agitated halves, the picture lit and darkened, the missing conjunction struck out |
+| `simile@1.0.0` | fill | The frame closing in on an eye whose iris lives, an etymology plate, the bridge with "like", eyelids opening and closing, the frame going dark |
+| `syllables@1.0.0` | fill | A verse's syllables as tiles, arcs over meeting vowels, the rule, the tiles closing up, the count falling to the metric syllables |
+| `rhymes@1.0.0` | fill | The verses' last words with their scheme letters, a rhyming pair joined by an arc, an eye closing |
+
+They draw with `lib/lesson-tools/1.0.0.tsx`: glass chips and tags, titles
+that light up, SVG text with a dark outline, waves, eyelids, the living iris,
+shards, wind, smoke, lines of light, `coverPoint` (where a point of a picture
+lands once framed: the figure tools take the picture's `aspect`), `fitLine`
+(a line fitted with its plate's room) and the figure tools' `PictureSchema`.
+
 ## Adding a kit or a version
 
 A released version never changes: a delivered episode must re-render as it

@@ -103,6 +103,67 @@ describe('validateTimeline', () => {
     assert.deepEqual(problems(doc), [['bad-props', '$.tracks[0].items[0].props.room.sky[0].period']]);
   });
 
+  it('refuses malformed teaching tools at their paths', () => {
+    const doc = clone(fixture('explainer.json'));
+    const item = doc.tracks[0].items[0];
+    const pic = {src: {$asset: 'scene-01-woods'}};
+    const look = clone(DEMO_LOOK);
+    const refused = (name: string, props: Record<string, unknown>, version = '1.0.0') => {
+      item.kit = {name, version};
+      item.props = {look, ...props};
+      return problems(doc);
+    };
+    const at = (path: string) => [['bad-props', `$.tracks[0].items[0].props.${path}`]];
+    assert.deepEqual(refused('panel', {phases: [{at: 0, layers: [{split: {items: [pic]}}]}]}, '1.1.0'), at('phases[0].layers[0].split.items'));
+    assert.deepEqual(refused('text-stack', {x: 0, y: 0, items: [{kind: 'title', text: 'A', at: 0, color: 'red'}]}), at('items[0]'));
+    assert.deepEqual(refused('word-tracks', {lines: ['a b.'], read: [2, 1]}), at('read'));
+    assert.deepEqual(refused('interlinear', {x: 960, y: 300, width: 900, words: [{text: 'Non', gloss: 'not', at: 0, glossAt: 1}], strike: {indices: [1], at: 2}}), at('strike.indices'));
+    assert.deepEqual(refused('monitor-wall', {cells: []}), at('cells'));
+    const row = {...pic, keyword: 'K', figure: 'F', at: 0};
+    assert.deepEqual(refused('summary', {rows: Array.from({length: 9}, () => row)}), at('rows'));
+    const times = {a: 2, b: 1, tear: 3, verb: 4, result: 5, end: 6};
+    const labels = {a: 'A', b: 'B', verb: 'V', result: 'R'};
+    assert.deepEqual(refused('merge', {picture: pic, times, labels}), at('times'));
+    const card = {word: 'W', gloss: 'g', icon: 'bruise', at: 0};
+    assert.deepEqual(refused('cards', {picture: pic, cards: [card, card, card, card], times: {human: 1, end: 2}}), at('cards'));
+    const step = {word: 'W', gloss: 'g'};
+    assert.deepEqual(refused('stack', {picture: pic, steps: [step, step], labels: {weight: 'W'}, times: {w1: 0, w2: 1, w3: 2, stairs: 3, s1: 4, s2: 5, s3: 6, collapse: 7}}), at('steps'));
+    const sylTimes = {sample: 0, vowel: 1, breath: 2, figure: 3, metric: 4};
+    const sylLabels = {counted: 'C', metric: 'M', rule: 'R', ruleResult: 'RR'};
+    assert.deepEqual(refused('syllables', {syllables: ['a', 'b', 'c'], merges: [{a: 0, b: 2, label: 'ac', vowels: 'a', text: 't', at: 1}], metric: 2, times: sylTimes, labels: sylLabels}), at('merges[0].b'));
+    assert.deepEqual(refused('rhymes', {ends: ['a', 'b'], scheme: 'AA', pair: [0, 2], title: 'T', label: 'L', times: {rhymes: 0, a: 1, b: 2, close: 3}}), at('pair'));
+  });
+
+  it('refuses teaching tools whose times or data contradict themselves', () => {
+    const doc = clone(fixture('explainer.json'));
+    const item = doc.tracks[0].items[0];
+    const pic = {src: {$asset: 'scene-01-woods'}};
+    const look = clone(DEMO_LOOK);
+    const refused = (name: string, props: Record<string, unknown>) => {
+      item.kit = {name, version: '1.0.0'};
+      item.props = {look, ...props};
+      return problems(doc);
+    };
+    const at = (path: string) => [['bad-props', `$.tracks[0].items[0].props.${path}`]];
+    assert.deepEqual(refused('text-stack', {x: 0, y: 0, items: [{kind: 'title', text: 'A', at: 2, until: 1}]}), at('items[0].until'));
+    assert.deepEqual(refused('text-stack', {x: 0, y: 0, items: [{kind: 'title', text: 'A', at: 0, color: 'plate'}]}), at('items[0]'));
+    assert.deepEqual(refused('story-fx', {effects: [{lightline: {at: 3, until: 1}}]}), at('effects[0].lightline.until'));
+    assert.deepEqual(refused('interlinear', {x: 960, y: 300, width: 900, words: [{text: 'Non', gloss: 'not', at: 2, glossAt: 1}]}), at('words[0].glossAt'));
+    assert.deepEqual(refused('timeline', {box: {x: 0, y: 0, w: 900, h: 170}, axis: {from: 1860, to: 1900, marks: [{year: 1890, at: 0}, {year: 1870, at: 1}]}}), at('axis'));
+    const labels = {a: 'A', b: 'B', verb: 'V', result: 'R'};
+    assert.deepEqual(refused('merge', {picture: pic, times: {a: 1, b: 2, tear: 0.5, verb: 4, result: 5, end: 6}, labels}), at('times'));
+    const card = {word: 'W', gloss: 'g', icon: 'bruise', at: 3};
+    assert.deepEqual(refused('cards', {picture: pic, cards: [card], times: {human: 4, end: 2}}), at('times'));
+    const simTimes = {subject: 0, etym: 1, like: 3, open: 3.2, close: 4, dark: 5};
+    assert.deepEqual(refused('simile', {picture: pic, eye: {x: 0.5, y: 0.5}, times: simTimes, labels: {like: 'L', open: 'O', close: 'C'}}), at('times'));
+    assert.deepEqual(refused('simile', {picture: pic, eye: {x: 0.5, y: 0.5}, times: {...simTimes, open: 5, close: 6, dark: 7}, labels: {etymOrigin: 'o', like: 'L', open: 'O', close: 'C'}}), at('labels.etymWord'));
+    const syl = (extra: Record<string, unknown>) => ({syllables: ['a', 'b', 'c', 'd'], metric: 3, times: {sample: 0, vowel: 1, breath: 2, figure: 3, metric: 4},
+      labels: {counted: 'C', metric: 'M', rule: 'R', ruleResult: 'RR'}, merges: [{a: 1, b: 2, label: 'bc', vowels: 'b', text: 't', at: 2.5}], ...extra});
+    assert.deepEqual(refused('syllables', syl({metric: 2})), at('metric'));
+    assert.deepEqual(refused('syllables', syl({metric: 2, merges: [{a: 1, b: 2, label: 'x', vowels: 'v', text: 't', at: 2.5}, {a: 2, b: 3, label: 'y', vowels: 'v', text: 't', at: 2.6}]})), at('merges[1].a'));
+    assert.deepEqual(refused('syllables', syl({times: {sample: 2, vowel: 1, breath: 3, figure: 4, metric: 5}})), at('times'));
+  });
+
   it('refuses a 16:9 lesson kit in a 9:16 timeline', () => {
     const doc = clone(fixture('vertical-short.json'));
     doc.tracks[0].items[0].kit = {name: 'chapter-opener', version: '1.0.0'};
@@ -131,22 +192,38 @@ describe('validateTimeline', () => {
       ['brand-mark', '2.0.0', 'overlay'],
       ['captions', '1.0.0', 'fill'],
       ['captions', '1.1.0', 'overlay'],
+      ['cards', '1.0.0', 'fill'],
       ['chapter-opener', '1.0.0', 'fill'],
       ['clip', '1.0.0', 'fill'],
       ['cover', '1.0.0', 'fill'],
       ['figure-title', '1.0.0', 'overlay'],
+      ['interlinear', '1.0.0', 'overlay'],
       ['interprete', '1.0.0', 'fill'],
       ['interprete', '1.1.0', 'fill'],
       ['lower-third', '1.0.0', 'overlay'],
+      ['merge', '1.0.0', 'fill'],
+      ['monitor-wall', '1.0.0', 'fill'],
       ['museum-hall', '1.0.0', 'fill'],
+      ['oxymoron', '1.0.0', 'fill'],
       ['panel', '1.0.0', 'fill'],
+      ['panel', '1.1.0', 'fill'],
+      ['progress', '1.0.0', 'overlay'],
+      ['rhymes', '1.0.0', 'fill'],
       ['room', '1.0.0', 'fill'],
       ['room-effect', '1.0.0', 'fill'],
+      ['simile', '1.0.0', 'fill'],
+      ['stack', '1.0.0', 'fill'],
       ['still', '1.0.0', 'fill'],
+      ['story-fx', '1.0.0', 'fill'],
+      ['summary', '1.0.0', 'fill'],
+      ['syllables', '1.0.0', 'fill'],
+      ['text-stack', '1.0.0', 'overlay'],
+      ['timeline', '1.0.0', 'fill'],
       ['title-chip', '1.0.0', 'overlay'],
       ['verse-bar', '1.0.0', 'overlay'],
       ['verse-plate', '1.0.0', 'overlay'],
       ['warp', '1.0.0', 'fill'],
+      ['word-tracks', '1.0.0', 'fill'],
     ]);
     const captions = listKits(ids).find((k) => k.name === 'captions' && k.version === '1.1.0')!;
     assert.deepEqual(captions.examples, ['bottom', 'top', 'center', 'long', 'overflowing']);

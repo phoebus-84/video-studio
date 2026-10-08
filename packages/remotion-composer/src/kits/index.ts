@@ -24,6 +24,22 @@ import {kit as warp100} from './warp/1.0.0.js';
 import {kit as room100} from './room/1.0.0.js';
 import {kit as panel100} from './panel/1.0.0.js';
 import {kit as interprete110} from './interprete/1.1.0.js';
+import {kit as panel110} from './panel/1.1.0.js';
+import {kit as textStack100} from './text-stack/1.0.0.js';
+import {kit as timeline100} from './timeline/1.0.0.js';
+import {kit as storyFx100} from './story-fx/1.0.0.js';
+import {kit as wordTracks100} from './word-tracks/1.0.0.js';
+import {kit as interlinear100} from './interlinear/1.0.0.js';
+import {kit as monitorWall100} from './monitor-wall/1.0.0.js';
+import {kit as summary100} from './summary/1.0.0.js';
+import {kit as progress100} from './progress/1.0.0.js';
+import {kit as merge100} from './merge/1.0.0.js';
+import {kit as cards100} from './cards/1.0.0.js';
+import {kit as stack100} from './stack/1.0.0.js';
+import {kit as oxymoron100} from './oxymoron/1.0.0.js';
+import {kit as simile100} from './simile/1.0.0.js';
+import {kit as syllables100} from './syllables/1.0.0.js';
+import {kit as rhymes100} from './rhymes/1.0.0.js';
 
 export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 
@@ -32,6 +48,8 @@ export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([
   still100, clip100, captions100, captions110,
   brandMark100, lowerThird100, titleChip100, versePlate100, museumHall100, interprete100, roomEffect100,
   brandMark200, blockTitle100, figureTitle100, verseBar100, cover100, chapterOpener100, warp100, room100, panel100, interprete110,
+  panel110, textStack100, timeline100, storyFx100, wordTracks100, interlinear100, monitorWall100, summary100, progress100,
+  merge100, cards100, stack100, oxymoron100, simile100, syllables100, rhymes100,
 ]);
 
 const key = (name: string, version: string) => `${name}@${version}`;

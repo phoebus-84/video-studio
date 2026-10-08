@@ -24,10 +24,12 @@ test("the contract allows exactly the font families the composer bundles", () =>
   assert.deepEqual(Object.keys(BUNDLED_FONTS).sort(), [...BUNDLED_FAMILIES].sort());
 });
 
-test("the neutral kits are the lesson stage's ten", () => {
+test("the neutral kits are the lesson stage's ten and the teaching tools' sixteen", () => {
   assert.deepEqual(neutral.map((k) => `${k.name}@${k.version}`).sort(), [
-    "block-title@1.0.0", "brand-mark@2.0.0", "chapter-opener@1.0.0", "cover@1.0.0", "figure-title@1.0.0",
-    "interprete@1.1.0", "panel@1.0.0", "room@1.0.0", "verse-bar@1.0.0", "warp@1.0.0",
+    "block-title@1.0.0", "brand-mark@2.0.0", "cards@1.0.0", "chapter-opener@1.0.0", "cover@1.0.0", "figure-title@1.0.0",
+    "interlinear@1.0.0", "interprete@1.1.0", "merge@1.0.0", "monitor-wall@1.0.0", "oxymoron@1.0.0", "panel@1.0.0", "panel@1.1.0",
+    "progress@1.0.0", "rhymes@1.0.0", "room@1.0.0", "simile@1.0.0", "stack@1.0.0", "story-fx@1.0.0", "summary@1.0.0",
+    "syllables@1.0.0", "text-stack@1.0.0", "timeline@1.0.0", "verse-bar@1.0.0", "warp@1.0.0", "word-tracks@1.0.0",
   ]);
 });
 
