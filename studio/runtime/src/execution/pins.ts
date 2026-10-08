@@ -235,7 +235,10 @@ export async function renewPin(
   } catch (e) {
     return { ok: false, refusal: { code: "invalid-pin", message: `${sourceLabel(pin.source)} cannot be inventoried: ${message(e)}` } };
   }
-  const affected = changed.length > 0 ? affectedBy(pipeline, pin.usedBy, ref) : [];
+  // Nothing to accept: rewriting the pin would only move pinnedAt, and a moved
+  // pin reads as a changed input to everything compiled from it (avg-d5h).
+  if (changed.length === 0) return { ok: true, changed, affected: [] };
+  const affected = affectedBy(pipeline, pin.usedBy, ref);
   if (affected.length > 0) {
     // Journal first: if the record cannot land, the pin keeps its old inventory and the
     // change stays visible. The reverse order could accept a change nobody is told to redo.

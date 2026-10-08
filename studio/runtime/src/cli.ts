@@ -470,7 +470,7 @@ async function cmdPin(ctx: CliContext, args: string[]): Promise<number> {
   }
   emit(ctx, {
     message: out.value.changed.length === 0
-      ? `Pin "${id}" renewed: its source had not changed`
+      ? `Pin "${id}" is current: its source has not changed, so nothing was renewed`
       : `Pin "${id}" renewed: ${out.value.changed.length} change(s); stale until they run again: ${out.value.affected.join(", ")}`,
     changed: out.value.changed, affected: out.value.affected,
   });

@@ -187,11 +187,37 @@ async function generateImage(
 
 // ── TTS synthesis ──────────────────────────────────────────────────────────
 
-async function synthesizeSpeech(text: string, voice: string, speed: number, instruct?: string): Promise<{ audioPath: string; durationSec: number }> {
+/** The Qwen3-TTS CustomVoice speakers the worker's model knows, and its aliases (avg-vzb). */
+export const QWEN_SPEAKERS = ["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"] as const;
+export const QWEN_SPEAKER_ALIASES = ["default", "narrator", "girl", "grandmother", "wolf", "woodcutter"] as const;
+/** The languages the worker's /synthesize accepts. */
+export const QWEN_LANGUAGES = [
+  "auto", "chinese", "english", "german", "italian", "portuguese", "spanish", "japanese", "korean", "french", "russian",
+  "beijing_dialect", "sichuan_dialect",
+] as const;
+
+/** What the worker answered for one synthesis: kept beside the WAV as its receipt. */
+interface WorkerSynthesis {
+  job_id: string;
+  wav_path: string;
+  duration_sec: number;
+  text_hash?: string;
+  provider_mode?: string;
+  actual_speaker?: string | null;
+  model_path?: string | null;
+  model_identity_sha256?: string | null;
+  created_at?: string;
+  completed_at?: string | null;
+}
+
+async function synthesizeSpeech(
+  text: string, voice: string, speed: number, instruct?: string, language?: string,
+): Promise<{ audioPath: string; durationSec: number; result: WorkerSynthesis }> {
   const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
 
   const reqBody: Record<string, unknown> = { text, voice, speed };
   if (instruct) reqBody.instruct = instruct;
+  if (language) reqBody.language = language;
 
   const res = await fetch(`${ttsUrl}/synthesize`, {
     method: "POST",
@@ -201,12 +227,14 @@ async function synthesizeSpeech(text: string, voice: string, speed: number, inst
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any;
-    throw new Error(`TTS error: ${res.status} ${err?.detail ?? res.statusText}`);
+    throw new Error(`TTS error: ${res.status} ${typeof err?.detail === "string" ? err.detail : JSON.stringify(err?.detail ?? res.statusText)}`);
   }
 
-  const body = await res.json() as { ok: boolean; result?: { wav_path: string; duration_sec: number; wav_size_bytes: number; job_id: string } };
-  if (!body.ok || !body.result) throw new Error(`TTS synthesis failed: ${JSON.stringify(body)}`);
-  return { audioPath: body.result.wav_path, durationSec: body.result.duration_sec };
+  const body = await res.json() as { ok: boolean; result?: WorkerSynthesis & { error?: string | null } };
+  if (!body.ok || !body.result?.wav_path) {
+    throw new Error(`TTS synthesis failed: ${body.result?.error ?? JSON.stringify(body)}`);
+  }
+  return { audioPath: body.result.wav_path, durationSec: body.result.duration_sec, result: body.result };
 }
 
 // ── Narration ──────────────────────────────────────────────────────────────
@@ -737,13 +765,23 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       episode: Type.String({ description: "Episode slug" }),
       sceneId: Type.String({ description: "Scene ID (e.g. n1, n2)" }),
       text: Type.String({ description: "Text to synthesize as speech" }),
-      voice: Type.Optional(Type.String({ default: "default", description: "Voice name (e.g. 'default', 'af_heart')" })),
-      speed: Type.Optional(Type.Number({ default: 1.0 })),
+      voice: Type.Optional(Type.String({
+        default: "default",
+        description: `Qwen CustomVoice speaker: ${QWEN_SPEAKERS.join(", ")}; or an alias: ${QWEN_SPEAKER_ALIASES.join(", ")}`,
+      })),
+      language: Type.Optional(StringEnum([...QWEN_LANGUAGES], {
+        description: "Language of the text. 'auto' lets the model guess; name it for anything not English (e.g. 'italian')",
+      })),
+      speed: Type.Optional(Type.Number({ default: 1.0, description: "Must be 1.0: Qwen does not change speed" })),
       instruct: Type.Optional(Type.String({ description: "Emotion/character instruction. Use for multi-character scenes: 'Speak with a sly, cunning voice like a wolf', 'Speak warmly like a grandmother', 'Speak with a young innocent girl voice'" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
-        const result = await synthesizeSpeech(params.text, params.voice ?? "default", params.speed ?? 1.0, (params as any).instruct);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(params.sceneId)) {
+          throw new Error("sceneId must contain only letters, numbers, underscores, and hyphens");
+        }
+        const voice = params.voice ?? "default";
+        const result = await synthesizeSpeech(params.text, voice, params.speed ?? 1.0, params.instruct, params.language);
 
         // Copy audio to episode artifacts/narration/
         const dir = episodeDir(params.channel, params.series, params.episode);
@@ -752,10 +790,34 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         const destPath = join(narrationDir, `${params.sceneId}.wav`);
         const { copyFileSync } = await import("node:fs");
         copyFileSync(result.audioPath, destPath);
+        // The receipt: which job, model and speaker made this WAV, beside it (avg-vzb).
+        const r = result.result;
+        const receipt = {
+          provider: "qwen-local",
+          jobId: r.job_id,
+          model: r.model_path ? r.model_path.split("/").pop() : null,
+          modelIdentitySha256: r.model_identity_sha256 ?? null,
+          providerMode: r.provider_mode ?? null,
+          requestedVoice: voice,
+          speaker: r.actual_speaker ?? null,
+          language: params.language ?? "auto",
+          ...(params.instruct ? { instruct: params.instruct } : {}),
+          text: params.text,
+          textHash: r.text_hash ?? null,
+          wav: `artifacts/narration/${params.sceneId}.wav`,
+          wavSha256: createHash("sha256").update(readFileSync(destPath)).digest("hex"),
+          durationSeconds: result.durationSec,
+          createdAt: r.completed_at ?? r.created_at ?? new Date().toISOString(),
+        };
+        const receiptPath = join(narrationDir, `${params.sceneId}.synthesis.json`);
+        writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 
         return {
-          content: [{ type: "text" as const, text: `✅ ${params.sceneId} — ${result.durationSec.toFixed(1)}s → ${destPath}` }],
-          details: { audioPath: destPath, durationSec: result.durationSec },
+          content: [{
+            type: "text" as const,
+            text: `✅ ${params.sceneId} — ${result.durationSec.toFixed(1)}s, ${receipt.speaker ?? voice} (${receipt.language}) → ${destPath}; receipt ${receiptPath}`,
+          }],
+          details: { audioPath: destPath, durationSec: result.durationSec, receiptPath, receipt },
         };
       } catch (err) {
         return {
@@ -1561,47 +1623,36 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "pva_capability_status",
     label: "Capability Status",
-    description: "Check which media production capabilities are available and their status.",
-    parameters: Type.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+    description:
+      "Check which media production capabilities are available and their status. Pass channel and series to " +
+      "learn the image route that series resolves (fal.ai or openai-codex) and whether it is ready.",
+    parameters: Type.Object({
+      channel: Type.Optional(Type.String({ description: "Channel slug, with series: report that series' image route" })),
+      series: Type.Optional(Type.String({ description: "Series slug, with channel" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const caps: Record<string, { available: boolean; detail: string }> = {};
+      const { imageGenerationStatus, voiceWorkerStatus } = await import("./capability-status.js");
 
-      // Generated media. Image generation may also be supplied by the
-      // openai-codex login; H3 video generation specifically requires fal.ai.
+      // Generated media: the route the series resolves, each with its own readiness (avg-twq).
+      // H3 video generation specifically requires fal.ai.
+      let falConfigured = false;
       try {
-        if ((await resolveConfig()).falKeyRef) {
-          caps["image-generation"] = { available: true, detail: "fal.ai configured; openai-codex selectable per series" };
-          caps["video-generation"] = { available: true, detail: "fal.ai MiniMax H3 configured" };
-        } else {
-          caps["image-generation"] = { available: false, detail: "FAL_KEY not set (openai-codex may still be available in Pi)" };
-          caps["video-generation"] = { available: false, detail: "FAL_KEY not set" };
-        }
-      } catch {
-        caps["image-generation"] = { available: false, detail: "generated-media clients unavailable" };
-        caps["video-generation"] = { available: false, detail: "fal client unavailable" };
-      }
+        falConfigured = Boolean((await resolveConfig()).falKeyRef);
+      } catch { /* generated-media clients unavailable: fal reads as not configured */ }
+      const registry = (ctx as { modelRegistry?: { getApiKeyForProvider(p: string): Promise<string | undefined> } } | undefined)?.modelRegistry;
+      caps["image-generation"] = await imageGenerationStatus({
+        libraryRoot: LIBRARY_ROOT,
+        ...(params.channel && params.series ? { series: { channel: params.channel, series: params.series } } : {}),
+        falConfigured,
+        codexLoggedIn: async () => Boolean(registry && await registry.getApiKeyForProvider(CODEX_PROVIDER)),
+      }).catch((e: unknown) => ({ available: false, detail: e instanceof Error ? e.message : String(e) }));
+      caps["video-generation"] = falConfigured
+        ? { available: true, detail: "fal.ai MiniMax H3 configured" }
+        : { available: false, detail: "FAL_KEY not set" };
 
-      // TTS
-      try {
-        const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
-        const res = await fetch(`${ttsUrl}/health`);
-        const health = await res.json() as any;
-        caps["text-to-speech"] = {
-          available: health?.service === "healthy",
-          detail: health?.dependencies?.find((d: any) => d.name === "mlx-audio")?.detail || "TTS worker reachable",
-        };
-      } catch {
-        caps["text-to-speech"] = { available: false, detail: "TTS worker not reachable" };
-      }
-
-      // speech.align (avg-8hs.2): the worker's aligner, and ElevenLabs when its key is set
-      try {
-        const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
-        const aligner = await (await fetch(`${ttsUrl}/align`)).json() as { model?: string; loaded?: boolean };
-        caps["speech-align-local"] = { available: true, detail: `${aligner.model ?? "aligner"}${aligner.loaded ? " (loaded)" : " (loads on first use)"}` };
-      } catch {
-        caps["speech-align-local"] = { available: false, detail: "voice worker not reachable" };
-      }
+      // The voice worker: speech only with a CustomVoice model installed, alignment only with /align (avg-twq, avg-07q).
+      Object.assign(caps, await voiceWorkerStatus(process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL));
       caps["speech-align-elevenlabs"] = process.env.ELEVENLABS_API_KEY
         ? { available: true, detail: "ELEVENLABS_API_KEY set" }
         : { available: false, detail: "ELEVENLABS_API_KEY not set" };
