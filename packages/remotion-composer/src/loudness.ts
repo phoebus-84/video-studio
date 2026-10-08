@@ -33,23 +33,47 @@ function report(stderr: string): Record<string, string> {
   return JSON.parse(stderr.slice(start, end + 1)) as Record<string, string>;
 }
 
+/**
+ * Headroom left under the true-peak ceiling for the AAC encode, which adds
+ * inter-sample peaks: aimed exactly at −1 dBTP, a long lesson came out at
+ * −0.53 and failed its audit.
+ */
+export const ENCODE_HEADROOM = 1;
+
+/** Integrated loudness and true peak of a file's sound, as loudnorm measures them (the audit's measure). */
+async function measure(ffmpeg: string, file: string, base: string): Promise<{i: number; tp: number}> {
+  const r = report(await run(ffmpeg, ['-hide_banner', '-i', file, '-vn', '-af', `loudnorm=${base}:print_format=json`, '-f', 'null', '-']));
+  return {i: Number(r.input_i), tp: Number(r.input_tp)};
+}
+
 export async function normalizeLoudness(
   input: string, output: string, target: LoudnessTarget, ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg',
 ): Promise<LoudnessResult> {
   const base = `I=${target.integrated}:TP=${target.truePeak}:LRA=${target.range}`;
   const measured = report(await run(ffmpeg, ['-hide_banner', '-i', input, '-af', `loudnorm=${base}:print_format=json`, '-f', 'null', '-']));
-  const second = [
-    `loudnorm=${base}`,
-    `measured_I=${measured.input_i}`,
-    `measured_TP=${measured.input_tp}`,
-    `measured_LRA=${measured.input_lra}`,
-    `measured_thresh=${measured.input_thresh}`,
-    `offset=${measured.target_offset}`,
-    'linear=true',
-    'print_format=json',
-  ].join(':');
-  const applied = report(await run(ffmpeg, [
-    '-hide_banner', '-y', '-i', input, '-c:v', 'copy', '-af', second, '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', output,
-  ]));
-  return {inputI: Number(measured.input_i), outputI: Number(applied.output_i), truePeak: Number(applied.output_tp)};
+  const encode = async (truePeak: number) => {
+    const second = [
+      `loudnorm=I=${target.integrated}:TP=${truePeak}:LRA=${target.range}`,
+      `measured_I=${measured.input_i}`,
+      `measured_TP=${measured.input_tp}`,
+      `measured_LRA=${measured.input_lra}`,
+      `measured_thresh=${measured.input_thresh}`,
+      `offset=${measured.target_offset}`,
+      'linear=true',
+      'print_format=json',
+    ].join(':');
+    report(await run(ffmpeg, [
+      '-hide_banner', '-y', '-i', input, '-c:v', 'copy', '-af', second, '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', output,
+    ]));
+    // What the file holds, after the encode: the audit's measure, not the filter's.
+    return measure(ffmpeg, output, base);
+  };
+  let aim = target.truePeak - ENCODE_HEADROOM;
+  let encoded = await encode(aim);
+  // Still over the ceiling: once more, lower by what the encode added.
+  if (encoded.tp > target.truePeak) {
+    aim = Math.max(-9, aim - (encoded.tp - target.truePeak) - 0.2);
+    encoded = await encode(aim);
+  }
+  return {inputI: Number(measured.input_i), outputI: encoded.i, truePeak: encoded.tp};
 }
