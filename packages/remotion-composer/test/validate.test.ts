@@ -128,6 +128,10 @@ describe('validateTimeline', () => {
     assert.deepEqual(refused('cards', {picture: pic, cards: [card, card, card, card], times: {human: 1, end: 2}}), at('cards'));
     const step = {word: 'W', gloss: 'g'};
     assert.deepEqual(refused('stack', {picture: pic, steps: [step, step], labels: {weight: 'W'}, times: {w1: 0, w2: 1, w3: 2, stairs: 3, s1: 4, s2: 5, s3: 6, collapse: 7}}), at('steps'));
+    const sylTimes = {sample: 0, vowel: 1, breath: 2, figure: 3, metric: 4};
+    const sylLabels = {counted: 'C', metric: 'M', rule: 'R', ruleResult: 'RR'};
+    assert.deepEqual(refused('syllables', {syllables: ['a', 'b', 'c'], merges: [{a: 0, b: 2, label: 'ac', vowels: 'a', text: 't', at: 1}], metric: 2, times: sylTimes, labels: sylLabels}), at('merges[0].b'));
+    assert.deepEqual(refused('rhymes', {ends: ['a', 'b'], scheme: 'AA', pair: [0, 2], title: 'T', label: 'L', times: {rhymes: 0, a: 1, b: 2, close: 3}}), at('pair'));
   });
 
   it('refuses a 16:9 lesson kit in a 9:16 timeline', () => {
@@ -174,6 +178,7 @@ describe('validateTimeline', () => {
       ['panel', '1.0.0', 'fill'],
       ['panel', '1.1.0', 'fill'],
       ['progress', '1.0.0', 'overlay'],
+      ['rhymes', '1.0.0', 'fill'],
       ['room', '1.0.0', 'fill'],
       ['room-effect', '1.0.0', 'fill'],
       ['simile', '1.0.0', 'fill'],
@@ -181,6 +186,7 @@ describe('validateTimeline', () => {
       ['still', '1.0.0', 'fill'],
       ['story-fx', '1.0.0', 'fill'],
       ['summary', '1.0.0', 'fill'],
+      ['syllables', '1.0.0', 'fill'],
       ['text-stack', '1.0.0', 'overlay'],
       ['timeline', '1.0.0', 'fill'],
       ['title-chip', '1.0.0', 'overlay'],
