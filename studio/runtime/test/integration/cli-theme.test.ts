@@ -62,6 +62,13 @@ describe("vpr theme seal, then vpr template release", () => {
     expect(existsSync(releaseDir("1.1.0"))).toBe(false);
   });
 
+  it("--compiler names the new release's compiler; given without a value it is a usage error", () => {
+    const released = vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.2.0", "--from", "1.0.0", "--compiler", "1.1.0"]);
+    expect(released.status, released.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(releaseDir("1.2.0"), "series-template.json"), "utf-8")).compiler.version).toBe("1.1.0");
+    expect(vpr(["template", "release", "dentro-i-versi/long", "dentro-i-versi-long", "1.3.0", "--from", "1.0.0", "--compiler"]).status).toBe(1);
+  });
+
   it("a dry run reports what the real command would refuse", () => {
     const pinned = vpr(["theme", "seal", "dentro-i-versi/dentro-i-versi/1.0.0", "--dry-run"]);
     expect(pinned.status).toBe(2);
