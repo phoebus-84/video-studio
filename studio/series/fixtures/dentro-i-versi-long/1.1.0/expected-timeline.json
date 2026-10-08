@@ -690,7 +690,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -795,7 +801,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -1019,7 +1031,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -1158,7 +1176,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -1210,7 +1234,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           },
           "transitionOut": {
             "type": "fade",
@@ -1271,7 +1301,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -1330,6 +1366,12 @@
               "verb": "SI MOSTRÒ",
               "result": "UNA SOLA VISIONE",
               "verbSub": "VERBO SINGOLARE, DUE SOGGETTI"
+            },
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
             }
           }
         },
@@ -1407,6 +1449,12 @@
             "times": {
               "human": 10.471,
               "end": 16.011
+            },
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
             }
           }
         },
@@ -1486,6 +1534,12 @@
               "s2": 11.167,
               "s3": 12.271,
               "collapse": 18.892
+            },
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
             }
           }
         },
@@ -1554,6 +1608,12 @@
               "off": "SPARÌ",
               "conj": "e",
               "noConj": "NESSUNA CONGIUNZIONE"
+            },
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
             }
           }
         },
@@ -1621,6 +1681,12 @@
             },
             "bridgeImage": {
               "$asset": "image-lampo-casa-crop"
+            },
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
             }
           }
         },
@@ -1707,6 +1773,12 @@
               "rule": "finisce per vocale  +  comincia per vocale",
               "ruleResult": "→ un solo fiato, una sillaba sola",
               "figure": "SINALEFE"
+            },
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
             }
           },
           "transitionOut": {
@@ -1771,6 +1843,12 @@
               "a": 0.364,
               "b": 3.278,
               "close": 6.556
+            },
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
             }
           },
           "transitionIn": {
@@ -1957,7 +2035,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -2150,7 +2234,13 @@
                   }
                 }
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -2277,7 +2367,13 @@
               2.66
             ],
             "point": 3.06,
-            "merge": 5.986
+            "merge": 5.986,
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           },
           "transitionOut": {
             "type": "fade",
@@ -2341,7 +2437,13 @@
                   ]
                 }
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -2393,7 +2495,13 @@
                   ]
                 }
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         }
       ]
@@ -2454,7 +2562,13 @@
                   ]
                 }
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -2501,7 +2615,13 @@
                   "y": 290
                 }
               }
-            ]
+            ],
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         }
       ]
@@ -15645,7 +15765,13 @@
               }
             ],
             "current": 0,
-            "done": 0
+            "done": 0,
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -15702,7 +15828,13 @@
               }
             ],
             "current": 1,
-            "done": 1
+            "done": 1,
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -15759,7 +15891,13 @@
               }
             ],
             "current": 2,
-            "done": 2
+            "done": 2,
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -15816,7 +15954,13 @@
               }
             ],
             "current": 3,
-            "done": 3
+            "done": 3,
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -15873,7 +16017,13 @@
               }
             ],
             "current": 4,
-            "done": 4
+            "done": 4,
+            "box": {
+              "x": 440,
+              "y": 150,
+              "w": 1060,
+              "h": 596
+            }
           }
         },
         {
@@ -17236,7 +17386,7 @@
             "kicker": "IL LAMPO",
             "text": "RIVELAZIONE",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17286,7 +17436,7 @@
             "kicker": "IL LAMPO",
             "text": "PERSONIFICAZIONE",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17336,7 +17486,7 @@
             "kicker": "IL LAMPO",
             "text": "CLIMAX",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17386,7 +17536,7 @@
             "kicker": "IL LAMPO",
             "text": "OSSIMORO",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17436,7 +17586,7 @@
             "kicker": "IL LAMPO",
             "text": "OSSIMORO",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17486,7 +17636,7 @@
             "kicker": "IL LAMPO",
             "text": "SIMILITUDINE",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17536,7 +17686,7 @@
             "kicker": "IL LAMPO",
             "text": "SIMILITUDINE",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17703,7 +17853,7 @@
             "kicker": "PAROLA CHIAVE",
             "text": "RIVELAZIONE",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17753,7 +17903,7 @@
             "kicker": "FIGURA RETORICA",
             "text": "PERSONIFICAZIONE",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17803,7 +17953,7 @@
             "kicker": "FIGURA RETORICA",
             "text": "CLIMAX",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17853,7 +18003,7 @@
             "kicker": "FIGURA RETORICA",
             "text": "OSSIMORO",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",
@@ -17903,7 +18053,7 @@
             "kicker": "FIGURA RETORICA",
             "text": "SIMILITUDINE",
             "x": 970,
-            "y": 636
+            "y": 546
           },
           "transitionIn": {
             "type": "fade",

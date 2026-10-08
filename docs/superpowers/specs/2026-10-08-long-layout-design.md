@@ -47,6 +47,23 @@ The sheet showed four faults. Each comes from one decision of compiler 1.0.0.
 9. **A draft moves too** (a fix to `upgradeEpisodeSpec`, found by Pi's move of the short Il lampo, whose sounds are still `__FILL__`). A schema error on a value that is itself unfilled (an id's pattern refusing `__FILL__`) no longer stops the move.
 10. **The golden.** `fixtures/dentro-i-versi-long/1.1.0/`: the release, pinned to compiler 1.1.0 and the fixture theme; `input.json`, 1.0.0's with the corrected data; and its `expected-timeline.json`.
 
+## Settled by the review (2026-10-08)
+
+- **The glass moves with the theme's panel, not only the text.** Every kit drawn on the panel's glass is given the box:
+  - the panel itself, word tracks, progress and story effects;
+  - the figure tools: merge, cards, stack, oxymoron, simile;
+  - syllables and rhymes.
+- **A title's plate ends on the glass.**
+  - `figure-title`'s `y` is its plate's top, and the plate is about 180 px tall. So titles sit at `panel.y + panel.h − 200`, ending on the glass, above the verse bar (top at y 790).
+  - At `−110` the plate hung 70 px below the glass, over the verse bar's kicker.
+- **More writing is held to the glass:**
+  - the quote's interlinear (placed by the spec, centred);
+  - the announcement's title (placed by the compiler, 900 wide: a narrower theme panel reports it).
+- **A stack is held by the edge it is placed by.** `y` is its top, or its bottom with `bottom: true`. A stack with no finite `x` or `y` is off the glass.
+- **A draft whose union value is unfilled moves too.**
+  - When a block's `kind` or a cue is `__FILL__`, the union fails at the object holding it, and the schema reports every branch's complaints about that object. All of it is excused, because the placeholder caused it.
+  - An object with no placeholder keeps its errors: a missing required field elsewhere still stops the move.
+
 ## Testing
 
 - **Compiler (series):**

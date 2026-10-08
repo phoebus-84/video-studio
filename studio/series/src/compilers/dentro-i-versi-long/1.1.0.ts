@@ -42,8 +42,14 @@ const END = 14;
 const GUIDE = { x: 1650, scale: 0.95 };
 /** The panel's box when the theme says none (1.0.0's). */
 const DEFAULT_PANEL = { x: 440, y: 150, w: 1060, h: 596 };
-/** Where titles sit on the panel: its lower band, clear of a painting's subject. */
-const TITLE_BAND = 110;
+/**
+ * Where titles sit on the panel: its lower band, clear of a painting's
+ * subject — the plate's top this far above the glass's bottom, so its ~180 px
+ * (kicker, title, padding) end on the glass, above the verse bar.
+ */
+const TITLE_BAND = 200;
+/** The kits drawn on the panel's glass: each is given its box, the theme's. */
+const ON_PANEL = new Set(["panel", "word-tracks", "progress", "merge", "cards", "stack", "oxymoron", "simile", "syllables", "rhymes", "story-fx"]);
 /** The verse bar between the block's title (bottom left) and the guide (right). */
 const VERSE_WIDTH = 760;
 
@@ -129,16 +135,20 @@ function compile(input: CompileInput): CompileResult {
   const look = theme.look;
   const PANEL: { x: number; y: number; w: number; h: number } = theme.layout.panel ?? DEFAULT_PANEL;
   /** Writing stays on the glass: a text stack the spec places must fit the panel (CreativeStudio: every writing inside its monitor). */
-  const onGlass = (stack: Record<string, unknown>, path: string) => {
+  // A stack's y is its top, or its bottom when it says `bottom: true`; its
+  // height is not known here, so the edge it is placed by must be on the glass.
+  const onGlass = (stack: Record<string, unknown>, path: string, defaults: { width?: number; align?: string } = {}) => {
     const x = stack.x as number;
     const y = stack.y as number;
-    const width = (stack.width as number | undefined) ?? 900;
-    const align = (stack.align as string | undefined) ?? "left";
+    const width = (stack.width as number | undefined) ?? defaults.width ?? 900;
+    const align = (stack.align as string | undefined) ?? defaults.align ?? "left";
     const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
-    if (left < PANEL.x || left + width > PANEL.x + PANEL.w || y < PANEL.y || y > PANEL.y + PANEL.h) {
+    const fits = Number.isFinite(left) && Number.isFinite(y)
+      && left >= PANEL.x && left + width <= PANEL.x + PANEL.w && y >= PANEL.y && y <= PANEL.y + PANEL.h;
+    if (!fits) {
       problems.push({
         code: "text-off-panel", path,
-        message: `the text spans x ${round3(left)}–${round3(left + width)} at y ${y}, off the panel (x ${PANEL.x}–${PANEL.x + PANEL.w}, y ${PANEL.y}–${PANEL.y + PANEL.h}): move or narrow it onto the glass`,
+        message: `the text spans x ${round3(left)}–${round3(left + width)} with its ${stack.bottom === true ? "bottom" : "top"} at y ${y}, off the panel (x ${PANEL.x}–${PANEL.x + PANEL.w}, y ${PANEL.y}–${PANEL.y + PANEL.h}): move or narrow it onto the glass`,
       });
     }
   };
@@ -481,9 +491,11 @@ function compile(input: CompileInput): CompileResult {
       case "announcement": {
         const pic = (b.picture as Picture | undefined) ? framed(b.picture as Picture, `${path}.picture.asset`) : painting(0, `${path}.picture`);
         if (pic) items.stage.push({ id: `panel-${b.id}`, ...whole, kit: KIT("panel", "1.1.0"), source: src, props: { look, appear: { at: 0, dur: 0.8 }, phases: [{ at: 0, layers: [{ picture: pic, shade: 0.35 }] }] } });
+        const announced = { x: PANEL.x + PANEL.w / 2, y: PANEL.y + 170, width: 900, align: "center" };
+        onGlass(announced, path);
         items.overlay.push({
           id: `title-${b.id}`, ...span(p.start + 0.5, to), kit: KIT("text-stack"), source: src, transitionOut: fade(0.4),
-          props: { look, x: PANEL.x + PANEL.w / 2, y: PANEL.y + 170, width: 900, align: "center", items: [{ kind: "kicker", text: (data.kicker ?? data.author).toUpperCase(), at: 0 }, { kind: "big", text: data.title.toUpperCase(), at: 0.2 }] },
+          props: { look, ...announced, items: [{ kind: "kicker", text: (data.kicker ?? data.author).toUpperCase(), at: 0 }, { kind: "big", text: data.title.toUpperCase(), at: 0.2 }] },
         });
         break;
       }
@@ -548,6 +560,7 @@ function compile(input: CompileInput): CompileResult {
           if (pic) items.stage.push({ id: `quote-${b.id}`, ...span(p.start + quoteAt, to), kit: KIT("panel", "1.1.0"), source: `${src}.quote`, props: { look, appear: { at: 0, dur: 0.8 }, phases: [{ at: 0, layers: [{ picture: pic, shade: "quote" }] }] } });
           // the interlinear's times are from the quote's start
           const lin = resolve(p, quote.interlinear, `${path}.quote.interlinear`) as Record<string, unknown>;
+          onGlass(lin, `${path}.quote.interlinear`, { align: "center" });
           const rebase = rebaseBy(quoteAt);
           items.overlay.push({ id: `interlinear-${b.id}`, ...span(p.start + quoteAt, to), kit: KIT("interlinear"), source: `${src}.quote.interlinear`, props: { look, ...(rebase(lin) as object) }, transitionIn: fade(0.4) });
           if (quote.title) {
@@ -644,6 +657,10 @@ function compile(input: CompileInput): CompileResult {
   // ── Tracks ────────────────────────────────────────────────────────────────
   const tracks: Record<string, unknown>[] = [];
   let z = 0;
+  // the glass is where the theme puts its panel, and every kit drawn on it with it
+  for (const list of Object.values(items)) {
+    for (const item of list) if (ON_PANEL.has(item.kit.name) && item.props.box === undefined) item.props.box = PANEL;
+  }
   const visual = (name: string, list: Item[], base: number) => lanes(list).forEach((laneItems, i) => tracks.push({ id: `${name}-${i + 1}`, type: "visual", z: base + i, items: laneItems }));
   visual("room", items.room, z);
   visual("stage", items.stage, (z += 10));

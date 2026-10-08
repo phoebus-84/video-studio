@@ -54,16 +54,57 @@ test("the panel is the theme's: a theme's own layout.panel moves it, and the tex
   input.theme.layout.panel = { x: 420, y: 140, w: 1100, h: 620 };
   const r = compiled(input);
   const headline = items(r).find((i) => i.id.startsWith("headline-"));
-  assert.deepEqual([headline.props.x, headline.props.y], [420 + 1100 / 2, 140 + 620 - 110]);
+  assert.deepEqual([headline.props.x, headline.props.y], [420 + 1100 / 2, 140 + 620 - 200]);
   input.theme.layout.panel = { x: 440, y: 150, w: 700, h: 596 };
   assert.ok(problems(compileSpec(input)).every(([code]) => code === "text-off-panel"));
+});
+
+test("the glass itself moves with the theme's panel: every kit drawn on it gets the box", () => {
+  const input = load();
+  const box = { x: 420, y: 140, w: 1100, h: 620 };
+  input.theme.layout.panel = box;
+  const onPanel = new Set(["panel", "word-tracks", "progress", "merge", "cards", "stack", "oxymoron", "simile", "syllables", "rhymes", "story-fx"]);
+  const drawn = items(compiled(input)).filter((i) => onPanel.has(i.kit?.name));
+  assert.ok(drawn.length > 20);
+  for (const i of drawn) assert.deepEqual(i.props.box, box, i.id);
+});
+
+test("a title's plate ends on the glass, above the verse bar", () => {
+  const titles = items(compiled(load())).filter((i) => i.kit?.name === "figure-title");
+  // figure-title's y is its plate's top; the plate is about 180 px tall (kicker, gap, 96 px title, padding)
+  for (const t of titles) assert.ok(t.props.y + 180 <= PANEL.y + PANEL.h, `${t.id} at y ${t.props.y}`);
+});
+
+test("the quote's interlinear and the announcement's title are writing too, held to the glass", () => {
+  const input = load();
+  const note = input.spec.data.blocks.findIndex((b: any) => b.kind === "note");
+  input.spec.data.blocks[note].quote.interlinear.x = 1500;
+  assert.deepEqual(problems(compileSpec(input)), [["text-off-panel", `$.data.blocks[${note}].quote.interlinear`]]);
+  const narrow = load();
+  narrow.theme.layout.panel = { x: 440, y: 150, w: 700, h: 596 };
+  const announcement = narrow.spec.data.blocks.findIndex((b: any) => b.kind === "announcement");
+  assert.ok(problems(compileSpec(narrow)).some(([code, path]) => code === "text-off-panel" && path === `$.data.blocks[${announcement}]`));
+});
+
+test("a stack measured from the bottom is held by its bottom; a stack with no place is off the glass", () => {
+  const input = load();
+  const story = input.spec.data.blocks.findIndex((b: any) => b.kind === "story");
+  const stack = input.spec.data.blocks[story].phases[0].texts[0];
+  stack.bottom = true;
+  stack.y = 140;
+  assert.deepEqual(problems(compileSpec(input)), [["text-off-panel", `$.data.blocks[${story}].phases[0].texts[0]`]]);
+  stack.y = 700;
+  assert.ok(compileSpec(input).ok);
+  delete stack.bottom;
+  delete stack.x;
+  assert.deepEqual(problems(compileSpec(input)), [["text-off-panel", `$.data.blocks[${story}].phases[0].texts[0]`]]);
 });
 
 test("without a theme panel, 1.0.0's box", () => {
   const input = load();
   delete input.theme.layout.panel;
   const headline = items(compiled(input)).find((i) => i.id.startsWith("headline-"));
-  assert.deepEqual([headline.props.x, headline.props.y], [PANEL.x + PANEL.w / 2, PANEL.y + PANEL.h - 110]);
+  assert.deepEqual([headline.props.x, headline.props.y], [PANEL.x + PANEL.w / 2, PANEL.y + PANEL.h - 200]);
 });
 
 test("the note's tracks and counts sit on the glass, for as long as they show", () => {
@@ -84,7 +125,7 @@ test("headlines and the annotated recital's figure titles sit in the panel's low
   const r = compiled(load());
   const titles = items(r).filter((i) => i.kit?.name === "figure-title");
   assert.ok(titles.length > 5);
-  for (const t of titles) assert.deepEqual([t.props.x, t.props.y], [PANEL.x + PANEL.w / 2, PANEL.y + PANEL.h - 110], t.id);
+  for (const t of titles) assert.deepEqual([t.props.x, t.props.y], [PANEL.x + PANEL.w / 2, PANEL.y + PANEL.h - 200], t.id);
 });
 
 test("Il lampo's data on the glass: every text stack inside the panel, and chapter 5's title said once", () => {
