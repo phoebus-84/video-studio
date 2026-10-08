@@ -94,6 +94,17 @@ CreativeStudio's long lesson is about 1300 lines of runtime per version (v10 to 
     - warnings: chapter count (5); specimens without a figure tool; sounds missing; a hand edit that moves a block.
 11. **Channel specifics.** The template and spec are library data. The compiler is code, as the short's is. Like the short (accepted, `avg-d1x`), it keeps layout constants of this format in code: block order rules, stage positions. Everything poem-specific is data.
 
+## Settled by the prototype (2026-10-09)
+
+- **Elided words.** A word cue also matches the parts of an elided word: `italia` finds «L'Italia», and `assedio` finds «d'assedio».
+- **Text stacks.** A story phase may hold up to four text stacks (`texts` is a list). They leave when the next phase comes, unless an item says otherwise.
+- **Chapter titles.** At most 20 characters, as `chapter-opener` requires, so a long title fails at the spec. "CONSIDERAZIONI FINALI" became "RIFLESSIONI FINALI" in Il lampo.
+- **Verse bars and titles.** Where a block shows verses (recital, metre, specimen), its title stays 3 s and the verse bars come after it, 760 px wide: they share the bottom of the frame. A word already said when its bar appears is lit from the start.
+- **The figure tools get the painting's aspect, the panel does not.** `panel@1.1.0`'s pictures take no `aspect`.
+- **`merge@1.0.0` and CreativeStudio's order.** The kit wants both words before the tear, while CreativeStudio tears first. Il lampo's spec uses the words' first occurrences ("e cielo e terra si mostrò"), which come before "strappa". A `merge@1.1.0` allowing either order is a follow-up.
+- **The note's take.** CreativeStudio splits it in three lines (`scheda-a`, `virgilio`, `scheda-b`). The fixture joins them into one take: one take per block.
+- **The real layout sheet.** 67 stills of every block and chapter, drawn with Il lampo's Codex paintings. It is the check that every kit composes on the stage. The full render is 6.5's.
+
 ## Il lampo's spec and the golden fixture
 
 - **`studio/series/fixtures/dentro-i-versi-long/1.0.0/`:**
