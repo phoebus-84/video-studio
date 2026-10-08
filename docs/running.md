@@ -93,11 +93,18 @@ Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_appr
 `pva_capability_status`
 
 Production: `pva_generate_image`, `pva_synthesize_speech`, `pva_register_take`,
-`pva_synthesize_nonverbal_audio`, `pva_render_graphics`,
+`pva_synthesize_nonverbal_audio`, `pva_synthesize_sound`, `pva_render_graphics`,
 `pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
 `pva_upgrade_spec`, `pva_propose_reference`,
 `pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, `pva_compose_multitrack_video`,
 `pva_probe_media`
+
+`pva_synthesize_sound` makes a series' sounds at $0, locally: wind, sea, rain,
+fire, steam, birds, thunder, applause, a whoosh, a shimmer, and a music bed (a
+soft chord progression in a key, major or minor). The same id always gives
+the same WAV, in `assets/sounds/<soundId>.wav`, with
+`<soundId>.sound.json` beside it saying how it was made. They are synthesized
+stand-ins a person hears as what they name, not recordings.
 
 A tool whose capability is not ready will fail rather than silently degrade.
 `npm run doctor` tells you which are ready; `pva_capability_status` tells the
