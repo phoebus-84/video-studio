@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { BUNDLED_FONTS, validateChannelTheme } from "../src/channel-themes.mjs";
+import { BUNDLED_FONTS, themeFilePaths, validateChannelTheme } from "../src/channel-themes.mjs";
 import { validateSeriesTemplate } from "../src/series-templates.mjs";
 
 const release = fileURLToPath(new URL("../fixtures/channel-theme/sample/themes/sample/1.0.0/", import.meta.url));
@@ -73,6 +73,46 @@ describe("validateChannelTheme (ADR-0040)", () => {
     const doc = theme();
     doc.rooms.hall.image = "../other/hall.png";
     assert.deepEqual(codes(doc).map(([c]) => c), ["schema"]);
+  });
+
+  it("lists the files a theme names: room images and monitor videos", () => {
+    const doc = theme();
+    const paths = themeFilePaths(doc);
+    assert.ok(paths.length > 0);
+    for (const room of Object.values(doc.rooms)) {
+      assert.ok(paths.includes(room.image));
+      if (room.monitor) assert.ok(paths.includes(room.monitor.video));
+    }
+  });
+
+  it("accepts a sealed release listing exactly the files it names", () => {
+    const doc = theme();
+    doc.files = Object.fromEntries(themeFilePaths(doc).map((p) => [p, `sha256:${"a".repeat(64)}`]));
+    assert.deepEqual(validateChannelTheme(doc), []);
+  });
+
+  it("refuses a sealed release missing a file it names, or listing one it does not name", () => {
+    const doc = theme();
+    const [first, ...rest] = themeFilePaths(doc);
+    doc.files = Object.fromEntries([...rest, "rooms/extra.png"].map((p) => [p, `sha256:${"a".repeat(64)}`]));
+    assert.deepEqual(codes(doc), [["unlisted-file", `$.files[${JSON.stringify(first)}]`], ["unused-file", '$.files["rooms/extra.png"]']]);
+  });
+
+  it("seals any name the theme may give a file, and no inherited key passes for a listed one", () => {
+    const doc = theme();
+    const [first] = Object.keys(doc.rooms);
+    doc.rooms[first].image = "rooms/atrio di città + notte.png";
+    doc.files = Object.fromEntries(themeFilePaths(doc).map((p) => [p, `sha256:${"a".repeat(64)}`]));
+    assert.deepEqual(validateChannelTheme(doc), []);
+    doc.rooms[first].image = "constructor";
+    doc.files = Object.fromEntries(themeFilePaths(doc).filter((p) => p !== "constructor").map((p) => [p, `sha256:${"a".repeat(64)}`]));
+    assert.deepEqual(codes(doc), [["unlisted-file", '$.files["constructor"]']]);
+  });
+
+  it("refuses a sealed file whose hash is not a sha256", () => {
+    const doc = theme();
+    doc.files = Object.fromEntries(themeFilePaths(doc).map((p) => [p, "md5:abc"]));
+    assert.ok(codes(doc).every(([c]) => c === "schema") && codes(doc).length > 0);
   });
 });
 

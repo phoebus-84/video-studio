@@ -31,8 +31,9 @@ import type { ExecutionError, StageOutcome } from "./execution/index.js";
 import { resolveCliCredential } from "./execution/principal.js";
 import { approveReference, listReferences, withdrawReference } from "./references.js";
 import { reviewSheet, sheetReviewStatus } from "./sheet-review.js";
+import { releaseTemplate, sealTheme, ThemeReleaseError } from "./theme-release.js";
 import { verifySeriesReference } from "@studio/contracts/src/series-references.mjs";
-import { seriesPath } from "@studio/contracts/src/layout.mjs";
+import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
 import type { RerunMode } from "./rerun/index.js";
 import { err, ok } from "./result.js";
 import type { Result } from "./result.js";
@@ -930,6 +931,76 @@ async function cmdSheet(ctx: CliContext, args: string[]): Promise<number> {
   return EX_OK;
 }
 
+// ── theme / template (avg-dcf.6.10) ─────────────────────────────────────────
+
+/** A channel, series, theme or version: one plain path part, never a way out of the library. */
+const isNamePart = (part: string) => part !== "" && part !== "." && part !== ".." && !/[\\/]/.test(part);
+
+/**
+ * `vpr theme seal`: list a theme release's files with their hashes in its
+ * theme.json, so every episode on it is held to them (ADR-0040). Prints the
+ * hash a template release pins.
+ */
+async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
+  const usage = "Usage: vpr theme seal <channel>/<theme>/<version> [--library <path>]";
+  const libraryRoot = libraryFrom(args);
+  const [sub, target] = positionalArgs(args);
+  const parts = target?.split("/") ?? [];
+  if (!libraryRoot || sub !== "seal" || parts.length !== 3 || !parts.every(isNamePart)) {
+    emit(ctx, { error: libraryRoot ? usage : "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
+    return EX_USAGE;
+  }
+  const [channel, id, version] = parts as [string, string, string];
+  try {
+    const sealed = sealTheme(channelPath(libraryRoot, channel), id, version, { dryRun: ctx.dryRun });
+    emit(ctx, {
+      message: ctx.dryRun
+        ? `[DRY RUN] ${id}@${version} would be sealed: ${Object.keys(sealed.files).length} file(s), theme.json hash ${sealed.hash}`
+        : `${id}@${version} sealed: ${Object.keys(sealed.files).length} file(s); pin it as {"id": "${id}", "version": "${version}", "hash": "${sealed.hash}"} (vpr template release … --theme ${id}@${version})`,
+      ...sealed,
+      dryRun: ctx.dryRun,
+    });
+    return EX_OK;
+  } catch (error) {
+    if (!(error instanceof ThemeReleaseError)) throw error;
+    emit(ctx, { error: error.message, code: error.code });
+    return EX_RUNTIME;
+  }
+}
+
+/** `vpr template release`: a new release of a series template, a copy of `--from`, pinned to a sealed theme. */
+async function cmdTemplate(ctx: CliContext, args: string[]): Promise<number> {
+  const usage = "Usage: vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--library <path>]";
+  const libraryRoot = libraryFrom(args);
+  const [sub, target, id, version] = positionalArgs(args);
+  const parts = target?.split("/") ?? [];
+  const from = flagValue(args, "--from");
+  const themeArg = flagValue(args, "--theme");
+  const theme = themeArg?.match(/^([^@]+)@([^@]+)$/);
+  // A flag given without its value is a mistake, never "no theme".
+  const flagsComplete = from !== undefined && (!args.includes("--theme") || (theme && isNamePart(theme[1]!) && isNamePart(theme[2]!)));
+  if (!libraryRoot || sub !== "release" || parts.length !== 2 || !parts.every(isNamePart) || !id || !version || !flagsComplete) {
+    emit(ctx, { error: libraryRoot ? usage : "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
+    return EX_USAGE;
+  }
+  const [channel, series] = parts as [string, string];
+  try {
+    const released = releaseTemplate(seriesPath(libraryRoot, channel, series), {
+      id, from, version, ...(theme ? { theme: { id: theme[1]!, version: theme[2]! } } : {}), dryRun: ctx.dryRun,
+    });
+    emit(ctx, {
+      message: `${ctx.dryRun ? "[DRY RUN] " : ""}${id}@${version} ${ctx.dryRun ? "would be released" : "released"} at ${released.path}${released.theme ? ` on ${released.theme.id}@${released.theme.version}` : " (the theme pin copied from " + from + ")"}; move an episode onto it with pva_upgrade_spec`,
+      ...released,
+      dryRun: ctx.dryRun,
+    });
+    return EX_OK;
+  } catch (error) {
+    if (!(error instanceof ThemeReleaseError)) throw error;
+    emit(ctx, { error: error.message, code: error.code });
+    return EX_RUNTIME;
+  }
+}
+
 // ── takes / select (avg-qr4.6) ──────────────────────────────────────────────
 
 async function cmdTakes(ctx: CliContext, args: string[]): Promise<number> {
@@ -1210,6 +1281,8 @@ const VALUE_FLAGS = new Set([
   "--source", "--used-by", "--path",
   // `reference`'s (avg-jao.6), and the notes `approve`, `reject` and `budget` take.
   "--note", "--reason",
+  // `template release`'s (avg-dcf.6.10).
+  "--from", "--theme",
 ]);
 
 /**
@@ -1549,6 +1622,8 @@ const COMMANDS: Record<string, CliCommand> = {
   budget: { name: "budget", description: "Show the episode's spend ledger; the operator can release an open reservation", usage: "vpr budget <channel>/<series>/<episode> [release <reservation-id> [--note <why>]] [--json] [--dry-run]", examples: ["vpr budget my-channel/my-series/ep001", "vpr budget my-channel/my-series/ep001 release rsv_01J9Z… --note 'fal dashboard shows no charge'"], run: cmdBudget },
   sheet: { name: "sheet", description: "Review an episode's layout sheet: approve it, reject it with a note, or see its review; a spec-driven episode renders only with an approval of its current sheet", usage: "vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode>", examples: ["vpr sheet approve dentro-i-versi/short/san-martino", "vpr sheet reject dentro-i-versi/short/san-martino --note 'the verse bar covers the hand at 0:12'", "vpr sheet status dentro-i-versi/short/san-martino"], run: cmdSheet },
   reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve dentro-i-versi/short/san-martino san-martino-v1 --dry-run", "vpr reference verify dentro-i-versi/short short-room san-martino-v1", "vpr reference withdraw dentro-i-versi/short short-room san-martino-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
+  theme: { name: "theme", description: "Seal a theme release: its files and their hashes in theme.json, so a changed room never passes for the released one", usage: "vpr theme seal <channel>/<theme>/<version> [--library <path>]", examples: ["vpr theme seal dentro-i-versi/dentro-i-versi/1.1.0"], run: cmdTheme },
+  template: { name: "template", description: "Release a series template: a copy of an earlier release, optionally pinned to a sealed theme (a new look)", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--library <path>]", examples: ["vpr template release dentro-i-versi/long dentro-i-versi-long 1.1.0 --from 1.0.0 --theme dentro-i-versi@1.1.0"], run: cmdTemplate },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },

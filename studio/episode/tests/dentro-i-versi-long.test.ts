@@ -29,12 +29,12 @@ describe("the dentro-i-versi-long episode", () => {
     expect(sharedRootsOf(episodeDir)).toEqual([join(root, "dentro-i-versi", "themes", "dentro-i-versi", "1.0.0"), join(root, "dentro-i-versi", "series", "short", "episodes", "il-lampo")]);
   });
 
-  it("passes its series rules but for the missing sound theme", async () => {
+  it("passes its series rules but for the missing sound theme (and its unsealed fixture theme)", async () => {
     const { episodeDir, episodeRef } = await divLongEpisode(root);
     const checked = checkEpisode(episodeDir, { episodeRef });
     if (!checked.ok) throw new Error(JSON.stringify(checked.problems));
     expect(checked.validator).toBe("dentro-i-versi-long@1.0.0");
-    expect(checked.findings.map((f) => [f.code, f.severity])).toEqual([["no-theme-sound", "warning"]]);
+    expect(checked.findings.map((f) => [f.code, f.severity])).toEqual([["theme-unsealed", "warning"], ["no-theme-sound", "warning"]]);
   });
 
   it("stops when the source changed since it was pinned", async () => {

@@ -41,6 +41,16 @@ function jsonPath(pointer, base = "$") {
   return pointer.split("/").slice(1).reduce((p, key) => member(p, key.replace(/~1/g, "/").replace(/~0/g, "~")), base);
 }
 
+/** The files a theme names, relative to its release: each room's image and each monitor's video. */
+export function themeFilePaths(doc) {
+  const paths = new Set();
+  for (const room of Object.values(doc.rooms ?? {})) {
+    if (room.image) paths.add(room.image);
+    if (room.monitor?.video) paths.add(room.monitor.video);
+  }
+  return [...paths].sort();
+}
+
 export function validateChannelTheme(doc) {
   const validate = ajv.getSchema(`${schema.$id}#/$defs/ChannelTheme`);
   if (!validate(doc)) return validate.errors.map((e) => issue("schema", jsonPath(e.instancePath), e.message));
@@ -67,5 +77,15 @@ export function validateChannelTheme(doc) {
     if (room.monitor && !boxOnFrame(room.monitor.box)) offFrame(`${at}.monitor.box`);
   }
   if (doc.layout?.panel && !boxOnFrame(doc.layout.panel)) offFrame("$.layout.panel");
+  // A sealed release lists exactly the files it names.
+  if (doc.files) {
+    const named = themeFilePaths(doc);
+    for (const path of named) {
+      if (!Object.hasOwn(doc.files, path)) problems.push(issue("unlisted-file", member("$.files", path), `${path} is named by the theme but not sealed in files`));
+    }
+    for (const path of Object.keys(doc.files)) {
+      if (!named.includes(path)) problems.push(issue("unused-file", member("$.files", path), `${path} is sealed in files but the theme names no such file`));
+    }
+  }
   return problems;
 }

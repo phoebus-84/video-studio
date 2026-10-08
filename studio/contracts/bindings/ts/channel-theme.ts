@@ -139,5 +139,7 @@ export interface ChannelTheme {
     text: string;
     icon: "bolt" | "none";
   };
+  /** The release's files, sealed: each file the theme names (room images, monitor videos), relative to the release, with its sha256. A sealed release is held to them (vpr theme seal). */
+  files?: Record<string, string>;
   metadata?: Record<string, unknown>;
 }

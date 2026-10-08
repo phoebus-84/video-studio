@@ -44,6 +44,8 @@ The short's kits (`avg-dcf.3`) were built the other way round: the Dentro i vers
 
 A published episode therefore re-renders with the look it had, until a new release pins a new theme.
 
+**A theme release is sealed** (amended 2026-10-08, `avg-dcf.6.8`). The pin's hash covers `theme.json` only, so `theme.json` lists every file it names with its sha256 (`files`), written by `vpr theme seal` (`studio/runtime/src/theme-release.ts`). The loader holds a sealed release's rooms to those hashes (`theme-mismatch` at the changed file). A release made before sealing loads as before, with a `theme-unsealed` warning. A release that a template release already pins is never sealed in place: sealing would change the hash it pinned.
+
 **Kits receive the look as a prop.** The composer's `lib/look/1.0.0.ts` defines the same `look` vocabulary as zod, fonts checked against the bundled faces (`lib/font-metrics/1.0.0.ts`, which also gives kits the faces' widths to fit text with). Channel-neutral kits take `look` (and, for the puppet, a theme `character`) like any other prop, and compilers pass the theme's look through untouched. `lib/fonts/1.1.0.ts` loads only the families a look names, before the first frame.
 
 The composer may not import the contracts (`check:boundaries`), so the two schemas are held together from the app side: a test in `@studio/series` passes every theme fixture's look and characters through the props schemas of every neutral kit, and compares the font families.
@@ -53,6 +55,6 @@ The composer may not import the contracts (`check:boundaries`), so the two schem
 ## Consequences
 
 - **Neutral 16:9 stage kits** draw any channel's lessons: `room`, `panel`, `interprete@1.1.0`, `verse-bar`, `block-title`, `figure-title`, `chapter-opener`, `cover`, `warp`, `brand-mark@2.0.0`. Their examples use a demo look with no channel in it.
-- **Changing a channel's look** is a new theme release and a new series template release: data, reviewed like data, with no kit version.
+- **Changing a channel's look** is a new theme release and a new series template release: data, reviewed like data, with no kit version. The operator seals the theme (`vpr theme seal`), releases the template on it (`vpr template release … --from <v> --theme <id>@<v>`), and each episode moves onto the new release with `pva_upgrade_spec`.
 - **The short's kits still carry the Dentro i versi look in code.** Moving them onto the theme is `avg-d1x`.
 - **A release without a theme** loads and renders exactly as before.
