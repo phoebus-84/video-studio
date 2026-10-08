@@ -18,6 +18,7 @@ import { validateNarrationTakes } from "@studio/contracts/src/narration-takes.mj
 import { SERIES_TEMPLATE_FILES, validateEpisodeSpec, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
 import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
 import { THEME_FILE, themeReleasePath, validateChannelTheme, type ChannelTheme } from "@studio/contracts/src/channel-themes.mjs";
+import { PINS_DIR, sourceDir, validateSourcePin } from "@studio/contracts/src/source-pins.mjs";
 
 export const NARRATION_TAKES_PATH = "artifacts/narration/takes.json";
 /** What the loader offers from assets/: every file in each folder, as <prefix>-<name>. */
@@ -112,9 +113,26 @@ export function sharedRootsOf(episodeDir: string): string[] {
     const pin = JSON.parse(readFileSync(join(dir, EPISODE_SPEC_PATH), "utf-8"))?.template;
     const releaseDir = seriesTemplatePath(dirname(dirname(dirname(seriesDir))), basename(dirname(dirname(seriesDir))), basename(seriesDir), pin?.id, pin?.version);
     const theme = JSON.parse(readFileSync(join(releaseDir, SERIES_TEMPLATE_MANIFEST), "utf-8"))?.theme;
-    if (!theme) return [];
-    const themeDir = join(dirname(dirname(seriesDir)), themeReleasePath(theme.id, theme.version));
-    return existsSync(themeDir) ? [themeDir] : [];
+    const roots: string[] = [];
+    if (theme) {
+      const themeDir = join(dirname(dirname(seriesDir)), themeReleasePath(theme.id, theme.version));
+      if (existsSync(themeDir)) roots.push(themeDir);
+    }
+    // the episodes it pins (ADR-0035): their pictures and takes are its assets too
+    const channelDir = dirname(dirname(seriesDir));
+    const pinsDir = join(dir, PINS_DIR);
+    for (const name of existsSync(pinsDir) ? readdirSync(pinsDir).filter((n) => n.endsWith(".json")).sort() : []) {
+      try {
+        const pinDoc = JSON.parse(readFileSync(join(pinsDir, name), "utf-8"));
+        // only a pin that holds names a root
+        if (validateSourcePin(pinDoc).length > 0 || `${pinDoc.id}.json` !== name) continue;
+        const source = pinDoc.source;
+        if (source?.kind !== "episode") continue;
+        const srcDir = sourceDir(dirname(channelDir), basename(channelDir), source);
+        if (existsSync(srcDir)) roots.push(srcDir);
+      } catch { /* loading the episode reports it */ }
+    }
+    return roots;
   } catch {
     return [];
   }
@@ -324,7 +342,76 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
   }
 
-  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}) }, releaseKey };
+  // ── Material pinned from other episodes of the channel (ADR-0035) ────────
+  // Each pin names an episode; what this episode reads of it must be what the
+  // pin inventoried, or the pin needs renewing. Its pictures are offered as
+  // source-<pin>-image-<name>, its takes as source-<pin>-narration-<take>, with
+  // paths relative to this episode.
+  const sources: NonNullable<CompileInput["sources"]> = {};
+  const pinsDir = join(episodeDir, PINS_DIR);
+  const pinFiles = existsSync(pinsDir) ? readdirSync(pinsDir).filter((n) => n.endsWith(".json") && !n.startsWith(".")).sort() : [];
+  const channelDir = dirname(dirname(seriesDir));
+  for (const name of pinFiles) {
+    const pinKey = `${PINS_DIR}/${name}`;
+    let pinDoc: any;
+    try {
+      pinDoc = JSON.parse(read(join(pinsDir, name), episodeDir, () => stop("missing-pin", pinKey, `${pinKey} is missing`)).toString("utf-8"));
+    } catch (error) {
+      if (error instanceof Stop) throw error;
+      return stop("bad-pin", pinKey, `${pinKey} is not JSON: ${(error as Error).message}`);
+    }
+    const pinProblems = validateSourcePin(pinDoc);
+    if (pinProblems.length > 0) throw new Stop(at(pinKey, pinProblems));
+    // A pin's file is named by its id: two pins never claim one id.
+    if (`${pinDoc.id}.json` !== name) stop("bad-pin", `${pinKey}#$.id`, `${pinKey} says its id is "${pinDoc.id}": name it ${pinDoc.id}.json`);
+    // Only episodes are compile material; a channel source pins texts and references for people.
+    if (pinDoc.source.kind !== "episode") continue;
+    const id = pinDoc.id as string;
+    const srcDir = sourceDir(dirname(channelDir), basename(channelDir), pinDoc.source);
+    const files = pinDoc.files as Record<string, { hash: string }>;
+    /** A file of the source, held to the pin's inventory. */
+    const fromSource = (path: string, where: string): Buffer => {
+      if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) stop("path-escape", where, `${path} is not a path inside the pinned episode`);
+      const file = join(srcDir, path);
+      const key = relative(episodeDir, file).split(sep).join("/");
+      const entry = files[path];
+      if (!entry) stop("pin-mismatch", where, `${path} of the pinned episode is not in pin "${id}": renew the pin (vpr pin)`);
+      const bytes = read(file, srcDir, () => stop("pin-mismatch", key, `${key} is missing: renew the pin (vpr pin) or restore it`));
+      if (inputs[key] !== entry!.hash) stop("pin-mismatch", key, `${key} changed since pin "${id}" inventoried it: renew the pin (vpr pin)`);
+      return bytes;
+    };
+    const keyOf = (path: string) => relative(episodeDir, join(srcDir, path)).split(sep).join("/");
+    const sourceNarration = files[NARRATION_TAKES_PATH] ? JSON.parse(fromSource(NARRATION_TAKES_PATH, pinKey).toString("utf-8")) : null;
+    const sourceTimings: Record<string, any> = {};
+    if (sourceNarration) {
+      const problems = validateNarrationTakes(sourceNarration);
+      if (problems.length > 0) throw new Stop(at(keyOf(NARRATION_TAKES_PATH), problems));
+      (sourceNarration.takes as any[]).forEach((take, i) => {
+        const where = `${keyOf(NARRATION_TAKES_PATH)}#$.takes[${i}]`;
+        const audio = fromSource(take.audio.path, `${where}.audio.path`);
+        if (sha256(audio) !== take.audio.hash) stop("hash-mismatch", `${where}.audio.hash`, `pinned take "${take.id}": ${take.audio.path} is not the audio the take recorded`);
+        assets[`source-${id}-narration-${take.id}`] = { path: keyOf(take.audio.path), hash: take.audio.hash, kind: "audio" };
+        if (!take.timing) return;
+        const timingBytes = fromSource(take.timing.path, `${where}.timing.path`);
+        if (sha256(timingBytes) !== take.timing.hash) stop("hash-mismatch", `${where}.timing.hash`, `pinned take "${take.id}": ${take.timing.path} is not the timing the take recorded`);
+        const timing = JSON.parse(timingBytes.toString("utf-8"));
+        const timingProblems = validateWordTiming(timing, { audioHash: take.audio.hash });
+        if (timingProblems.length > 0) throw new Stop(at(keyOf(take.timing.path), timingProblems));
+        sourceTimings[take.id] = timing;
+      });
+      sources[id] = { narration: sourceNarration, timings: sourceTimings };
+    }
+    for (const { dir, prefix, kind, extensions } of OFFERED) {
+      for (const path of Object.keys(files).filter((p) => p.startsWith(`assets/${dir}/`) && !p.slice(`assets/${dir}/`.length).includes("/")).sort()) {
+        const file = path.slice(`assets/${dir}/`.length);
+        if (file.startsWith(".") || !(extensions as readonly string[]).includes(extname(file).toLowerCase())) continue;
+        fromSource(path, pinKey);
+        assets[`source-${id}-${prefix}-${file.slice(0, -extname(file).length)}`] = { path: keyOf(path), hash: files[path]!.hash, kind };
+      }
+    }
+  }
+
+  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}), ...(Object.keys(sources).length > 0 ? { sources } : {}) }, releaseKey };
 }
 
 const IN_TIMELINE = /^\$\.(tracks|profile|durationInFrames|resolution|assets|sections)\b/;

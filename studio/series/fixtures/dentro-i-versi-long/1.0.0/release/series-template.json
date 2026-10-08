@@ -1,0 +1,56 @@
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "SeriesTemplate",
+  "id": "dentro-i-versi-long",
+  "version": "1.0.0",
+  "compiler": {
+    "id": "dentro-i-versi-long",
+    "version": "1.0.0"
+  },
+  "validator": {
+    "id": "dentro-i-versi-long",
+    "version": "1.0.0"
+  },
+  "files": {
+    "schema": {
+      "path": "episode-spec.schema.json",
+      "hash": "sha256:51cf2c95db7aef14f6af871dbf986f6b3c718c60ef953b26f00014b991a407fb"
+    },
+    "template": {
+      "path": "episode-spec.template.json",
+      "hash": "sha256:271ef6f120ddbb334d58f2aff654e755b5bb8f3fe9dc22c166b6102889f9bc6c"
+    },
+    "standard": {
+      "path": "FORMAT.md",
+      "hash": "sha256:e16d6a83bdd55e725a2da6d772c5738fe9ee988fcd456d9859095c39e2f3a069"
+    }
+  },
+  "theme": {
+    "id": "dentro-i-versi",
+    "version": "1.0.0",
+    "hash": "sha256:a2f65b0d7ec1c11879cef0626071750c6266c59247034b7e46fd2560d954aadf"
+  },
+  "sheet": {
+    "instants": [
+      {
+        "at": "start",
+        "offsetSeconds": 1.2,
+        "sections": [
+          "block-*"
+        ]
+      },
+      {
+        "at": "middle",
+        "sections": [
+          "block-*"
+        ]
+      },
+      {
+        "at": "middle",
+        "sections": [
+          "chapter-*"
+        ]
+      }
+    ]
+  }
+}
