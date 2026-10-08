@@ -95,7 +95,7 @@ Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_appr
 Production: `pva_generate_image`, `pva_synthesize_speech`, `pva_register_take`,
 `pva_synthesize_nonverbal_audio`, `pva_render_graphics`,
 `pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
-`pva_propose_reference`,
+`pva_upgrade_spec`, `pva_propose_reference`,
 `pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, `pva_compose_multitrack_video`,
 `pva_probe_media`
 
@@ -370,6 +370,19 @@ node studio/runtime/dist/src/cli.js sheet approve my-channel/my-series/ep001 --l
 node studio/runtime/dist/src/cli.js sheet reject my-channel/my-series/ep001 \
   --note "the verse bar covers the hand at 0:12" --library "$PWD/library"
 node studio/runtime/dist/src/cli.js sheet status my-channel/my-series/ep001 --library "$PWD/library"
+```
+
+**`vpr theme seal`** and **`vpr template release`** change a channel's look
+(ADR-0040, avg-dcf.6.10). `theme seal` writes each file a theme release names,
+with its hash, into its `theme.json`, and prints the hash a template release
+pins; it refuses a release already sealed or already pinned. `template release`
+copies a template release to a new version, pinned to a sealed theme with
+`--theme`. Episodes then move onto it with Pi's `pva_upgrade_spec`.
+
+```bash
+node studio/runtime/dist/src/cli.js theme seal my-channel/my-theme/1.1.0 --library "$PWD/library"
+node studio/runtime/dist/src/cli.js template release my-channel/my-series my-template 1.1.0 \
+  --from 1.0.0 --theme my-theme@1.1.0 --library "$PWD/library"
 ```
 
 **`vpr select`** puts an earlier candidate back in place. The gateway offers

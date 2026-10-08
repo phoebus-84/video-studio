@@ -52,6 +52,7 @@ import {
   elevenLabsAlignmentUsd,
   compareVersions,
   initEpisodeSpec,
+  upgradeEpisodeSpec,
   makeLayoutSheet,
   proposeReference,
   renderEpisode,
@@ -942,6 +943,37 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         "Read the release's FORMAT.md and fill them with the fill-episode-spec skill; then pva_check_episode.",
       ];
       return { content: [{ type: "text" as const, text: lines.join("\n") }], details: result as unknown as Record<string, unknown> };
+    },
+  });
+
+  pi.registerTool({
+    name: "pva_upgrade_spec",
+    label: "Upgrade Episode Spec",
+    description: "Move the episode's episode-spec.json to a newer release of the same series template (a new look or a corrected standard): the pin becomes that exact release, the data stays and must hold under its schema, the revision goes up by one. Never an implicit latest. Then pva_build_timeline and a new layout sheet: the old review no longer holds.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      version: Type.String({ description: "Exact newer release version, x.y.z, as in the series' templates/<id>/ folder" }),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+      const result = await withFileMutationQueue(join(dir, "episode-spec.json"), async () =>
+        upgradeEpisodeSpec(dir, { episodeRef, version: params.version }));
+      if (!result.ok) {
+        return {
+          content: [{ type: "text" as const, text: ["❌ The spec was not moved", ...result.problems.map((p) => `  - ${p.code} at ${p.path}: ${p.message}`)].join("\n") }],
+          details: { problems: result.problems } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+      const { from, spec } = result;
+      const text = [
+        `✅ ${result.path}: ${from.id}@${from.version} → ${spec.template.id}@${spec.template.version} (${spec.template.hash}), revision ${spec.revision}`,
+        "Rebuild the timeline (pva_build_timeline), check it, and make a new layout sheet for review.",
+      ].join("\n");
+      return { content: [{ type: "text" as const, text }], details: result as unknown as Record<string, unknown> };
     },
   });
 

@@ -94,7 +94,11 @@ names `<channel>/themes/<id>/<version>/theme.json`
 ([ADR-0040](adr/0040-channel-themes-carry-the-look-as-data.md)) — colour and
 font roles, characters, rooms and brand, with the images it names beside
 it. Theme releases are immutable too; a new look is a new theme release and
-a new series template release.
+a new series template release. A theme release is sealed: its `theme.json`
+lists each file it names with its hash (`vpr theme seal`), and the loader
+holds the rooms to them. `vpr template release` copies a release to a new
+version pinned to a sealed theme, and `pva_upgrade_spec` moves an episode's
+spec to it (its revision goes up; the sheet must be reviewed again).
 
 This is the contract for forthcoming series compilers. Existing episode
 initialization and composition do not yet create or consume it. Path helpers
