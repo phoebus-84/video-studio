@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from qwen_tts_worker.cli import DownloadError, download_model
 from qwen_tts_worker.config import Settings
@@ -34,6 +34,19 @@ def _default_models_dir() -> Path:
     if configured: return Path(configured).expanduser()
     if sys.platform == "darwin": return service_paths()["models"]
     return Settings().models_dir
+
+
+def serve_environment(environ: Mapping[str, str], system: str, home: Path | None = None) -> dict[str, str]:
+    """The data directories ``serve`` adds on macOS: the service's, where ``install`` puts the models.
+
+    A foreground worker started from the repository otherwise looked in ``./models``, found
+    nothing, and failed its first synthesis while ``/health`` said ready (avg-07q). A
+    directory already set in the environment is kept.
+    """
+    if system != "darwin": return {}
+    paths = service_paths(home)
+    wanted = {"QTW_MODELS_DIR": paths["models"], "QTW_VOICES_DIR": paths["voices"], "QTW_OUTPUTS_DIR": paths["outputs"]}
+    return {name: str(path) for name, path in wanted.items() if not environ.get(name)}
 
 
 def _api(base_url: str, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
@@ -162,6 +175,7 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "doctor": return _doctor(args)
     if args.command == "serve":
         from qwen_tts_worker.__main__ import main as serve
+        os.environ.update(serve_environment(os.environ, sys.platform))
         serve(); return 0
     if args.command == "models":
         print(json.dumps(_api(args.url, "GET", "/models"), indent=2)); return 0

@@ -182,6 +182,21 @@ CLI and the studio all agree. Running `qwen-tts serve` outside a mise
 environment binds 8000, and the studio reports `tts: down` while the worker is
 plainly running.
 
+On macOS `qwen-tts serve` (and so `voice-serve`) reads its models, voices and
+outputs from `~/Library/Application Support/QwenTTSWorker/`, where
+`qwen-tts install` put them, unless `QTW_MODELS_DIR`, `QTW_VOICES_DIR` or
+`QTW_OUTPUTS_DIR` say otherwise. `pva_capability_status` reports speech as
+available only when the worker has a CustomVoice model installed, and
+alignment only when it answers `/align`. Pass it a channel and series to see
+which image route that series uses (fal.ai or openai-codex) and whether that
+route is ready.
+
+`pva_synthesize_speech` takes the speaker (`aiden`, `dylan`, `eric`,
+`ono_anna`, `ryan`, `serena`, `sohee`, `uncle_fu`, `vivian`, or an alias such
+as `narrator`) and a `language` (`italian`, `english`, …; `auto` by default).
+Beside each `<scene>.wav` it writes `<scene>.synthesis.json`, the receipt: the
+worker's job, model, speaker, language and the WAV's hash.
+
 There is no supervisor that starts the worker for you: the agent will report
 `speech.synthesize` as unavailable rather than launching a multi-gigabyte model
 server behind your back.

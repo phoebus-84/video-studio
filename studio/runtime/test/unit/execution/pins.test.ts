@@ -219,11 +219,15 @@ describe("renewing a pin", () => {
     expect([after.upstream!.state, after.gated!.state, after.downstream!.state]).toEqual(["completed", "completed", "completed"]);
   });
 
-  it("journals nothing when the source did not change", async () => {
+  it("journals and writes nothing when the source did not change (avg-d5h)", async () => {
     const { dir, svc } = await setup();
     await svc.addPin(REF, "review-chain", { id: "poesia", source: channelSource, usedBy: ["upstream"] });
     await runChain(svc);
+    const file = join(dir, "source", "pins", "poesia.json");
+    const before = await readFile(file, "utf-8");
+    await new Promise((resolve) => setTimeout(resolve, 5)); // a rewrite would carry a later pinnedAt
     const renewed = await svc.renewPin(REF, "review-chain", "poesia", "human");
+    expect(await readFile(file, "utf-8")).toBe(before);
     expect(renewed.ok && renewed.value.ok && renewed.value.affected).toEqual([]);
     const events = parseJournal(await readFile(join(dir, JOURNAL_RELATIVE_PATH), "utf-8"), { strict: true });
     expect(events.some((e) => e.type === "staleness-marked")).toBe(false);

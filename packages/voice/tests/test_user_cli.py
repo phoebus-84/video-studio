@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from qwen_tts_worker import macos_service
-from qwen_tts_worker.user_cli import CliError, _api, _copy_worker_wav, build_parser, run
+from qwen_tts_worker.user_cli import CliError, _api, _copy_worker_wav, build_parser, run, serve_environment
 
 
 @pytest.mark.parametrize("url", ["file:///etc/passwd", "https://127.0.0.1:8000", "http://example.com:8000"])
@@ -76,3 +76,15 @@ def test_clone_cli_forwards_explicit_consent(monkeypatch: pytest.MonkeyPatch, ca
     assert captured["payload"]["reference_text"] == "These are exact words."
     assert captured["payload"]["consent"]["confirmed"] is True
     assert "voice-id" in capsys.readouterr().out
+
+
+def test_serve_uses_the_service_data_directories_on_macos(tmp_path: Path) -> None:
+    support = tmp_path / "Library" / "Application Support" / "QwenTTSWorker"
+    assert serve_environment({}, "darwin", tmp_path) == {
+        "QTW_MODELS_DIR": str(support / "models"),
+        "QTW_VOICES_DIR": str(support / "voices"),
+        "QTW_OUTPUTS_DIR": str(support / "outputs"),
+    }
+    # A directory the caller set is kept; elsewhere nothing changes.
+    assert "QTW_MODELS_DIR" not in serve_environment({"QTW_MODELS_DIR": "/elsewhere"}, "darwin", tmp_path)
+    assert serve_environment({}, "linux", tmp_path) == {}
