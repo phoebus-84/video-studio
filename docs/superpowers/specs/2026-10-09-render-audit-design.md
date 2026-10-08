@@ -20,14 +20,14 @@ CreativeStudio refused such files before delivery. This studio should refuse the
 
 Taken autonomously, as the user delegated the run.
 
-1. **The audit is the composer's.** It reads a rendered file with FFmpeg, and the composer already owns FFmpeg (loudness, probe). The function `auditRender(file, expect)` returns findings. It never throws for a bad file, only when FFmpeg cannot run. FFmpeg and FFprobe paths are parameters (defaults `ffmpeg`, `ffprobe`); the new code reads no environment variable.
+1. **The audit is the composer's.** It reads a rendered file with FFmpeg, and the composer already owns FFmpeg (loudness, probe). The function `auditRender(file, expect)` returns findings. It never throws for a bad file, only when FFmpeg cannot run. FFmpeg and FFprobe paths are parameters, by default the ones every other step of a render uses (`FFMPEG_PATH`, `FFPROBE_PATH`, else on the PATH), so a host that sets them renders and audits with the same binaries.
 2. **What it checks.** Each failed check is a finding `{code, message, measured, expected}`.
    - **decode** (`decode-errors`): `ffmpeg -v error -i <file> -f null -` prints nothing.
    - **streams**:
      - video is H.264, `yuv420p`, at the timeline's width × height and fps (`wrong-video`);
      - with audio, AAC at 48 kHz (`wrong-audio`);
      - without audio expected, an audio track is allowed (Remotion always writes one).
-   - **duration** (`wrong-duration`): the video stream lasts `durationInFrames / fps`, give or take one frame.
+   - **duration** (`wrong-duration`): the video stream lasts `durationInFrames / fps`, give or take one frame; with sound, the sound lasts as long, give or take 0.2 s (AAC priming and padding).
    - **loudness** (`loudness-off`): when the timeline has audio, integrated loudness is within 1 LU of the profile's target and true peak at most 0.3 dB above it.
    - **loop** (`loop-broken`): when the timeline declares `loop: true`, the first and last frames, scaled to 64×36 grey, differ by a mean of at most 2 levels out of 255. That bound allows compression noise but no change of scene.
 3. **The loop is declared in the timeline.** `EditTimeline` (v1alpha2) gains an optional top-level `loop: boolean`, in the contract schema and the composer's zod schema alike. Compilers set it.
@@ -35,6 +35,7 @@ Taken autonomously, as the user delegated the run.
    - The long compiler (`avg-dcf.6`) sets it from the start.
 4. **Only an audited render becomes current.** `renderEpisode` audits the finished file before anything is promoted.
    - **If it passes**, it proceeds as today, and the report gains `audit: {passed: true, checks}`.
+   - **If the audit cannot run** (FFmpeg missing or failing), the render is kept the same way with `audit: {passed: false, error}` in its report, and `RenderAuditError` carries one finding `audit-unavailable`. The timeline is checked against the composer's schema before rendering, so a timeline the audit could not read is refused before minutes of render.
    - **If it fails**, the video stays at `output/<render-id>.mp4` with its timeline snapshot and its report, so it can be looked at. The report gains `audit: {passed: false, findings}`. `output/current.json` does not move. `renderEpisode` throws `RenderAuditError` (`code: "render-audit"`, `problems`: the findings). The agent tool and the series adapter already report any `code` and `problems`.
 5. **Not here:** frame sampling, black, frozen or blank frames, silence and clipping, captions, provenance and budget assertions (`avg-z6c.3`).
 

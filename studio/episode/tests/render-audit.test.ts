@@ -12,12 +12,15 @@ import { sha256, specEpisode } from "../src/testing.js";
 
 let findings: { code: string; message: string }[] = [];
 let expectation: unknown = null;
+let auditCrash: Error | null = null;
+let rendered = 0;
 
 vi.mock("@av/remotion-composer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@av/remotion-composer")>();
   return {
     ...actual,
     renderTimeline: async (options: { timeline: any; outputPath: string }) => {
+      rendered++;
       mkdirSync(dirname(options.outputPath), { recursive: true });
       writeFileSync(options.outputPath, "fake mp4");
       return {
@@ -32,6 +35,7 @@ vi.mock("@av/remotion-composer", async (importOriginal) => {
     },
     auditRender: async (_file: string, expect: unknown) => {
       expectation = expect;
+      if (auditCrash) throw auditCrash;
       return { passed: findings.length === 0, checks: ["decode", "streams", "duration"], findings };
     },
   };
@@ -47,6 +51,8 @@ beforeEach(() => {
   specEpisode(dir(), REF);
   findings = [];
   expectation = null;
+  auditCrash = null;
+  rendered = 0;
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -83,6 +89,19 @@ describe("renderEpisode audits the file before it becomes current", () => {
     expect(existsSync(at(`output/${audit.renderId}.timeline.json`))).toBe(true);
     const report = JSON.parse(readFileSync(at(`output/${audit.renderId}.report.json`), "utf-8"));
     expect(report.audit).toEqual({ passed: false, checks: ["decode", "streams", "duration"], findings });
+    expect(JSON.parse(readFileSync(at("output/current.json"), "utf-8")).renderId).toBe(first.renderId);
+    expect(audit.message).toBe(`the render ${audit.renderId} failed its audit (1 finding), so it did not become current`);
+  });
+
+  it("keeps the render and says so when the audit cannot run, and never makes it current", async () => {
+    const first = await renderEpisode(dir(), { episodeRef: REF });
+    auditCrash = new Error("spawn ffmpeg ENOENT");
+    const error = (await renderEpisode(dir(), { episodeRef: REF, label: "second" }).catch((e: unknown) => e)) as RenderAuditError;
+    expect(error).toBeInstanceOf(RenderAuditError);
+    expect(error.problems).toEqual([{ code: "audit-unavailable", message: "the audit could not run: spawn ffmpeg ENOENT", path: `output/${error.renderId}.mp4` }]);
+    const report = JSON.parse(readFileSync(at(`output/${error.renderId}.report.json`), "utf-8"));
+    expect(report.audit).toEqual({ passed: false, error: "spawn ffmpeg ENOENT" });
+    expect(existsSync(at(`output/${error.renderId}.timeline.json`))).toBe(true);
     expect(JSON.parse(readFileSync(at("output/current.json"), "utf-8")).renderId).toBe(first.renderId);
   });
 });

@@ -65,8 +65,8 @@ export class SeriesRulesError extends TimelineBuildError {
 export class RenderAuditError extends Error {
   readonly code = "render-audit";
   readonly problems: { code: string; message: string; path: string }[];
-  constructor(readonly renderId: string, readonly findings: AuditFinding[]) {
-    super(`the render ${renderId} failed its audit, so it did not become current: ${findings.map((f) => `${f.code}: ${f.message}`).join("; ")}`);
+  constructor(readonly renderId: string, readonly findings: (AuditFinding | { code: "audit-unavailable"; message: string })[]) {
+    super(`the render ${renderId} failed its audit (${findings.length} finding${findings.length === 1 ? "" : "s"}), so it did not become current`);
     this.name = "RenderAuditError";
     this.problems = findings.map((f) => ({ code: f.code, message: f.message, path: `output/${renderId}.mp4` }));
   }
@@ -367,6 +367,8 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   const partialPath = join(outputDir, `.${renderId}.partial.mp4`);
   const reportPath = join(outputDir, `${renderId}.report.json`);
   const snapshot = `${renderId}.timeline.json`;
+  // What the file must be, read before minutes of render: a timeline the audit cannot read is refused here.
+  const expectation = auditExpectation(EditTimelineSchema.parse(current.timeline));
 
   let result: RenderResult;
   try {
@@ -384,7 +386,14 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     throw error;
   }
   result = { ...result, path: outputPath };
-  const audit = await auditRender(outputPath, auditExpectation(EditTimelineSchema.parse(current.timeline)));
+  // An audit that cannot run (FFmpeg missing or failing) is recorded like a failed one: the render stays, never current.
+  let audit: AuditResult | null = null;
+  let auditError: string | null = null;
+  try {
+    audit = await auditRender(outputPath, expectation);
+  } catch (error) {
+    auditError = error instanceof Error ? error.message : String(error);
+  }
 
   // The exact text rendered: a later version is compared with it section by section.
   writeAtomically(join(outputDir, snapshot), decision.text);
@@ -397,8 +406,9 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     ...(current.rebuilt ? { rebuilt: current.rebuilt } : {}),
     ...(current.warnings.length > 0 ? { warnings: current.warnings } : {}),
     render: { ...result, path: `${renderId}.mp4` },
-    audit: audit.passed ? { passed: true, checks: audit.checks } : { passed: false, checks: audit.checks, findings: audit.findings },
+    audit: audit === null ? { passed: false, error: auditError } : audit.passed ? { passed: true, checks: audit.checks } : { passed: false, checks: audit.checks, findings: audit.findings },
   }));
+  if (audit === null) throw new RenderAuditError(renderId, [{ code: "audit-unavailable", message: `the audit could not run: ${auditError}` }]);
   if (!audit.passed) throw new RenderAuditError(renderId, audit.findings);
   writeAtomically(join(outputDir, "current.json"), serialize({ renderId, path: `${renderId}.mp4` }));
 

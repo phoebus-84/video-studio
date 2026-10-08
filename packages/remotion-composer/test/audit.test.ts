@@ -51,6 +51,28 @@ describe('auditRender', () => {
     assert.deepEqual(codes(await auditRender(make('exact.mp4', {seconds: 2}), {...EXPECT, durationInFrames: 61})), []);
   });
 
+  it('refuses a file shorter than its timeline, and sound that stops before the picture', async () => {
+    assert.ok(codes(await auditRender(make('short.mp4', {seconds: 1.5}), EXPECT)).includes('wrong-duration'));
+    const file = path.join(dir, 'short-sound.mp4');
+    const out = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=0.5',
+      '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', file], {encoding: 'utf8'});
+    assert.equal(out.status, 0, out.stderr);
+    const r = await auditRender(file, EXPECT);
+    assert.ok(r.findings.some((f) => f.code === 'wrong-duration' && /sound/.test(f.message)), JSON.stringify(r.findings));
+  });
+
+  it('says silent sound is silent, not NaN', async () => {
+    const r = await auditRender(make('silent.mp4', {volume: '0'}), {...EXPECT, loudness: {integrated: -14, truePeak: -1, range: 11}});
+    const f = r.findings.find((x) => x.code === 'loudness-off')!;
+    assert.match(f.message, /silent/);
+    assert.doesNotMatch(f.message, /NaN/);
+  });
+
+  it('takes the loop\'s last frame from the file, even a frame short of its timeline', async () => {
+    const still = make('still-short.mp4', {video: 'color=c=navy:size=320x180:rate=30'});
+    assert.deepEqual(codes(await auditRender(still, {...EXPECT, durationInFrames: 61, loop: true})), []);
+  });
+
   it('refuses a truncated file at once, with nothing else checked', async () => {
     const good = readFileSync(make('whole.mp4', {seconds: 2}));
     const cut = path.join(dir, 'cut.mp4');

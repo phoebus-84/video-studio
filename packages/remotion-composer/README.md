@@ -177,12 +177,14 @@ const audit = await auditRender('out.mp4', auditExpectation(timeline));
 |---|---|---|
 | decode | `decode-errors` | FFmpeg decodes the whole file without an error (nothing else is checked otherwise) |
 | streams | `wrong-video`, `wrong-audio` | H.264 `yuv420p` at the timeline's size and frame rate; AAC at 48 kHz when the timeline has sound |
-| duration | `wrong-duration` | the video lasts the timeline's frames, ± 1 |
-| loudness | `loudness-off` | with sound: integrated loudness within 1 LU of the profile's target, true peak at most 0.3 dB over it |
+| duration | `wrong-duration` | the video lasts the timeline's frames, ± 1; with sound, the sound lasts as long, ± 0.2 s |
+| loudness | `loudness-off` | with sound: integrated loudness within 1 LU of the profile's target, true peak at most 0.3 dB over it (silence says so) |
 | loop | `loop-broken` | when the timeline sets `loop: true`: first and last frame, at 64×36 grey, differ by at most 2 levels on average |
 
 A bad file gives findings, never an exception; it throws only when FFmpeg or
-FFprobe cannot run (their paths are the optional third argument). What a
+FFprobe cannot run. Their paths are the optional third argument, by default
+the ones every other step of a render uses (`FFMPEG_PATH`, `FFPROBE_PATH`,
+else on the PATH). What a
 failed audit means is the caller's: `@studio/episode` never makes such a
 render current.
 

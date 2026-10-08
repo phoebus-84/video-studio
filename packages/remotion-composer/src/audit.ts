@@ -34,11 +34,14 @@ export interface AuditResult {
   findings: AuditFinding[];
 }
 
+/** The FFmpeg and FFprobe to run; by default the ones every other step of a render uses (FFMPEG_PATH, FFPROBE_PATH, else on the PATH). */
 export interface AuditTools {
   ffmpeg?: string;
   ffprobe?: string;
 }
 
+/** The sound may end this much (s) before or after the picture: AAC's priming and padding, never a cut. */
+export const SOUND_DURATION_TOLERANCE = 0.2;
 /** Loudness may miss its target by this much (LU); true peak may exceed its ceiling by this much (dB). */
 export const LOUDNESS_TOLERANCE = 1;
 export const TRUE_PEAK_TOLERANCE = 0.3;
@@ -86,8 +89,8 @@ async function frame(ffmpeg: string, file: string, index: number): Promise<Buffe
 }
 
 export async function auditRender(file: string, expect: AuditExpectation, tools: AuditTools = {}): Promise<AuditResult> {
-  const ffmpeg = tools.ffmpeg ?? 'ffmpeg';
-  const ffprobe = tools.ffprobe ?? 'ffprobe';
+  const ffmpeg = tools.ffmpeg ?? (process.env.FFMPEG_PATH || 'ffmpeg');
+  const ffprobe = tools.ffprobe ?? (process.env.FFPROBE_PATH || 'ffprobe');
   const checks: string[] = [];
   const findings: AuditFinding[] = [];
 
@@ -116,24 +119,33 @@ export async function auditRender(file: string, expect: AuditExpectation, tools:
   }
 
   checks.push('duration');
-  if (video) {
-    const frames = video.nb_frames && Number(video.nb_frames) > 0 ? Number(video.nb_frames) : Math.round(Number(video.duration ?? 0) * expect.fps);
-    if (Math.abs(frames - expect.durationInFrames) > 1) {
-      findings.push({code: 'wrong-duration', message: `the video lasts ${frames} frames, not ${expect.durationInFrames} (± 1)`, measured: frames, expected: expect.durationInFrames});
+  const frames = video ? (video.nb_frames && Number(video.nb_frames) > 0 ? Number(video.nb_frames) : Math.round(Number(video.duration ?? 0) * expect.fps)) : 0;
+  if (video && Math.abs(frames - expect.durationInFrames) > 1) {
+    findings.push({code: 'wrong-duration', message: `the video lasts ${frames} frames, not ${expect.durationInFrames} (± 1)`, measured: frames, expected: expect.durationInFrames});
+  }
+  if (expect.audio && audio) {
+    const seconds = Number(audio.duration ?? 0);
+    const wantedSeconds = expect.durationInFrames / expect.fps;
+    if (!(Math.abs(seconds - wantedSeconds) <= SOUND_DURATION_TOLERANCE)) {
+      findings.push({code: 'wrong-duration', message: `the sound lasts ${seconds.toFixed(2)} s, not the picture's ${wantedSeconds.toFixed(2)} s (± ${SOUND_DURATION_TOLERANCE})`, measured: seconds, expected: wantedSeconds});
     }
   }
 
   if (expect.audio && expect.loudness && audio) {
     checks.push('loudness');
     const t = expect.loudness;
-    const measured = await run(ffmpeg, ['-hide_banner', '-i', file, '-af', `loudnorm=I=${t.integrated}:TP=${t.truePeak}:LRA=${t.range}:print_format=json`, '-f', 'null', '-']);
+    const measured = await run(ffmpeg, ['-hide_banner', '-i', file, '-vn', '-af', `loudnorm=I=${t.integrated}:TP=${t.truePeak}:LRA=${t.range}:print_format=json`, '-f', 'null', '-']);
     const start = measured.stderr.lastIndexOf('{');
     const end = measured.stderr.lastIndexOf('}');
     if (measured.code !== 0 || start < 0 || end < start) throw new Error(`ffmpeg could not measure the loudness of ${file}`);
     const report = JSON.parse(measured.stderr.slice(start, end + 1)) as Record<string, string>;
-    const integrated = Number(report.input_i);
-    const truePeak = Number(report.input_tp);
-    if (!(Math.abs(integrated - t.integrated) <= LOUDNESS_TOLERANCE) || !(truePeak <= t.truePeak + TRUE_PEAK_TOLERANCE)) {
+    // FFmpeg prints -inf for silence
+    const level = (v: string | undefined) => (v === '-inf' ? -Infinity : Number(v));
+    const integrated = level(report.input_i);
+    const truePeak = level(report.input_tp);
+    if (integrated === -Infinity) {
+      findings.push({code: 'loudness-off', message: `the sound is silent, not ${t.integrated} LUFS`, measured: {integrated: null, truePeak: null}, expected: {integrated: t.integrated, truePeak: t.truePeak}});
+    } else if (!(Math.abs(integrated - t.integrated) <= LOUDNESS_TOLERANCE) || !(truePeak <= t.truePeak + TRUE_PEAK_TOLERANCE)) {
       findings.push({code: 'loudness-off', message: `the loudness is ${integrated} LUFS with a true peak of ${truePeak} dBTP, not ${t.integrated} ± ${LOUDNESS_TOLERANCE} LUFS under ${t.truePeak} dBTP`, measured: {integrated, truePeak}, expected: {integrated: t.integrated, truePeak: t.truePeak}});
     }
   }
@@ -141,7 +153,8 @@ export async function auditRender(file: string, expect: AuditExpectation, tools:
   if (expect.loop) {
     checks.push('loop');
     const first = await frame(ffmpeg, file, 0);
-    const last = await frame(ffmpeg, file, expect.durationInFrames - 1);
+    // the file's own last frame: it may be a frame short of its timeline and still pass the duration check
+    const last = await frame(ffmpeg, file, Math.max(0, (frames || expect.durationInFrames) - 1));
     const n = Math.min(first.length, last.length);
     let sum = 0;
     for (let i = 0; i < n; i++) sum += Math.abs(first[i]! - last[i]!);
