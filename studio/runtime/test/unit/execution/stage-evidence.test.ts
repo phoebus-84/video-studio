@@ -35,7 +35,7 @@ async function setup(evidence?: StageEvidence) {
 
 /** The episode REF follows its files: upstream done, gated awaiting the operator, the rest not said. */
 const evidence: StageEvidence = {
-  appliesTo: ({ ref }) => ref.episode === REF.episode,
+  appliesTo: ({ ref, stageIds }) => ref.episode === REF.episode && stageIds.includes("upstream"),
   stages: async ({ operatorKey }) => ({
     upstream: { state: "completed", reason: `made (key ${operatorKey ? "held" : "absent"})` },
     gated: { state: "awaiting_review", reason: "the operator reads it" },

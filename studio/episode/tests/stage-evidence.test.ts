@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeEditTimeline } from "../src/episode-render.js";
 import { makeLayoutSheet } from "../src/layout-sheet.js";
 import { seriesStageEvidence } from "../src/stage-evidence.js";
-import { approveSheet, editSpec, sha256, specEpisode } from "../src/testing.js";
+import { approveSheet, divLongEpisode, editSpec, sha256, specEpisode } from "../src/testing.js";
 
 /**
  * A series episode's stages read from its files (avg-qwc): each stage is
@@ -49,6 +49,7 @@ function renderedFrom(hash: string, passed = true) {
   mkdirSync(join(dir(), "output"), { recursive: true });
   writeFileSync(join(dir(), "output", "render-1-a.report.json"), JSON.stringify({ renderId: "render-1-a", timeline: { hash }, audit: { passed } }));
   writeFileSync(join(dir(), "output", "current.json"), JSON.stringify({ renderId: "render-1-a", path: "render-1-a.mp4" }));
+  writeFileSync(join(dir(), "output", "render-1-a.mp4"), "video");
 }
 const timelineHash = () => sha256(readFileSync(join(dir(), "artifacts", "edit-timeline.json")));
 
@@ -142,6 +143,27 @@ describe("seriesStageEvidence", () => {
     expect(evidence().render.state).toBe("stale");
     renderedFrom(timelineHash(), false);
     expect(evidence().render.state).toBe("failed");
+  });
+
+  it("fails a render whose video is gone", async () => {
+    writeEditTimeline(dir(), { episodeRef: REF });
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    approveSheet(dir(), REF, KEY);
+    renderedFrom(timelineHash());
+    rmSync(join(dir(), "output", "render-1-a.mp4"));
+    expect(evidence().render).toEqual({ state: "failed", reason: "output/render-1-a.mp4 is missing" });
+  });
+
+  it("makes a changed pinned picture the pictures' staleness, not the spec's failure", async () => {
+    const { episodeDir, episodeRef } = await divLongEpisode(root);
+    const shortImages = join(episodeDir, "..", "..", "..", "short", "episodes", "il-lampo", "assets", "images");
+    writeFileSync(join(shortImages, readdirSync(shortImages)[0]!), "a repainted picture");
+    const long = seriesStageEvidence(episodeDir, { episodeRef, key: KEY })!;
+    expect(long.spec.state).toBe("completed");
+    expect(long.pictures.state).toBe("stale");
+    expect(long.pictures.reason).toContain("renew the pin");
+    expect(long.takes.reason).toBe("checked once pictures loads");
+    expect(long.timeline.reason).toBe("waiting on pictures and takes");
   });
 
   it("keeps a delivered video in sight when the sheet must be approved again", async () => {

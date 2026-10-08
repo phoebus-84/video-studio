@@ -52,6 +52,15 @@ describe("what the studio offers for each state", () => {
     expect(actionsFor("awaiting_review")).toEqual(["approve", "reject"]);
   });
 
+  it("offers no journal action for an episode whose stages follow its files (avg-qwc)", () => {
+    // A series episode is made with Pi's tools and its sheet is approved in the
+    // Storyboard: run, approve and reject go through the journal, which refuses them.
+    for (const state of ["runnable", "completed", "failed", "stale", "awaiting_review"]) {
+      expect(actionsFor(state, "files")).toEqual([]);
+    }
+    expect(actionsFor("runnable", "journal")).toEqual(["run"]);
+  });
+
   it("offers nothing for a stage that cannot act", () => {
     // A blocked stage's condition is someone else's to clear, and a running
     // one is held by a live lease. Offering a button that the service will

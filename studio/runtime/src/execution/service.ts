@@ -191,7 +191,7 @@ export class ExecutionService {
     if (!resolved.ok) return resolved;
 
     const episodeDir = this.episodeDir(ref);
-    if (this.options.stageEvidence?.appliesTo({ ref, episodeDir })) {
+    if (this.options.stageEvidence?.appliesTo({ ref, episodeDir, stageIds: resolved.value.stages.map((s) => s.definition.id) })) {
       return this.statusFromFiles(ref, pipeline, resolved.value.stages, episodeDir);
     }
     const events = await this.readJournal(episodeDir);

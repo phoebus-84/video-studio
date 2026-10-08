@@ -39,7 +39,26 @@ const brief = (problems: { message: string }[], most = 2) =>
 
 /** A problem with the takes, their audio or their timing, rather than with the spec. */
 const isTakeProblem = (p: SeriesCompileProblem) =>
+  ["missing-narration", "bad-narration", "missing-timing", "bad-timing"].includes(p.code) ||
   ["$.takes", "artifacts/narration/", "artifacts/timing/", "assets/takes/"].some((prefix) => p.path.startsWith(prefix));
+
+/**
+ * Which stage a problem loading the episode belongs to, and what it makes of
+ * it. Loading stops at the first problem: a changed pin or theme is not the
+ * spec's fault, and must not hide every stage behind it.
+ */
+function ownerOf(p: SeriesCompileProblem): { stage: "spec" | "pictures" | "takes"; state: StageEvidenceState } {
+  if (["missing-pin", "bad-pin", "pin-mismatch"].includes(p.code)) {
+    const stage = /(^|\/)(artifacts|assets\/takes)\//.test(p.path) ? "takes" : "pictures";
+    return { stage, state: p.code === "pin-mismatch" ? "stale" : "failed" };
+  }
+  if (["missing-theme", "bad-theme", "theme-mismatch"].includes(p.code)) return { stage: "pictures", state: "failed" };
+  if (isTakeProblem(p)) return { stage: "takes", state: p.code === "missing-timing" || p.code === "missing-asset" ? "pending" : "failed" };
+  if (["missing-asset", "ambiguous-asset", "not-a-file"].includes(p.code) && !p.path.startsWith("episode-spec.json")) {
+    return { stage: "pictures", state: p.code === "missing-asset" ? "pending" : "failed" };
+  }
+  return { stage: "spec", state: "failed" };
+}
 
 /**
  * Each series-production stage's state, read from the episode's files, or
@@ -66,10 +85,10 @@ export function seriesStageEvidence(
   const specText = readFileSync(join(episodeDir, "episode-spec.json"), "utf-8");
   const placeholders = specText.split(PLACEHOLDER).length - 1;
   const loaded = loadEpisode(episodeDir, options);
-  // Loading reads the takes too: what is wrong with them is the takes stage's, not the spec's.
+  // Loading reads the takes, the pins and the theme too: their problems are their stages', not the spec's.
   const loadProblems = loaded.ok ? [] : loaded.problems;
-  const takeLoadProblems = loadProblems.filter(isTakeProblem);
-  const specProblems = loadProblems.filter((p) => !isTakeProblem(p));
+  const specProblems = loadProblems.filter((p) => ownerOf(p).stage === "spec");
+  const otherProblems = loadProblems.filter((p) => ownerOf(p).stage !== "spec");
   if (placeholders > 0) {
     out.spec = { state: "pending", reason: `${placeholders} ${PLACEHOLDER} placeholder${placeholders === 1 ? "" : "s"} left in episode-spec.json` };
   } else if (specProblems.length > 0) {
@@ -83,10 +102,15 @@ export function seriesStageEvidence(
     return out;
   }
 
-  if (takeLoadProblems.length > 0) {
-    out.takes = takesVerdict(episodeDir, takeLoadProblems);
-    out.pictures = { state: "pending", reason: "checked once the takes load" };
-    for (const stage of ["timeline", "check", "sheet", "render"] as const) waiting(stage, stage === "timeline" ? ["pictures", "takes"] : ["timeline"]);
+  if (otherProblems.length > 0) {
+    const first = otherProblems[0]!;
+    const { stage, state } = ownerOf(first);
+    const other = stage === "takes" ? "pictures" : "takes";
+    out[stage] = stage === "takes" && state === "pending"
+      ? takesVerdict(episodeDir, otherProblems)
+      : { state, reason: brief(otherProblems) };
+    out[other] = { state: "pending", reason: `checked once ${stage} ${stage === "takes" ? "load" : "loads"}` };
+    for (const s of ["timeline", "check", "sheet", "render"] as const) waiting(s, s === "timeline" ? ["pictures", "takes"] : ["timeline"]);
     return out;
   }
 
@@ -133,7 +157,9 @@ export function seriesStageEvidence(
   const warnings = findings.length - errors.length;
   out.check = errors.length > 0
     ? { state: "failed", reason: `${errors.length} series rule${errors.length === 1 ? "" : "s"} broken: ${brief(errors)}` }
-    : { state: "completed", reason: `the series rules pass${warnings > 0 ? `, ${warnings} warning${warnings === 1 ? "" : "s"}` : ""}` };
+    : decision.validation?.validator == null
+      ? { state: "completed", reason: "the template names no series rules to check" }
+      : { state: "completed", reason: `the series rules pass${warnings > 0 ? `, ${warnings} warning${warnings === 1 ? "" : "s"}` : ""}` };
   if (!done("check")) {
     waiting("sheet", ["check"]);
     waiting("render", ["sheet"]);
@@ -194,6 +220,7 @@ function renderVerdict(episodeDir: string, decision: TimelineDecision): StageVer
     { timeline?: { hash?: string }; audit?: { passed?: boolean } } | null;
   if (!report) return { state: "failed", reason: `output/${renderId}.report.json is missing or not JSON` };
   if (report.audit?.passed !== true) return { state: "failed", reason: `the render audit of ${renderId} did not pass` };
+  if (!existsSync(join(episodeDir, "output", `${renderId}.mp4`))) return { state: "failed", reason: `output/${renderId}.mp4 is missing` };
   if (report.timeline?.hash !== `sha256:${decision.hash}`) {
     return { state: "stale", reason: `output/${renderId}.mp4 was rendered from an earlier timeline (pva_compose_video)` };
   }

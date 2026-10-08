@@ -319,8 +319,11 @@ from those files (`"source": "files"`):
   timeline.
 
 A changed file makes its stage stale by itself. Each stage's `stateReason`
-says what is missing and which tool makes it. Claims still go through the
-journal, for the stages the gateway can perform itself.
+says what is missing and which tool makes it. The stage panel offers no run,
+approve or reject for such an episode: those go through the journal. Claims
+still do, for the stages the gateway can perform itself, but a sheet approved
+only at the journal's gate (`vpr review`) is not seen here: approve it in the
+Storyboard or with `vpr sheet approve`.
 
 **`vpr run`** claims the next runnable stage — or the one named by `--stage` —
 and prints the command that closes it:

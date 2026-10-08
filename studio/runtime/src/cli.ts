@@ -35,6 +35,8 @@ import { releaseTemplate, sealTheme, ThemeReleaseError } from "./theme-release.j
 import { verifySeriesReference } from "@studio/contracts/src/series-references.mjs";
 import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { declaredPipeline, PipelineDeclarationError } from "./pipeline/declared.js";
 import type { RerunMode } from "./rerun/index.js";
 import { err, ok } from "./result.js";
@@ -348,7 +350,10 @@ async function cmdStatus(ctx: CliContext, args: string[]): Promise<number> {
   const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
   if (typeof pipeline === "number") return pipeline;
   // Only status reads a series episode's stages from its files: the bridge loads the composer, which nothing else here needs.
-  await loadStageEvidence();
+  const unloaded = await loadStageEvidence();
+  if (unloaded && existsSync(join(episodePath(libraryFrom(args) || ".", parsed.channel, parsed.series, parsed.episode), "episode-spec.json"))) {
+    ctx.logger.warn(`this episode's stages are read from its files, but the studio's reader could not be loaded (${unloaded}): showing the journal's`);
+  }
   const service = makeService(args, ttl.value, operatorKey);
   const status = await service.status(parsed, pipeline);
   if (!status.ok) {
@@ -1202,13 +1207,16 @@ function builtinPipelines(): string | undefined {
  * alone), status follows the journal for every episode.
  */
 let stageEvidence: StageEvidence | undefined;
-async function loadStageEvidence(): Promise<void> {
+/** Load the bridge; the reason it could not be loaded, or null. */
+async function loadStageEvidence(): Promise<string | null> {
   const adapters = "@studio/adapters";
   try {
     const mod = (await import(adapters)) as { createStudioStageEvidence?: () => StageEvidence };
     stageEvidence = mod.createStudioStageEvidence?.();
-  } catch {
+    return stageEvidence ? null : `${adapters} has no createStudioStageEvidence`;
+  } catch (e) {
     stageEvidence = undefined;
+    return e instanceof Error ? e.message : String(e);
   }
 }
 

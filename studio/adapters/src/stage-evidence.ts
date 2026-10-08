@@ -7,12 +7,15 @@
 // execution service; the runtime knows no episode format.
 // ---------------------------------------------------------------------------
 
-import { isSpecDriven, seriesStageEvidence } from "@studio/episode";
+import { isSpecDriven, SERIES_STAGES, seriesStageEvidence } from "@studio/episode";
 import type { StageEvidence } from "@studio/runtime";
 
 export function createStudioStageEvidence(): StageEvidence {
   return {
-    appliesTo: ({ episodeDir }) => isSpecDriven(episodeDir),
+    // Only for the series-production stages: another pipeline run on the same
+    // episode, or a series that adds stages of its own, keeps the journal.
+    appliesTo: ({ episodeDir, stageIds }) =>
+      isSpecDriven(episodeDir) && stageIds.every((id) => (SERIES_STAGES as readonly string[]).includes(id)),
     stages: async ({ ref, episodeDir, operatorKey }) =>
       seriesStageEvidence(episodeDir, { episodeRef: ref, key: operatorKey }) ?? {},
   };

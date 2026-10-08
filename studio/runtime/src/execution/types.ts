@@ -432,8 +432,12 @@ export interface StageEvidenceVerdict {
  * the composition roots, which know the studio's episodes; the runtime does not.
  */
 export interface StageEvidence {
-  /** Whether this episode's stages follow its files rather than the journal. Cheap: asked on every status. */
-  appliesTo(input: { ref: EpisodeRef; episodeDir: string }): boolean;
+  /**
+   * Whether this episode's stages, in this pipeline, follow its files rather
+   * than the journal. Cheap: asked on every status. `stageIds` are the
+   * pipeline's: evidence that does not know them all must say no.
+   */
+  appliesTo(input: { ref: EpisodeRef; episodeDir: string; stageIds: string[] }): boolean;
   /** Each stage's verdict, by stage id. */
   stages(input: { ref: EpisodeRef; episodeDir: string; operatorKey: string | null }): Promise<Record<string, StageEvidenceVerdict>>;
 }

@@ -31,7 +31,7 @@
   const liveStage = $derived(statusIsCurrent
     ? production.stages.find((s) => s.stageId === stageId) : undefined);
   const state = $derived(liveStage?.state ?? (stage ? stageDisplayState(stage) : null));
-  const actions = $derived(liveStage ? actionsFor(liveStage.state) : []);
+  const actions = $derived(liveStage ? actionsFor(liveStage.state, production.source) : []);
   const primaryAction = $derived(actions.includes("approve") ? "approve"
     : actions.includes("run") ? "run" : null);
   const busy = $derived(production.busyStage !== null || production.loading);
