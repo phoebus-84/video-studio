@@ -49,6 +49,9 @@ A frozen library module, holding what several tools draw:
 | `Shards` | A picture breaking into triangles that fly into the room |
 | `Wind` | Leaves and streaks |
 | `Smoke` | Smoke |
+| `coverPoint` | Where a point of a picture (0–1) lands once framed as `Cover` frames it (object-fit cover, focus, zoom), given the picture's aspect |
+| `fitLine` | The largest size at which lines fit their room with their letter spacing and their plate's padding, border and shadow |
+| `PictureSchema`, `PANEL` | The figure tools' picture `{src, focus?, aspect?}` (aspect = width / height, default 4/3) and the panel's default box |
 
 Colours come from the look's roles; SVG ids are unique per instance.
 
@@ -75,7 +78,7 @@ Colours given in props name a look role (`text`, `accent`, `highlight`, `glow`, 
 | `interlinear` | overlay | `x`, `y`, `width`, `words: {text, gloss, at, glossAt}[]`, `strike?: {indices, at}` (see below) |
 | `monitor-wall` | fill | `box?`, `cells: {src, focus?, kind: picture \| clip}[]` (1–8), `appear?`, `caption: {text, at, color?}[]` (see below) |
 | `summary` | fill | `x?`, `y?`, `rows: {src, focus?, keyword, figure, at}[]` (1–8), `closing?: {text, at}`, `lit?` (see below) |
-| `progress` | overlay | `box`, `steps: {label}[]` (1–8), `current`, `done` (see below) |
+| `progress` | overlay | `box?`, `steps: {label}[]` (1–8), `current`, `done` (see below) |
 
 - **`panel` layers**: each layer is one of
   - `picture {src, focus?, zoom?, push?}`;
@@ -94,7 +97,7 @@ Colours given in props name a look role (`text`, `accent`, `highlight`, `glow`, 
 
   Space is reserved from the start, so items never overlap. Plates are full under titles, quotes and notes.
 - **`timeline` modes**:
-  - `axis`: a light thread, a tick every 5 years, stops lighting up, labels alternating above and below when close, a cursor;
+  - `axis`: a light thread, a tick every 5 years, stops lighting up, labels above and below on as many lines as they need not to touch, a cursor;
   - `stops`: dots with label and sub-label, the line drawing out.
 - **`story-fx` effects**:
   - `{people: {at, total?, lit?, extra?: {at}, x0?, y?, step?}}`;
@@ -110,18 +113,18 @@ Colours given in props name a look role (`text`, `accent`, `highlight`, `glow`, 
 
 **Figure tools (`avg-dcf.4.2.2`)**
 
-Each draws the glass panel and its picture (`picture: {src, focus?}`), its effects and its chips. Positions are inside the panel box (`box?`, default 440/150/1060×596).
+Each draws the glass panel and its picture (`picture: {src, focus?, aspect?}`), its effects and its chips. Positions are inside the panel box (`box?`, default 440/150/1060×596). Points on the picture (`house`, `eye`) are found through the picture's `aspect`, which the compiler passes.
 
 | Kit | Times (`times`) | Labels and data |
 |---|---|---|
 | `merge` | `a`, `b`, `tear`, `verb`, `result`, `end` | `labels: {a, b, verb, verbSub?, result}` |
-| `cards` | each card's `at`, `human`, `end` | `cards: {word, gloss, icon (asset or "bruise"), pulse?, at}[1–3]`, `human: string[]` |
-| `stack` | `w1`–`w3`, `stairs`, `s1`–`s3`, `collapse` | `steps: {word, gloss, color?}[3]`, `row?: string[3]`, `clip?`, `labels: {weight}` |
+| `cards` | each card's `at`, `human`, `end` | `cards: {word (≤14), gloss (≤30), icon (asset or "bruise"), pulse?, at}[1–3]`, `human: string[]` (≤4) |
+| `stack` | `w1`–`w3`, `stairs`, `s1`–`s3`, `collapse` | `steps: {word, gloss, color?}[3]` (colours default to glow, highlight, signal), `row?: string[3]`, `clip?`, `labels: {weight}` |
 | `oxymoron` | `glow`, `a`, `b`, `on`, `off`, `noConj` | `house: [x, y]` (on the picture), `labels: {glow, glowSub?, a, aSub?, b, bSub?, on, off, conj, noConj}` |
-| `simile` | `subject`, `etym`, `like`, `open`, `close`, `dark` | `eye: {x, y, r?}`, `labels: {etymWord?, etymOrigin?, etymMeaning?, like, open, close}`, `bridgeImage?` |
+| `simile` | `subject`, `etym`, `like`, `open`, `close`, `dark` | `eye: {x, y, r?}` (`r`: the iris's radius as a share of the picture's width, default 0.148), `labels: {etymWord?, etymOrigin?, etymMeaning?, like, open, close}`, `bridgeImage?` |
 
 What each tool draws:
-- **`merge`**: the picture tears in two along a jagged light line, live bolts flicker in the dark, the two chips meet in the result.
+- **`merge`**: the panel is dark and a live bolt crawls in it; the dark tears in two along a jagged light line and parts on the picture, where bolts keep striking; the two chips meet in the result.
 - **`cards`**: up to three cards slide in, the last one jolts the picture; the `human` lines stack on the left; wind blows.
 - **`stack`**: the adjectives in a row, then a staircase of growing weight with its gauge. At `collapse` the picture shatters into shards, smoke, and a rebuilt dimmed glass.
 - **`oxymoron`**: a glow on the house; two halves (calm and agitated waves); lights on and off; the conjunction struck out.
@@ -131,8 +134,8 @@ What each tool draws:
 
 | Kit | Times | Data |
 |---|---|---|
-| `syllables` | `sample`, `vowel`, `breath`, `figure`, `metric` | `syllables: string[]`, `merges: {a, b, label, vowels, text, at}[0–2]`, `metric`, `labels: {counted, metric, rule, ruleResult, figure?}` |
-| `rhymes` | `rhymes`, `a`, `b`, `close` | `ends: string[]`, `scheme`, `pair: [i, j]`, `title`, `label` |
+| `syllables` | `sample`, `vowel`, `breath`, `figure`, `metric` | `syllables: string[]` (2–20), `merges: {a, b, label, vowels, text, at}[0–2]`, `metric`, `labels: {counted, metric, rule, ruleResult, figure?}` |
+| `rhymes` | `rhymes`, `a`, `b`, `close` | `ends: string[]` (2–10), `scheme` (one capital letter per verse), `pair: [i, j]`, `title`, `label` |
 
 - **`syllables`**: tiles that close up as the vowels merge, arcs over the meeting vowels, the count, and the figure's name.
 - **`rhymes`**: the last words with their scheme letters, the pair lit and joined by an arc, the closing eye.
@@ -143,10 +146,10 @@ The props schemas refuse, at their paths:
 - 2–4 split items;
 - at most 3 cards and 2 merges;
 - exactly 3 `stack` steps;
-- interlinear and rhyme indices that do not point to a word or line;
-- `read` and phase times out of order;
+- interlinear and rhyme indices that do not point to a word or line, a rhyme pair out of order, a scheme without one letter per verse;
+- `read`, phase times and each tool's `times` out of order;
 - 1–8 monitor cells and summary rows;
-- a `merge` whose `b` does not follow `a`;
+- a syllable merge whose `b` is not the syllable after `a`;
 - colours that are not look roles.
 
 ## Verifying the look
@@ -156,6 +159,12 @@ Before the plan, uncommitted, as for the stage: the kits drawn with the Dentro i
 - **The five figure tools, the metre, the monitor wall and the summary:** at moments found in the video.
 
 The comparison is shown to the user for approval.
+
+**Done on 2026-10-08:** thirteen moments of the delivered video beside the kits drawn with the Dentro i versi look, with crops of CreativeStudio's panel as the pictures: word tracks and counts, interlinear, merge, cards, stack, oxymoron (halves, struck conjunction), simile (etymology, bridge), syllables, rhymes, monitor wall, summary. Tools, layouts, colours and type match. The differences are in the data and the timing, which belong to the compiler (`avg-dcf.6`), and CreativeStudio's own card icons. The prototype also settled:
+- `fitLine` (the stack's plates were shrinking their text);
+- labels on as many lines as they need on the axis;
+- arrows drawn to their full length;
+- the dark before the tear in `merge`.
 
 ## Testing
 
