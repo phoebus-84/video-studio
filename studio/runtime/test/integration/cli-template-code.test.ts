@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -51,13 +51,16 @@ describe("vpr template seal / verify", { timeout: 60_000 }, () => {
     mkdirSync(path.join(release, "fixtures", "morning"), { recursive: true });
     cpSync(INPUT, path.join(release, "fixtures", "morning", "input.json"));
     expect(vpr(root, ["verify", "sample/poetry", "poetry-short", "1.0.0"]).status).toBe(2); // no golden yet
+    const dry = vpr(root, ["verify", "sample/poetry", "poetry-short", "1.0.0", "--update", "--dry-run"]);
+    expect([dry.status, existsSync(path.join(release, "fixtures", "morning", "expected-timeline.json"))]).toEqual([0, false]);
     expect(vpr(root, ["verify", "sample/poetry", "poetry-short", "1.0.0", "--update"]).status).toBe(0);
     const verified = vpr(root, ["verify", "sample/poetry", "poetry-short", "1.0.0"]);
     expect([verified.status, verified.json.ok, verified.json.fixtures]).toEqual([0, true, [{ name: "morning", ok: true }]]);
 
     appendFileSync(path.join(release, "compiler", "index.ts"), "\nexport const extra = 1;\n");
+    // The sealed bundle still runs and passes: a source that moved on is a warning.
     const changed = vpr(root, ["verify", "sample/poetry", "poetry-short", "1.0.0"]);
-    expect([changed.status, changed.json.problems[0].code]).toEqual([2, "source-differs"]);
+    expect([changed.status, changed.json.warnings[0].code]).toEqual([0, "rebuild-differs"]);
   });
 
   it("refuses to seal a release an episode pins, as a runtime error", () => {

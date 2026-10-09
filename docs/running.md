@@ -459,11 +459,13 @@ and `validator`.
   seal it.
 - **`template verify`** checks:
   - that the bundles are the sealed ones;
-  - that the source still builds to them;
+  - that the source still builds to them (a warning only: the studio code it
+    inlines may have changed since, and the sealed bundle is what runs);
   - that each `fixtures/<name>/input.json` compiles, and passes the
     validator, to its `expected-timeline.json`.
 
-  `--update` writes the goldens, before any episode pins the release.
+  `--update` writes the goldens, before any episode pins the release;
+  `--dry-run` writes nothing.
 
 ```bash
 node studio/runtime/dist/src/cli.js template seal my-channel/my-series my-template 1.1.0 --library "$PWD/library"

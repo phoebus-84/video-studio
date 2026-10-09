@@ -12,12 +12,13 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { builtinModules, createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { compileSpec, checkSeries } from "@studio/series";
 import { SERIES_TEMPLATE_MANIFEST } from "@studio/contracts/src/layout.mjs";
-import { SERIES_TEMPLATE_FILES, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
+import { SERIES_TEMPLATE_FILES, validateSeriesTemplate, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
 import { releaseCodeOf } from "./release-code.js";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -25,7 +26,7 @@ const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const ROLES = ["compiler", "validator"] as const;
 type Role = (typeof ROLES)[number];
 
-export type TemplateCodeCode = "missing-template" | "bad-template" | "release-pinned" | "build-failed" | "no-code" | "no-esbuild";
+export type TemplateCodeCode = "missing-template" | "bad-template" | "release-pinned" | "build-failed" | "bad-code" | "no-code" | "no-esbuild";
 
 export class TemplateCodeError extends Error {
   constructor(readonly code: TemplateCodeCode, message: string) {
@@ -60,50 +61,138 @@ function readManifest(releaseDir: string, label: string): { manifest: any; text:
   }
 }
 
-/** The episodes of this series whose spec pins the release. */
+/**
+ * What pins the release: the series' episodes whose spec names it, and its
+ * golden references. A spec or reference that cannot be read counts as a pin:
+ * sealing must never guess that nothing depends on a release.
+ */
 function pinnedBy(seriesDir: string, id: string, version: string): string[] {
-  const episodes = join(seriesDir, "episodes");
-  if (!existsSync(episodes)) return [];
-  return readdirSync(episodes).filter((name) => {
+  const pins: string[] = [];
+  const names = (file: string, label: string) => {
     try {
-      const spec = JSON.parse(readFileSync(join(episodes, name, "episode-spec.json"), "utf-8"));
-      return spec?.template?.id === id && spec?.template?.version === version;
+      const doc = JSON.parse(readFileSync(file, "utf-8"));
+      if (doc?.template?.id === id && doc?.template?.version === version) pins.push(label);
     } catch {
-      return false;
+      pins.push(`${label} (unreadable)`);
     }
-  }).sort();
+  };
+  const episodes = join(seriesDir, "episodes");
+  for (const name of existsSync(episodes) ? readdirSync(episodes).sort() : []) {
+    if (existsSync(join(episodes, name, "episode-spec.json"))) names(join(episodes, name, "episode-spec.json"), name);
+  }
+  const references = join(seriesDir, "templates", id, "references");
+  for (const name of existsSync(references) ? readdirSync(references).filter((n) => n.endsWith(".json") && !n.endsWith(".withdrawal.json")).sort() : []) {
+    names(join(references, name), `reference ${name.slice(0, -5)}`);
+  }
+  return pins;
 }
 
-/** One self-contained CommonJS bundle of a role's source; the app's packages resolve from its node_modules. */
+const EXTENSIONS = ["", ".ts", ".tsx", ".mjs", ".js", ".cjs", ".json", "/index.ts", "/index.tsx", "/index.mjs", "/index.js"];
+const LOADERS: Record<string, "ts" | "tsx" | "js" | "json"> = { ".ts": "ts", ".tsx": "tsx", ".mjs": "js", ".js": "js", ".cjs": "js", ".json": "json" };
+
+/** The first file a relative import names, trying the usual extensions. */
+function fileOf(base: string): string | null {
+  for (const ext of EXTENSIONS) {
+    const candidate = `${base}${ext}`;
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+  }
+  return null;
+}
+
+/** `<name>@<version>/<path in the package>` for a file of the app: the same wherever the app is installed. */
+function packageKeyOf(file: string, cache: Map<string, string>): string {
+  let dir = dirname(file);
+  for (;;) {
+    const manifest = join(dir, "package.json");
+    if (existsSync(manifest)) {
+      let key = cache.get(dir);
+      if (key === undefined) {
+        const pkg = JSON.parse(readFileSync(manifest, "utf-8")) as { name?: string; version?: string };
+        key = pkg.name ? `${pkg.name}@${pkg.version ?? "0.0.0"}` : "";
+        cache.set(dir, key);
+      }
+      if (key) return `${key}/${relative(dir, file).split(sep).join("/")}`;
+    }
+    const up = dirname(dir);
+    if (up === dir) return relative(process.cwd(), file).split(sep).join("/");
+    dir = up;
+  }
+}
+
+/**
+ * One self-contained CommonJS bundle of a role's source. Every module is
+ * named by where it sits in the release (`release:compiler/x.ts`) or in its
+ * package (`app:@studio/contracts@0.1.0/src/cues.mjs`), never by a path on
+ * this machine, so the bundle is the same wherever the library and the app
+ * are. Bare imports resolve as Node would from the app; relative ones stay
+ * inside the release.
+ */
 async function build(releaseDir: string, role: Role): Promise<string> {
   const require = createRequire(import.meta.url);
   let esbuild: typeof import("esbuild");
-  let nodeModules: string;
   try {
-    const main = require.resolve("esbuild");
-    esbuild = require(main);
-    nodeModules = dirname(dirname(dirname(main)));
+    esbuild = require("esbuild");
   } catch {
     return fail("no-esbuild", "esbuild is not installed beside the studio: it builds a release's code");
   }
+  const real = new Map<string, string>(); // "<namespace>:<key>" → file
+  const packages = new Map<string, string>();
+  const builtins = new Set(builtinModules);
+  const name = (namespace: "release" | "app", file: string) => {
+    const key = namespace === "release" ? relative(releaseDir, file).split(sep).join("/") : packageKeyOf(file, packages);
+    real.set(`${namespace}:${key}`, file);
+    return { path: key, namespace };
+  };
+  const plugin: import("esbuild").Plugin = {
+    name: "release-code",
+    setup(b) {
+      b.onResolve({ filter: /.*/ }, (args) => {
+        if (args.kind === "entry-point") return name("release", sourceOf(releaseDir, role));
+        if (args.path.startsWith("node:") || builtins.has(args.path) || builtins.has(args.path.split("/")[0]!)) return { path: args.path, external: true };
+        const importer = real.get(`${args.namespace}:${args.importer}`);
+        if (!importer) return { errors: [{ text: `cannot place ${args.path}: its importer ${args.importer} is unknown` }] };
+        if (args.path.startsWith(".")) {
+          const file = fileOf(resolve(dirname(importer), args.path));
+          if (!file) return { errors: [{ text: `${args.path} not found from ${args.importer}` }] };
+          if (args.namespace === "release") {
+            const inside = relative(releaseDir, file);
+            if (inside.startsWith("..") || isAbsolute(inside)) return { errors: [{ text: `${args.path} leads outside the release` }] };
+            return name("release", file);
+          }
+          return name("app", file);
+        }
+        // A bare import: the release's from the app, the app's from where it sits.
+        const from = args.namespace === "release" ? fileURLToPath(import.meta.url) : importer;
+        try {
+          return name("app", createRequire(from).resolve(args.path));
+        } catch {
+          return { errors: [{ text: `${args.path} is not a package the studio has (imported by ${args.importer})` }] };
+        }
+      });
+      b.onLoad({ filter: /.*/ }, (args) => {
+        const file = real.get(`${args.namespace}:${args.path}`)!;
+        return { contents: readFileSync(file), loader: LOADERS[extname(file)] ?? "js", resolveDir: dirname(file) };
+      });
+    },
+  };
   try {
     const out = await esbuild.build({
-      entryPoints: [sourceOf(releaseDir, role)],
+      entryPoints: [`${role}/index.ts`],
       absWorkingDir: releaseDir,
       bundle: true,
       platform: "node",
       format: "cjs",
       target: "node20",
       write: false,
-      nodePaths: [nodeModules],
-      // No path comments: the bundle is the same wherever the library and the app sit.
+      plugins: [plugin],
+      // No tsconfig above the release changes how it builds.
+      tsconfigRaw: "{}",
       minifyWhitespace: true,
       legalComments: "none",
       logLevel: "silent",
     });
     return out.outputFiles[0]!.text;
-  } catch (error) {
-    const errors = (error as { errors?: { text: string; location?: { file: string; line: number } }[] }).errors ?? [];
+  } catch (error) {    const errors = (error as { errors?: { text: string; location?: { file: string; line: number } }[] }).errors ?? [];
     const detail = errors.map((e) => `${e.location ? `${e.location.file}:${e.location.line}: ` : ""}${e.text}`).join("; ");
     return fail("build-failed", `${role}/index.ts does not build: ${detail || (error as Error).message}`);
   }
@@ -132,7 +221,11 @@ export async function sealTemplateCode(seriesDir: string, id: string, version: s
     if (!existsSync(sourceOf(releaseDir, role))) continue;
     if (!manifest[role] || typeof manifest[role] !== "object") fail("bad-template", `${label} has ${role}/index.ts but its manifest names no ${role} (id and version)`);
     built[role] = await build(releaseDir, role);
-    manifest[role] = { id: manifest[role].id, version: manifest[role].version, bundle: { path: bundlePath(role), hash: sha256(built[role]!) } };
+    const hash = sha256(built[role]!);
+    // Sealed only if it runs as what the release names it.
+    const loaded = releaseCodeOf(role, join(releaseDir, bundlePath(role)), Buffer.from(built[role]!), hash, manifest[role]);
+    if (!loaded.ok) fail("bad-code", `${role}/index.ts: ${loaded.message}`);
+    manifest[role] = { id: manifest[role].id, version: manifest[role].version, bundle: { path: bundlePath(role), hash } };
   }
   if (Object.keys(built).length === 0) fail("no-code", `${label} has neither compiler/index.ts nor validator/index.ts`);
 
@@ -166,6 +259,8 @@ export async function sealTemplateCode(seriesDir: string, id: string, version: s
 export interface CodeVerification {
   ok: boolean;
   problems: { code: string; message: string }[];
+  /** Worth knowing, not wrong: e.g. the source, or the toolbox it inlines, no longer builds to the sealed bundle. */
+  warnings: { code: string; message: string }[];
   fixtures: { name: string; ok: boolean; message?: string }[];
 }
 
@@ -175,15 +270,19 @@ export interface CodeVerification {
  * timelines (expected-timeline.json)? `update` writes the goldens instead,
  * refused once an episode pins the release.
  */
-export async function verifyTemplateCode(seriesDir: string, id: string, version: string, options: { update?: boolean } = {}): Promise<CodeVerification> {
+export async function verifyTemplateCode(seriesDir: string, id: string, version: string, options: { update?: boolean; dryRun?: boolean } = {}): Promise<CodeVerification> {
   const releaseDir = releaseDirOf(seriesDir, id, version);
   const label = `${id}@${version}`;
-  if (options.update) {
+  if (options.update && !options.dryRun) {
     const pinned = pinnedBy(seriesDir, id, version);
     if (pinned.length > 0) fail("release-pinned", `${label} is pinned by ${pinned.join(", ")}: its goldens never change`);
   }
   const { manifest, text: manifestText } = readManifest(releaseDir, label);
+  // The manifest's shape first: a bundle path is only read once the contract has held it to compiler/ or validator/.
+  const shape = validateSeriesTemplate(manifest);
+  if (shape.length > 0) fail("bad-template", shape.map((p: { code: string; path: string; message: string }) => `${p.code} at ${p.path}: ${p.message}`).join("; "));
   const problems: CodeVerification["problems"] = [];
+  const warnings: CodeVerification["warnings"] = [];
   const code: { compiler?: any; validator?: any } = {};
   for (const role of ROLES) {
     const bundle = manifest[role]?.bundle as { path: string; hash: string } | undefined;
@@ -199,9 +298,9 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
       continue;
     }
     if (existsSync(sourceOf(releaseDir, role)) && sha256(await build(releaseDir, role)) !== bundle.hash) {
-      problems.push({ code: "source-differs", message: `${role}/index.ts no longer builds to ${bundle.path}: the source changed after sealing` });
+      warnings.push({ code: "rebuild-differs", message: `${role}/index.ts no longer builds to ${bundle.path}: its source, or the studio code it inlines, changed since sealing; the sealed bundle is what runs` });
     }
-    const loaded = releaseCodeOf(role, file, bytes, bundle.hash);
+    const loaded = releaseCodeOf(role, file, bytes, bundle.hash, manifest[role]);
     if (!loaded.ok) problems.push({ code: "bad-code", message: `${bundle.path}: ${loaded.message}` });
     else code[role] = loaded.code;
   }
@@ -211,8 +310,15 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
   const fixturesDir = join(releaseDir, "fixtures");
   for (const name of existsSync(fixturesDir) ? readdirSync(fixturesDir).sort() : []) {
     const dir = join(fixturesDir, name);
-    if (!existsSync(join(dir, "input.json"))) continue;
-    const input = JSON.parse(readFileSync(join(dir, "input.json"), "utf-8"));
+    if (!statSync(dir).isDirectory()) continue;
+    let input: any;
+    try {
+      input = JSON.parse(readFileSync(join(dir, "input.json"), "utf-8"));
+      if (input === null || typeof input !== "object" || typeof input.spec !== "object" || input.spec === null) throw new Error("not a compile input (no spec)");
+    } catch (error) {
+      fixtures.push({ name, ok: false, message: `input.json: ${existsSync(join(dir, "input.json")) ? (error as Error).message : "missing"}` });
+      continue;
+    }
     // The fixture is compiled as this release, whatever release it was written for.
     input.template = manifest;
     input.spec.template = { id, version, hash: sha256(manifestText) };
@@ -230,8 +336,8 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
     const text = `${JSON.stringify(result.timeline, null, 2)}\n`;
     const golden = join(dir, "expected-timeline.json");
     if (options.update) {
-      writeFileSync(golden, text);
-      fixtures.push({ name, ok: true, message: "golden written" });
+      if (!options.dryRun) writeFileSync(golden, text);
+      fixtures.push({ name, ok: true, message: options.dryRun ? "golden would be written" : "golden written" });
     } else if (!existsSync(golden)) {
       fixtures.push({ name, ok: false, message: "no expected-timeline.json: verify --update writes it" });
     } else if (readFileSync(golden, "utf-8") !== text) {
@@ -240,5 +346,5 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
       fixtures.push({ name, ok: true });
     }
   }
-  return { ok: problems.length === 0 && fixtures.every((f) => f.ok), problems, fixtures };
+  return { ok: problems.length === 0 && fixtures.every((f) => f.ok), problems, warnings, fixtures };
 }

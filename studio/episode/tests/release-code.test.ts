@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -75,7 +76,7 @@ describe("a release that runs its own code", () => {
     expect(!missing.ok && missing.problems[0]!.code).toBe("missing-code");
   });
 
-  it("refuses code that exports no compiler, and code that is not the release's named version", async () => {
+  it("refuses code that exports no compiler: sealing it, and loading a bundle made by hand", async () => {
     specEpisode(dir(), REF);
     const releaseDir = join(seriesDir(), "templates", "poetry-short", "1.0.0");
     mkdirSync(join(releaseDir, "compiler"), { recursive: true });
@@ -83,28 +84,34 @@ describe("a release that runs its own code", () => {
     const spec = join(dir(), "episode-spec.json");
     const aside = readFileSync(spec);
     rmSync(spec);
-    const sealed = await sealTemplateCode(seriesDir(), "poetry-short", "1.0.0");
+    const sealing = await refusal(() => sealTemplateCode(seriesDir(), "poetry-short", "1.0.0"));
+    expect([sealing.code, sealing.message]).toEqual(["bad-code", expect.stringContaining("export const compiler")]);
+
+    // A bundle no seal made: the loader holds it to the same rule.
+    const bundle = "module.exports = { nothing: 1 };\n";
+    writeFileSync(join(releaseDir, "compiler", "compiler.cjs"), bundle);
+    const manifestFile = join(releaseDir, "series-template.json");
+    const manifest = JSON.parse(readFileSync(manifestFile, "utf-8"));
+    manifest.compiler.bundle = { path: "compiler/compiler.cjs", hash: `sha256:${createHash("sha256").update(bundle).digest("hex")}` };
+    const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+    writeFileSync(manifestFile, manifestText);
     writeFileSync(spec, aside);
-    editSpec(dir(), (doc) => { doc.template.hash = sealed.hash; });
+    editSpec(dir(), (doc) => { doc.template.hash = `sha256:${createHash("sha256").update(manifestText).digest("hex")}`; });
     const empty = loadEpisode(dir(), opts());
     expect(!empty.ok && empty.problems[0]).toMatchObject({ code: "bad-code" });
     expect(!empty.ok && empty.problems[0]!.message).toContain("export const compiler");
   });
 
-  it("says when the code is another version than the one the release names", async () => {
+  it("refuses to seal code that is another version than the one the release names", async () => {
     const { releaseDir } = await releaseCodeEpisode(dir(), REF);
+    rmSync(join(dir(), "episode-spec.json"));
     const manifestFile = join(releaseDir, "series-template.json");
     const manifest = JSON.parse(readFileSync(manifestFile, "utf-8"));
     manifest.compiler.version = "9.9.9";
     writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
-    const spec = join(dir(), "episode-spec.json");
-    const aside = readFileSync(spec);
-    rmSync(spec);
-    const sealed = await sealTemplateCode(seriesDir(), "poetry-short", "1.0.0");
-    writeFileSync(spec, aside);
-    editSpec(dir(), (doc) => { doc.template.hash = sealed.hash; });
-    const compiled = compileEpisode(dir(), opts());
-    expect(!compiled.ok && compiled.problems[0]).toMatchObject({ code: "code-mismatch" });
+    const e = await refusal(() => sealTemplateCode(seriesDir(), "poetry-short", "1.0.0"));
+    expect(e.code).toBe("bad-code");
+    expect(e.message).toContain("poetry-short@1.0.0, not the poetry-short@9.9.9");
   });
 });
 
@@ -129,16 +136,35 @@ describe("sealing", () => {
     expect(readFileSync(join(releaseDir, "series-template.json"), "utf-8")).toBe(before);
   });
 
-  it("builds the same bundle wherever the library is", async () => {
+  it("builds the same bundle wherever the library is, naming no path of this machine", async () => {
     const a = await releaseCodeEpisode(dir(), REF);
+    // Deeper, and so another way from the app: module names must not depend on it.
     const elsewhere = mkdtempSync(join(tmpdir(), "release-code-elsewhere-"));
     try {
-      const b = await releaseCodeEpisode(join(elsewhere, "x", "series", "poetry", "episodes", "e"), { channel: "x", series: "poetry", episode: "e" });
+      const deep = join(elsewhere, "a", "b", "c", "x", "series", "poetry", "episodes", "e");
+      const b = await releaseCodeEpisode(deep, { channel: "x", series: "poetry", episode: "e" });
       const bundle = (r: string) => readFileSync(join(r, "compiler", "compiler.cjs"), "utf-8");
       expect(bundle(b.releaseDir)).toBe(bundle(a.releaseDir));
+      for (const text of [bundle(a.releaseDir), readFileSync(join(a.releaseDir, "validator", "validator.cjs"), "utf-8")]) {
+        expect(text).not.toContain(tmpdir());
+        expect(text).not.toContain(process.cwd());
+        expect(text).not.toMatch(/\/Users\/|node_modules\//);
+      }
     } finally {
       rmSync(elsewhere, { recursive: true, force: true });
     }
+  });
+
+  it("counts the series' golden references as pins, and an unreadable spec too", async () => {
+    specEpisode(dir(), REF);
+    const releaseDir = join(seriesDir(), "templates", "poetry-short", "1.0.0");
+    cpSync(join(dirname(require.resolve("@studio/series/fixtures/release-code/poetry-short/compiler/index.ts")), ".."), releaseDir, { recursive: true });
+    writeFileSync(join(dir(), "episode-spec.json"), "{ not json");
+    expect((await refusal(() => sealTemplateCode(seriesDir(), "poetry-short", "1.0.0"))).message).toContain("morning (unreadable)");
+    rmSync(join(dir(), "episode-spec.json"));
+    mkdirSync(join(seriesDir(), "templates", "poetry-short", "references"), { recursive: true });
+    writeFileSync(join(seriesDir(), "templates", "poetry-short", "references", "morning-v1.json"), JSON.stringify({ template: { id: "poetry-short", version: "1.0.0", hash: "sha256:x" } }));
+    expect((await refusal(() => sealTemplateCode(seriesDir(), "poetry-short", "1.0.0"))).message).toContain("reference morning-v1");
   });
 });
 
@@ -161,17 +187,19 @@ describe("verifying", () => {
     rmSync(join(dir(), "episode-spec.json"));
     await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
     const verified = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0");
-    expect(verified).toEqual({ ok: true, problems: [], fixtures: [{ name: "morning", ok: true }] });
+    expect(verified).toEqual({ ok: true, problems: [], warnings: [], fixtures: [{ name: "morning", ok: true }] });
     expect(readFileSync(join(releaseDir, "fixtures", "morning", "expected-timeline.json"), "utf-8")).toContain('"kind": "EditTimeline"');
   });
 
-  it("finds a source changed after sealing, a changed bundle and a golden that no longer matches", async () => {
+  it("warns of a source changed after sealing, and finds a changed bundle and a golden that no longer matches", async () => {
     const releaseDir = await withFixture();
     rmSync(join(dir(), "episode-spec.json"));
     await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
 
+    // The sealed bundle is what runs: a source (or toolbox) that moved on is worth knowing, not a failure.
     appendFileSync(join(releaseDir, "compiler", "index.ts"), "\nexport const extra = 1;\n");
-    expect((await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0")).problems.map((p) => p.code)).toEqual(["source-differs"]);
+    const moved = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0");
+    expect([moved.ok, moved.problems, moved.warnings.map((w) => w.code)]).toEqual([true, [], ["rebuild-differs"]]);
 
     writeFileSync(join(releaseDir, "fixtures", "morning", "expected-timeline.json"), "{}\n");
     const golden = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0");
@@ -179,6 +207,27 @@ describe("verifying", () => {
 
     appendFileSync(join(releaseDir, "validator", "validator.cjs"), "\n// changed");
     expect((await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0")).problems.map((p) => p.code)).toContain("code-mismatch");
+  });
+
+  it("reports a malformed fixture and a fixture without input as failed, never crashing", async () => {
+    const releaseDir = await withFixture();
+    mkdirSync(join(releaseDir, "fixtures", "broken"), { recursive: true });
+    writeFileSync(join(releaseDir, "fixtures", "broken", "input.json"), "{ not json");
+    mkdirSync(join(releaseDir, "fixtures", "empty"), { recursive: true });
+    mkdirSync(join(releaseDir, "fixtures", "nospec"), { recursive: true });
+    writeFileSync(join(releaseDir, "fixtures", "nospec", "input.json"), "{}");
+    const verified = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0");
+    const by = Object.fromEntries(verified.fixtures.map((f) => [f.name, f]));
+    expect(by.broken!.ok).toBe(false);
+    expect(by.empty).toEqual({ name: "empty", ok: false, message: "input.json: missing" });
+    expect(by.nospec).toEqual({ name: "nospec", ok: false, message: "input.json: not a compile input (no spec)" });
+  });
+
+  it("writes no golden on a dry run, pinned or not", async () => {
+    const releaseDir = await withFixture();
+    const dry = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true, dryRun: true });
+    expect(dry.fixtures).toEqual([{ name: "morning", ok: true, message: "golden would be written" }]);
+    expect(existsSync(join(releaseDir, "fixtures", "morning", "expected-timeline.json"))).toBe(false);
   });
 });
 

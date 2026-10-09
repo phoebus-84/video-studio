@@ -17,7 +17,7 @@ import { SERIES_TEMPLATE_FILES, validateTemplateBundle } from "@studio/contracts
 
 export type ThemeReleaseCode =
   | "missing-theme" | "bad-theme" | "sealed" | "pinned" | "missing-file" | "path-escape"
-  | "missing-template" | "release-exists" | "bad-version" | "theme-unsealed" | "theme-mismatch" | "bad-template";
+  | "missing-template" | "release-exists" | "bad-version" | "theme-unsealed" | "theme-mismatch" | "bad-template" | "bundled-code";
 
 export class ThemeReleaseError extends Error {
   constructor(readonly code: ThemeReleaseCode, message: string) {
@@ -183,6 +183,8 @@ export function releaseTemplate(seriesDir: string, options: ReleaseTemplateOptio
     const v = options[role];
     if (v === undefined) continue;
     if (!manifest[role] || typeof manifest[role] !== "object") fail("bad-template", `${id}@${from} names no ${role} to move to ${v}`);
+    // Its own code says which version it is (avg-d1x): renaming it here would make a release that never compiles.
+    if (manifest[role].bundle) fail("bundled-code", `${id}@${from} carries its own ${role} (${manifest[role].bundle.path}): release a copy, change its ${role}/index.ts and its version there, then vpr template seal it`);
     manifest[role] = { ...manifest[role], version: v };
   }
   let themePin: { id: string; version: string; hash: string } | undefined;

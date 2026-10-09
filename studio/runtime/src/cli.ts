@@ -991,17 +991,17 @@ async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
   }
 }
 
-/** `vpr template release`: a new release of a series template, a copy of `--from`, pinned to a sealed theme. */
 /**
  * `vpr template seal|verify` (avg-d1x): a release's own compiler and
  * validator, built and checked by @studio/episode, loaded at run time as
  * `vpr status` loads the studio's reader: that package depends on this one.
  */
 async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDir: string, id: string, version: string, update: boolean): Promise<number> {
+  type Verified = { ok: boolean; problems: { code: string; message: string }[]; warnings: { code: string; message: string }[]; fixtures: { name: string; ok: boolean; message?: string }[] };
   const episode = "@studio/episode";
   let mod: {
     sealTemplateCode: (s: string, i: string, v: string, o: { dryRun?: boolean }) => Promise<{ hash: string; code: Record<string, { path: string; hash: string }> }>;
-    verifyTemplateCode: (s: string, i: string, v: string, o: { update?: boolean }) => Promise<{ ok: boolean; problems: { code: string; message: string }[]; fixtures: { name: string; ok: boolean; message?: string }[] }>;
+    verifyTemplateCode: (s: string, i: string, v: string, o: { update?: boolean; dryRun?: boolean }) => Promise<Verified>;
     TemplateCodeError: new (...a: never[]) => Error & { code: string };
   };
   try {
@@ -1017,10 +1017,14 @@ async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDi
       emit(ctx, { message: `${ctx.dryRun ? "[DRY RUN] " : ""}${id}@${version} ${ctx.dryRun ? "would be sealed" : "sealed"}: ${built}; verify it with vpr template verify`, ...sealed, dryRun: ctx.dryRun });
       return EX_OK;
     }
-    const verified = await mod.verifyTemplateCode(seriesDir, id, version, { update });
+    const verified = await mod.verifyTemplateCode(seriesDir, id, version, { update, dryRun: ctx.dryRun });
     const fixtures = verified.fixtures.map((f) => `${f.ok ? "✓" : "✗"} ${f.name}${f.message ? `: ${f.message}` : ""}`).join("; ");
+    const said = `${id}@${version}: ${verified.ok ? "verified" : "NOT verified"}` +
+      `${verified.problems.length ? `; ${verified.problems.map((p) => p.message).join("; ")}` : ""}` +
+      `${fixtures ? `; fixtures: ${fixtures}` : "; no fixtures"}`;
     emit(ctx, {
-      message: `${id}@${version}: ${verified.ok ? "verified" : "NOT verified"}${verified.problems.length ? `; ${verified.problems.map((p) => p.message).join("; ")}` : ""}${fixtures ? `; fixtures: ${fixtures}` : "; no fixtures"}`,
+      ...(verified.ok ? { message: said } : { error: said }),
+      ...(verified.warnings.length ? { warning: verified.warnings.map((w) => w.message).join("; ") } : {}),
       ...verified,
     });
     return verified.ok ? EX_OK : EX_RUNTIME;
@@ -1031,9 +1035,10 @@ async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDi
   }
 }
 
+/** `vpr template release|seal|verify`: a new release of a series template (a copy of `--from`, pinned to a sealed theme), or its own code sealed and verified. */
 async function cmdTemplate(ctx: CliContext, args: string[]): Promise<number> {
   const usage = "Usage: vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] [--library <path>] | " +
-    "vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update]";
+    "vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--dry-run]";
   const libraryRoot = libraryFrom(args);
   const [sub, target, id, version] = positionalArgs(args);
   const parts = target?.split("/") ?? [];

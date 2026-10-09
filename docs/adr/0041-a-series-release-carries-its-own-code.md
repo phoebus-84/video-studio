@@ -22,17 +22,20 @@ The operator's rule (2026-10-09): the application holds generic code and capabil
 - **Sealing.** `vpr template seal` builds each with esbuild into one self-contained CommonJS file:
   - the packages it imports (the contracts' helpers, later the toolbox) are inlined, so a later change to them never alters the release;
   - Node's built-ins stay external;
-  - path comments are dropped, so the bundle is the same wherever the library and the application sit.
+  - every module is named by its place in the release (`release:compiler/x.ts`) or in its package (`app:@studio/contracts@0.1.0/src/cues.mjs`), never by a path on the machine, so the bundle is the same wherever the library and the application sit;
+  - no `tsconfig.json` above the release changes it.
+
+  The bundle must export the role under the `id@version` the manifest names; sealing refuses one that doesn't.
 - **The manifest.** It names the bundle and its sha256: `compiler: {id, version, bundle: {path, hash}}`. A release without `bundle` keeps the registered compiler or validator, so ADR-0037 releases are unchanged.
 - **Loading.** The loader reads the bundle like every other file of the release:
   - inside the series, its hash recorded among the timeline's inputs;
   - refused when its hash isn't the sealed one (`code-mismatch`), missing (`missing-code`), or not exporting the role (`bad-code`).
 
   It runs the bytes it checked, one module per hash. The compiler and validator must say the `id@version` the manifest names.
-- **Pinned releases.** A release an episode pins is never resealed (`release-pinned`). A change is a new release: `template release --from`, change the source, seal.
+- **Pinned releases.** A release that an episode or a golden reference pins is never resealed (`release-pinned`). A spec or reference that can't be read counts as a pin. A change is a new release: `template release --from`, change the source, seal. `template release --compiler/--validator` refuses to rename code the release carries (`bundled-code`): the code says its own version.
 - **Tests travel with the code.** `vpr template verify`:
   - checks the bundles;
-  - rebuilds the source and compares;
+  - rebuilds the source and compares, as a warning only (`rebuild-differs`): the source, or the studio code it inlines, may have moved on since sealing, and the sealed bundle is what runs;
   - compiles `fixtures/<name>/input.json` as this release and compares with `expected-timeline.json` byte for byte;
   - holds the result to the release's validator.
 

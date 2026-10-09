@@ -196,7 +196,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     const real = realpathSync(file);
     const root = realpathSync(within);
     if (real !== root && !real.startsWith(root + sep)) {
-      const where = within === episodeDir ? "the episode" : within === seriesDir ? "the series" : "its theme release";
+      const where = within === episodeDir ? "the episode" : within === seriesDir ? "the series" : "its release";
       stop("path-escape", key, `${key} leads outside ${where} (${real})`);
     }
     if (!statSync(real).isFile()) stop("not-a-file", key, `${key} is not a file`);
@@ -250,13 +250,13 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   // ── The release's own code (avg-d1x): its sealed compiler and validator ──
   const code: NonNullable<CompileInput["code"]> = {};
   for (const role of ["compiler", "validator"] as const) {
-    const ref = template[role] as { bundle?: { path: string; hash: string } } | undefined;
+    const ref = template[role] as { id: string; version: string; bundle?: { path: string; hash: string } } | undefined;
     if (!ref?.bundle) continue;
     const key = `${releaseKey}/${ref.bundle.path}`;
     const file = join(releaseDir, ref.bundle.path);
-    const bytes = read(file, seriesDir, () => stop("missing-code", key, `${key} is missing: the release names it, so it was sealed with it (vpr template seal)`));
+    const bytes = read(file, releaseDir, () => stop("missing-code", key, `${key} is missing: the release names it, so it was sealed with it (vpr template seal)`));
     if (sha256(bytes) !== ref.bundle.hash) stop("code-mismatch", key, `${key} is not the code the release sealed (${ref.bundle.hash}): a release never changes, make a new one`);
-    const loaded = releaseCodeOf(role, file, bytes, ref.bundle.hash);
+    const loaded = releaseCodeOf(role, file, bytes, ref.bundle.hash, ref);
     if (!loaded.ok) return stop("bad-code", key, `${key}: ${loaded.message}`);
     (code as Record<string, unknown>)[role] = loaded.code;
   }

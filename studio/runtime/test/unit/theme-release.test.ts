@@ -117,6 +117,16 @@ describe("releaseTemplate", () => {
     expect(codeOf(() => releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.3.0", compiler: "latest" }))).toBe("bad-version");
   });
 
+  it("refuses to rename a compiler or validator the release carries as its own code (avg-d1x)", () => {
+    const manifestFile = join(releaseDir("1.0.0"), "series-template.json");
+    const manifest = JSON.parse(readFileSync(manifestFile, "utf-8"));
+    manifest.compiler.bundle = { path: "compiler/compiler.cjs", hash: `sha256:${"a".repeat(64)}` };
+    writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+    const refused = codeOf(() => releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.2.0", compiler: "1.1.0" }));
+    expect(refused).toBe("bundled-code");
+    expect(existsSync(releaseDir("1.2.0"))).toBe(false);
+  });
+
   it("keeps the source's theme pin when given no theme", () => {
     const released = releaseTemplate(seriesDir(), { id: "dentro-i-versi-long", from: "1.0.0", version: "1.0.1" });
     expect(released.theme).toBeUndefined();

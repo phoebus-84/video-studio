@@ -34,6 +34,8 @@ export function releaseCodeOf<K extends "compiler" | "validator">(
   file: string,
   bytes: Buffer,
   hash: string,
+  /** The id@version the release names: code that says another is refused here, before anything compiles. */
+  expected?: { id: string; version: string },
 ): { ok: true; code: K extends "compiler" ? SeriesCompiler : SeriesValidator } | { ok: false; message: string } {
   let exports: Record<string, unknown>;
   try {
@@ -45,6 +47,9 @@ export function releaseCodeOf<K extends "compiler" | "validator">(
   const run = role === "compiler" ? "compile" : "validate";
   if (!code || typeof code.id !== "string" || typeof code.version !== "string" || typeof code[run] !== "function") {
     return { ok: false, message: `it does not export a ${role} (\`export const ${role}\` with id, version and ${run}())` };
+  }
+  if (expected && (code.id !== expected.id || code.version !== expected.version)) {
+    return { ok: false, message: `it is ${code.id}@${code.version}, not the ${expected.id}@${expected.version} the release names` };
   }
   return { ok: true, code: code as unknown as K extends "compiler" ? SeriesCompiler : SeriesValidator };
 }
