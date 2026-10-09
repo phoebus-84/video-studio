@@ -47,10 +47,10 @@ describe('validateTimeline', () => {
 
   it('refuses kits it does not have, by name or by version', () => {
     // The lesson excerpt (a contracts sketch) uses sala, interprete@1.0.0 and verse-bar@1.0.0: sala does
-    // not exist, interprete@1.0.0 is drawn for 9:16 only (the lesson's is 1.1.0), and the sketch's
-    // verse-bar props are not the real kit's (it takes a look and lines of words).
+    // not exist, interprete@1.0.0 is no longer the application's (it moved to its channel's library,
+    // ADR-0042; the lesson's is 1.1.0), and the sketch's verse-bar props are not the real kit's.
     const codes = new Set(problems(fixture('lesson-excerpt.json')).map(([code]) => code));
-    assert.deepEqual([...codes].sort(), ['bad-props', 'unknown-kit', 'wrong-profile']);
+    assert.deepEqual([...codes].sort(), ['bad-props', 'unknown-kit']);
     const doc = clone(fixture('explainer.json'));
     doc.tracks[0].items[0].kit.version = '2.0.0';
     assert.deepEqual(problems(doc), [['unknown-kit', '$.tracks[0].items[0].kit']]);
@@ -59,12 +59,12 @@ describe('validateTimeline', () => {
   });
 
   it('refuses a kit drawn for another output profile', () => {
-    const doc = clone(fixture('explainer.json'));
-    doc.tracks[0].items[0].kit = {name: 'title-chip', version: '1.0.0'};
-    doc.tracks[0].items[0].props = {title: 'San Martino'};
+    const doc = clone(fixture('vertical-short.json'));
+    doc.tracks[0].items[0].kit = {name: 'block-title', version: '1.0.0'};
+    doc.tracks[0].items[0].props = {look: clone(DEMO_LOOK), kicker: 'CHAPTER I', title: 'THE CONTEXT'};
     assert.deepEqual(problems(doc), [['wrong-profile', '$.tracks[0].items[0].kit']]);
     const result = validateTimeline(doc);
-    assert.match(result.ok ? '' : result.problems[0]!.message, /title-chip@1\.0\.0 is drawn for vertical-1080x1920, not youtube-1920x1080/);
+    assert.match(result.ok ? '' : result.problems[0]!.message, /block-title@1\.0\.0 is drawn for youtube-1920x1080, not vertical-1080x1920/);
   });
 
   it('accepts a channel-neutral lesson kit with a look in 16:9, and refuses a malformed look at its path', () => {
@@ -188,7 +188,6 @@ describe('validateTimeline', () => {
     const ids = outputProfiles().map((p) => p.id);
     assert.deepEqual(listKits(ids).map((k) => [k.name, k.version, k.layer]), [
       ['block-title', '1.0.0', 'overlay'],
-      ['brand-mark', '1.0.0', 'overlay'],
       ['brand-mark', '2.0.0', 'overlay'],
       ['captions', '1.0.0', 'fill'],
       ['captions', '1.1.0', 'overlay'],
@@ -198,19 +197,15 @@ describe('validateTimeline', () => {
       ['cover', '1.0.0', 'fill'],
       ['figure-title', '1.0.0', 'overlay'],
       ['interlinear', '1.0.0', 'overlay'],
-      ['interprete', '1.0.0', 'fill'],
       ['interprete', '1.1.0', 'fill'],
-      ['lower-third', '1.0.0', 'overlay'],
       ['merge', '1.0.0', 'fill'],
       ['monitor-wall', '1.0.0', 'fill'],
-      ['museum-hall', '1.0.0', 'fill'],
       ['oxymoron', '1.0.0', 'fill'],
       ['panel', '1.0.0', 'fill'],
       ['panel', '1.1.0', 'fill'],
       ['progress', '1.0.0', 'overlay'],
       ['rhymes', '1.0.0', 'fill'],
       ['room', '1.0.0', 'fill'],
-      ['room-effect', '1.0.0', 'fill'],
       ['simile', '1.0.0', 'fill'],
       ['stack', '1.0.0', 'fill'],
       ['still', '1.0.0', 'fill'],
@@ -219,9 +214,7 @@ describe('validateTimeline', () => {
       ['syllables', '1.0.0', 'fill'],
       ['text-stack', '1.0.0', 'overlay'],
       ['timeline', '1.0.0', 'fill'],
-      ['title-chip', '1.0.0', 'overlay'],
       ['verse-bar', '1.0.0', 'overlay'],
-      ['verse-plate', '1.0.0', 'overlay'],
       ['warp', '1.0.0', 'fill'],
       ['word-tracks', '1.0.0', 'fill'],
     ]);
@@ -232,8 +225,8 @@ describe('validateTimeline', () => {
       'vertical-1080x1920': 'previews/captions@1.1.0.vertical-1080x1920.png',
     });
     // A format's kit is listed with the profiles it is drawn for, and previews only there.
-    const chip = listKits(ids).find((k) => k.name === 'title-chip')!;
-    assert.deepEqual([chip.profiles, chip.previews], [['vertical-1080x1920'], {'vertical-1080x1920': 'previews/title-chip@1.0.0.vertical-1080x1920.png'}]);
+    const title = listKits(ids).find((k) => k.name === 'block-title')!;
+    assert.deepEqual([title.profiles, title.previews], [['youtube-1920x1080'], {'youtube-1920x1080': 'previews/block-title@1.0.0.youtube-1920x1080.png'}]);
     assert.deepEqual(listKits()[1]!.previews, {});
     assert.ok(listKits().every((k) => k.description.length > 0));
   });

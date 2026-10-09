@@ -1,8 +1,8 @@
 // Spec-driven episodes on disk, made from @studio/series's fixtures: a
 // poetry-short episode (the contracts' example release copied into the
 // series, the fixture's spec, two narration takes with their word timing,
-// three images) and the dentro-i-versi-short golden San Martino. Media are
-// small placeholder files unless the caller writes real ones.
+// three images). Media are small placeholder files unless the caller writes
+// real ones.
 
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -18,10 +18,6 @@ const RELEASE = dirname(require.resolve("@studio/contracts/fixtures/series-templ
 const INPUT = require.resolve("@studio/series/fixtures/poetry-short/1.0.0/input.json");
 /** poetry-short@1.0.0's compiler and validator as a release's own code (avg-d1x). */
 const RELEASE_CODE = dirname(require.resolve("@studio/series/fixtures/release-code/poetry-short/compiler/index.ts"));
-const DIV_INPUT = require.resolve("@studio/series/fixtures/dentro-i-versi-short/1.0.0/input.json");
-/** The long's golden fixture, for each released compiler version. */
-const divLongInput = (version: string) => require.resolve(`@studio/series/fixtures/dentro-i-versi-long/${version}/input.json`);
-const DIV_THEME = dirname(require.resolve("@studio/series/fixtures/themes/dentro-i-versi/1.0.0/theme.json"));
 
 export const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
@@ -41,31 +37,13 @@ export function specEpisode(
   layOut(episodeDir, episodeRef, INPUT, RELEASE, "poetry-short", options);
 }
 
-export interface DivShortEpisodeOptions extends SpecEpisodeOptions {
-  /** Write the sound at `path` (absolute); placeholder bytes by default. */
-  sound?: (path: string, assetId: string) => void;
-}
-
-/**
- * Lay out the dentro-i-versi-short golden episode — a synthetic San Martino:
- * its release, spec, two takes with their word timing and energy, every
- * picture and sound the spec names — at `episodeDir`.
- */
-export function divShortEpisode(
-  episodeDir: string,
-  episodeRef: { channel: string; series: string; episode: string },
-  options: DivShortEpisodeOptions = {},
-): void {
-  layOut(episodeDir, episodeRef, DIV_INPUT, join(dirname(DIV_INPUT), "release"), "dentro-i-versi-short", options);
-}
-
 function layOut(
   episodeDir: string,
   episodeRef: { channel: string; series: string; episode: string },
   inputPath: string,
   release: string,
   templateId: string,
-  options: DivShortEpisodeOptions,
+  options: SpecEpisodeOptions & { sound?: (path: string, assetId: string) => void },
 ): void {
   const input = JSON.parse(readFileSync(inputPath, "utf-8"));
   const seriesDir = dirname(dirname(episodeDir));
@@ -133,71 +111,6 @@ export function approveSheet(episodeDir: string, episodeRef: { channel: string; 
   return review;
 }
 
-/**
- * Lay out the dentro-i-versi-long golden episode — Il lampo's lesson — under
- * `libraryRoot`, with everything it reads: the channel's theme release, the
- * short episode it pins as its source (its paintings, and its title and
- * recital takes with their timing), and the long episode itself (its release,
- * spec, guide takes with their timing, own pictures and the pin). Returns the
- * long episode's directory and reference.
- */
-export async function divLongEpisode(
-  libraryRoot: string,
-  options: DivShortEpisodeOptions & { /** The fixture of this compiler version (default 1.0.0). */ version?: string } = {},
-): Promise<{ episodeDir: string; episodeRef: { channel: string; series: string; episode: string } }> {
-  const fixture = divLongInput(options.version ?? "1.0.0");
-  const input = JSON.parse(readFileSync(fixture, "utf-8"));
-  const channelDir = join(libraryRoot, "dentro-i-versi");
-  cpSync(DIV_THEME, join(channelDir, "themes", "dentro-i-versi", "1.0.0"), { recursive: true });
-  const sourceDir = join(channelDir, "series", "short", "episodes", "il-lampo");
-  const episodeRef = { channel: "dentro-i-versi", series: "long", episode: "il-lampo" };
-  const episodeDir = join(channelDir, "series", "long", "episodes", "il-lampo");
-  const writeIn = (dir: string, relative: string, content: string | Buffer) => {
-    mkdirSync(dirname(join(dir, relative)), { recursive: true });
-    writeFileSync(join(dir, relative), content);
-  };
-  /** Takes' audio, then their timing (bound to that audio's real hash), then takes.json. */
-  const takes = (dir: string, narration: any, timings: Record<string, any>) => {
-    for (const take of narration.takes as any[]) {
-      const path = join(dir, take.audio.path);
-      mkdirSync(dirname(path), { recursive: true });
-      if (options.audio) options.audio(path, take.id, take.audio.durationSeconds);
-      else writeFileSync(path, `audio ${take.id}`);
-      take.audio.hash = sha256(readFileSync(path));
-      const timingText = `${JSON.stringify({ ...timings[take.id], audio: { ...take.audio } }, null, 2)}\n`;
-      writeIn(dir, take.timing.path, timingText);
-      take.timing.hash = sha256(timingText);
-    }
-    writeIn(dir, "artifacts/narration/takes.json", `${JSON.stringify(narration, null, 2)}\n`);
-  };
-  const picture = (dir: string, relative: string, name: string) => {
-    const path = join(dir, relative);
-    mkdirSync(dirname(path), { recursive: true });
-    if (options.image) options.image(path, name);
-    else writeFileSync(path, `image ${name}`);
-  };
-
-  // The source: the short episode's paintings and takes.
-  for (const [id, asset] of Object.entries<{ path: string }>(input.assets)) {
-    if (id.startsWith("source-fonte-image-")) picture(sourceDir, `assets/images/${asset.path.split("/").pop()}`, id.slice("source-fonte-image-".length));
-  }
-  takes(sourceDir, input.sources.fonte.narration, input.sources.fonte.timings);
-
-  // The lesson.
-  cpSync(join(dirname(fixture), "release"), join(channelDir, "series", "long", "templates", "dentro-i-versi-long", input.template.version), { recursive: true });
-  for (const [id, asset] of Object.entries<{ path: string }>(input.assets)) {
-    if (id.startsWith("image-")) picture(episodeDir, asset.path, id.slice(6));
-  }
-  takes(episodeDir, input.narration, input.timings);
-  writeIn(episodeDir, "episode-spec.json", `${JSON.stringify({ ...input.spec, episodeRef }, null, 2)}\n`);
-  const files = await inventory(sourceDir);
-  writeIn(episodeDir, "source/pins/fonte.json", `${JSON.stringify({
-    apiVersion: "studio.video/v1alpha1", kind: "SourcePin", id: "fonte",
-    source: { kind: "episode", series: "short", episode: "il-lampo" },
-    usedBy: ["timeline"], pinnedAt: "2026-10-09T12:00:00.000Z", files,
-  }, null, 2)}\n`);
-  return { episodeDir, episodeRef };
-}
 
 /**
  * specEpisode, with its release running its own code (avg-d1x): the

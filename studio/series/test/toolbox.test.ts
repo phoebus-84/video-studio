@@ -13,7 +13,7 @@ test("frames, round3 and tokens", () => {
   assert.deepEqual(tokens("  La nebbia\n a gl'irti   colli "), ["La", "nebbia", "a", "gl'irti", "colli"]);
 });
 
-test("normalizeWord compares as the dentro-i-versi compilers did", () => {
+test("normalizeWord compares as the compilers it was extracted from did", () => {
   const theirs = (s: string) => s.toLocaleLowerCase("it-IT").normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, "");
   for (const word of ["Perché,", "SPARÌ", "gl'irti", "«L’Italia»", "città."]) assert.equal(normalizeWord(word), theirs(word));
   assert.equal(normalizeWord("İstanbul", "tr-TR"), "istanbul");

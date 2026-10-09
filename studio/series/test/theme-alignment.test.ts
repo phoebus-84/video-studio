@@ -14,7 +14,6 @@ import { BUNDLED_FONTS, validateChannelTheme, type ChannelTheme } from "@studio/
 
 const require = createRequire(import.meta.url);
 const themes: [string, ChannelTheme][] = [
-  ["dentro-i-versi", JSON.parse(readFileSync(join(import.meta.dirname, "..", "fixtures", "themes", "dentro-i-versi", "1.0.0", "theme.json"), "utf-8"))],
   ["sample (contracts)", JSON.parse(readFileSync(require.resolve("@studio/contracts/fixtures/channel-theme/sample/themes/sample/1.0.0/theme.json"), "utf-8"))],
 ];
 /** The neutral kits: those whose props take a look. */

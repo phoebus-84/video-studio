@@ -15,12 +15,12 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { builtinModules, createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { compileSpec, checkSeries } from "@studio/series";
 import { SERIES_TEMPLATE_MANIFEST } from "@studio/contracts/src/layout.mjs";
 import { SERIES_TEMPLATE_FILES, validateSeriesTemplate, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
 import { releaseCodeOf } from "./release-code.js";
-import { pinnedKitHashes } from "./kit-code.js";
+import { kitDirOf, pinnedKitHashes, readKitRelease } from "./kit-code.js";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -146,7 +146,8 @@ export async function bundleSource(
   entry: string,
   options: { platform: "node" | "neutral"; external?: string[]; jsx?: boolean; forbidden?: { prefix: string; message: string }[] },
 ): Promise<string> {
-  const releaseDir = root;
+  // esbuild works from an absolute directory: a library named relatively (`--library library`) is resolved first.
+  const releaseDir = resolve(root);
   const external = options.external ?? [];
   const require = createRequire(import.meta.url);
   let esbuild: typeof import("esbuild");
@@ -332,6 +333,23 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
   }
   if (!manifest.compiler?.bundle && !manifest.validator?.bundle) problems.push({ code: "no-code", message: `${label} names no code of its own` });
 
+  // The library kits it pins (ADR-0042), as the loader hands them to a compile.
+  const kits: { name: string; version: string; file: string; hash: string; kit: unknown }[] = [];
+  const channelDir = dirname(dirname(seriesDir));
+  for (const pin of (manifest.kits ?? []) as { name: string; version: string; level: "channel" | "series"; hash: string }[]) {
+    const place = { channelDir, name: pin.name, version: pin.version, ...(pin.level === "series" ? { series: basename(seriesDir) } : {}) };
+    const read = readKitRelease(kitDirOf(place), pin);
+    if (!read.ok) {
+      problems.push({ code: read.code, message: `${pin.level} kit ${pin.name}@${pin.version}: ${read.message}` });
+      continue;
+    }
+    if (sha256(read.manifestText) !== pin.hash) {
+      problems.push({ code: "kit-mismatch", message: `${pin.level} kit ${pin.name}@${pin.version}'s kit.json is not the one the release pinned` });
+      continue;
+    }
+    kits.push({ name: pin.name, version: pin.version, file: read.file, hash: read.release.bundle.hash, kit: read.kit });
+  }
+
   const fixtures: CodeVerification["fixtures"] = [];
   const fixturesDir = join(releaseDir, "fixtures");
   for (const name of existsSync(fixturesDir) ? readdirSync(fixturesDir).sort() : []) {
@@ -349,6 +367,7 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
     input.template = manifest;
     input.spec.template = { id, version, hash: sha256(manifestText) };
     input.code = code;
+    if (kits.length > 0) input.kits = kits;
     const result = compileSpec(input);
     if (!result.ok) {
       fixtures.push({ name, ok: false, message: result.problems.map((p) => `${p.code} at ${p.path}: ${p.message}`).join("; ") });

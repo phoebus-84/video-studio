@@ -35,13 +35,13 @@ input.
 
 ## Compilers
 
+The application registers only its starter compilers. A channel's series
+carry their own compiler and validator in their template releases
+(ADR-0041), sealed and verified in the channel's library.
+
 | Compiler | What it makes |
 |---|---|
 | `poetry-short@1.0.0` | A vertical poem: pictures changing on cued words (`still@1.0.0`, `fit: cover`, 12-frame crossfades centred on each cue), the `narration` unit of `takes.json` on the voice track, captions grouped from the measured words (at `. ! ? ; :` and before 42 characters), `holdSeconds` of picture after the voice, the title as the chapter of one section. |
-| `dentro-i-versi-short@1.0.0` | Dentro i versi · short (CreativeStudio's `sala8`): the `recital` unit — the title take, then the poem — from 0.3 s; the video lasts until 6 s after `voiceEndWord`. From the spec's data and the measured words it computes the camera's breathing, pushes and shakes, lightning at each picture change, lights, wind, shatter, blackout, the actor's poses, expressions, gazes, blinks, mouth (from the voice's energy), live and bow windows, and the title card's fit; it lays out the museum kits (`museum-hall`, `room-effect`, `verse-plate`, `interprete`, `lower-third`, `title-chip`, `brand-mark`), the sounds, applause and music. Times are seconds or `verse:N`, `verseEnd:N`, `word:parola`, `end`, `picture:N`, ± seconds. Items that overlap go on separate lanes (`verses-1`, `verses-2`, `room-1`…, `sfx-1`…). Sections: `title`, `verse-N`, `bow`. |
-| `dentro-i-versi-short@1.1.0` | 1.0.0 with its loop declared (`avg-z7f`): the timeline says `loop: true`, so the render audit checks that the last frame is the first — the empty hall with the title, the opening picture back for the bow. Everything else as 1.0.0. |
-| `dentro-i-versi-long@1.0.0` | Dentro i versi · long (CreativeStudio's `poesie-museo-long`, runtime v10): the lesson's blocks in order — `opening` (the atrio, the cover, the warp into the hall), `announcement`, `recital` (the pinned source's takes; `annotated` adds each verse's figure), `story`, `note`, `specimen` (one figure tool per painting), `meter`, `invite`, `summary`, `end` — each lasting its guide take (0.4 s before, 0.6 s after) plus its gap, with a 4 s chapter card after `chapterAfter`. Every time in a block is a cue: seconds, `end`, or `{word, n?, offset?}` on its take (elided words found: «L'Italia» answers `italia`); a cue that finds nothing stops with `cue-not-found`. The look, rooms and characters are the pinned theme's; the paintings and recitals are `source-<pin>-…` from the pinned source episode. Draws the channel-neutral lesson kits; the last frame is the first (`loop: true`). Sections: `block-<id>`, `chapter-N`. |
-| `dentro-i-versi-long@1.1.0` | 1.0.0, from the lesson's first real layout sheet (`avg-dcf.6.9`): the panel's box is the theme's `layout.panel` (1.0.0's without one); writing stays on the glass — a text stack (story texts, a note's counts, the quote's title) off the panel stops with `text-off-panel`, fixed in the data, never clamped; the note's tracks and counts get the glass behind them; headlines and the annotated recital's figure titles sit in the panel's lower band, clear of the painting's subject; the guide stands at x 1650 (1700 in 1.0.0), so a wide pose keeps its hand in the frame. |
 
 ## Validators
 
@@ -59,8 +59,6 @@ const { validator, findings } = checkSeries({ ...input, timeline, compiled });
 | Validator | Rules |
 |---|---|
 | `poetry-short@1.0.0` | Errors: a track missing, `profile-changed`, `fps-changed`, `duration-range` (10–60 s), `extra-track`, `hidden-track`, `stacking-changed`, `forbidden-kit`, `forbidden-transition` (only a 12-frame crossfade in), `altered-voice` (takes never cut, moved or reworked), `asset-changed` (no picture or take swapped, added or removed by hand), `text-not-voice` (the captions say exactly what the compiler captioned from the voice), `missing-picture`, `uncovered-frames`. Warnings: `panel-flash` (under 1 s), `panel-long` (over 7 s), `caption-long` (over 42 characters). |
-| `dentro-i-versi-short@1.0.0` | Errors: `profile-changed`, `fps-changed`, `duration-range` (25–90 s), `hidden-track`, `forbidden-kit` (only the seven museum kits at 1.0.0), `verse-text` (a plate that is not a verse of the spec), `missing-verse` (counted), `missing-actor`, `missing-teleport` and `loop-broken` (the first and last frame are the empty hall), `altered-voice` (takes, and the voice track's gain and ducking). Warnings: `apparitions` (not 2), `apparition-short` (under 5 s), `title-pause` (not 0.8–1.4 s between the title and the poem). |
-| `dentro-i-versi-long@1.0.0` | Errors: `profile-changed`, `loop-broken`, `duration` (240–600 s), `unknown-kit` (only the lesson kits at their versions), `look-changed` (every kit in the theme's look), `voice-missing` and `voice-changed` (the guide's and the source's voices untouched), `missing-teleport` (the guide arrives at the opening and leaves at the exit). Warnings: `chapters` (not 5), `specimen-without-tool`, `no-theme-sound`. |
 
 Like compilers, validators are pure, one file per version
 (`src/validators/<id>/<version>.ts`, registered in `src/validators.ts`, the

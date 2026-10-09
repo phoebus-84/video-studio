@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { compileEpisode, libraryKitsOf, loadEpisode } from "../src/series-compile.js";
 import { sealKit, verifyKit } from "../src/kit-code.js";
-import { sealTemplateCode, TemplateCodeError } from "../src/template-code.js";
+import { sealTemplateCode, TemplateCodeError, verifyTemplateCode } from "../src/template-code.js";
 import { writeEditTimeline } from "../src/episode-render.js";
 import { makeLayoutSheet } from "../src/layout-sheet.js";
 import { editSpec, releaseCodeEpisode, sha256 } from "../src/testing.js";
@@ -109,6 +109,21 @@ describe("a kit the channel carries", () => {
     expect(inputs["../../../../kits/sample-card/1.0.0/kit.cjs"]).toBe(sealed.bundle.hash);
   });
 
+  it("is handed to the release's fixtures when it is verified", async () => {
+    await sealedCard();
+    const { releaseDir } = await releaseDrawingTheCard();
+    mkdirSync(join(releaseDir, "fixtures", "morning"), { recursive: true });
+    cpSync(require.resolve("@studio/series/fixtures/poetry-short/1.0.0/input.json"), join(releaseDir, "fixtures", "morning", "input.json"));
+    rmSync(join(dir(), "episode-spec.json"));
+    const written = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
+    expect(written.fixtures, JSON.stringify(written)).toEqual([{ name: "morning", ok: true, message: "golden written" }]);
+    expect((await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0")).ok).toBe(true);
+
+    appendFileSync(join(channelDir(), "kits", "sample-card", "1.0.0", "kit.json"), " ");
+    const changed = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0");
+    expect(changed.problems.map((p) => p.code)).toContain("kit-mismatch");
+  });
+
   it("goes to the layout sheet, which locks it by its bundle's hash", async () => {
     const { sealed } = await sealedCard();
     await releaseDrawingTheCard();
@@ -210,6 +225,14 @@ it("refuses to seal a kit that imports the composer itself rather than one of it
   ].join("\n"));
   const e = await refusal(() => sealKit({ channelDir: channelDir(), name: "greedy-card", version: "1.0.0" }));
   expect([e.code, e.message]).toEqual(["build-failed", expect.stringContaining("only its kit libraries")]);
+});
+
+it("seals a kit named by a path relative to the working directory", async () => {
+  const kitDir = join(channelDir(), "kits", "sample-card", "1.0.0");
+  cpSync(join(FIXTURES, "kit"), join(kitDir, "kit"), { recursive: true });
+  const relativeChannel = relative(process.cwd(), channelDir());
+  const sealed = await sealKit({ channelDir: relativeChannel, name: "sample-card", version: "1.0.0" });
+  expect(sealed.bundle.hash).toBe(sha256(readFileSync(join(kitDir, "kit.cjs"))));
 });
 
 describe("verifying a kit", () => {

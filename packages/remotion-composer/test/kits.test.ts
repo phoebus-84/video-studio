@@ -17,6 +17,11 @@ const source = (name: string, version: string) => path.join(root, 'src/kits', na
 const lock = JSON.parse(readFileSync(path.join(root, 'kits.lock.json'), 'utf8')) as Record<string, string>;
 /** The branch whose lock a change must keep: every entry there stays, unchanged. */
 const LOCK_BASE = process.env.KITS_LOCK_BASE ?? 'origin/main';
+/**
+ * Released versions that left the application for a channel's library (ADR-0042, avg-d1x phase 4):
+ * the same code, sealed there. Only these may go from the lock.
+ */
+const MOVED_OUT = new Set(['brand-mark@1.0.0', 'interprete@1.0.0', 'lower-third@1.0.0', 'museum-hall@1.0.0', 'room-effect@1.0.0', 'title-chip@1.0.0', 'verse-plate@1.0.0']);
 
 describe('kit versions', () => {
   for (const kit of KIT_VERSIONS) {
@@ -78,6 +83,7 @@ describe('kit versions', () => {
     if (base.status !== 0) return t.skip(`no kits.lock.json on ${LOCK_BASE}`);
     const released = JSON.parse(base.stdout) as Record<string, string>;
     for (const [id, hash] of Object.entries(released)) {
+      if (MOVED_OUT.has(id) && lock[id] === undefined) continue;
       assert.equal(lock[id], hash, `${id} was released on ${LOCK_BASE}: its lock entry and file must not change or go away`);
     }
   });
