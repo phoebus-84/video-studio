@@ -199,6 +199,9 @@ describe("verifying", () => {
     const kept = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
     expect(kept.fixtures).toEqual([{ name: "morning", ok: false, message: "compiles differently from its expected-timeline.json, which a pinned release never rewrites" }]);
     expect(readFileSync(golden, "utf-8")).toBe("{}\n");
+    // A dry run says what the real run would do.
+    const dry = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true, dryRun: true });
+    expect(dry.fixtures[0]!.ok).toBe(false);
     // Unpinned, the golden is rewritten.
     rmSync(join(dir(), "episode-spec.json"));
     expect((await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true })).fixtures[0]!.ok).toBe(true);
@@ -262,6 +265,8 @@ describe("captureFixture", () => {
   it("writes into another release of the same template when told to, and refuses what it cannot keep", async () => {
     const { releaseDir } = await releaseCodeEpisode(dir(), REF);
     cpSync(releaseDir, join(seriesDir(), "templates", "poetry-short", "1.1.0"), { recursive: true });
+    expect(captureFixture(dir(), { ...opts(), name: "dry", dryRun: true }).path).toBe("templates/poetry-short/1.0.0/fixtures/dry/input.json");
+    expect(existsSync(join(releaseDir, "fixtures", "dry"))).toBe(false);
     expect(captureFixture(dir(), { ...opts(), name: "morning", to: "1.1.0" }).path).toBe("templates/poetry-short/1.1.0/fixtures/morning/input.json");
     const code = (call: () => unknown) => { try { call(); } catch (e) { if (e instanceof TemplateCodeError) return e.code; throw e; } return "ok"; };
     expect(code(() => captureFixture(dir(), { ...opts(), name: "morning", to: "1.1.0" }))).toBe("fixture-exists");

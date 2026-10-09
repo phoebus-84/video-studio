@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { builtinModules, createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -305,7 +305,7 @@ export interface CodeVerification {
 export async function verifyTemplateCode(seriesDir: string, id: string, version: string, options: { update?: boolean; dryRun?: boolean } = {}): Promise<CodeVerification> {
   const releaseDir = releaseDirOf(seriesDir, id, version);
   const label = `${id}@${version}`;
-  const pinned = options.update && !options.dryRun && pinnedBy(seriesDir, id, version).length > 0;
+  const pinned = !!options.update && pinnedBy(seriesDir, id, version).length > 0;
   const { manifest, text: manifestText } = readManifest(releaseDir, label);
   // The manifest's shape first: a bundle path is only read once the contract has held it to compiler/ or validator/.
   const shape = validateSeriesTemplate(manifest);
@@ -412,7 +412,7 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
  */
 export function captureFixture(
   episodeDir: string,
-  options: { episodeRef: { channel: string; series: string; episode: string }; name: string; to?: string },
+  options: { episodeRef: { channel: string; series: string; episode: string }; name: string; to?: string; dryRun?: boolean },
 ): { release: string; path: string } {
   if (!SLUG.test(options.name)) fail("bad-fixture", `"${options.name}" is not a fixture name (lowercase words joined by -)`);
   const loaded = loadEpisode(episodeDir, { episodeRef: options.episodeRef });
@@ -424,7 +424,17 @@ export function captureFixture(
   const releaseDir = releaseDirOf(seriesDir, id, version);
   const dir = join(releaseDir, "fixtures", options.name);
   if (existsSync(dir)) fail("fixture-exists", `${id}@${version} already has a fixture "${options.name}"`);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "input.json"), `${JSON.stringify(input, null, 2)}\n`);
+  if (!options.dryRun) {
+    // Written aside and moved in whole: a failed write leaves no half fixture behind.
+    const staging = `${dir}.tmp-${process.pid}`;
+    mkdirSync(staging, { recursive: true });
+    try {
+      writeFileSync(join(staging, "input.json"), `${JSON.stringify(input, null, 2)}\n`);
+      renameSync(staging, dir);
+    } catch (error) {
+      rmSync(staging, { recursive: true, force: true });
+      throw error;
+    }
+  }
   return { release: `${id}@${version}`, path: relative(seriesDir, join(dir, "input.json")).split(sep).join("/") };
 }

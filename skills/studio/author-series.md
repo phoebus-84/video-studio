@@ -149,6 +149,7 @@ is listed here:
      level.
    - **What it exports:** `kit: KitVersion`, with:
      - `name` and `version` equal to the folder;
+     - a one-sentence `description`;
      - `layer`;
      - `profiles`;
      - zod `props` (`.strict()`);

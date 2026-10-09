@@ -1102,7 +1102,7 @@ async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify" | "fixtur
   let mod: {
     sealTemplateCode: (s: string, i: string, v: string, o: { dryRun?: boolean }) => Promise<{ hash: string; code: Record<string, { path: string; hash: string }> }>;
     verifyTemplateCode: (s: string, i: string, v: string, o: { update?: boolean; dryRun?: boolean }) => Promise<Verified>;
-    captureFixture: (e: string, o: { episodeRef: { channel: string; series: string; episode: string }; name: string; to?: string }) => { release: string; path: string };
+    captureFixture: (e: string, o: { episodeRef: { channel: string; series: string; episode: string }; name: string; to?: string; dryRun?: boolean }) => { release: string; path: string };
     TemplateCodeError: new (...a: never[]) => Error & { code: string };
   };
   try {
@@ -1113,8 +1113,8 @@ async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify" | "fixtur
   }
   try {
     if (sub === "fixture" && fixture) {
-      const captured = mod.captureFixture(join(seriesDir, "episodes", fixture.episodeRef.episode), { episodeRef: fixture.episodeRef, name: id, ...(fixture.to ? { to: fixture.to } : {}) });
-      emit(ctx, { message: `${captured.release}: ${fixture.episodeRef.episode} kept as fixture "${id}" (${captured.path}); write its golden with vpr template verify --update`, ...captured });
+      const captured = mod.captureFixture(join(seriesDir, "episodes", fixture.episodeRef.episode), { episodeRef: fixture.episodeRef, name: id, ...(fixture.to ? { to: fixture.to } : {}), dryRun: ctx.dryRun });
+      emit(ctx, { message: `${ctx.dryRun ? "[DRY RUN] " : ""}${captured.release}: ${fixture.episodeRef.episode} ${ctx.dryRun ? "would be kept" : "kept"} as fixture "${id}" (${captured.path}); write its golden with vpr template verify --update`, ...captured, dryRun: ctx.dryRun });
       return EX_OK;
     }
     if (sub === "seal") {
@@ -1145,7 +1145,7 @@ async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify" | "fixtur
 async function cmdTemplate(ctx: CliContext, args: string[]): Promise<number> {
   const usage = "Usage: vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] [--library <path>] | " +
     "vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--dry-run] | " +
-    "vpr template fixture <channel>/<series>/<episode> <fixture-name> [--to <version>]";
+    "vpr template fixture <channel>/<series>/<episode> <fixture-name> [--to <version>] [--dry-run]";
   const libraryRoot = libraryFrom(args);
   const [sub, target, id, version] = positionalArgs(args);
   const parts = target?.split("/") ?? [];
