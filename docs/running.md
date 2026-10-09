@@ -521,6 +521,30 @@ node studio/runtime/dist/src/cli.js channel init my-channel --commit --library "
 node studio/runtime/dist/src/cli.js channel media my-channel --check --library "$PWD/library"
 ```
 
+**Archive and stock media** (ADR-0046) come from public collections, free,
+each with a licence anyone can verify: the Art Institute of Chicago, the Met,
+the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and
+Openverse, none of which needs a key.
+- **Finding and fetching.** Pi finds them with `pva_search_media` and fetches
+  the original with `pva_fetch_media`. The `find-archive-media` skill says how
+  to choose.
+- **What a file brings.** It arrives in `assets/` with `<name>.source.json`
+  (its provider, licence and credit) and the provider's response as evidence
+  in `artifacts/provenance/`. `ATTRIBUTIONS.md` is made from the records.
+- **Policy.** A channel decides which licences it accepts in `settings.yaml`.
+  The default is public domain, CC0, CC BY and CC BY-SA, with at least
+  1600 px on an image's long side.
+- **Checking.** `pva_check_provenance` checks that every file is still the one
+  fetched.
+
+```yaml
+# library/<channel>/settings.yaml
+archiveMedia:
+  licences: [public-domain, CC0, CC-BY, CC-BY-SA]
+  minImageLongSide: 1600
+  minVideoHeight: 720
+```
+
 **`vpr select`** puts an earlier candidate back in place. The gateway offers
 the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`
 lists the candidates.

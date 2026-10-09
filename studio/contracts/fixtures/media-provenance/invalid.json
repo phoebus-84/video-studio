@@ -1,0 +1,188 @@
+[
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "MediaProvenance",
+    "file": {
+      "path": "assets/images/storm.jpg",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 2513447,
+      "mime": "image/jpeg",
+      "width": 3000,
+      "height": 2056
+    },
+    "provider": {
+      "id": "aic",
+      "label": "Art Institute of Chicago"
+    },
+    "item": {
+      "id": "24645",
+      "title": "Under the Wave off Kanagawa",
+      "creator": "Katsushika Hokusai",
+      "date": "1830/33",
+      "institution": "Art Institute of Chicago",
+      "landingUrl": "https://www.artic.edu/artworks/24645",
+      "fileUrl": "https://www.artic.edu/iiif/2/b3974542-b9b4-7568-fc4b-966738f61d78/full/3000,/0/default.jpg"
+    },
+    "licence": {
+      "id": "unknown",
+      "basis": "aic:is_public_domain",
+      "url": "https://www.artic.edu/open-access/open-access-images",
+      "attributionRequired": false,
+      "statement": "is_public_domain: true"
+    },
+    "attribution": "«Under the Wave off Kanagawa» by Katsushika Hokusai (1830/33), Art Institute of Chicago. Public domain",
+    "retrievedAt": "2026-10-09T14:00:00.000Z",
+    "evidence": {
+      "path": "artifacts/provenance/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+      "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "MediaProvenance",
+    "file": {
+      "path": "../etc/passwd",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 2513447,
+      "mime": "image/jpeg",
+      "width": 3000,
+      "height": 2056
+    },
+    "provider": {
+      "id": "aic",
+      "label": "Art Institute of Chicago"
+    },
+    "item": {
+      "id": "24645",
+      "title": "Under the Wave off Kanagawa",
+      "creator": "Katsushika Hokusai",
+      "date": "1830/33",
+      "institution": "Art Institute of Chicago",
+      "landingUrl": "https://www.artic.edu/artworks/24645",
+      "fileUrl": "https://www.artic.edu/iiif/2/b3974542-b9b4-7568-fc4b-966738f61d78/full/3000,/0/default.jpg"
+    },
+    "licence": {
+      "id": "public-domain",
+      "basis": "aic:is_public_domain",
+      "url": "https://www.artic.edu/open-access/open-access-images",
+      "attributionRequired": false,
+      "statement": "is_public_domain: true"
+    },
+    "attribution": "«Under the Wave off Kanagawa» by Katsushika Hokusai (1830/33), Art Institute of Chicago. Public domain",
+    "retrievedAt": "2026-10-09T14:00:00.000Z",
+    "evidence": {
+      "path": "artifacts/provenance/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+      "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "MediaProvenance",
+    "file": {
+      "path": "assets/images/storm.jpg",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 2513447,
+      "mime": "image/jpeg",
+      "width": 3000,
+      "height": 2056
+    },
+    "provider": {
+      "id": "aic",
+      "label": "Art Institute of Chicago"
+    },
+    "item": {
+      "id": "24645",
+      "title": "Under the Wave off Kanagawa",
+      "creator": "Katsushika Hokusai",
+      "date": "1830/33",
+      "institution": "Art Institute of Chicago",
+      "landingUrl": "https://www.artic.edu/artworks/24645",
+      "fileUrl": "https://www.artic.edu/iiif/2/b3974542-b9b4-7568-fc4b-966738f61d78/full/3000,/0/default.jpg"
+    },
+    "licence": {
+      "id": "public-domain",
+      "basis": "aic:is_public_domain",
+      "url": "https://www.artic.edu/open-access/open-access-images",
+      "attributionRequired": false,
+      "statement": "is_public_domain: true"
+    },
+    "attribution": "«Under the Wave off Kanagawa» by Katsushika Hokusai (1830/33), Art Institute of Chicago. Public domain",
+    "retrievedAt": "2026-10-09T14:00:00.000Z"
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "MediaProvenance",
+    "file": {
+      "path": "assets/images/storm.jpg",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 2513447,
+      "mime": "image/jpeg",
+      "width": 3000,
+      "height": 2056
+    },
+    "provider": {
+      "id": "aic",
+      "label": "Art Institute of Chicago"
+    },
+    "item": {
+      "id": "24645",
+      "title": "Under the Wave off Kanagawa",
+      "creator": "Katsushika Hokusai",
+      "date": "1830/33",
+      "institution": "Art Institute of Chicago",
+      "landingUrl": "https://www.artic.edu/artworks/24645",
+      "fileUrl": "https://www.artic.edu/iiif/2/b3974542-b9b4-7568-fc4b-966738f61d78/full/3000,/0/default.jpg"
+    },
+    "licence": {
+      "id": "CC-BY-XX-4.0",
+      "basis": "aic:is_public_domain",
+      "url": "https://www.artic.edu/open-access/open-access-images",
+      "attributionRequired": false,
+      "statement": "is_public_domain: true"
+    },
+    "attribution": "«Under the Wave off Kanagawa» by Katsushika Hokusai (1830/33), Art Institute of Chicago. Public domain",
+    "retrievedAt": "2026-10-09T14:00:00.000Z",
+    "evidence": {
+      "path": "artifacts/provenance/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+      "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "MediaProvenance",
+    "file": {
+      "path": "assets/images/storm.jpg",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 2513447,
+      "mime": "image/jpeg",
+      "width": 3000,
+      "height": 2056
+    },
+    "provider": {
+      "id": "aic",
+      "label": "Art Institute of Chicago"
+    },
+    "item": {
+      "id": "24645",
+      "title": "Under the Wave off Kanagawa",
+      "creator": "Katsushika Hokusai",
+      "date": "1830/33",
+      "institution": "Art Institute of Chicago",
+      "landingUrl": "not a url",
+      "fileUrl": "https://www.artic.edu/iiif/2/b3974542-b9b4-7568-fc4b-966738f61d78/full/3000,/0/default.jpg"
+    },
+    "licence": {
+      "id": "public-domain",
+      "basis": "aic:is_public_domain",
+      "url": "https://www.artic.edu/open-access/open-access-images",
+      "attributionRequired": false,
+      "statement": "is_public_domain: true"
+    },
+    "attribution": "«Under the Wave off Kanagawa» by Katsushika Hokusai (1830/33), Art Institute of Chicago. Public domain",
+    "retrievedAt": "2026-10-09T14:00:00.000Z",
+    "evidence": {
+      "path": "artifacts/provenance/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+      "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }
+]

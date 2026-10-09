@@ -14,6 +14,7 @@ import { registerWorkspaceTools } from "../src/workspace-tools.js";
 import { registerPipelineTools } from "../src/pipeline-tools.js";
 import { registerCapabilityTools } from "../src/capability-tools.js";
 import { registerBlenderTools } from "../src/blender-tools.js";
+import { registerArchiveTools } from "../src/archive-tools.js";
 import { registerSkillTools } from "../src/skill-tools.js";
 import { registerSlashCommands } from "../src/slash-commands.js";
 import { registerTuiComponents } from "../src/tui-status.js";
@@ -292,6 +293,7 @@ export default function (pi: ExtensionAPI): void {
 
   registerCapabilityTools(pi);
   registerBlenderTools(pi);
+  registerArchiveTools(pi);
 
   // --- Register skill and context tools ---------------------------------
 

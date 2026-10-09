@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@av/elevenlabs": "workspace:*",
+    "@av/archive-media": "workspace:*",
     "@av/remotion-composer": "workspace:*",
     "@studio/contracts": "workspace:*",
     "@studio/series": "workspace:*"

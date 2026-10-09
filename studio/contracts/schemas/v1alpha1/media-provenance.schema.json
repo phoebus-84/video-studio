@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/media-provenance.schema.json",
+  "title": "Where an archive or stock file came from, under which licence, and the evidence (avg-fe8.2)",
+  "$defs": {
+    "MediaProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "file", "provider", "item", "licence", "attribution", "retrievedAt", "evidence"],
+      "properties": {
+        "apiVersion": { "const": "studio.video/v1alpha1" },
+        "kind": { "const": "MediaProvenance" },
+        "file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash", "bytes", "mime"],
+          "properties": {
+            "path": { "type": "string", "pattern": "^assets/(images|video|sounds)/[A-Za-z0-9][A-Za-z0-9._-]*$", "description": "Relative to the workspace." },
+            "hash": { "$ref": "identity.schema.json#/$defs/ContentHash" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "mime": { "type": "string", "minLength": 1 },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "durationSeconds": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "label"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+            "label": { "type": "string", "minLength": 1 }
+          }
+        },
+        "item": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "title", "landingUrl", "fileUrl"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "description": "The provider's own id: what fetches it again." },
+            "title": { "type": "string", "minLength": 1 },
+            "creator": { "type": "string", "minLength": 1 },
+            "date": { "type": "string", "minLength": 1 },
+            "institution": { "type": "string", "minLength": 1 },
+            "landingUrl": { "type": "string", "format": "uri", "description": "The page where a person verifies the item and its licence." },
+            "fileUrl": { "type": "string", "format": "uri" }
+          }
+        },
+        "licence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "attributionRequired", "statement"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^(public-domain|CC0-1\\.0|CC-BY(-NC)?(-SA|-ND)?-[0-9]+(\\.[0-9]+)?|provider:[a-z0-9-]+)$",
+              "description": "Never `unknown`: an unverified licence is never fetched."
+            },
+            "basis": { "type": "string", "minLength": 1, "description": "For public-domain: why it is." },
+            "url": { "type": "string", "format": "uri" },
+            "attributionRequired": { "type": "boolean" },
+            "statement": { "type": "string", "description": "What the provider said, as it said it." }
+          }
+        },
+        "attribution": { "type": "string", "minLength": 1, "description": "The credit line ATTRIBUTIONS.md prints." },
+        "retrievedAt": { "type": "string", "format": "date-time" },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash"],
+          "properties": {
+            "path": { "type": "string", "pattern": "^artifacts/provenance/[0-9a-f]{64}\\.json$" },
+            "hash": { "$ref": "identity.schema.json#/$defs/ContentHash" }
+          },
+          "description": "The provider's own response for the item when it was fetched, named by its hash."
+        }
+      },
+      "description": "<file>.source.json beside an archive file in a workspace's assets/."
+    }
+  }
+}
