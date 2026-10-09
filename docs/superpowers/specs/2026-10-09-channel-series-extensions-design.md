@@ -107,13 +107,28 @@ Concentric levels. Each holds its own data **and its own procedures**. The appli
    - Seal, build, lookup order, generated bundle entry, hashes in `drawingCodeHash` and the cache, `vpr kit verify`.
 3. **The toolbox**, extracted from what the dentro-i-versi compilers share. This can overlap with phase 4.
 4. **dentro-i-versi moves out** (decision 7), then the app's copy is deleted.
+5. **Channels as repositories, and the `author-series` skill.** `vpr channel init` (git), dentro-i-versi made a repository, and the skill, written from what phases 1–4 established and tried on a new small series.
 
 Each phase is its own plan and PR.
 
-## Open questions for the operator
+## Settled with the operator (2026-10-09)
 
-- **Versioning the library.** The library is gitignored production data. With this change, dentro-i-versi's code lives only there, protected by sealed releases but by no history or backup. Should each channel (or the whole library) become its own git repository?
-- **Who writes a series' code.** A person, or Pi through new tools (`pva_write_compiler`?). Pi editing code in the library is still code, reviewed through the layout sheet and the golden fixtures. This design makes it possible but doesn't add those tools.
+- **Each channel is its own git repository.** `library/<channel>/` gets its own history and remote. Its code, releases and data are versioned there, and the application's repository never holds them. Sealed releases still guard a render; git guards the work. `vpr channel init` makes a new channel a repository. An existing channel becomes one once, by hand or with the same command; media too large for git are named in the channel's `.gitignore` (e.g. `**/output/`, `.cache/`), decided per channel.
+- **Pi writes a series' procedures, guided by a skill.** A built-in skill, `author-series`, teaches Pi what a series needs and how to write it. It covers:
+  - the levels, and where each thing goes;
+  - the template;
+  - the compiler, its time cues and the toolbox;
+  - the validator;
+  - kits;
+  - fixtures;
+  - sealing and verifying;
+  - which tools to call.
+
+  Pi can make very different products, and most don't use Remotion or a compiler: Blender scenes, narrated illustrated videos, repository documentation. So the skill opens by telling Pi which kind of product it is making:
+  - **A spec-driven series rendered with kits:** the procedure above, in full.
+  - **Another pipeline family:** the skill says so and points to that family's skills. The principle stays: what is specific goes to the channel or the series, never into the application.
+
+  Pi's code is reviewed like everything else: through the golden fixtures, `vpr template verify`, `vpr kit verify` and the layout sheet the operator approves.
 
 ## Out of scope
 
