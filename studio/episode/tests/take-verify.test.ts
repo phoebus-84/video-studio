@@ -139,6 +139,13 @@ describe("review fixes", () => {
     expect([report.words.missing, report.words.substituted]).toEqual([[], []]);
   });
 
+  it("reports lines of the written text when the voice was given one paragraph", () => {
+    const text = "Gemmea l'aria, il sole così chiaro\nche tu ricerchi gli albicocchi in fiore,\ne del prunalbo l'odorino amaro\nsenti nel cuore.";
+    const spokenText = "Gemmea l'aria, il sole così chiaro che tu ricerchi gli albicocchi in fiore, e del prunalbo l'odorino amaro senti nel cuore.";
+    const report = compareTake({ text, spokenText, heard: heard("Gemmea l'aria, il sole così chiaro che tu ricerchi gli albicocchi in fiore, senti nel cuore."), durationSeconds: 8 });
+    expect(report.words.missing).toEqual([{ line: 3, words: "e del prunalbo l'odorino amaro", wholeLine: true }]);
+  });
+
   it("names words heard almost as written, without calling them wrong", () => {
     const report = compareTake({ text: "che bella cosa", heard: heard("chi bella cosa"), durationSeconds: 2 });
     expect(report.words.near).toEqual([{ line: 1, expected: "che", heard: "chi", start: 0 }]);

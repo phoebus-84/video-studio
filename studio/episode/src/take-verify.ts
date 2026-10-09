@@ -220,6 +220,18 @@ export function compareTake(input: CompareInput): Omit<TakeVerification, "apiVer
   const ops = alignWords(ref, hyp);
   // Which written words were heard, for the squeezed runs: the same ops when the text is what was said.
   const writtenOps = spoken === input.text ? ops : alignWords(written.map((w) => normalizeToken(w.word)), hyp);
+  // What was spoken is reported by the written text's lines: a paragraph given to the voice still has the poem's verses.
+  if (spoken !== input.text) {
+    const lineOf: (number | undefined)[] = new Array(compared.length);
+    for (const op of alignWords(compared.map((w) => normalizeToken(w.word)), written.map((w) => normalizeToken(w.word)))) {
+      if ((op.op === "match" || op.op === "sub") && op.hyp.length > 0) for (const k of op.ref) lineOf[k] = written[op.hyp[0]!]!.line;
+    }
+    let last = written[0]?.line ?? 1;
+    compared.forEach((w, k) => {
+      w.line = lineOf[k] ?? last;
+      last = w.line;
+    });
+  }
 
   const lineWords = new Map<number, number>();
   for (const w of compared) lineWords.set(w.line, (lineWords.get(w.line) ?? 0) + 1);

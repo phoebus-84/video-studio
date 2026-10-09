@@ -360,9 +360,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Synthesize Nonverbal Audio",
     description: "Generate a deterministic speech-free character buzz cue as mono PCM WAV.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       cueId: Type.String({ description: "Safe cue ID used as the WAV filename" }),
       emotion: StringEnum(NONVERBAL_EMOTIONS, { description: "Expressive buzz emotion" }),
       durationSeconds: Type.Number({ minimum: 0.1, maximum: 8 }),
@@ -371,14 +369,14 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     async execute(_toolCallId, params) {
       if (!params.cueId.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)) throw new Error("cueId must contain only letters, numbers, underscores, and hyphens");
       const relativeOutput = join("assets", "audio", `${params.cueId}.wav`);
-      const guard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, relativeOutput);
+      const guard = await guardWorkspacePath(LIBRARY_ROOT, where(params), relativeOutput);
       if (!guard.allowed) throw new Error(guard.reason ?? "Audio output path rejected");
-      const dir = episodeDir(params.channel, params.series, params.episode);
+      const dir = where(params).dir;
       const result = await synthesizeNonverbalBuzz({
         emotion: params.emotion,
         durationSeconds: params.durationSeconds,
         gain: params.gain,
-        seed: `${params.channel}/${params.series}/${params.episode}/${params.cueId}`,
+        seed: `${where(params).label}/${params.cueId}`,
         outputPath: join(dir, relativeOutput),
       });
       return {
@@ -483,12 +481,16 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         if ((params.outputWidth === undefined) !== (params.outputHeight === undefined)) {
           throw new Error("outputWidth and outputHeight must be supplied together");
         }
-        const dir = where(params).dir;
-        const imgDir = join(dir, "assets", "images");
-        mkdirSync(imgDir, { recursive: true });
-
+        const workspace = where(params);
+        const dir = workspace.dir;
         const libraryRoot = process.env["AVG_LIBRARY_ROOT"] || join(process.cwd(), "library");
         const provider = resolveImageProvider(libraryRoot, params.channel, params.series);
+        // A source has no budget: a paid provider is refused before anything is written.
+        if (provider.kind === "fal" && workspace.kind === "source") {
+          throw new Error(`image generation with fal is paid, and a source has no budget: set image.provider: openai-codex in the channel's pipeline.yaml, fetch an archive picture (pva_fetch_media), or generate it in an episode`);
+        }
+        const imgDir = join(dir, "assets", "images");
+        mkdirSync(imgDir, { recursive: true });
         const referenceImages: CodexReferenceImage[] = [];
         for (const relativePath of params.referenceImagePaths ?? []) {
           const guard = await guardWorkspacePath(LIBRARY_ROOT, where(params), relativePath,
@@ -515,7 +517,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
                 // Through the episode's spend ledger (avg-91o): reserved
                 // before the request, settled after, refused over budget.
                 const fal = await paidCall(
-                  { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "this call") },
+                  { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "image generation with fal") },
                   { capability: "image.generate", provider: "fal", model: provider.model, purpose: `image ${params.sceneId}` },
                   async (spend) => ({ value: await generateImage(params.prompt, provider.model, spend) }),
                 );
@@ -844,11 +846,12 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(params.sceneId)) {
           throw new Error("sceneId must contain only letters, numbers, underscores, and hyphens");
         }
+        // Where it goes first: a wrong episode or source fails before the synthesis, not after.
+        const dir = where(params).dir;
         const voice = params.voice ?? "default";
         const result = await synthesizeSpeech(params.text, voice, params.speed ?? 1.0, params.instruct, params.language);
 
-        // Copy audio to episode artifacts/narration/
-        const dir = where(params).dir;
+        // Copy audio to the workspace's artifacts/narration/
         const narrationDir = join(dir, "artifacts", "narration");
         mkdirSync(narrationDir, { recursive: true });
         const destPath = join(narrationDir, `${params.sceneId}.wav`);
@@ -1392,7 +1395,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
               apiKey,
               // Through the episode's spend ledger (avg-91o), at the profile's price per minute.
               pay: <T>(minutes: number, call: () => Promise<T>) => paidCall(
-                { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "this call") },
+                { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "alignment with ElevenLabs") },
                 {
                   capability: "speech.align", provider: "elevenlabs", model: "forced-alignment", purpose: `align ${params.take}`,
                   estimate: {
@@ -1622,9 +1625,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Render Graphics",
     description: "Render graphics content: title cards, lower thirds, diagrams, overlays.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       contentKind: Type.Union([
         Type.Literal("title-card"),
         Type.Literal("overlay"),
@@ -1638,7 +1639,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
         // For MVP, generate simple PNG via ffmpeg drawtext
-        const dir = episodeDir(params.channel, params.series, params.episode);
+        const dir = where(params).dir;
         const gfxDir = join(dir, "artifacts", "graphics");
         mkdirSync(gfxDir, { recursive: true });
         const outPath = join(gfxDir, `${params.contentKind}.png`);

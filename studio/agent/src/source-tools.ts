@@ -56,9 +56,9 @@ export function sourceReadme(options: { title: string; procedure?: string; descr
 kind: source
 title: ${JSON.stringify(options.title)}
 status: draft
-${options.procedure ? `procedure: ${options.procedure}\n` : ""}---
+${options.procedure ? `procedure: ${JSON.stringify(options.procedure)}\n` : ""}---
 
-# ${options.title}
+# ${options.title.replace(/\s+/g, " ").trim()}
 
 ${options.description ?? "What this source is, in one paragraph."}
 
@@ -108,6 +108,7 @@ export function registerSourceTools(pi: ExtensionAPI): void {
       try {
         if (!SLUG.test(params.channel)) throw new Error(`"${params.channel}" is not a channel slug`);
         if (!SLUG.test(params.name)) throw new Error(`"${params.name}" is not a source name (lowercase words joined by -)`);
+        if (params.procedure !== undefined && !SLUG.test(params.procedure)) throw new Error(`"${params.procedure}" is not a skill id`);
         if (!existsSync(channelPath(libraryRoot(), params.channel))) throw new Error(`there is no channel ${params.channel}`);
         const dir = sourcePath(libraryRoot(), params.channel, params.name);
         const readme = join(dir, SOURCE_README);

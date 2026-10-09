@@ -34,7 +34,7 @@ describe("sources", () => {
     const made = await run("pva_create_source", { channel: "poesia", name: "san-martino", title: "San Martino", procedure: "poem-source" });
     expect(made.isError).toBeUndefined();
     const readme = readFileSync(join(root, "poesia", "sources", "san-martino", "README.md"), "utf-8");
-    expect(readme).toMatch(/^---\nkind: source\ntitle: "San Martino"\nstatus: draft\nprocedure: poem-source\n---/);
+    expect(readme).toMatch(/^---\nkind: source\ntitle: "San Martino"\nstatus: draft\nprocedure: "poem-source"\n---/);
     expect(readSource(root, "poesia", "san-martino")).toEqual({ name: "san-martino", title: "San Martino", status: "draft", procedure: "poem-source" });
     expect((await run("pva_create_source", { channel: "poesia", name: "san-martino", title: "x" })).isError).toBe(true);
     expect((await run("pva_create_source", { channel: "poesia", name: "../x", title: "x" })).isError).toBe(true);
@@ -102,5 +102,38 @@ describe("the channel's own skills and instructions", () => {
       'poesia/sources/lampo/README.md: source pinned as "fonte" (ready)',
     ]);
     expect(existsSync(join(root, "poesia"))).toBe(true);
+  });
+});
+
+describe("episode tools in a source", () => {
+  async function capability() {
+    const { registerCapabilityTools } = await import("../src/capability-tools.js");
+    const registered = new Map<string, any>();
+    registerCapabilityTools({ registerTool: (t: { name: string }) => registered.set(t.name, t), on: () => undefined } as never);
+    return (name: string, params: Record<string, unknown>) => registered.get(name)!.execute("call", params, undefined, () => undefined, { modelRegistry: {} });
+  }
+
+  it("makes a sound in the source, seeded by the source", async () => {
+    mkdirSync(join(root, "poesia", "sources", "lampo"), { recursive: true });
+    const run = await capability();
+    const made = await run("pva_synthesize_sound", { channel: "poesia", source: "lampo", soundId: "tuono", kind: "thunder", durationSeconds: 1 });
+    expect(made.isError, made.content[0].text).toBeUndefined();
+    expect(existsSync(join(root, "poesia", "sources", "lampo", "assets", "sounds", "tuono.wav"))).toBe(true);
+    expect(made.details.receipt.seed).toBe("poesia/sources/lampo/tuono");
+  });
+
+  it("refuses a paid image in a source before writing anything, saying how to do without", async () => {
+    mkdirSync(join(root, "poesia", "sources", "lampo"), { recursive: true });
+    const run = await capability();
+    const refused = await run("pva_generate_image", { channel: "poesia", source: "lampo", sceneId: "cielo", prompt: "a storm" });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toMatch(/a source has no budget.*openai-codex/);
+    expect(existsSync(join(root, "poesia", "sources", "lampo", "assets"))).toBe(false);
+  });
+
+  it("refuses a source that is not there before doing any work", async () => {
+    const run = await capability();
+    const refused = await run("pva_synthesize_sound", { channel: "poesia", source: "nowhere", soundId: "x", kind: "wind", durationSeconds: 1 });
+    expect(refused.content[0].text).toMatch(/pva_create_source/);
   });
 });
