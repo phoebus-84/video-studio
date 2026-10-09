@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { alignWords, compareTake, normalizeToken, textWords, verifyTake, type Transcript } from "../src/take-verify.js";
@@ -85,9 +85,29 @@ describe("verifyTake", () => {
     const asked: string[] = [];
     const got = await verifyTake(ws, "titolo", { transcribe: async (path, language) => { asked.push(`${path}|${language}`); return heard("Il lampo"); }, now: () => new Date("2026-10-09T18:00:00Z") });
     expect(got.path).toBe("artifacts/takes/titolo.verification.json");
-    expect(asked).toEqual([`${join(ws, "assets/takes/titolo.wav")}|it`]);
+    expect(asked).toEqual([`${realpathSync(join(ws, "assets/takes/titolo.wav"))}|it`]);
     const written = JSON.parse(readFileSync(join(ws, got.path), "utf-8"));
     expect(written).toMatchObject({ kind: "TakeVerification", take: { id: "titolo", audio: { path: "assets/takes/titolo.wav" } }, words: { expected: 2, matched: 2 }, createdAt: "2026-10-09T18:00:00.000Z" });
+  });
+
+  it("never follows a link out of the workspace, and reads a broken timing as none", async () => {
+    workspace();
+    const outside = mkdtempSync(join(tmpdir(), "outside-"));
+    try {
+      const doc = JSON.parse(readFileSync(join(ws, "artifacts/narration/takes.json"), "utf-8"));
+      writeFileSync(join(outside, "secret.wav"), "elsewhere");
+      symlinkSync(join(outside, "secret.wav"), join(ws, "assets/takes/link.wav"));
+      doc.takes.push({ id: "link", text: "x", audio: { path: "assets/takes/link.wav", hash: sha("elsewhere") } });
+      writeFileSync(join(ws, "artifacts/narration/timing-broken.json"), "{ not json");
+      doc.takes[0].timing = { path: "artifacts/narration/timing-broken.json", hash: sha("{ not json") };
+      writeFileSync(join(ws, "artifacts/narration/takes.json"), JSON.stringify(doc));
+      const t = { transcribe: async () => heard("Il lampo") };
+      await expect(verifyTake(ws, "link", t)).rejects.toMatchObject({ code: "no-such-take" });
+      const got = await verifyTake(ws, "titolo", t);
+      expect(got.report.pauses).toBeNull();
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("refuses a take that is not there, and audio that is not the take's", async () => {
@@ -96,5 +116,36 @@ describe("verifyTake", () => {
     await expect(verifyTake(ws, "recita", t)).rejects.toMatchObject({ code: "no-such-take" });
     writeFileSync(join(ws, "assets/takes/titolo.wav"), "another take");
     await expect(verifyTake(ws, "titolo", t)).rejects.toMatchObject({ code: "audio-changed" });
+  });
+});
+
+describe("review fixes", () => {
+  const timingOf = (tokens: string[], step = 0.5, gaps: Record<number, number> = {}) => {
+    let t = 0;
+    return { words: tokens.map((text, i) => { t += gaps[i] ?? 0; const w = { text, start: t, end: t + step }; t += step; return w; }) };
+  };
+
+  it("keeps measuring when a line holds only a dash or an ellipsis, and never counts it as a stanza break", () => {
+    const text = "uno due\n—\ntre quattro";
+    const tokens = ["uno", "due", "—", "tre", "quattro"];
+    const report = compareTake({ text, heard: heard("uno due tre quattro"), durationSeconds: 3, timing: timingOf(tokens, 0.4, { 3: 0.6 }) });
+    expect(report.concerns).toEqual([]);
+    expect(report.pauses!.stanza.count).toBe(0);
+    expect(report.pauses!.all.map((p) => [p.after, p.kind])).toEqual([["due", "verse"]]);
+  });
+
+  it("compares the transcript with what the take was given to say, when it differs from the text", () => {
+    const report = compareTake({ text: "Nel 1944", spokenText: "Nel millenovecentoquarantaquattro", heard: heard("nel millenovecentoquarantaquattro"), durationSeconds: 2 });
+    expect([report.words.missing, report.words.substituted]).toEqual([[], []]);
+  });
+
+  it("names words heard almost as written, without calling them wrong", () => {
+    const report = compareTake({ text: "che bella cosa", heard: heard("chi bella cosa"), durationSeconds: 2 });
+    expect(report.words.near).toEqual([{ line: 1, expected: "che", heard: "chi", start: 0 }]);
+    expect(report.concerns.join("\n")).toContain("«che»→«chi»");
+  });
+
+  it("survives an empty timing", () => {
+    expect(() => compareTake({ text: "", heard: heard(""), durationSeconds: 1, timing: { words: [] } })).not.toThrow();
   });
 });
