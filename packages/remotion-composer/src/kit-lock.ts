@@ -25,7 +25,7 @@ export interface LockedKit {
  * code hash; null for a kit the lock does not know (a timeline the composer
  * would refuse anyway).
  */
-export function timelineKits(timeline: Pick<EditTimeline, 'tracks'>): LockedKit[] | null {
+export function timelineKits(timeline: Pick<EditTimeline, 'tracks'>, library: readonly LockedKit[] = []): LockedKit[] | null {
   const kits = new Map<string, {name: string; version: string}>();
   for (const item of timeline.tracks.flatMap((t) => t.items)) {
     if (isAudioItem(item)) continue;
@@ -34,7 +34,8 @@ export function timelineKits(timeline: Pick<EditTimeline, 'tracks'>): LockedKit[
   }
   const locked: LockedKit[] = [];
   for (const {name, version} of [...kits.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))) {
-    const hash = kitLockHash(name, version);
+    // A library kit's hash is its sealed bundle's (avg-d1x).
+    const hash = kitLockHash(name, version) ?? library.find((k) => k.name === name && k.version === version)?.hash;
     if (hash === undefined) return null;
     locked.push({name, version, hash});
   }

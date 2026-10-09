@@ -18,3 +18,4 @@ export * from "./take-align.js";
 export * from "./take-register.js";
 export * from "./stage-evidence.js";
 export * from "./template-code.js";
+export * from "./kit-code.js";

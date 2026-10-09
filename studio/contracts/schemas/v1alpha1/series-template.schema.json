@@ -19,6 +19,17 @@
       },
       "description": "The compiler or validator the release runs: with `bundle`, the release's own sealed code (avg-d1x); without, the application's registered one."
     },
+    "KitPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "level", "hash"],
+      "properties": {
+        "name": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "version": { "$ref": "#/$defs/TemplateVersion" },
+        "level": { "enum": ["channel", "series"], "description": "library/<channel>/kits/ or library/<channel>/series/<series>/kits/." },
+        "hash": { "$ref": "identity.schema.json#/$defs/ContentHash", "description": "sha256 of the kit release's kit.json." }
+      }
+    },
     "CodeBundle": {
       "type": "object",
       "additionalProperties": false,
@@ -97,6 +108,12 @@
         "compiler": { "$ref": "#/$defs/SeriesComponentRef" },
         "validator": { "$ref": "#/$defs/SeriesComponentRef" },
         "theme": { "$ref": "channel-theme.schema.json#/$defs/ThemePin", "description": "The channel theme release this series draws with (ADR-0040); absent: the kits' own look." },
+        "kits": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/KitPin" },
+          "description": "The library kits this series' timelines may draw with besides the application's (avg-d1x): the channel's or the series' own, each pinned by the hash of its kit.json."
+        },
         "files": {
           "type": "object",
           "additionalProperties": false,

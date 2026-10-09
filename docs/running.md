@@ -472,6 +472,23 @@ node studio/runtime/dist/src/cli.js template seal my-channel/my-series my-templa
 node studio/runtime/dist/src/cli.js template verify my-channel/my-series my-template 1.1.0 --library "$PWD/library"
 ```
 
+**`vpr kit seal`** and **`vpr kit verify`** handle a kit a channel or a
+series carries (ADR-0042). The kit lives in `library/<channel>/kits/<name>/<version>/`
+(or the series' own `kits/`). Its source is `kit/index.tsx`, exporting
+`kit`, the same shape as the composer's kits.
+- **`kit seal`** builds `kit.cjs`, with React, Remotion and zod left to the
+  studio, and writes `kit.json`.
+- **A series release draws with the kit** once its `series-template.json`
+  lists it, as `"kits": [{"name": "…", "version": "…", "level": "channel"}]`,
+  and `template seal` fills in the hash.
+- **`kit verify`** checks the bundle, warns if the source no longer builds to
+  it, and checks the examples' props.
+
+```bash
+node studio/runtime/dist/src/cli.js kit seal my-channel my-card 1.0.0 --library "$PWD/library"
+node studio/runtime/dist/src/cli.js kit verify my-channel/my-series my-hall 1.0.0 --library "$PWD/library"
+```
+
 **`vpr select`** puts an earlier candidate back in place. The gateway offers
 the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`
 lists the candidates.

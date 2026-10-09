@@ -11,6 +11,8 @@ export interface CodeBundle { path: string; hash: string }
 /** With `bundle`, the release's own code; without, the application's registered compiler or validator. */
 export interface SeriesComponentRef { id: string; version: string; bundle?: CodeBundle }
 export interface TemplatePin { id: string; version: string; hash: string }
+/** A library kit a series release may draw with (avg-d1x), pinned by its kit.json's hash. */
+export interface KitPin { name: string; version: string; level: "channel" | "series"; hash: string }
 export interface SeriesFileRef { path: string; hash: string }
 export interface SeriesEpisodeRef { channel: string; series: string; episode: string }
 /** One layout-sheet instant per matching section (avg-3th.1). */
@@ -28,6 +30,7 @@ export interface SeriesTemplate {
   version: string;
   compiler: SeriesComponentRef;
   validator?: SeriesComponentRef;
+  kits?: KitPin[];
   /** The channel theme release this series draws with (ADR-0040). */
   theme?: { id: string; version: string; hash: string };
   files: { schema: SeriesFileRef; template: SeriesFileRef; standard: SeriesFileRef };

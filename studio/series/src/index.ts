@@ -10,6 +10,7 @@ export type {
   EditTimeline,
   EpisodeSpec,
   Finding,
+  LoadedLibraryKit,
   NarrationTakes,
   SeriesCompiler,
   SeriesTemplate,

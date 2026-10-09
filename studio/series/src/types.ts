@@ -12,6 +12,7 @@ import type { NarrationTakes } from "@studio/contracts/bindings/ts/narration-tak
 import type { WordTiming } from "@studio/contracts/bindings/ts/word-timing.ts";
 import type { EditTimeline } from "@studio/contracts/bindings/ts/v1alpha2/edit-timeline.ts";
 import type { ChannelTheme } from "@studio/contracts/src/channel-themes.mjs";
+import type { KitVersion } from "@av/remotion-composer";
 
 export type { ChannelTheme, EditTimeline, EpisodeSpec, NarrationTakes, SeriesTemplate, WordTiming };
 
@@ -56,6 +57,23 @@ export interface CompileInput {
    * or `validator.bundle` is. Not data: never in a fixture's input.json.
    */
   code?: { compiler?: SeriesCompiler; validator?: SeriesValidator };
+  /**
+   * The library kits the release pins (avg-d1x), loaded by the episode's
+   * loader: the timeline may draw with them besides the application's. Not
+   * data: never in a fixture's input.json.
+   */
+  kits?: LoadedLibraryKit[];
+}
+
+/** A library kit as a compile and a render need it: its sealed bundle, and the KitVersion it exports. */
+export interface LoadedLibraryKit {
+  name: string;
+  version: string;
+  /** Absolute path of its kit.cjs. */
+  file: string;
+  /** "sha256:…" of kit.cjs. */
+  hash: string;
+  kit: KitVersion;
 }
 
 /** Something in the input that stops compilation, located by a JSON path. */

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/kit-release.schema.json",
+  "title": "A kit a channel or a series carries in the library: its sealed bundle (avg-d1x)",
+  "$defs": {
+    "KitRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "name", "version", "bundle"],
+      "properties": {
+        "apiVersion": { "const": "studio.video/v1alpha1" },
+        "kind": { "const": "KitRelease" },
+        "name": { "$ref": "identity.schema.json#/$defs/Slug" },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "description": "An exact released version."
+        },
+        "bundle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash"],
+          "properties": {
+            "path": { "const": "kit.cjs" },
+            "hash": { "$ref": "identity.schema.json#/$defs/ContentHash" }
+          },
+          "description": "The CommonJS bundle `vpr kit seal` built from kit/index.tsx, React, Remotion and zod left to the application; `hash` is its sha256."
+        }
+      },
+      "description": "kit.json, at library/<channel>/kits/<name>/<version>/ or library/<channel>/series/<series>/kits/<name>/<version>/. Immutable once a series release pins it."
+    }
+  }
+}

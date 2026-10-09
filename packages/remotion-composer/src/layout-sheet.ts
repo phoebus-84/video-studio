@@ -6,12 +6,12 @@
 import {mkdir, mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
 import {bundle} from '@remotion/bundler';
 import {openBrowser, renderStill, selectComposition, type HeadlessBrowser} from '@remotion/renderer';
 import {stageAssets, sha256} from './assets.js';
 import {ComposerError} from './errors.js';
 import {timelineKits, type LockedKit} from './kit-lock.js';
+import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
 import {sheetSize, type SheetProps} from './Sheet.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
@@ -36,6 +36,8 @@ export interface LayoutSheetOptions {
   columns?: number;
   /** Stills rendered at once. Default 6. */
   parallel?: number;
+  /** Kits the channel or the series carries (avg-d1x), beside the application's. */
+  kits?: readonly LibraryKit[];
 }
 
 export interface LayoutSheetFrame {
@@ -68,7 +70,8 @@ function refuse(message: string): never {
 }
 
 export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<LayoutSheetResult> {
-  const checked = validateTimeline(options.timeline);
+  const library = await readLibraryKits(options.kits ?? []);
+  const checked = validateTimeline(options.timeline, {kits: library.versions});
   if (!checked.ok) {
     const code = checked.problems[0]!.code;
     throw new ComposerError(code, `the timeline cannot be rendered: ${checked.problems.map((p) => `${p.code} at ${p.path}`).join('; ')}`, checked.problems);
@@ -91,7 +94,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
   if (!(scale > 0 && scale <= 1)) refuse(`scale ${scale} is not in (0, 1]`);
   if (!Number.isInteger(columns) || columns < 1) refuse(`columns ${columns} is not a positive whole number`);
 
-  const kits = timelineKits(timeline) ?? refuse('a kit of this timeline is not in kits.lock.json');
+  const kits = timelineKits(timeline, options.kits ?? []) ?? refuse('a kit of this timeline is neither in kits.lock.json nor a library kit it was handed');
 
   const staging = await stageAssets(timeline, options.assetRoot, options.sharedRoots);
   if (!staging.ok) {
@@ -108,7 +111,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
       if (asset.kind === 'video') assetFrames[staged.files[id]!] = videoFrames(staged.sources[id]!, timeline.fps);
     }
     await mkdir(path.join(outDir, 'frames'), {recursive: true});
-    const entryPoint = path.join(path.dirname(fileURLToPath(import.meta.url)), 'remotion-entry.js');
+    const entryPoint = await libraryEntry(library);
     const frames: LayoutSheetFrame[] = picks.map((p, index) => ({
       index,
       frame: p.frame,
@@ -120,7 +123,10 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
     const sheetPath = path.join(outDir, 'sheet.jpg');
     let sheet: SheetProps;
     try {
-      const serveUrl = await bundle({entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle')});
+      const serveUrl = await bundle({
+        entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle'),
+        ...(options.kits?.length ? {webpackOverride: resolveFromApplication} : {}),
+      });
       browser = await openBrowser('chrome');
       const inputProps = {timeline, files: staged.files, assetFrames};
       const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps, puppeteerInstance: browser});

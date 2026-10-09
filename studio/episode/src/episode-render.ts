@@ -24,7 +24,7 @@ import {
   type BuildProblem,
   type EditTimelineDoc,
 } from "./edit-timeline-builder.js";
-import { checkEpisode, compileEpisode, isSpecDriven, sharedRootsOf, type SeriesFinding } from "./series-compile.js";
+import { checkEpisode, compileEpisode, isSpecDriven, libraryKitsOf, sharedRootsOf, type SeriesFinding } from "./series-compile.js";
 import { requireSheetReview } from "./sheet-review.js";
 
 const LABEL = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -394,6 +394,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
       timeline: current.timeline,
       assetRoot: episodeDir,
       sharedRoots: sharedRootsOf(episodeDir),
+      kits: libraryKitsOf(episodeDir, options),
       cacheDir: join(episodeDir, ".cache", "remotion"),
       outputPath: partialPath,
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
