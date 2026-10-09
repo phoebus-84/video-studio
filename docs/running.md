@@ -497,6 +497,17 @@ node studio/runtime/dist/src/cli.js kit verify my-channel/my-series my-hall 1.0.
   `@av/remotion-composer/kits/lib/fonts/1.1.0`, `…/stage-math/1.0.0` and the
   rest; `kit seal` leaves them to the studio, so the fonts load once.
 
+**A channel is its own git repository** (ADR-0045). `vpr channel init` sets
+it up: its text in git, its heavy media out, each named by hash and size in
+`media.lock.json`. After a `git pull`, `vpr channel media --check` lists the
+media this machine lacks or holds in another version; after new media,
+`vpr channel media` updates the list, to commit with the work.
+
+```bash
+node studio/runtime/dist/src/cli.js channel init my-channel --commit --library "$PWD/library"
+node studio/runtime/dist/src/cli.js channel media my-channel --check --library "$PWD/library"
+```
+
 **`vpr select`** puts an earlier candidate back in place. The gateway offers
 the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`
 lists the candidates.

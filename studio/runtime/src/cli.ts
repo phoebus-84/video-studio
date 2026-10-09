@@ -32,6 +32,7 @@ import { resolveCliCredential } from "./execution/principal.js";
 import { approveReference, listReferences, withdrawReference } from "./references.js";
 import { reviewSheet, sheetReviewStatus } from "./sheet-review.js";
 import { releaseTemplate, sealTheme, ThemeReleaseError } from "./theme-release.js";
+import { checkMedia, initChannelRepo, MEDIA_LOCK, writeMediaLock } from "./channel-repo.js";
 import { verifySeriesReference } from "@studio/contracts/src/series-references.mjs";
 import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
 import { createRequire } from "node:module";
@@ -997,6 +998,52 @@ async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
  * `vpr status` loads the studio's reader: that package depends on this one.
  */
 /**
+ * `vpr channel init|media <channel>` (avg-d1x phase 5): the channel as its own
+ * git repository, its heavy media named by hash in media.lock.json.
+ */
+async function cmdChannel(ctx: CliContext, args: string[]): Promise<number> {
+  const usage = "Usage: vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--library <path>]";
+  const libraryRoot = libraryFrom(args);
+  const [sub, channel] = positionalArgs(args);
+  if (!libraryRoot || (sub !== "init" && sub !== "media") || !channel || !isNamePart(channel)) {
+    emit(ctx, { error: libraryRoot ? usage : "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
+    return EX_USAGE;
+  }
+  const dir = channelPath(libraryRoot, channel);
+  if (!existsSync(dir)) {
+    emit(ctx, { error: `there is no channel "${channel}" in ${libraryRoot}` });
+    return EX_RUNTIME;
+  }
+  const mb = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
+  try {
+    if (sub === "init") {
+      const made = initChannelRepo(dir, { commit: args.includes("--commit") });
+      emit(ctx, {
+        message: `${channel} is a git repository: ${made.created.join(", ") || "nothing"} written${made.kept.length ? `, ${made.kept.join(", ")} kept` : ""}; ` +
+          `${made.media.files} media files (${mb(made.media.bytes)}) named in ${MEDIA_LOCK}, kept out of git` +
+          (made.commit ? `; committed ${made.commit}` : "; commit it, and add a remote to share it"),
+        ...made,
+      });
+      return EX_OK;
+    }
+    if (args.includes("--check")) {
+      const checked = checkMedia(dir);
+      const said = checked.ok
+        ? `${channel}: every media file is here and is the one ${MEDIA_LOCK} names`
+        : `${channel}: ${checked.missing.length} missing, ${checked.changed.length} changed, ${checked.unlisted.length} not yet in ${MEDIA_LOCK}`;
+      emit(ctx, { ...(checked.ok ? { message: said } : { error: said }), ...checked });
+      return checked.ok ? EX_OK : EX_RUNTIME;
+    }
+    const written = writeMediaLock(dir);
+    emit(ctx, { message: `${channel}: ${written.files} media files (${mb(written.bytes)}) named in ${MEDIA_LOCK}; commit it with the work that made them`, ...written });
+    return EX_OK;
+  } catch (error) {
+    emit(ctx, { error: error instanceof Error ? error.message : String(error) });
+    return EX_RUNTIME;
+  }
+}
+
+/**
  * `vpr kit seal|verify <channel>[/<series>] <name> <version>` (avg-d1x): a kit
  * the channel or one of its series carries, built and checked by
  * @studio/episode, loaded at run time as `vpr template seal` loads it.
@@ -1819,6 +1866,7 @@ const COMMANDS: Record<string, CliCommand> = {
   sheet: { name: "sheet", description: "Review an episode's layout sheet: approve it, reject it with a note, or see its review; a spec-driven episode renders only with an approval of its current sheet", usage: "vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode>", examples: ["vpr sheet approve my-channel/my-series/ep001", "vpr sheet reject my-channel/my-series/ep001 --note 'the verse bar covers the hand at 0:12'", "vpr sheet status my-channel/my-series/ep001"], run: cmdSheet },
   reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve my-channel/my-series/ep001 ep001-v1 --dry-run", "vpr reference verify my-channel/my-series my-template ep001-v1", "vpr reference withdraw my-channel/my-series my-template ep001-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
   theme: { name: "theme", description: "Seal a theme release: its files and their hashes in theme.json, so a changed room never passes for the released one", usage: "vpr theme seal <channel>/<theme>/<version> [--library <path>]", examples: ["vpr theme seal my-channel/my-theme/1.1.0"], run: cmdTheme },
+  channel: { name: "channel", description: "Make a channel its own git repository (its heavy media named by hash in media.lock.json), update that list, or check this machine's media against it", usage: "vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--library <path>]", examples: ["vpr channel init my-channel --commit", "vpr channel media my-channel", "vpr channel media my-channel --check"], run: cmdChannel },
   kit: { name: "kit", description: "Seal a kit the channel or a series carries in the library (kit/index.tsx → kit.cjs, kit.json), or verify it", usage: "vpr kit seal <channel>[/<series>] <name> <version> [--dry-run] | vpr kit verify <channel>[/<series>] <name> <version> [--library <path>]", examples: ["vpr kit seal sample sample-card 1.0.0", "vpr kit verify sample/poetry hall 1.0.0"], run: cmdKit },
   template: { name: "template", description: "Release a series template (a copy of an earlier release, optionally pinned to a sealed theme), seal its own compiler and validator, or verify them against its fixtures", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] | vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--library <path>]", examples: ["vpr template seal sample/poetry poetry-short 1.1.0", "vpr template verify sample/poetry poetry-short 1.1.0", "vpr template release my-channel/my-series my-template 1.1.0 --from 1.0.0 --theme my-theme@1.1.0", "vpr template release my-channel/my-series my-template 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
