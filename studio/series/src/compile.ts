@@ -53,7 +53,7 @@ export function compileSpec(input: CompileInput): CompileResult {
   const problems: CompileProblem[] = validateEditTimeline(result.timeline)
     .map((p) => ({ code: `timeline:${p.code}`, message: p.message, path: p.path ?? "$" }));
   if (problems.length === 0) {
-    const composer = validateTimeline(result.timeline);
+    const composer = validateTimeline(result.timeline, { kits: (input.kits ?? []).map((k) => k.kit) });
     if (!composer.ok) {
       problems.push(...composer.problems.map((p) => ({ code: `timeline:${p.code}`, message: p.message, path: p.path ?? "$" })));
     }

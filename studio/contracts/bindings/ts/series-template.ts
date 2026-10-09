@@ -16,6 +16,15 @@ export interface SeriesComponentRef {
   bundle?: CodeBundle;
 }
 
+export interface KitPin {
+  name: Slug;
+  version: TemplateVersion;
+  /** library/<channel>/kits/ or library/<channel>/series/<series>/kits/. */
+  level: "channel" | "series";
+  /** sha256 of the kit release's kit.json. */
+  hash: ContentHash;
+}
+
 export interface CodeBundle {
   path: string;
   hash: ContentHash;
@@ -60,6 +69,8 @@ export interface SeriesTemplate {
   validator?: SeriesComponentRef;
   /** The channel theme release this series draws with (ADR-0040); absent: the kits' own look. */
   theme?: ThemePin;
+  /** The library kits this series' timelines may draw with besides the application's (avg-d1x): the channel's or the series' own, each pinned by the hash of its kit.json. */
+  kits?: KitPin[];
   files: {
     schema: SeriesFileRef;
     template: SeriesFileRef;
