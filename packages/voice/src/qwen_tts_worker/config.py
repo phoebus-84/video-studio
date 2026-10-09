@@ -72,6 +72,11 @@ class Settings(BaseSettings):
         description="Forced-alignment model for POST /align (avg-8hs.2), loaded on first use.",
     )
 
+    transcribe_model: str = Field(
+        default="mlx-community/whisper-large-v3-turbo",
+        description="Transcription model for POST /transcribe (avg-8hs.3), through mlx-whisper, loaded on first use.",
+    )
+
     model_idle_timeout_seconds: float | None = Field(
         default=None,
         ge=1.0,

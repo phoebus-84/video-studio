@@ -458,3 +458,52 @@ first download without network, a wrong `QTW_ALIGN_MODEL`).
 
 `detail[0].type` `aligner-failed`: the model itself failed while aligning.
 
+## Transcription
+
+What a take actually says, word by word (avg-8hs.3).
+- **Why it exists:** forced alignment places every word of the text even
+  when it was never said. A transcription made without the text does not.
+- **Model:** `QTW_TRANSCRIBE_MODEL`, by default
+  `mlx-community/whisper-large-v3-turbo` through mlx-whisper. It is downloaded
+  on first use and kept, and takes about 8 s for 40 s of Italian on Apple
+  silicon.
+- **Fake mode:** under `QTW_TTS_MODE=fake` it hears nothing and says so.
+
+### `GET /transcribe`
+
+```json
+{ "model": "mlx-community/whisper-large-v3-turbo", "loaded": false, "maxSeconds": 600 }
+```
+
+### `POST /transcribe`
+
+```json
+{ "audio_path": "/abs/path/take.wav", "language": "it" }
+```
+
+#### Response `200 OK`
+
+```json
+{
+  "text": "La nebbia glirti colli, pioviginando sale",
+  "words": [{ "text": "La", "start": 0.0, "end": 0.3, "probability": 0.98 }],
+  "model": "mlx-community/whisper-large-v3-turbo",
+  "language": "it"
+}
+```
+
+It does not use the earlier text as a prompt, so a missing or repeated line
+is heard as it is, not as expected.
+
+#### Response `422`
+
+`detail[0].type` is one of:
+- `too-long`: over 600 s;
+- `unsupported-language`;
+- `bad-audio`.
+
+#### Response `503`
+
+`detail[0].type` `transcriber-failed`: the model could not be loaded or
+failed.
+

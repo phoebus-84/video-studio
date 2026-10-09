@@ -240,6 +240,23 @@ Ask the agent to align a take (`pva_align_take`, with the take's id from
 - At most 300 s of audio at a time; a take without a `language` needs one
   given (`it`, `en`…).
 
+### Verifying a take
+
+Before a take is used, ask the agent to verify it (`pva_verify_take`). The
+voice worker transcribes it locally (Whisper, $0) without knowing the text,
+and the studio compares the two. The report goes to
+`artifacts/takes/<take>.verification.json`, with:
+- **Words:** words or whole lines missing, extra or heard differently.
+- **Squeezed runs:** words the alignment gave almost no time. Either they
+  were not said, or, when the transcription heard them, the timing is wrong
+  there.
+- **Pauses:** every pause at a verse end, a stanza end and inside a line.
+- **Edges:** the take's start and end, and whether it ends while still
+  loud.
+
+Which pauses are too short is the series' or the channel's rule, in its skill
+or validator.
+
 ## 2. Agent plus gateway plus web studio
 
 The gateway owns Pi RPC processes and streams events to the browser. Start it
