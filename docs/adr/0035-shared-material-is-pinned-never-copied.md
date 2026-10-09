@@ -38,3 +38,21 @@ A changed source can never silently alter an episode: it is either reported as
 stale or explicitly renewed and redone. Status costs one stat per pinned file
 per poll. Pins are created and renewed from the CLI today; web and agent tools
 can call the same service methods later.
+
+## Amendment: channel sources are made, documented and compiled (avg-dcf.2)
+
+- **Compile material.** A pin on a channel source is compile material, as a
+  pin on an episode is. The loader offers its `artifacts/narration/takes.json`
+  (with audio and timings) and `assets/images|sounds/` as
+  `source-<pin>-…`, held to the pin's inventory. Everything else in the
+  source is free in structure.
+- **The README.** A source's `README.md` is required. It says what the source
+  holds, how it was made and how to use it, with `status: draft | ready`. A
+  ready source is not edited in place.
+- **Tools.** A source is made with the episode tools, which take `source` in
+  place of `series` and `episode`. It has no budget: a paid call runs in an
+  episode.
+- **Procedure.** How a channel makes its sources is a channel skill,
+  `library/<channel>/skills/<name>.md`. The agent finds it after the series'
+  skills and before the studio's.
+

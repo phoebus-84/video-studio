@@ -58,9 +58,9 @@ export function parseProvider(configured: string | undefined): ImageProvider {
 export function resolveImageProvider(
   libraryRoot: string,
   channel: string,
-  series: string,
+  series?: string,
 ): ImageProvider {
-  for (const dir of [seriesPath(libraryRoot, channel, series), channelPath(libraryRoot, channel)]) {
+  for (const dir of [...(series ? [seriesPath(libraryRoot, channel, series)] : []), channelPath(libraryRoot, channel)]) {
     const configured = readConfiguredProvider(join(dir, "pipeline.yaml"));
     if (configured) return parseProvider(configured);
   }

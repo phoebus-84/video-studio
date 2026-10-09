@@ -37,6 +37,8 @@ describe("Wikimedia Commons", () => {
     expect(first.fileUrl).toMatch(/^https:\/\/upload\.wikimedia\.org\/.+\.jpg$/);
     expect(first.landingUrl).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
     expect(first.licence.basis).toBe("commons: Public domain");
+    // Its Credit is the digitization ("Google Art Project"), not the museum.
+    expect(first.institution).toBeUndefined();
   });
 
   it("reads a sound's CC BY-SA licence and its credit", async () => {

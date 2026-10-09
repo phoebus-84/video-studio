@@ -107,8 +107,9 @@ export async function registerTake(episodeDir: string, options: RegisterTakeOpti
     : { apiVersion: "studio.video/v1alpha1", kind: "NarrationTakes", takes: [], units: [] };
 
   const previous = doc.takes.find((t: { id: string }) => t.id === options.take);
-  // What the take said before, unless told otherwise.
-  const spokenText = options.spokenText !== undefined ? options.spokenText : previous?.text === options.text ? previous?.spokenText : undefined;
+  // What the take said before, unless told otherwise — for the same audio only: new audio was made from what the voice was given then.
+  const spokenText = options.spokenText !== undefined ? options.spokenText
+    : previous?.text === options.text && previous?.audio?.hash === hash ? previous?.spokenText : undefined;
   const language = options.language ?? previous?.language;
   const role = options.role ?? previous?.role;
   // A timing measures one audio saying one text in one language: any of them changed, it no longer holds.

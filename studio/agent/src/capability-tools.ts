@@ -14,6 +14,7 @@ import { spawnSync } from "node:child_process";
 import { extname, join } from "node:path";
 import { resolveConfig, DEFAULT_TTS_WORKER_URL } from "./config.js";
 import { guardEpisodePath } from "./trust-guards.js";
+import { WORKSPACE_PARAMS, episodeOf, guardWorkspacePath, workspaceOf, type WorkspaceParams } from "./workspace-target.js";
 import {
   loadVectorAnimationSpec,
   renderVectorAnimation,
@@ -280,6 +281,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
   function episodeDir(channel: string, series: string, episode: string): string {
     return episodePath(LIBRARY_ROOT, channel, series, episode);
   }
+  /** The episode or channel source a tool works in (avg-dcf.2). */
+  const where = (params: WorkspaceParams) => workspaceOf(LIBRARY_ROOT, params);
 
   // --- Tool: pva_render_vector_animation ---------------------------------
 
@@ -357,9 +360,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Synthesize Nonverbal Audio",
     description: "Generate a deterministic speech-free character buzz cue as mono PCM WAV.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       cueId: Type.String({ description: "Safe cue ID used as the WAV filename" }),
       emotion: StringEnum(NONVERBAL_EMOTIONS, { description: "Expressive buzz emotion" }),
       durationSeconds: Type.Number({ minimum: 0.1, maximum: 8 }),
@@ -368,14 +369,14 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     async execute(_toolCallId, params) {
       if (!params.cueId.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)) throw new Error("cueId must contain only letters, numbers, underscores, and hyphens");
       const relativeOutput = join("assets", "audio", `${params.cueId}.wav`);
-      const guard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, relativeOutput);
+      const guard = await guardWorkspacePath(LIBRARY_ROOT, where(params), relativeOutput);
       if (!guard.allowed) throw new Error(guard.reason ?? "Audio output path rejected");
-      const dir = episodeDir(params.channel, params.series, params.episode);
+      const dir = where(params).dir;
       const result = await synthesizeNonverbalBuzz({
         emotion: params.emotion,
         durationSeconds: params.durationSeconds,
         gain: params.gain,
-        seed: `${params.channel}/${params.series}/${params.episode}/${params.cueId}`,
+        seed: `${where(params).label}/${params.cueId}`,
         outputPath: join(dir, relativeOutput),
       });
       return {
@@ -396,9 +397,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       SOUND_KINDS.map((k) => `${k} (${SOUND_DESCRIPTIONS[k]})`).join(", ") +
       ". They are synthesized stand-ins, not recordings: name one in the spec by its soundId.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       soundId: Type.String({ description: "The asset id the spec names; the WAV's file name" }),
       kind: StringEnum([...SOUND_KINDS], { description: "What the sound is" }),
       durationSeconds: Type.Number({ minimum: 0.2, maximum: MAX_SECONDS }),
@@ -412,15 +411,15 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           throw new Error("soundId must contain only letters, numbers, underscores, and hyphens");
         }
         const relative = `assets/sounds/${params.soundId}.wav`;
-        const guard = await guardEpisodePath(LIBRARY_ROOT, params.channel, params.series, params.episode, relative);
+        const guard = await guardWorkspacePath(LIBRARY_ROOT, where(params), relative);
         if (!guard.allowed) throw new Error(guard.reason ?? "Sound output path rejected");
-        const seed = `${params.channel}/${params.series}/${params.episode}/${params.soundId}`;
+        const seed = `${where(params).label}/${params.soundId}`;
         const gain = params.gain ?? 0.5;
         const wav = synthesizeSound({
           kind: params.kind, durationSeconds: params.durationSeconds, seed, gain,
           ...(params.key ? { key: params.key } : {}), ...(params.mode ? { mode: params.mode as "major" | "minor" } : {}),
         });
-        const dir = join(episodeDir(params.channel, params.series, params.episode), "assets", "sounds");
+        const dir = join(where(params).dir, "assets", "sounds");
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, `${params.soundId}.wav`), wav);
         const receipt = {
@@ -464,9 +463,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       "OpenAI ChatGPT/Codex plan when pipeline.yaml sets image.provider to openai-codex. Saves directly to " +
       "episode assets/images/.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       sceneId: Type.String({ description: "Scene ID (e.g. s1, s2)" }),
       prompt: Type.String({ description: "Image generation prompt" }),
       outputWidth: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096, description: "Optional normalized output width" })),
@@ -484,20 +481,19 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         if ((params.outputWidth === undefined) !== (params.outputHeight === undefined)) {
           throw new Error("outputWidth and outputHeight must be supplied together");
         }
-        const dir = episodeDir(params.channel, params.series, params.episode);
-        const imgDir = join(dir, "assets", "images");
-        mkdirSync(imgDir, { recursive: true });
-
+        const workspace = where(params);
+        const dir = workspace.dir;
         const libraryRoot = process.env["AVG_LIBRARY_ROOT"] || join(process.cwd(), "library");
         const provider = resolveImageProvider(libraryRoot, params.channel, params.series);
+        // A source has no budget: a paid provider is refused before anything is written.
+        if (provider.kind === "fal" && workspace.kind === "source") {
+          throw new Error(`image generation with fal is paid, and a source has no budget: set image.provider: openai-codex in the channel's pipeline.yaml, fetch an archive picture (pva_fetch_media), or generate it in an episode`);
+        }
+        const imgDir = join(dir, "assets", "images");
+        mkdirSync(imgDir, { recursive: true });
         const referenceImages: CodexReferenceImage[] = [];
         for (const relativePath of params.referenceImagePaths ?? []) {
-          const guard = await guardEpisodePath(
-            LIBRARY_ROOT,
-            params.channel,
-            params.series,
-            params.episode,
-            relativePath,
+          const guard = await guardWorkspacePath(LIBRARY_ROOT, where(params), relativePath,
           );
           if (!guard.allowed) throw new Error(guard.reason ?? "Reference image path rejected");
           const fullPath = join(dir, relativePath);
@@ -521,7 +517,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
                 // Through the episode's spend ledger (avg-91o): reserved
                 // before the request, settled after, refused over budget.
                 const fal = await paidCall(
-                  { libraryRoot: LIBRARY_ROOT, channel: params.channel, series: params.series, episode: params.episode },
+                  { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "image generation with fal") },
                   { capability: "image.generate", provider: "fal", model: provider.model, purpose: `image ${params.sceneId}` },
                   async (spend) => ({ value: await generateImage(params.prompt, provider.model, spend) }),
                 );
@@ -832,9 +828,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Synthesize Speech",
     description: "Synthesize speech audio via the local Qwen3-TTS worker. Saves to episode artifacts/narration/.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       sceneId: Type.String({ description: "Scene ID (e.g. n1, n2)" }),
       text: Type.String({ description: "Text to synthesize as speech" }),
       voice: Type.Optional(Type.String({
@@ -852,11 +846,12 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(params.sceneId)) {
           throw new Error("sceneId must contain only letters, numbers, underscores, and hyphens");
         }
+        // Where it goes first: a wrong episode or source fails before the synthesis, not after.
+        const dir = where(params).dir;
         const voice = params.voice ?? "default";
         const result = await synthesizeSpeech(params.text, voice, params.speed ?? 1.0, params.instruct, params.language);
 
-        // Copy audio to episode artifacts/narration/
-        const dir = episodeDir(params.channel, params.series, params.episode);
+        // Copy audio to the workspace's artifacts/narration/
         const narrationDir = join(dir, "artifacts", "narration");
         mkdirSync(narrationDir, { recursive: true });
         const destPath = join(narrationDir, `${params.sceneId}.wav`);
@@ -1380,17 +1375,15 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Align Take",
     description: "Measure a narration take's word timing (speech.align): when each word of its written text is said in its audio, by forced alignment, written beside the take and named in artifacts/narration/takes.json — what the series compiler reads. Local Qwen3-ForcedAligner in the voice worker by default (free); provider \"elevenlabs\" only when the person asks for it (paid, through the spend ledger). Never switches provider on its own.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       take: Type.String({ description: "The take's id in takes.json" }),
       provider: Type.Optional(Type.Union([Type.Literal("qwen-local"), Type.Literal("elevenlabs")], { description: "Default qwen-local" })),
       language: Type.Optional(Type.String({ description: "ISO 639-1 code (it, en…) when the take does not give one" })),
     }),
     async execute(_toolCallId, params) {
-      const dir = episodeDir(params.channel, params.series, params.episode);
       const provider = params.provider ?? "qwen-local";
       try {
+        const dir = where(params).dir;
         const apiKey = process.env.ELEVENLABS_API_KEY;
         const result = await alignTake(dir, {
           take: params.take,
@@ -1402,7 +1395,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
               apiKey,
               // Through the episode's spend ledger (avg-91o), at the profile's price per minute.
               pay: <T>(minutes: number, call: () => Promise<T>) => paidCall(
-                { libraryRoot: LIBRARY_ROOT, channel: params.channel, series: params.series, episode: params.episode },
+                { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "alignment with ElevenLabs") },
                 {
                   capability: "speech.align", provider: "elevenlabs", model: "forced-alignment", purpose: `align ${params.take}`,
                   estimate: {
@@ -1454,18 +1447,13 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       "(not said, or mistimed). Also measures every pause at a verse end, a stanza end and inside a line, and the take's edges. Writes " +
       "artifacts/takes/<take>.verification.json. Judging the pauses is the series' or channel's rule (its skill or validator), not this tool's.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       take: Type.String({ description: "The take's id in takes.json" }),
       language: Type.Optional(Type.String({ description: "ISO 639-1 code (it, en…) when the take does not give one" })),
     }),
     async execute(_toolCallId, params) {
       try {
-        for (const part of [params.channel, params.series, params.episode]) {
-          if (!/^[a-z0-9][a-z0-9._-]*$/i.test(part)) throw new Error(`"${part}" is not a slug`);
-        }
-        const { path, report } = await verifyTake(episodeDir(params.channel, params.series, params.episode), params.take, {
+        const { path, report } = await verifyTake(where(params).dir, params.take, {
           transcribe: workerTranscriber(process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL),
           ...(params.language ? { language: params.language } : {}),
         });
@@ -1496,9 +1484,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Register Take",
     description: "Make an audio file a narration take of artifacts/narration/takes.json (what pva_align_take and the series compilers read): copied to assets/takes/<take>.<hash8>.<ext>, hashed, measured, with its text and the voice that said it, and placed in a unit's sequence — e.g. a short's unit \"recital\": titolo, then recita with pauseBefore 1. Registering a take again replaces it in place; a timing that measured other audio or text is dropped (align it again).",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       take: Type.String({ description: "The take's id (letters, digits, . _ -), e.g. titolo, recita" }),
       audio: Type.String({ description: "The audio file a speech tool made, relative to the episode, e.g. artifacts/narration/titolo.wav" }),
       text: Type.String({ description: "The written text the take says, exactly as shown on screen" }),
@@ -1515,8 +1501,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       position: Type.Optional(Type.Integer({ minimum: 0, description: "Where the take goes in its unit (0 = first); by default appended, or kept in place when already there" })),
     }),
     async execute(_toolCallId, params) {
-      const dir = episodeDir(params.channel, params.series, params.episode);
       try {
+        const dir = where(params).dir;
         const result = await registerTake(dir, {
           take: params.take,
           audio: params.audio,
@@ -1639,9 +1625,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Render Graphics",
     description: "Render graphics content: title cards, lower thirds, diagrams, overlays.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       contentKind: Type.Union([
         Type.Literal("title-card"),
         Type.Literal("overlay"),
@@ -1655,7 +1639,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
         // For MVP, generate simple PNG via ffmpeg drawtext
-        const dir = episodeDir(params.channel, params.series, params.episode);
+        const dir = where(params).dir;
         const gfxDir = join(dir, "artifacts", "graphics");
         mkdirSync(gfxDir, { recursive: true });
         const outPath = join(gfxDir, `${params.contentKind}.png`);
@@ -1689,14 +1673,12 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     label: "Probe Media",
     description: "Probe a media file for metadata: dimensions, duration, codec.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       assetPath: Type.String({ description: "Relative path within episode (e.g. assets/images/s1.jpg)" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
-        const dir = episodeDir(params.channel, params.series, params.episode);
+        const dir = where(params).dir;
         const fullPath = join(dir, params.assetPath);
         const { execSync } = await import("node:child_process");
 

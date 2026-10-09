@@ -6,6 +6,10 @@
 // without flooding the model window.
 // ---------------------------------------------------------------------------
 
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { channelPath, episodePath, seriesPath } from "@studio/contracts/src/layout.mjs";
+import { readSource } from "./source-tools.js";
 import { resolveConfig } from "../src/config.js";
 import type { SkillCatalog } from "../src/skills.js";
 
@@ -149,8 +153,12 @@ export async function gatherContext(
   };
 
   const availableSkills = skillCatalog
-    ? skillCatalog.list({ seriesSlug: `${channel}/${series}` }).map((s) => s.id)
+    ? [
+      ...skillCatalog.list({ seriesSlug: `${channel}/${series}` }).map((s) => s.id),
+      ...skillCatalog.list({ source: "channel-local", channelSlug: channel }).map((s) => `${s.id} (channel)`),
+    ]
     : [];
+  const instructions = libraryInstructions(config.libraryRoot, channel, series, episode);
 
   // Build compact summary
   const completedStages = stages.filter((s) => s.state === "completed").length;
@@ -168,6 +176,9 @@ export async function gatherContext(
       ? `📝 ${reviews.openCount} open review thread(s)`
       : "",
     hasBlockers ? "🚫 Production has blocking issues" : "",
+    instructions.length > 0
+      ? `Read before working (the library's own instructions):\n${instructions.map((i) => `- ${i}`).join("\n")}`
+      : "",
     availableSkills.length > 0
       ? `Skills available: ${availableSkills.slice(0, 10).join(", ")}${availableSkills.length > 10 ? ` +${availableSkills.length - 10} more` : ""}`
       : "",
@@ -179,4 +190,26 @@ export async function gatherContext(
     hasBlockers,
     availableSkills,
   };
+}
+
+/**
+ * The library's instruction files for this episode (avg-dcf.2): the channel's
+ * and the series' README.md, and the README.md of every channel source the
+ * episode pins, with its status. Paths relative to the library.
+ */
+export function libraryInstructions(libraryRoot: string, channel: string, series: string, episode: string): string[] {
+  const out: string[] = [];
+  const rel = (...parts: string[]) => parts.join("/");
+  if (existsSync(join(channelPath(libraryRoot, channel), "README.md"))) out.push(`${rel(channel, "README.md")}: the channel`);
+  if (existsSync(join(seriesPath(libraryRoot, channel, series), "README.md"))) out.push(`${rel(channel, "series", series, "README.md")}: the series`);
+  const pins = join(episodePath(libraryRoot, channel, series, episode), "source", "pins");
+  for (const name of existsSync(pins) ? readdirSync(pins).filter((n) => n.endsWith(".json")).sort() : []) {
+    try {
+      const pin = JSON.parse(readFileSync(join(pins, name), "utf-8")) as { id?: string; source?: { kind?: string; name?: string } };
+      if (pin.source?.kind !== "channel-source" || typeof pin.source.name !== "string") continue;
+      const info = readSource(libraryRoot, channel, pin.source.name);
+      out.push(`${rel(channel, "sources", pin.source.name, "README.md")}: source pinned as "${pin.id}"${info.status ? ` (${info.status})` : ""}${info.problem ? ` ⚠️ ${info.problem}` : ""}`);
+    } catch { /* a broken pin is reported by the episode's checks */ }
+  }
+  return out;
 }

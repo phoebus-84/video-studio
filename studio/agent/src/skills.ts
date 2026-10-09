@@ -22,10 +22,12 @@ export interface SkillDescriptor {
   description: string;
   /** Absolute path to the SKILL.md file. */
   path: string;
-  /** Where this skill was discovered. */
-  source: "built-in" | "series-local";
-  /** Series slug if series-local. */
+  /** Where this skill was discovered: the studio's, a channel's (library/<channel>/skills), a series' (…/series/<series>/skills). */
+  source: "built-in" | "channel-local" | "series-local";
+  /** "channel/series" if series-local. */
   seriesSlug?: string;
+  /** The channel, if channel-local. */
+  channelSlug?: string;
   /** Estimated token count of the skill content. */
   tokenEstimate?: number;
 }
@@ -34,9 +36,13 @@ export interface SkillCatalog {
   /** All discovered skills. */
   skills: SkillDescriptor[];
   /** List skills with optional filter. */
-  list(filter?: { source?: "built-in" | "series-local"; seriesSlug?: string }): SkillDescriptor[];
-  /** Load a skill's full content. */
-  load(skillId: string, seriesSlug?: string): Promise<string>;
+  list(filter?: { source?: SkillDescriptor["source"]; seriesSlug?: string; channelSlug?: string }): SkillDescriptor[];
+  /**
+   * Load a skill's full content. `scope` is "channel/series" or "channel": the
+   * series' skill wins, then the channel's, then the studio's. Without a scope,
+   * the studio's, or else the one channel skill of that name.
+   */
+  load(skillId: string, scope?: string): Promise<string>;
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────
@@ -69,6 +75,11 @@ export async function discoverSkills(options: { libraryRoot?: string; builtInPat
       const channelStat = await fs.stat(channelPath).catch(() => null);
       if (!channelStat?.isDirectory()) continue;
 
+      // The channel's own procedures (avg-dcf.2): how to make its sources, its conventions.
+      try {
+        allSkills.push(...await scanSkillDir(path.join(channelPath, "skills"), "channel-local", undefined, channel));
+      } catch { /* none */ }
+
       const seriesList = await fs.readdir(path.join(channelPath, "series")).catch(() => [] as string[]);
       for (const series of seriesList) {
         const seriesPath = path.join(channelPath, "series", series);
@@ -91,13 +102,18 @@ export async function discoverSkills(options: { libraryRoot?: string; builtInPat
       return allSkills.filter((s) => {
         if (filter?.source && s.source !== filter.source) return false;
         if (filter?.seriesSlug && s.seriesSlug !== filter.seriesSlug) return false;
+        if (filter?.channelSlug && (s.channelSlug ?? s.seriesSlug?.split("/")[0]) !== filter.channelSlug) return false;
         return true;
       });
     },
-    async load(skillId, seriesSlug) {
-      const local = seriesSlug ? allSkills.filter(s => s.id === skillId && s.seriesSlug === seriesSlug) : [];
-      const builtin = allSkills.filter(s => s.id === skillId && s.source === "built-in");
-      const matches = local.length ? local : builtin;
+    async load(skillId, scope) {
+      const [channel, series] = scope ? scope.split("/") : [];
+      const named = allSkills.filter((s) => s.id === skillId);
+      const seriesLocal = series ? named.filter((s) => s.seriesSlug === `${channel}/${series}`) : [];
+      const channelLocal = channel ? named.filter((s) => s.source === "channel-local" && s.channelSlug === channel) : [];
+      const builtin = named.filter((s) => s.source === "built-in");
+      const anyChannel = named.filter((s) => s.source === "channel-local");
+      const matches = seriesLocal.length ? seriesLocal : channelLocal.length ? channelLocal : builtin.length ? builtin : scope ? [] : anyChannel;
       if (matches.length > 1) throw new Error(`Ambiguous skill: ${skillId}`);
       const skill = matches[0];
       if (!skill) throw new Error(`Skill not found: ${skillId}`);
@@ -111,8 +127,9 @@ export async function discoverSkills(options: { libraryRoot?: string; builtInPat
  */
 async function scanSkillDir(
   dirPath: string,
-  source: "built-in" | "series-local",
+  source: SkillDescriptor["source"],
   seriesSlug?: string,
+  channelSlug?: string,
 ): Promise<SkillDescriptor[]> {
   const skills: SkillDescriptor[] = [];
 
@@ -126,7 +143,7 @@ async function scanSkillDir(
         for (const subEntry of await fs.readdir(subDir, { withFileTypes: true }).catch(() => [])) {
           if (subEntry.isFile() && subEntry.name.toUpperCase() === "SKILL.MD") {
             const skillPath = path.join(subDir, subEntry.name);
-            const descriptor = await describeSkill(entry.name, skillPath, source, seriesSlug);
+            const descriptor = await describeSkill(entry.name, skillPath, source, seriesSlug, channelSlug);
             skills.push(descriptor);
           }
         }
@@ -134,7 +151,7 @@ async function scanSkillDir(
         // Pi also discovers root-level .md skills, not just SKILL.md folders.
         const skillPath = path.join(dirPath, entry.name);
         const skillId = entry.name.toUpperCase() === "SKILL.MD" ? path.basename(dirPath) : path.basename(entry.name, ".md");
-        const descriptor = await describeSkill(skillId, skillPath, source, seriesSlug);
+        const descriptor = await describeSkill(skillId, skillPath, source, seriesSlug, channelSlug);
         skills.push(descriptor);
       }
     }
@@ -151,8 +168,9 @@ async function scanSkillDir(
 async function describeSkill(
   skillId: string,
   skillPath: string,
-  source: "built-in" | "series-local",
+  source: SkillDescriptor["source"],
   seriesSlug?: string,
+  channelSlug?: string,
 ): Promise<SkillDescriptor> {
   let name = skillId.replace(/-/g, " ");
   let description = "";
@@ -189,7 +207,8 @@ async function describeSkill(
     description,
     path: skillPath,
     source,
-    seriesSlug,
+    ...(seriesSlug ? { seriesSlug } : {}),
+    ...(channelSlug ? { channelSlug } : {}),
     tokenEstimate,
   };
 }

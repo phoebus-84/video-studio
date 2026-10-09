@@ -41,7 +41,7 @@ function toItem(page: any): ArchiveItem | null {
   const title = plainText(value("ObjectName")) ?? fileName.replace(/\.[a-z0-9]+$/i, "");
   const creator = plainText(value("Artist"));
   const date = plainText(value("DateTimeOriginal"));
-  const institution = plainText(value("Credit"));
+  // Commons' Credit says where the file came from (often "Google Art Project"), not who holds the work: never the institution.
   const duration = Number(info.duration);
   return {
     provider: "commons",
@@ -50,7 +50,6 @@ function toItem(page: any): ArchiveItem | null {
     title,
     ...(creator ? { creator } : {}),
     ...(date ? { date } : {}),
-    ...(institution ? { institution } : {}),
     landingUrl: info.descriptionurl,
     fileUrl: clean(info.url),
     ...(info.thumburl ? { previewUrl: clean(info.thumburl) } : {}),

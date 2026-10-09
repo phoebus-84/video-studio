@@ -150,6 +150,14 @@ describe("registerTake", () => {
     expect(takes().takes[0]).toMatchObject({ language: "it", role: "recitante", spokenText: "Saprì." });
   });
 
+  it("drops the spoken text when the audio is new: the voice was given something else (avg-dcf.2)", async () => {
+    tone("a.wav", 1);
+    tone("b.wav", 2);
+    await registerTake(root, { take: "a", audio: "a.wav", text: "S'aprì.", spokenText: "Saprì.", voice: QWEN });
+    await registerTake(root, { take: "a", audio: "b.wav", text: "S'aprì.", voice: QWEN });
+    expect(takes().takes[0].spokenText).toBeUndefined();
+  });
+
   it("refuses assets/takes leading out of the episode", async () => {
     const outsider = mkdtempSync(join(tmpdir(), "outside-"));
     mkdirSync(at("assets"), { recursive: true });

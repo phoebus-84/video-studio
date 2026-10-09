@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inventory } from "@studio/contracts/src/source-pins.mjs";
@@ -96,5 +96,43 @@ describe("pinned episodes in loadEpisode", () => {
     expect(sharedRootsOf(dirOf(REF))).not.toContain(dirOf(SOURCE));
     await pin();
     expect(sharedRootsOf(dirOf(REF))).toContain(dirOf(SOURCE));
+  });
+});
+
+describe("a pinned channel source (avg-dcf.2)", () => {
+  const sourceDir = () => join(root, REF.channel, "sources", "san-martino");
+
+  /** A channel source with the source episode's takes, timings and pictures, its README, and no spec. */
+  async function channelSource(): Promise<void> {
+    cpSync(dirOf(SOURCE), sourceDir(), { recursive: true });
+    rmSync(join(sourceDir(), "episode-spec.json"), { force: true });
+    writeFileSync(join(sourceDir(), "README.md"), "---\nkind: source\ntitle: San Martino\nstatus: ready\n---\n# San Martino\n");
+    const files = await inventory(sourceDir());
+    mkdirSync(join(dirOf(REF), "source", "pins"), { recursive: true });
+    writeFileSync(join(dirOf(REF), "source", "pins", "poesia.json"), JSON.stringify({
+      apiVersion: "studio.video/v1alpha1", kind: "SourcePin", id: "poesia",
+      source: { kind: "channel-source", name: "san-martino" },
+      usedBy: ["timeline"], pinnedAt: "2026-10-09T12:00:00.000Z", files,
+    }));
+  }
+
+  it("offers its takes, timings and pictures as an episode's are, held to the pin", async () => {
+    await channelSource();
+    const loaded = loadEpisode(dirOf(REF), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    const { assets, sources } = loaded.input;
+    const pinned = Object.keys(assets).filter((id) => id.startsWith("source-poesia-image-"));
+    expect(pinned.length).toBeGreaterThan(0);
+    expect(assets[pinned[0]!]!.path).toMatch(/^\.\.\/\.\.\/\.\.\/\.\.\/sources\/san-martino\/assets\/images\//);
+    expect(Object.keys(sources!.poesia!.timings).length).toBeGreaterThan(0);
+    expect(sharedRootsOf(dirOf(REF))).toContain(sourceDir());
+  });
+
+  it("refuses a source changed since the pin", async () => {
+    await channelSource();
+    const takes = JSON.parse(readFileSync(join(sourceDir(), "artifacts", "narration", "takes.json"), "utf-8"));
+    writeFileSync(join(sourceDir(), takes.takes[0].audio.path), "re-recorded");
+    const loaded = loadEpisode(dirOf(REF), { episodeRef: REF });
+    expect(loaded.ok ? null : loaded.problems[0]!.code).toBe("pin-mismatch");
   });
 });

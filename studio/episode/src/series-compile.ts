@@ -142,7 +142,7 @@ export function sharedRootsOf(episodeDir: string): string[] {
         // only a pin that holds names a root
         if (validateSourcePin(pinDoc).length > 0 || `${pinDoc.id}.json` !== name) continue;
         const source = pinDoc.source;
-        if (source?.kind !== "episode") continue;
+        if (source?.kind !== "episode" && source?.kind !== "channel-source") continue;
         const srcDir = sourceDir(dirname(channelDir), basename(channelDir), source);
         if (existsSync(srcDir)) roots.push(srcDir);
       } catch { /* loading the episode reports it */ }
@@ -409,8 +409,8 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
   }
 
-  // ── Material pinned from other episodes of the channel (ADR-0035) ────────
-  // Each pin names an episode; what this episode reads of it must be what the
+  // ── Material pinned from other episodes or the channel's sources (ADR-0035) ─
+  // Each pin names an episode or a channel source; what this episode reads of it must be what the
   // pin inventoried, or the pin needs renewing. Its pictures are offered as
   // source-<pin>-image-<name>, its takes as source-<pin>-narration-<take>, with
   // paths relative to this episode.
@@ -430,18 +430,18 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     if (pinProblems.length > 0) throw new Stop(at(pinKey, pinProblems));
     // A pin's file is named by its id: two pins never claim one id.
     if (`${pinDoc.id}.json` !== name) stop("bad-pin", `${pinKey}#$.id`, `${pinKey} says its id is "${pinDoc.id}": name it ${pinDoc.id}.json`);
-    // Only episodes are compile material; a channel source pins texts and references for people.
-    if (pinDoc.source.kind !== "episode") continue;
+    // An episode or a channel source (avg-dcf.2): the parts that follow the studio's contracts are compile material.
+    if (pinDoc.source.kind !== "episode" && pinDoc.source.kind !== "channel-source") continue;
     const id = pinDoc.id as string;
     const srcDir = sourceDir(dirname(channelDir), basename(channelDir), pinDoc.source);
     const files = pinDoc.files as Record<string, { hash: string }>;
     /** A file of the source, held to the pin's inventory. */
     const fromSource = (path: string, where: string): Buffer => {
-      if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) stop("path-escape", where, `${path} is not a path inside the pinned episode`);
+      if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) stop("path-escape", where, `${path} is not a path inside the pinned source`);
       const file = join(srcDir, path);
       const key = relative(episodeDir, file).split(sep).join("/");
       const entry = files[path];
-      if (!entry) stop("pin-mismatch", where, `${path} of the pinned episode is not in pin "${id}": renew the pin (vpr pin)`);
+      if (!entry) stop("pin-mismatch", where, `${path} of the pinned source is not in pin "${id}": renew the pin (vpr pin)`);
       const bytes = read(file, srcDir, () => stop("pin-mismatch", key, `${key} is missing: renew the pin (vpr pin) or restore it`));
       if (inputs[key] !== entry!.hash) stop("pin-mismatch", key, `${key} changed since pin "${id}" inventoried it: renew the pin (vpr pin)`);
       return bytes;

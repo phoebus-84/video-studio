@@ -17,7 +17,8 @@ import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
 import { ArchiveError, createArchive, DEFAULT_POLICY, type Archive, type LicencePolicy, type Quality } from "@av/archive-media";
 import { checkProvenance, fetchIntoWorkspace } from "@studio/episode";
-import { channelPath, episodePath, seriesPath } from "@studio/contracts/src/layout.mjs";
+import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
+import { WORKSPACE_PARAMS, workspaceOf } from "./workspace-target.js";
 
 const USER_AGENT = "video-studio-archive-media/0.1 (https://github.com/phoebus-84/video-studio)";
 const SLUG = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -129,13 +130,11 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
     name: "pva_fetch_media",
     label: "Fetch Archive Media",
     description:
-      "Download one archive item's original into an episode: assets/images|video|sounds/<name>.<ext>, with <name>.source.json beside it " +
+      "Download one archive item's original into an episode or a channel source: assets/images|video|sounds/<name>.<ext>, with <name>.source.json beside it " +
       "(provider, item, licence, credit), the provider's response kept in artifacts/provenance/ as evidence, and ATTRIBUTIONS.md made again. " +
       "Refuses a licence the channel does not allow, an unknown licence, a file below the least size, a name already used (unless replace).",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
       provider: Type.String({ description: "The candidate's provider, as pva_search_media gave it" }),
       id: Type.String({ description: "The candidate's id, exactly as pva_search_media gave it" }),
       name: Type.String({ description: "The asset id: the file's name without extension, as the spec names it (letters, digits, _ -)" }),
@@ -143,9 +142,9 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
     }),
     async execute(_id, params) {
       try {
-        checkNames(params.channel, params.series, params.episode);
-        const dir = episodePath(libraryRoot(), params.channel, params.series, params.episode);
-        if (!existsSync(dir)) throw new Error(`there is no episode ${params.channel}/${params.series}/${params.episode}`);
+        const ws = workspaceOf(libraryRoot(), params);
+        const dir = ws.dir;
+        if (!existsSync(dir)) throw new Error(`there is no episode ${ws.label}`);
         const settings = archiveSettings(libraryRoot(), params.channel, params.series);
         const got = await fetchIntoWorkspace(dir, {
           archive: archive(), provider: params.provider, id: params.id, name: params.name,
@@ -166,16 +165,13 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
   pi.registerTool({
     name: "pva_check_provenance",
     label: "Check Archive Media Provenance",
-    description: "Check an episode's archive media: every file still the one fetched, its record valid, its evidence kept, ATTRIBUTIONS.md current.",
+    description: "Check an episode's or a source's archive media: every file still the one fetched, its record valid, its evidence kept, ATTRIBUTIONS.md current.",
     parameters: Type.Object({
-      channel: Type.String({ description: "Channel slug" }),
-      series: Type.String({ description: "Series slug" }),
-      episode: Type.String({ description: "Episode slug" }),
+      ...WORKSPACE_PARAMS,
     }),
     async execute(_id, params) {
       try {
-        checkNames(params.channel, params.series, params.episode);
-        const checked = checkProvenance(episodePath(libraryRoot(), params.channel, params.series, params.episode));
+        const checked = checkProvenance(workspaceOf(libraryRoot(), params).dir);
         const text = checked.ok
           ? `✅ ${checked.files} archive files, every one as fetched, with its licence and evidence; ATTRIBUTIONS.md current`
           : `❌ ${checked.problems.length} problems:\n${checked.problems.map((p) => `- ${p.path}: ${p.message}`).join("\n")}`;
