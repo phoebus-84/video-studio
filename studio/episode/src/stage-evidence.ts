@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { NARRATION_TAKES_PATH, checkEpisode, isSpecDriven, loadEpisode } from "./series-compile.js";
+import { NARRATION_TAKES_PATH, checkEpisode, isSpecDriven, loadEpisode, pinsBringingTakes } from "./series-compile.js";
 import type { SeriesCompileProblem } from "./series-compile.js";
 import { EDIT_TIMELINE_PATH } from "./edit-timeline-builder.js";
 import { decideEditTimeline } from "./episode-render.js";
@@ -191,7 +191,13 @@ export function seriesStageEvidence(
 
 function takesVerdict(episodeDir: string, problems: SeriesCompileProblem[]): StageVerdict {
   const path = join(episodeDir, NARRATION_TAKES_PATH);
-  if (!existsSync(path)) return { state: "pending", reason: "no takes registered (pva_register_take)" };
+  if (!existsSync(path)) {
+    // The takes of a pinned source (avg-dcf.8): the loader holds them to the pin's inventory.
+    const pins = pinsBringingTakes(episodeDir);
+    if (pins.length === 0) return { state: "pending", reason: "no takes registered (pva_register_take), and no pinned source brings any" };
+    if (problems.length > 0) return { state: "failed", reason: brief(problems) };
+    return { state: "completed", reason: `the takes of the pinned source${pins.length === 1 ? "" : "s"} ${pins.join(", ")}` };
+  }
   let doc: { units?: unknown[]; takes?: { id?: string; timing?: unknown }[] };
   try {
     doc = JSON.parse(readFileSync(path, "utf-8"));

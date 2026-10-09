@@ -70,6 +70,23 @@ export type EpisodeCheckResult =
   }
   | { ok: false; problems: SeriesCompileProblem[] };
 
+/**
+ * The ids of the episode's pins whose inventory holds takes
+ * (artifacts/narration/takes.json): its narration comes from them. Pins that
+ * do not parse are left to the loader to report.
+ */
+export function pinsBringingTakes(episodeDir: string): string[] {
+  const pinsDir = join(episodeDir, PINS_DIR);
+  const out: string[] = [];
+  for (const name of existsSync(pinsDir) ? readdirSync(pinsDir).filter((n) => n.endsWith(".json") && !n.startsWith(".")).sort() : []) {
+    try {
+      const pin = JSON.parse(readFileSync(join(pinsDir, name), "utf-8"));
+      if ((pin?.source?.kind === "episode" || pin?.source?.kind === "channel-source") && pin?.files?.[NARRATION_TAKES_PATH]) out.push(String(pin.id));
+    } catch { /* reported when the episode loads */ }
+  }
+  return out;
+}
+
 /** Does this episode have a spec, and so a compiler instead of the legacy builder? */
 export function isSpecDriven(episodeDir: string): boolean {
   return existsSync(join(episodeDir, EPISODE_SPEC_PATH));
@@ -297,16 +314,21 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   }
 
   // ── Narration takes and their timing ──────────────────────────────────────
-  const takesBytes = read(join(episodeDir, NARRATION_TAKES_PATH), episodeDir,
-    () => stop("missing-narration", NARRATION_TAKES_PATH, `${NARRATION_TAKES_PATH} is missing: record and verify the narration takes first`));
+  // An episode whose pinned source brings the takes (avg-dcf.8) may have none of its own.
   let narration: any;
-  try {
-    narration = JSON.parse(takesBytes.toString("utf-8"));
-  } catch (error) {
-    return stop("bad-narration", NARRATION_TAKES_PATH, `${NARRATION_TAKES_PATH} is not JSON: ${(error as Error).message}`);
+  if (!existsSync(join(episodeDir, NARRATION_TAKES_PATH)) && pinsBringingTakes(episodeDir).length > 0) {
+    narration = { apiVersion: "studio.video/v1alpha1", kind: "NarrationTakes", takes: [], units: [] };
+  } else {
+    const takesBytes = read(join(episodeDir, NARRATION_TAKES_PATH), episodeDir,
+      () => stop("missing-narration", NARRATION_TAKES_PATH, `${NARRATION_TAKES_PATH} is missing: record and verify the narration takes first, or pin a source that has them`));
+    try {
+      narration = JSON.parse(takesBytes.toString("utf-8"));
+    } catch (error) {
+      return stop("bad-narration", NARRATION_TAKES_PATH, `${NARRATION_TAKES_PATH} is not JSON: ${(error as Error).message}`);
+    }
+    const takesProblems = validateNarrationTakes(narration);
+    if (takesProblems.length > 0) throw new Stop(at(NARRATION_TAKES_PATH, takesProblems));
   }
-  const takesProblems = validateNarrationTakes(narration);
-  if (takesProblems.length > 0) throw new Stop(at(NARRATION_TAKES_PATH, takesProblems));
 
   const assets: Record<string, CompileAsset> = {};
   const timings: Record<string, any> = {};
