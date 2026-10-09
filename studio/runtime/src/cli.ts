@@ -996,6 +996,56 @@ async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
  * validator, built and checked by @studio/episode, loaded at run time as
  * `vpr status` loads the studio's reader: that package depends on this one.
  */
+/**
+ * `vpr kit seal|verify <channel>[/<series>] <name> <version>` (avg-d1x): a kit
+ * the channel or one of its series carries, built and checked by
+ * @studio/episode, loaded at run time as `vpr template seal` loads it.
+ */
+async function cmdKit(ctx: CliContext, args: string[]): Promise<number> {
+  const usage = "Usage: vpr kit seal <channel>[/<series>] <name> <version> [--dry-run] | vpr kit verify <channel>[/<series>] <name> <version> [--library <path>]";
+  const libraryRoot = libraryFrom(args);
+  const [sub, target, name, version] = positionalArgs(args);
+  const parts = target?.split("/") ?? [];
+  if (!libraryRoot || (sub !== "seal" && sub !== "verify") || parts.length < 1 || parts.length > 2 || !parts.every(isNamePart) || !name || !version) {
+    emit(ctx, { error: libraryRoot ? usage : "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
+    return EX_USAGE;
+  }
+  const place = { channelDir: channelPath(libraryRoot, parts[0]!), ...(parts[1] ? { series: parts[1] } : {}), name, version };
+  const episode = "@studio/episode";
+  let mod: {
+    sealKit: (p: typeof place, o: { dryRun?: boolean }) => Promise<{ hash: string; bundle: { path: string; hash: string } }>;
+    verifyKit: (p: typeof place) => Promise<{ ok: boolean; problems: { code: string; message: string }[]; warnings: { code: string; message: string }[]; examples: { id: string; ok: boolean; message?: string }[] }>;
+    TemplateCodeError: new (...a: never[]) => Error & { code: string };
+  };
+  try {
+    mod = await import(episode);
+  } catch (error) {
+    emit(ctx, { error: `the studio's episode package could not be loaded: ${error instanceof Error ? error.message : String(error)}` });
+    return EX_RUNTIME;
+  }
+  const label = `${parts.join("/")} kit ${name}@${version}`;
+  try {
+    if (sub === "seal") {
+      const sealed = await mod.sealKit(place, { dryRun: ctx.dryRun });
+      emit(ctx, { message: `${ctx.dryRun ? "[DRY RUN] " : ""}${label} ${ctx.dryRun ? "would be sealed" : "sealed"}: pin it in a series release (kits: [{name, version, level}]) and vpr template seal it`, ...sealed, dryRun: ctx.dryRun });
+      return EX_OK;
+    }
+    const verified = await mod.verifyKit(place);
+    const examples = verified.examples.map((e) => `${e.ok ? "✓" : "✗"} ${e.id}${e.message ? `: ${e.message}` : ""}`).join("; ");
+    const said = `${label}: ${verified.ok ? "verified" : "NOT verified"}${verified.problems.length ? `; ${verified.problems.map((p) => p.message).join("; ")}` : ""}${examples ? `; examples: ${examples}` : "; no examples"}`;
+    emit(ctx, {
+      ...(verified.ok ? { message: said } : { error: said }),
+      ...(verified.warnings.length ? { warning: verified.warnings.map((w) => w.message).join("; ") } : {}),
+      ...verified,
+    });
+    return verified.ok ? EX_OK : EX_RUNTIME;
+  } catch (error) {
+    if (!(error instanceof mod.TemplateCodeError)) throw error;
+    emit(ctx, { error: error.message, code: error.code });
+    return EX_RUNTIME;
+  }
+}
+
 async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDir: string, id: string, version: string, update: boolean): Promise<number> {
   type Verified = { ok: boolean; problems: { code: string; message: string }[]; warnings: { code: string; message: string }[]; fixtures: { name: string; ok: boolean; message?: string }[] };
   const episode = "@studio/episode";
@@ -1769,6 +1819,7 @@ const COMMANDS: Record<string, CliCommand> = {
   sheet: { name: "sheet", description: "Review an episode's layout sheet: approve it, reject it with a note, or see its review; a spec-driven episode renders only with an approval of its current sheet", usage: "vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode>", examples: ["vpr sheet approve dentro-i-versi/short/san-martino", "vpr sheet reject dentro-i-versi/short/san-martino --note 'the verse bar covers the hand at 0:12'", "vpr sheet status dentro-i-versi/short/san-martino"], run: cmdSheet },
   reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve dentro-i-versi/short/san-martino san-martino-v1 --dry-run", "vpr reference verify dentro-i-versi/short short-room san-martino-v1", "vpr reference withdraw dentro-i-versi/short short-room san-martino-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
   theme: { name: "theme", description: "Seal a theme release: its files and their hashes in theme.json, so a changed room never passes for the released one", usage: "vpr theme seal <channel>/<theme>/<version> [--library <path>]", examples: ["vpr theme seal dentro-i-versi/dentro-i-versi/1.1.0"], run: cmdTheme },
+  kit: { name: "kit", description: "Seal a kit the channel or a series carries in the library (kit/index.tsx → kit.cjs, kit.json), or verify it", usage: "vpr kit seal <channel>[/<series>] <name> <version> [--dry-run] | vpr kit verify <channel>[/<series>] <name> <version> [--library <path>]", examples: ["vpr kit seal sample sample-card 1.0.0", "vpr kit verify sample/poetry hall 1.0.0"], run: cmdKit },
   template: { name: "template", description: "Release a series template (a copy of an earlier release, optionally pinned to a sealed theme), seal its own compiler and validator, or verify them against its fixtures", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] | vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--library <path>]", examples: ["vpr template seal sample/poetry poetry-short 1.1.0", "vpr template verify sample/poetry poetry-short 1.1.0", "vpr template release dentro-i-versi/long dentro-i-versi-long 1.1.0 --from 1.0.0 --theme dentro-i-versi@1.1.0", "vpr template release dentro-i-versi/long dentro-i-versi-long 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
