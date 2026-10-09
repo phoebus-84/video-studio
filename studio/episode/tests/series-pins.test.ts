@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inventory } from "@studio/contracts/src/source-pins.mjs";
 import { loadEpisode, sharedRootsOf } from "../src/series-compile.js";
+import { seriesStageEvidence } from "../src/stage-evidence.js";
 import { specEpisode } from "../src/testing.js";
 
 /**
@@ -126,6 +127,23 @@ describe("a pinned channel source (avg-dcf.2)", () => {
     expect(assets[pinned[0]!]!.path).toMatch(/^\.\.\/\.\.\/\.\.\/\.\.\/sources\/san-martino\/assets\/images\//);
     expect(Object.keys(sources!.poesia!.timings).length).toBeGreaterThan(0);
     expect(sharedRootsOf(dirOf(REF))).toContain(sourceDir());
+  });
+
+  it("lets an episode without takes of its own use the source's (avg-dcf.8)", async () => {
+    await channelSource();
+    rmSync(join(dirOf(REF), "artifacts", "narration", "takes.json"));
+    const loaded = loadEpisode(dirOf(REF), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    expect(loaded.input.narration.takes).toEqual([]);
+    expect(loaded.input.sources!.poesia!.narration.takes.length).toBeGreaterThan(0);
+    // poetry-short reads only the episode's own takes: its compiler says what it lacks, as the takes stage's problem.
+    expect(seriesStageEvidence(dirOf(REF), { episodeRef: REF, key: null })!.takes).toEqual({ state: "failed", reason: 'takes.json has no unit "narration"' });
+  });
+
+  it("still asks for takes when no pin brings any", () => {
+    rmSync(join(dirOf(REF), "artifacts", "narration", "takes.json"));
+    const loaded = loadEpisode(dirOf(REF), { episodeRef: REF });
+    expect(loaded.ok ? null : loaded.problems[0]!.code).toBe("missing-narration");
   });
 
   it("refuses a source changed since the pin", async () => {
