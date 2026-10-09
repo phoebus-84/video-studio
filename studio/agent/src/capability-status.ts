@@ -42,6 +42,7 @@ async function getJson(url: string, signal?: AbortSignal): Promise<{ status: num
 export async function voiceWorkerStatus(workerUrl: string): Promise<{
   "text-to-speech": CapabilityReport;
   "speech-align-local": CapabilityReport;
+  "take-verification": CapabilityReport;
 }> {
   let speech: CapabilityReport;
   try {
@@ -86,7 +87,17 @@ export async function voiceWorkerStatus(workerUrl: string): Promise<{
   } catch {
     align = { available: false, detail: `voice worker not reachable at ${workerUrl}` };
   }
-  return { "text-to-speech": speech, "speech-align-local": align };
+  let transcribe: CapabilityReport;
+  try {
+    const res = await getJson(`${workerUrl}/transcribe`);
+    const t = res.body as { model?: unknown; loaded?: unknown } | null;
+    transcribe = res.status !== 200 || typeof t?.model !== "string"
+      ? { available: false, detail: `the worker has no transcriber (GET /transcribe answered HTTP ${res.status}): it predates take verification, restart it from this checkout` }
+      : { available: true, detail: `${t.model}${t.loaded === true ? " (loaded)" : " (loads on first use)"}` };
+  } catch {
+    transcribe = { available: false, detail: `voice worker not reachable at ${workerUrl}` };
+  }
+  return { "text-to-speech": speech, "speech-align-local": align, "take-verification": transcribe };
 }
 
 /**

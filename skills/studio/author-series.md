@@ -181,7 +181,8 @@ is listed here:
      skill;
    - pictures and sounds (`pva_generate_image`, `pva_synthesize_sound`);
    - takes (`pva_synthesize_speech` or a recording, then `pva_register_take`
-     and `pva_align_take`);
+     and `pva_align_take`, then `pva_verify_take`, so a missing line is caught
+     before the timeline);
    - `pva_build_timeline`, then `pva_check_episode`;
    - `pva_layout_sheet`, read with the `review-layout-sheet` skill.
 

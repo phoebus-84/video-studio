@@ -48,6 +48,8 @@ import {
   decideEditTimeline,
   EDIT_TIMELINE_PATH,
   alignTake,
+  verifyTake,
+  workerTranscriber,
   AlignError,
   registerTake,
   elevenLabsAlignmentUsd,
@@ -1436,6 +1438,51 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: `❌ ${code ? `${code}: ` : ""}${e.message ?? String(err)}` }],
           details: { code: code ?? null } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  // --- Tool: pva_verify_take (avg-8hs.3) ---------------------------------
+
+  pi.registerTool({
+    name: "pva_verify_take",
+    label: "Verify Take",
+    description: "Check that a narration take says its text, before it is used: a local transcription (Whisper, in the voice worker, $0) made without the text " +
+      "is compared with it — words or whole lines missing, extra, heard differently — and the take's alignment shows runs of words given almost no time " +
+      "(not said, or mistimed). Also measures every pause at a verse end, a stanza end and inside a line, and the take's edges. Writes " +
+      "artifacts/takes/<take>.verification.json. Judging the pauses is the series' or channel's rule (its skill or validator), not this tool's.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      take: Type.String({ description: "The take's id in takes.json" }),
+      language: Type.Optional(Type.String({ description: "ISO 639-1 code (it, en…) when the take does not give one" })),
+    }),
+    async execute(_toolCallId, params) {
+      try {
+        for (const part of [params.channel, params.series, params.episode]) {
+          if (!/^[a-z0-9][a-z0-9._-]*$/i.test(part)) throw new Error(`"${part}" is not a slug`);
+        }
+        const { path, report } = await verifyTake(episodeDir(params.channel, params.series, params.episode), params.take, {
+          transcribe: workerTranscriber(process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL),
+          ...(params.language ? { language: params.language } : {}),
+        });
+        const p = report.pauses;
+        const fmt = (s: { count: number; min: number | null; median: number | null; max: number | null }) => s.count ? `${s.count}: ${s.min}–${s.max} s, median ${s.median} s` : "none";
+        const lines = [
+          `${report.concerns.length === 0 ? "✅" : "⚠️"} ${params.take}: ${report.words.matched}/${report.words.expected} written words heard (${report.transcriber.model}) → ${path}`,
+          ...(p ? [`pauses at verse ends ${fmt(p.verse)}; at stanza ends ${fmt(p.stanza)}; inside lines ≥ 0.2 s: ${p.line.length}`] : []),
+          ...(report.edges ? [`starts after ${report.edges.leadSeconds} s, ends ${report.edges.tailSeconds} s after the last word${report.edges.endsLoud ? " (still loud)" : ""}`] : []),
+          ...report.concerns.map((c) => `- ${c}`),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { path, report } as unknown as Record<string, unknown> };
+      } catch (err) {
+        const e = err as { message?: string; code?: string };
+        return {
+          content: [{ type: "text" as const, text: `❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}` }],
+          details: { code: e.code ?? null } as Record<string, unknown>,
           isError: true as unknown as boolean,
         };
       }

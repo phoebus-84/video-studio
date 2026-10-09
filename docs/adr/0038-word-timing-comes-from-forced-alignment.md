@@ -70,10 +70,29 @@ run 19–43 s.
 - A token with no letters (a dash, an ellipsis, a guillemet) is not said:
   it takes no time, in the gap where it is written, and never counts as
   unmatched.
-- Verifying a take against its text (missing words, long pauses) is
-  `avg-8hs.3`; this only reports the pauses over 0.35 s.
+- Verifying a take against its text is `avg-8hs.3`; see the amendment below.
 - Added with `avg-dcf.3`: the timing also carries the take's energy — RMS
   per 1/30 s, divided by the 95th percentile of the frames above −50 dBFS
   and capped at 1, so one click does not flatten the voice and a silent
   take stays at 0 — measured with ffmpeg, whatever the provider; what moves
   with the voice (the interprete's mouth) reads it.
+
+## Amendment: verifying a take (avg-8hs.3)
+
+Forced alignment cannot tell a word said from a word missing: it places every
+word of the text, squeezing a missing one into a few frames. San Martino's
+recital lost its fourth line, and its timing still showed «urla e biancheggia
+il mar» as five 80 ms words.
+
+**Two independent signals verify a take.**
+- **A transcription.** The voice worker's `POST /transcribe` (Whisper
+  large-v3-turbo, local) hears the take without being given its text. The
+  studio compares it with the text, tolerant of elisions, joined words and
+  accents.
+- **The alignment's own timing.** At least three words in a row, in one line,
+  each given 0.1 s or less.
+
+`pva_verify_take` writes both, with every pause at a verse end, a stanza end
+and inside a line, to `artifacts/takes/<take>.verification.json`. Thresholds
+for the pauses belong to the channel or the series.
+

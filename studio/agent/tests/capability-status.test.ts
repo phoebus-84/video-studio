@@ -48,6 +48,14 @@ describe("voiceWorkerStatus", () => {
     const status = await voiceWorkerStatus(url);
     expect(status["text-to-speech"]).toEqual({ available: true, detail: "worker 1.0.0, Qwen3-TTS CustomVoice 1.7B" });
     expect(status["speech-align-local"]).toEqual({ available: true, detail: "mlx-community/Qwen3-ForcedAligner-0.6B-8bit (loads on first use)" });
+    // This worker predates take verification: it has no /transcribe.
+    expect(status["take-verification"].available).toBe(false);
+    expect(status["take-verification"].detail).toContain("restart it from this checkout");
+  });
+
+  it("verifies takes when the worker transcribes (avg-8hs.3)", async () => {
+    const url = await fakeWorker({ "/health": HEALTHY, "/models": [200, []], "/transcribe": [200, { model: "mlx-community/whisper-large-v3-turbo", loaded: true }] });
+    expect((await voiceWorkerStatus(url))["take-verification"]).toEqual({ available: true, detail: "mlx-community/whisper-large-v3-turbo (loaded)" });
   });
 
   it("does not speak when no CustomVoice model is installed, and says where it looked", async () => {
