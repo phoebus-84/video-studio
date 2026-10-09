@@ -29,7 +29,7 @@ lightning, a recorded thunderstorm.
 | A historical photograph, a place, a person of the past | `commons`, then `met` |
 | Space, the sky, rockets, weather from above | `nasa` |
 | Film footage, old newsreels, recordings | `internet-archive` (video, audio), `commons` (video, audio) |
-| A sound, an ambience | `commons` (audio), `openverse` (audio), `internet-archive` |
+| A sound, an ambience | `freesound` (when its key is set: recorded effects and ambiences, CC0 / BY), then `commons` (audio), `internet-archive`, `openverse` (audio) |
 | A recent photograph of anything | `openverse`, `commons`; Flickr images through Openverse are only about 1024 px |
 
 - Search museums in **English**: "storm painting", "lightning landscape",

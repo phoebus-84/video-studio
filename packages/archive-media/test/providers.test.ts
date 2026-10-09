@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { aic, cleveland, commons, internetArchive, met, nasa, openverse } from "../src/providers/index.js";
+import { aic, cleveland, commons, freesound, internetArchive, met, nasa, openverse } from "../src/providers/index.js";
 import { originalOf } from "../src/providers/nasa.js";
 import type { Http } from "../src/types.js";
 
@@ -170,5 +170,29 @@ describe("review fixes: what is not an original", () => {
   it("AIC offers no preview URL a viewer cannot open", async () => {
     const http = recorded([[/artworks\/search/, "aic-search.json"]]);
     expect((await aic.search("storm", opts(), http))[0]!.previewUrl).toBeUndefined();
+  });
+});
+
+describe("Freesound (with FREESOUND_API_KEY)", () => {
+  const sound = {
+    id: 336652, name: "Wind blowing through leaves", username: "giddster", license: "http://creativecommons.org/publicdomain/zero/1.0/",
+    duration: 61.4, url: "https://freesound.org/people/giddster/sounds/336652/", created: "2016-01-18T10:00:00", description: "Wind in an oak", tags: ["wind", "leaves"],
+    previews: { "preview-hq-ogg": "https://cdn.freesound.org/previews/336/336652_hq.ogg", "preview-hq-mp3": "https://cdn.freesound.org/previews/336/336652_hq.mp3", "preview-lq-mp3": "https://cdn.freesound.org/previews/336/336652_lq.mp3" },
+  };
+
+  it("finds sounds with their licence, and names the HQ preview it fetches as a rendition", async () => {
+    const asked: string[] = [];
+    const http: Http = { userAgent: "t", json: async (url) => { asked.push(url); return url.includes("/search/text/") ? { results: [sound, { ...sound, id: 2, license: "http://creativecommons.org/licenses/by-nc/3.0/" }] } : sound; } };
+    const [cc0, nc] = await freesound.search("wind leaves", opts("audio"), http, "KEY");
+    expect(asked[0]).toContain("token=KEY");
+    expect(cc0).toMatchObject({ id: "336652", creator: "giddster", licence: { id: "CC0-1.0" }, durationSeconds: 61.4, rendition: "preview-hq-ogg", mime: "audio/ogg", fileUrl: sound.previews["preview-hq-ogg"] });
+    expect(nc!.licence.id).toBe("CC-BY-NC-3.0");
+    expect((await freesound.item("336652", http, "KEY")).landingUrl).toBe(sound.url);
+  });
+
+  it("needs its key, and an id that is a number", async () => {
+    const http: Http = { userAgent: "t", json: async () => sound };
+    await expect(freesound.search("wind", opts("audio"), http)).rejects.toMatchObject({ code: "provider-disabled" });
+    await expect(freesound.item("../x", http, "KEY")).rejects.toMatchObject({ code: "not-found" });
   });
 });

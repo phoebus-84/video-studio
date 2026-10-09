@@ -6,7 +6,7 @@ export interface MediaProvenance {
   kind: "MediaProvenance";
   file: { path: string; hash: string; bytes: number; mime: string; width?: number; height?: number; durationSeconds?: number };
   provider: { id: string; label: string };
-  item: { id: string; title: string; creator?: string; date?: string; institution?: string; landingUrl: string; fileUrl: string };
+  item: { id: string; title: string; creator?: string; date?: string; institution?: string; landingUrl: string; fileUrl: string; rendition?: string };
   licence: { id: string; basis?: string; url?: string; attributionRequired: boolean; statement: string };
   attribution: string;
   retrievedAt: string;

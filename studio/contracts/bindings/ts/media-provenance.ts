@@ -33,6 +33,8 @@ export interface MediaProvenance {
     /** The page where a person verifies the item and its licence. */
     landingUrl: string;
     fileUrl: string;
+    /** When the file is not the provider's original, which rendition it is (e.g. Freesound's preview-hq-ogg). */
+    rendition?: string;
   };
   licence: {
     /** Never `unknown`: an unverified licence is never fetched. */

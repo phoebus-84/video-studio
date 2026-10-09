@@ -85,14 +85,14 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
     label: "Search Archive Media",
     description:
       "Search free archive and stock collections for pictures, videos or sounds with verifiable licences: the Art Institute of Chicago, the Met, " +
-      "the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and Openverse. Each candidate gives its licence, size, " +
+      "the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and Openverse; Freesound's recorded sounds too when FREESOUND_API_KEY is set (its HQ preview, said so in the record). Each candidate gives its licence, size, " +
       "credit, preview and landing page, and whether the channel's policy allows fetching it (and why not). Fetch one with pva_fetch_media.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug: its settings decide which licences are allowed" }),
       series: Type.Optional(Type.String({ description: "Series slug, when its settings override the channel's" })),
       query: Type.String({ description: "What to look for, in English for the museums (e.g. 'storm painting', 'lightning')" }),
       mediaType: Type.Optional(StringEnum(["image", "video", "audio"], { description: "Default image" })),
-      providers: Type.Optional(Type.Array(Type.String(), { description: "Only these: aic, met, cleveland, commons, nasa, internet-archive, openverse" })),
+      providers: Type.Optional(Type.Array(Type.String(), { description: "Only these: aic, met, cleveland, commons, nasa, internet-archive, openverse, freesound" })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 30, description: "Per provider, default 8" })),
       onlyAllowed: Type.Optional(Type.Boolean({ description: "Leave out what the policy would refuse (default true)" })),
     }),

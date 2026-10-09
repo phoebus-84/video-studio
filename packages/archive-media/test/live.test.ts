@@ -23,6 +23,7 @@ const CASES: [string, string, MediaType][] = [
   ["nasa", "lightning", "image"],
   ["openverse", "thunderstorm", "image"],
   ["internet-archive", "thunderstorm", "video"],
+  ...(process.env.FREESOUND_API_KEY ? [["freesound", "wind leaves", "audio"] as [string, string, MediaType]] : []),
 ];
 
 describe.skipIf(!live)("live providers", { timeout: 180_000 }, () => {
