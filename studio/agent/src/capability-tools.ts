@@ -241,6 +241,40 @@ async function synthesizeSpeech(
   return { audioPath: body.result.wav_path, durationSec: body.result.duration_sec, result: body.result };
 }
 
+/** What an enrolled clone voice said: the worker's clone synthesis (POST /voices/{id}/synthesize). */
+interface CloneSynthesis {
+  synthesis_id: string;
+  voice_id: string;
+  voice_revision_sha256: string;
+  provider_mode: string;
+  model_size: string;
+  model_profile: string;
+  model_revision?: string | null;
+  model_identity_sha256?: string | null;
+  reference_audio_sha256: string;
+  reference_text_sha256: string;
+  seed?: number | null;
+  wav_path: string;
+  wav_sha256: string;
+  duration_seconds: number;
+  created_at?: string;
+  warning?: string | null;
+}
+
+const CLONE_LANGUAGES: Record<string, string> = { auto: "auto", italian: "italian", english: "english", german: "german", french: "french", spanish: "spanish", portuguese: "portuguese", russian: "russian", japanese: "japanese", korean: "korean", chinese: "chinese" };
+
+/** A clone voice speaks through the Base model, with the reference the operator enrolled with consent; never a fallback to a preset. */
+async function synthesizeWithClone(voiceId: string, text: string, language: string | undefined, seed: number | undefined): Promise<CloneSynthesis> {
+  const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
+  const body = { text, language: CLONE_LANGUAGES[language ?? "auto"] ?? "auto", model_size: "1.7B", ...(seed !== undefined ? { seed } : {}) };
+  const res = await fetch(`${ttsUrl}/voices/${encodeURIComponent(voiceId)}/synthesize`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const out = await res.json().catch(() => ({})) as CloneSynthesis & { error?: string; detail?: unknown };
+  if (!res.ok || !out.wav_path) {
+    throw new Error(`clone voice ${voiceId}: ${res.status} ${out.error ?? (typeof out.detail === "string" ? out.detail : JSON.stringify(out.detail ?? res.statusText))}`);
+  }
+  return out;
+}
+
 // ── Narration ──────────────────────────────────────────────────────────────
 
 export function canonicalNarrationPath(episodeDir: string): string | null {
@@ -833,8 +867,10 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       text: Type.String({ description: "Text to synthesize as speech" }),
       voice: Type.Optional(Type.String({
         default: "default",
-        description: `Qwen CustomVoice speaker: ${QWEN_SPEAKERS.join(", ")}; or an alias: ${QWEN_SPEAKER_ALIASES.join(", ")}`,
+        description: `Qwen CustomVoice speaker: ${QWEN_SPEAKERS.join(", ")}; or an alias: ${QWEN_SPEAKER_ALIASES.join(", ")}; ` +
+          "or an enrolled clone voice as clone:<voice id> (see pva_voices; the channel's voices/registry names its characters' voices)",
       })),
+      seed: Type.Optional(Type.Integer({ minimum: 0, description: "Clone voices: a seed, to make the same take again" })),
       language: Type.Optional(StringEnum([...QWEN_LANGUAGES], {
         description: "Language of the text. 'auto' lets the model guess; name it for anything not English (e.g. 'italian')",
       })),
@@ -849,13 +885,46 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         // Where it goes first: a wrong episode or source fails before the synthesis, not after.
         const dir = where(params).dir;
         const voice = params.voice ?? "default";
+        const narrationDir = join(dir, "artifacts", "narration");
+        const destPath = join(narrationDir, `${params.sceneId}.wav`);
+        const receiptPath = join(narrationDir, `${params.sceneId}.synthesis.json`);
+        const { copyFileSync } = await import("node:fs");
+        const clone = /^clone:([0-9a-f-]{36})$/i.exec(voice);
+        if (voice.startsWith("clone:") && !clone) throw new Error(`"${voice}" is not clone:<voice id>; list the enrolled voices with pva_voices`);
+        if (clone) {
+          if (params.instruct) throw new Error("a clone voice takes no instruct: its manner is the reference's");
+          const c = await synthesizeWithClone(clone[1]!, params.text, params.language, params.seed);
+          mkdirSync(narrationDir, { recursive: true });
+          copyFileSync(c.wav_path, destPath);
+          const wavSha256 = createHash("sha256").update(readFileSync(destPath)).digest("hex");
+          if (wavSha256 !== c.wav_sha256) throw new Error("the clone's WAV changed between the worker and the workspace");
+          const receipt = {
+            provider: "qwen-local",
+            method: "voice-clone",
+            synthesisId: c.synthesis_id,
+            voice: { id: c.voice_id, revisionSha256: c.voice_revision_sha256, referenceAudioSha256: c.reference_audio_sha256, referenceTextSha256: c.reference_text_sha256 },
+            model: { profile: c.model_profile, size: c.model_size, revision: c.model_revision ?? null, identitySha256: c.model_identity_sha256 ?? null },
+            providerMode: c.provider_mode,
+            requestedVoice: voice,
+            language: params.language ?? "auto",
+            ...(c.seed !== undefined && c.seed !== null ? { seed: c.seed } : {}),
+            text: params.text,
+            wav: `artifacts/narration/${params.sceneId}.wav`,
+            wavSha256,
+            durationSeconds: c.duration_seconds,
+            createdAt: c.created_at ?? new Date().toISOString(),
+            ...(c.warning ? { warning: c.warning } : {}),
+          };
+          writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+          return {
+            content: [{ type: "text" as const, text: `✅ ${params.sceneId} — ${c.duration_seconds.toFixed(1)}s, clone voice ${c.voice_id} (${receipt.language}) → ${destPath}; receipt ${receiptPath}${c.warning ? ` ⚠️ ${c.warning}` : ""}` }],
+            details: { audioPath: destPath, durationSec: c.duration_seconds, receiptPath, receipt },
+          };
+        }
         const result = await synthesizeSpeech(params.text, voice, params.speed ?? 1.0, params.instruct, params.language);
 
         // Copy audio to the workspace's artifacts/narration/
-        const narrationDir = join(dir, "artifacts", "narration");
         mkdirSync(narrationDir, { recursive: true });
-        const destPath = join(narrationDir, `${params.sceneId}.wav`);
-        const { copyFileSync } = await import("node:fs");
         copyFileSync(result.audioPath, destPath);
         // The receipt: which job, model and speaker made this WAV, beside it (avg-vzb).
         const r = result.result;
@@ -876,7 +945,6 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           durationSeconds: result.durationSec,
           createdAt: r.completed_at ?? r.created_at ?? new Date().toISOString(),
         };
-        const receiptPath = join(narrationDir, `${params.sceneId}.synthesis.json`);
         writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 
         return {
@@ -892,6 +960,27 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           details: {},
           isError: true as unknown as boolean,
         };
+      }
+    },
+  });
+
+  // --- Tool: pva_voices -------------------------------------------------------
+
+  pi.registerTool({
+    name: "pva_voices",
+    label: "List Voices",
+    description: "List the voice worker's voice profiles: presets, designed voices and enrolled clone voices (with their id, to use as voice: clone:<id> in pva_synthesize_speech). Enrolling a clone needs the operator's consent and is done by the operator, not here.",
+    parameters: Type.Object({}),
+    async execute() {
+      try {
+        const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
+        const res = await fetch(`${ttsUrl}/voices`);
+        if (!res.ok) throw new Error(`the voice worker answered ${res.status} for /voices`);
+        const voices = await res.json() as { id: string; name: string; mode: string; language: string }[];
+        const text = voices.length === 0 ? "no voice profiles" : voices.map((v) => `- ${v.name}: ${v.mode === "clone" ? `clone:${v.id}` : `${v.mode} ${v.id}`} (${v.language})`).join("\n");
+        return { content: [{ type: "text" as const, text }], details: { voices } as Record<string, unknown> };
+      } catch (err) {
+        return { content: [{ type: "text" as const, text: `❌ ${err instanceof Error ? err.message : String(err)}` }], details: {}, isError: true as unknown as boolean };
       }
     },
   });

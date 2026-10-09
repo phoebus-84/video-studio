@@ -240,6 +240,19 @@ Ask the agent to align a take (`pva_align_take`, with the take's id from
 - At most 300 s of audio at a time; a take without a `language` needs one
   given (`it`, `en`…).
 
+### Clone voices
+
+The voice worker can speak with an enrolled clone voice, through the Qwen3-TTS
+**Base** model.
+- **Enrolling** (`POST /voices/enroll`) is the operator's act. It needs a
+  reference of 3–30 s, its exact transcript, and a written consent that names
+  the source (`self_recorded`, `licensed` or `synthetic`) and its terms.
+- **Using it:** Pi lists the voices with `pva_voices` and speaks with one by
+  passing `voice: "clone:<id>"` to `pva_synthesize_speech`.
+- **The receipt** names the voice's revision, the reference's hashes, the
+  model and the seed.
+- **A channel's characters** name their voice in `voices/registry.local.json`.
+
 ### Verifying a take
 
 Before a take is used, ask the agent to verify it (`pva_verify_take`). The
