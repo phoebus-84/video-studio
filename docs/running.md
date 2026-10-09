@@ -499,9 +499,11 @@ node studio/runtime/dist/src/cli.js kit verify my-channel/my-series my-hall 1.0.
 
 **A channel is its own git repository** (ADR-0045). `vpr channel init` sets
 it up: its text in git, its heavy media out, each named by hash and size in
-`media.lock.json`. After a `git pull`, `vpr channel media --check` lists the
-media this machine lacks or holds in another version; after new media,
-`vpr channel media` updates the list, to commit with the work.
+`media.lock.jsonl`, one line a file. After a `git pull`, `vpr channel media
+--check` lists the media this machine lacks or holds in another version
+(`--verify` rehashes every byte); after new media, `vpr channel media` updates
+the list, to commit with the work. The list never forgets a file only because
+this machine lacks it: `--prune` forgets the files deleted on purpose.
 
 ```bash
 node studio/runtime/dist/src/cli.js channel init my-channel --commit --library "$PWD/library"

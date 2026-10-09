@@ -33,13 +33,19 @@ describe("vpr channel", { timeout: 30_000 }, () => {
 
     const made = vpr(root, ["init", "sample", "--commit"]);
     expect(made.status, made.stderr).toBe(0);
-    expect(made.json.media).toEqual({ files: 1, bytes: 5 });
+    expect(made.json.media).toEqual({ files: 1, bytes: 5, absent: 0, pruned: 0 });
+    expect(made.json.notIgnored).toEqual([]);
     expect(execFileSync("git", ["-C", path.join(root, "sample"), "ls-files"], { encoding: "utf-8" })).not.toContain("sea.png");
 
     expect(vpr(root, ["media", "sample", "--check"]).status).toBe(0);
     rmSync(path.join(images, "sea.png"));
     const lacking = vpr(root, ["media", "sample", "--check"]);
     expect([lacking.status, lacking.json.missing]).toEqual([2, ["series/poetry/episodes/morning/assets/images/sea.png"]]);
+
+    // A file this machine lacks stays named; only --prune forgets it.
+    expect(vpr(root, ["media", "sample"]).json).toMatchObject({ files: 1, absent: 1, pruned: 0 });
+    expect(vpr(root, ["media", "sample", "--prune"]).json).toMatchObject({ files: 0, pruned: 1 });
+    expect(vpr(root, ["media", "sample", "--check", "--verify"]).status).toBe(0);
   });
 
   it("refuses a channel that is not there, and a bad command", () => {
