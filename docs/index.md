@@ -56,7 +56,7 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0044-the-application-ships-no-channel) holds 44 accepted
+[`adr/`](./adr/0045-a-channel-is-its-own-repository) holds 45 accepted
 decisions. The ones that most shape the code:
 
 | ADR | Decision |
@@ -78,6 +78,7 @@ decisions. The ones that most shape the code:
 | [0042](./adr/0042-kits-a-channel-or-series-carries) | Kits a channel or a series carries |
 | [0043](./adr/0043-the-toolbox-for-library-code) | The toolbox for a channel's and a series' code |
 | [0044](./adr/0044-the-application-ships-no-channel) | The application ships no channel's format |
+| [0045](./adr/0045-a-channel-is-its-own-repository) | A channel is its own repository; its media are named by hash |
 
 ADR-0022 (independent repositories per module) is superseded by 0032.
 ADR-0009 (FFmpeg compiles a typed edit timeline) is superseded by 0034.
