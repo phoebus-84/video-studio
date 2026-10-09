@@ -58,7 +58,9 @@ export interface SpokenWord {
  * The `n`th time (1-based) a take says `word`, from its measured words, or
  * null. A word matches when it normalizes to the same, or one of its parts
  * around an apostrophe does («L'Italia» answers "italia"); with `prefix`, a
- * word that starts with it matches when none matches whole.
+ * word that starts with it matches when none matches whole; a word that
+ * normalizes to nothing finds nothing. A superset of the dentro-i-versi
+ * compilers' two lookups, not a copy of either (ADR-0043).
  */
 export function findWord(
   words: readonly SpokenWord[],

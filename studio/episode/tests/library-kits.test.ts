@@ -200,6 +200,18 @@ it("leaves the composer's toolbox to the application when it seals a kit that us
   expect(bundle).not.toContain("woff2");
 });
 
+it("refuses to seal a kit that imports the composer itself rather than one of its kit libraries", async () => {
+  const kitDir = join(channelDir(), "kits", "greedy-card", "1.0.0");
+  mkdirSync(join(kitDir, "kit"), { recursive: true });
+  writeFileSync(join(kitDir, "kit", "index.tsx"), [
+    'import { z } from "zod";',
+    'import { BUNDLED_FAMILIES } from "@av/remotion-composer";',
+    'export const kit = { name: "greedy-card", version: "1.0.0", description: BUNDLED_FAMILIES.join(", "), props: z.object({}), component: () => null, examples: [] };',
+  ].join("\n"));
+  const e = await refusal(() => sealKit({ channelDir: channelDir(), name: "greedy-card", version: "1.0.0" }));
+  expect([e.code, e.message]).toEqual(["build-failed", expect.stringContaining("only its kit libraries")]);
+});
+
 describe("verifying a kit", () => {
   it("passes a sealed kit, warns when its source moved on, and holds its examples to its props", async () => {
     const { kitDir } = await sealedCard();
