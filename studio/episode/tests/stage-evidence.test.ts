@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { writeEditTimeline } from "../src/episode-render.js";
 import { makeLayoutSheet } from "../src/layout-sheet.js";
 import { seriesStageEvidence } from "../src/stage-evidence.js";
-import { approveSheet, divLongEpisode, editSpec, sha256, specEpisode } from "../src/testing.js";
+import { approveSheet, editSpec, sha256, specEpisode } from "../src/testing.js";
+import { inventory } from "@studio/contracts/src/source-pins.mjs";
 
 /**
  * A series episode's stages read from its files (avg-qwc): each stage is
@@ -155,15 +156,25 @@ describe("seriesStageEvidence", () => {
   });
 
   it("makes a changed pinned picture the pictures' staleness, not the spec's failure", async () => {
-    const { episodeDir, episodeRef } = await divLongEpisode(root);
-    const shortImages = join(episodeDir, "..", "..", "..", "short", "episodes", "il-lampo", "assets", "images");
-    writeFileSync(join(shortImages, readdirSync(shortImages)[0]!), "a repainted picture");
-    const long = seriesStageEvidence(episodeDir, { episodeRef, key: KEY })!;
-    expect(long.spec.state).toBe("completed");
-    expect(long.pictures.state).toBe("stale");
-    expect(long.pictures.reason).toContain("renew the pin");
-    expect(long.takes.reason).toBe("checked once pictures loads");
-    expect(long.timeline.reason).toBe("waiting on pictures and takes");
+    // A second starter episode, pinned as this one's source (ADR-0035).
+    const sourceRef = { ...REF, episode: "source" };
+    const sourceDir = join(root, REF.channel, "series", REF.series, "episodes", "source");
+    specEpisode(sourceDir, sourceRef);
+    mkdirSync(join(dir(), "source", "pins"), { recursive: true });
+    writeFileSync(join(dir(), "source", "pins", "fonte.json"), JSON.stringify({
+      apiVersion: "studio.video/v1alpha1", kind: "SourcePin", id: "fonte",
+      source: { kind: "episode", series: REF.series, episode: "source" },
+      usedBy: ["timeline"], pinnedAt: "2026-10-09T12:00:00.000Z", files: await inventory(sourceDir),
+    }));
+    expect(evidence().pictures.state).toBe("completed");
+    const images = join(sourceDir, "assets", "images");
+    writeFileSync(join(images, readdirSync(images)[0]!), "a repainted picture");
+    const pinned = evidence();
+    expect(pinned.spec.state).toBe("completed");
+    expect(pinned.pictures.state).toBe("stale");
+    expect(pinned.pictures.reason).toContain("renew the pin");
+    expect(pinned.takes.reason).toBe("checked once pictures loads");
+    expect(pinned.timeline.reason).toBe("waiting on pictures and takes");
   });
 
   it("keeps a delivered video in sight when the sheet must be approved again", async () => {

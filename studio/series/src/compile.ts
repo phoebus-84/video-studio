@@ -40,7 +40,7 @@ export function compileSpec(input: CompileInput): CompileResult {
       problems: [{
         code: "unknown-compiler",
         path: "$.template.compiler",
-        message: `${id}@${version}: ${available.length > 0 ? `available ${available.join(", ")}` : "no compiler with this id"}`,
+        message: `${id}@${version}: ${available.length > 0 ? `available ${available.join(", ")}` : "the application has no compiler with this id: a series' own compiler lives in its release (ADR-0041, ADR-0044); move the episode onto a release that carries it (pva_upgrade_spec)"}`,
       }],
     };
   }

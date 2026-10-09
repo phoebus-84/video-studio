@@ -6,10 +6,8 @@
 import type { CheckResult, SeriesValidator, ValidateInput } from "./types.js";
 import { releaseCode } from "./compile.js";
 import { validator as poetryShort100 } from "./validators/poetry-short/1.0.0.js";
-import { validator as dentroIVersiShort100 } from "./validators/dentro-i-versi-short/1.0.0.js";
-import { validator as dentroIVersiLong100 } from "./validators/dentro-i-versi-long/1.0.0.js";
 
-export const VALIDATORS: readonly SeriesValidator[] = Object.freeze([poetryShort100, dentroIVersiShort100, dentroIVersiLong100]);
+export const VALIDATORS: readonly SeriesValidator[] = Object.freeze([poetryShort100]);
 
 /** The validator with exactly this id and version, or undefined. */
 export function resolveValidator(id: string, version: string): SeriesValidator | undefined {
@@ -39,7 +37,7 @@ export function checkSeries(input: ValidateInput): CheckResult {
         code: "unknown-validator",
         severity: "error",
         path: "$.template.validator",
-        message: `${ref.id}@${ref.version}: ${available.length > 0 ? `available ${available.join(", ")}` : "no validator with this id"}`,
+        message: `${ref.id}@${ref.version}: ${available.length > 0 ? `available ${available.join(", ")}` : "the application has no validator with this id: a series' own validator lives in its release (ADR-0041, ADR-0044); move the episode onto a release that carries it (pva_upgrade_spec)"}`,
       }],
     };
   }

@@ -7,13 +7,6 @@ import {kit as still100} from './still/1.0.0.js';
 import {kit as clip100} from './clip/1.0.0.js';
 import {kit as captions100} from './captions/1.0.0.js';
 import {kit as captions110} from './captions/1.1.0.js';
-import {kit as brandMark100} from './brand-mark/1.0.0.js';
-import {kit as lowerThird100} from './lower-third/1.0.0.js';
-import {kit as titleChip100} from './title-chip/1.0.0.js';
-import {kit as versePlate100} from './verse-plate/1.0.0.js';
-import {kit as museumHall100} from './museum-hall/1.0.0.js';
-import {kit as interprete100} from './interprete/1.0.0.js';
-import {kit as roomEffect100} from './room-effect/1.0.0.js';
 import {kit as brandMark200} from './brand-mark/2.0.0.js';
 import {kit as blockTitle100} from './block-title/1.0.0.js';
 import {kit as figureTitle100} from './figure-title/1.0.0.js';
@@ -46,7 +39,6 @@ export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
 /** Every released kit version. Adding a version: import it here, then `npm run kits:lock`. */
 export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([
   still100, clip100, captions100, captions110,
-  brandMark100, lowerThird100, titleChip100, versePlate100, museumHall100, interprete100, roomEffect100,
   brandMark200, blockTitle100, figureTitle100, verseBar100, cover100, chapterOpener100, warp100, room100, panel100, interprete110,
   panel110, textStack100, timeline100, storyFx100, wordTracks100, interlinear100, monitorWall100, summary100, progress100,
   merge100, cards100, stack100, oxymoron100, simile100, syllables100, rhymes100,

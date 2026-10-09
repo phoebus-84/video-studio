@@ -89,7 +89,7 @@ Concentric levels. Each holds its own data **and its own procedures**. The appli
    - **The application's own tests** use a neutral example channel, kept in the repository's fixtures. It has a tiny series with a compiler, a validator and one kit, and it exercises the loader, sealing, lookup, bundling and refusal paths.
 7. **dentro-i-versi moves out without changing a frame.**
    - **New releases:** the four compilers, two validators and eight kit files go to the library as new releases:
-     - kits at the channel level (`interprete`, `brand-mark`, `lower-third`, `title-chip`, hall effects) and the series level (`museum-hall`, `verse-plate`), decided by what both series draw;
+     - kits at the channel level or the series level, decided by what both series draw. Done (ADR-0044): only the short drew the seven, so all went to the short series; the long draws only the application's generic lesson kits;
      - templates `dentro-i-versi-short@1.4.0` and `dentro-i-versi-long@1.3.0`, built from today's code.
    - **Proof:** their golden fixtures compile to the same timelines as the app's versions, apart from `derivedFrom`, `metadata.builtBy` and the template pin. The kits' examples render the same frames.
    - **Episodes:** they move with `pva_upgrade_spec`. A timeline compiled by the new release draws the same frames, so the approved sheet's drawing stays the same, though its inputs change and it must be made again.
