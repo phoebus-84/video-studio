@@ -55,6 +55,8 @@ Commands below run from the repository root. `vpr` is
 library/<channel>/                        its own git repository (vpr channel init)
   themes/<theme>/<x.y.z>/theme.json       the channel's look, sealed (optional)
   kits/<kit>/<x.y.z>/kit/index.tsx        kits every series of the channel may use
+  skills/<name>.md                        the channel's own procedures (e.g. how it makes a source)
+  sources/<name>/README.md …              material made once, pinned by episodes (status draft|ready)
   series/<series>/
     series.json, pipeline.yaml            pipeline: series-production
     skills/<series>-episode.md            how to make one episode of THIS series
@@ -212,6 +214,17 @@ is listed here:
     - Then `git -C library/<channel> add -A && git -C library/<channel> commit`,
       with a message saying what the release is.
     - Pushing, or adding a remote, is the person's call.
+
+## Material shared between series
+
+When several series use the same material (a poem's recital and paintings for
+a short and a long), it is a **channel source**, not part of either series:
+- **Making it:** `pva_create_source`, then the usual tools with `source: "<name>"`.
+- **Its procedure:** a channel skill, `library/<channel>/skills/<name>-source.md`.
+- **Using it:** each episode pins it.
+
+Give the template a field naming the pin, as `source: {pin, …}`. The compiler
+then reads `input.sources[pin]` and the `source-<pin>-…` assets.
 
 ## Changing a series later
 

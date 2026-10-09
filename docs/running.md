@@ -538,6 +538,25 @@ node studio/runtime/dist/src/cli.js channel init my-channel --commit --library "
 node studio/runtime/dist/src/cli.js channel media my-channel --check --library "$PWD/library"
 ```
 
+**A channel's sources** (ADR-0035) are material made once and pinned by the
+episodes that use it: a poem's text, recital, timing and pictures, shared by a
+short and a long. Each lives in `library/<channel>/sources/<name>/`.
+- **Structure:** its structure is free. Its `README.md` says what it holds,
+  how it was made and how to use it, with `status: draft` or `ready` in its
+  frontmatter.
+- **Making one:** Pi creates a source with `pva_create_source`, and makes its
+  contents with the usual tools, passing `source: "<name>"` in place of
+  `series` and `episode`. It follows the channel's procedure: a channel skill
+  in `library/<channel>/skills/`, found after the series' skills and before
+  the studio's.
+- **Using one:** episodes pin it
+  (`vpr pin add <channel>/<series>/<episode> <id> --source channel:<name> --used-by timeline`).
+  Its takes, timings and pictures then reach the series' compiler like those
+  of a pinned episode.
+- **Context:** `pva_gather_context` names the README of the channel, the
+  series and every pinned source.
+- **Paid calls:** a source has no budget, so a paid call runs in an episode.
+
 **Archive and stock media** (ADR-0046) come from public collections, free,
 each with a licence anyone can verify: the Art Institute of Chicago, the Met,
 the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and

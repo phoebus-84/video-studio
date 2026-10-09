@@ -22,13 +22,15 @@ export function registerSkillTools(pi: ExtensionAPI): void {
     name: "pva_list_skills",
     label: "List Skills",
     description:
-      "List all available production skills (built-in and series-local). Skills are markdown documents that guide Pi through production stages.",
+      "List all available production skills: the studio's (built-in), a channel's (channel-local: how that channel makes its sources and follows its conventions) and a series' (series-local). Skills are markdown documents that guide Pi through production work.",
     parameters: Type.Object({
       source: Type.Optional(Type.Union([
         Type.Literal("built-in"),
+        Type.Literal("channel-local"),
         Type.Literal("series-local"),
       ], { description: "Filter by skill source" })),
-      seriesSlug: Type.Optional(Type.String({ description: "Filter by series slug" })),
+      seriesSlug: Type.Optional(Type.String({ description: "Filter by series: channel/series" })),
+      channelSlug: Type.Optional(Type.String({ description: "Filter by channel: its own skills and its series'" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
@@ -36,6 +38,7 @@ export function registerSkillTools(pi: ExtensionAPI): void {
         const skills = catalog.list({
           source: params.source,
           seriesSlug: params.seriesSlug,
+          channelSlug: params.channelSlug,
         });
 
         return {
@@ -61,7 +64,7 @@ export function registerSkillTools(pi: ExtensionAPI): void {
       "Load the full content of a production skill markdown file.",
     parameters: Type.Object({
       skillId: Type.String({ description: "Skill ID to load (e.g. 'write-brief')" }),
-      seriesSlug: Type.Optional(Type.String({ description: "channel/series for an explicit series-local override" })),
+      seriesSlug: Type.Optional(Type.String({ description: "Where it is used: channel/series, or channel alone. The series' skill wins, then the channel's, then the studio's" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
