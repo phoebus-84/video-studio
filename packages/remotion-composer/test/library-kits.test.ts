@@ -67,15 +67,25 @@ describe('library kits', () => {
     assert.match(await code([{name: 'sample-card', version: '1.0.0', file: empty.file, hash: empty.hash}]), /^bad-kit: .*does not export a kit/);
   });
 
-  it('writes a bundle entry that registers the library kits before the root, and keeps the package’s own without them', async () => {
+  it('writes a bundle entry that registers the library kits before the root, the same one render after render, of the checked bytes', async () => {
     const built = await buildLibraryKit(path.join(dir, 'entry'));
-    const own = await libraryEntry(dir, []);
+    const own = await libraryEntry({versions: [], sources: []});
     assert.equal(path.basename(own), 'remotion-entry.js');
-    const entry = await libraryEntry(dir, [{name: 'sample-card', version: '1.0.0', file: built.file, hash: built.hash}]);
+    const kits = [{name: 'sample-card', version: '1.0.0', file: built.file, hash: built.hash}];
+    const entry = await libraryEntry(await readLibraryKits(kits));
+    // The bundle names its modules by path: the same kits, the same entry, so the render cache keeps hitting.
+    assert.equal(await libraryEntry(await readLibraryKits(kits)), entry);
     const text = await readFile(entry, 'utf-8');
     assert.ok(text.indexOf('registerLibraryKits([kit0.kit])') < text.indexOf('registerRoot(RemotionRoot)'));
-    assert.ok(text.includes(JSON.stringify(built.file)));
-    // The application's own resolution never sees a library kit unless it is registered or handed.
+    assert.ok(text.includes("import * as kit0 from './kit-0.cjs';"));
+    // Webpack reads the bytes that were hashed, not the library's file again.
+    assert.deepEqual(await readFile(path.join(path.dirname(entry), 'kit-0.cjs')), built.bytes);
     assert.equal(resolveKit('sample-card', '1.0.0'), undefined);
+  });
+
+  it('refuses a kit handed twice', async () => {
+    const built = await buildLibraryKit(path.join(dir, 'twice'));
+    const kit = {name: 'sample-card', version: '1.0.0', file: built.file, hash: built.hash};
+    await assert.rejects(readLibraryKits([kit, kit]), (e: unknown) => e instanceof ComposerError && e.code === 'bad-kit' && /handed twice/.test(e.message));
   });
 });

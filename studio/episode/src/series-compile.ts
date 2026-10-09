@@ -278,7 +278,10 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   // ── The library kits it pins (avg-d1x): the channel's or the series' own ──
   const kits: NonNullable<CompileInput["kits"]> = [];
   const channelDir = dirname(dirname(seriesDir));
+  const pinnedKits = new Set<string>();
   for (const pin of (template.kits ?? []) as { name: string; version: string; level: "channel" | "series"; hash: string }[]) {
+    if (pinnedKits.has(`${pin.name}@${pin.version}`)) stop("kit-duplicate", `${releaseKey}/${SERIES_TEMPLATE_MANIFEST}#$.kits`, `${pin.name}@${pin.version} is pinned twice: one kit per name@version`);
+    pinnedKits.add(`${pin.name}@${pin.version}`);
     const place = { channelDir, name: pin.name, version: pin.version, ...(pin.level === "series" ? { series: basename(seriesDir) } : {}) };
     const dir = kitDirOf(place);
     const within = pin.level === "series" ? seriesDir : channelDir;

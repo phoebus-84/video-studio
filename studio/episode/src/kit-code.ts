@@ -41,11 +41,11 @@ export const kitDirOf = (place: KitPlace) =>
   join(place.series ? join(place.channelDir, "series", place.series) : place.channelDir, "kits", place.name, place.version);
 
 function checkPlace(place: KitPlace): string {
-  if (!SLUG.test(place.name)) fail("missing-template", `"${place.name}" is not a kit name`);
-  if (!EXACT.test(place.version)) fail("missing-template", `"${place.version}" is not an exact x.y.z release`);
-  if (place.series !== undefined && !SLUG.test(place.series)) fail("missing-template", `"${place.series}" is not a series`);
+  if (!SLUG.test(place.name)) fail("bad-kit", `"${place.name}" is not a kit name`);
+  if (!EXACT.test(place.version)) fail("bad-kit", `"${place.version}" is not an exact x.y.z release`);
+  if (place.series !== undefined && !SLUG.test(place.series)) fail("bad-kit", `"${place.series}" is not a series`);
   const dir = kitDirOf(place);
-  if (!existsSync(dir)) fail("missing-template", `${place.name}@${place.version} is not a kit release of ${place.series ? `series ${place.series}` : "the channel"}`);
+  if (!existsSync(dir)) fail("missing-kit", `${place.name}@${place.version} is not a kit release of ${place.series ? `series ${place.series}` : "the channel"}`);
   return dir;
 }
 
@@ -81,16 +81,16 @@ function kitPinnedBy(place: KitPlace): string[] {
 export async function sealKit(place: KitPlace, options: { dryRun?: boolean } = {}): Promise<{ hash: string; bundle: { path: string; hash: string } }> {
   const dir = checkPlace(place);
   const label = `${place.name}@${place.version}`;
-  if (isApplicationKit(place.name, place.version)) fail("bad-code", `${label} is an application kit: a library kit takes another name or version`);
+  if (isApplicationKit(place.name, place.version)) fail("kit-shadows", `${label} is an application kit: a library kit takes another name or version`);
   const pinned = kitPinnedBy(place);
   if (pinned.length > 0) fail("release-pinned", `${label} is pinned by ${pinned.join(", ")}: a pinned kit never changes; make a new version`);
   if (!existsSync(join(dir, KIT_SOURCE))) fail("no-code", `${label} has no ${KIT_SOURCE}`);
   const text = await bundleSource(dir, KIT_SOURCE, { platform: "neutral", external: KIT_EXTERNALS, jsx: true });
   const bundleHash = sha256(text);
   const loaded = loadLibraryKit(join(dir, KIT_BUNDLE), Buffer.from(text), bundleHash);
-  if (!loaded.ok) fail("bad-code", `${KIT_SOURCE}: ${loaded.message}`);
+  if (!loaded.ok) fail("bad-kit", `${KIT_SOURCE}: ${loaded.message}`);
   const kit = (loaded as { kit: { name: string; version: string } }).kit;
-  if (kit.name !== place.name || kit.version !== place.version) fail("bad-code", `${KIT_SOURCE} exports ${kit.name}@${kit.version}, not the ${label} its folder names`);
+  if (kit.name !== place.name || kit.version !== place.version) fail("bad-kit", `${KIT_SOURCE} exports ${kit.name}@${kit.version}, not the ${label} its folder names`);
   const manifest = { apiVersion: "studio.video/v1alpha1", kind: "KitRelease", name: place.name, version: place.version, bundle: { path: KIT_BUNDLE, hash: bundleHash } };
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
   const result = { hash: sha256(manifestText), bundle: manifest.bundle };
@@ -160,9 +160,20 @@ export function readKitRelease(dir: string, place: { name: string; version: stri
 }
 
 /** The kit pins a series release's manifest lists, their hashes filled from the sealed kit releases (for `vpr template seal`). */
-export function pinnedKitHashes(seriesDir: string, kits: { name: string; version: string; level: "channel" | "series" }[]): { name: string; version: string; level: "channel" | "series"; hash: string }[] {
+export function pinnedKitHashes(seriesDir: string, kits: unknown[]): { name: string; version: string; level: "channel" | "series"; hash: string }[] {
   const channelDir = dirname(dirname(seriesDir));
-  return kits.map((pin) => {
+  const seen = new Set<string>();
+  // Each pin's shape before any disk is touched: a name is a folder name, and a level one of two.
+  for (const [i, raw] of kits.entries()) {
+    const pin = raw as { name?: unknown; version?: unknown; level?: unknown } | null;
+    if (!pin || typeof pin !== "object" || typeof pin.name !== "string" || !SLUG.test(pin.name) || typeof pin.version !== "string" || !EXACT.test(pin.version) || (pin.level !== "channel" && pin.level !== "series")) {
+      fail("bad-template", `kits[${i}] is not a kit pin: {name, version, level: "channel" | "series"}`);
+    }
+    const label = `${(pin as { name: string }).name}@${(pin as { version: string }).version}`;
+    if (seen.has(label)) fail("bad-template", `${label} is pinned twice: one kit per name@version`);
+    seen.add(label);
+  }
+  return (kits as { name: string; version: string; level: "channel" | "series" }[]).map((pin) => {
     const place: KitPlace = { channelDir, name: pin.name, version: pin.version, ...(pin.level === "series" ? { series: basename(seriesDir) } : {}) };
     const read = readKitRelease(kitDirOf(place), pin);
     if (!read.ok) return fail("bad-template", `the release pins ${pin.level} kit ${pin.name}@${pin.version}: ${read.message}`);

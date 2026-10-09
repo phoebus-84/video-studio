@@ -50,7 +50,7 @@ export interface RenderResult {
 
 export async function renderTimeline(options: RenderTimelineOptions): Promise<RenderResult> {
   const library = await readLibraryKits(options.kits ?? []);
-  const checked = validateTimeline(options.timeline, {kits: library});
+  const checked = validateTimeline(options.timeline, {kits: library.versions});
   if (!checked.ok) {
     const code = checked.problems[0]!.code;
     throw new ComposerError(code, `the timeline cannot be rendered: ${checked.problems.map((p) => `${p.code} at ${p.path}`).join('; ')}`, checked.problems);
@@ -68,7 +68,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       if (asset.kind === 'video') assetFrames[staged.files[id]!] = videoFrames(staged.sources[id]!, timeline.fps);
     }
     const inputProps = {timeline, files: staged.files, assetFrames};
-    const entryPoint = await libraryEntry(work, options.kits ?? []);
+    const entryPoint = await libraryEntry(library);
     const hasAudio = timeline.tracks.some((t) => t.type === 'audio' && !t.muted && t.items.some(isAudioItem));
     const output = path.resolve(options.outputPath);
     await mkdir(path.dirname(output), {recursive: true});

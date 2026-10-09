@@ -149,9 +149,28 @@ describe("a kit the channel carries", () => {
     const kitDir = join(channelDir(), "kits", "other-card", "1.0.0");
     cpSync(join(FIXTURES, "kit"), join(kitDir, "kit"), { recursive: true });
     const other = await refusal(() => sealKit({ channelDir: channelDir(), name: "other-card", version: "1.0.0" }));
-    expect([other.code, other.message]).toEqual(["bad-code", expect.stringContaining("exports sample-card@1.0.0")]);
+    expect([other.code, other.message]).toEqual(["bad-kit", expect.stringContaining("exports sample-card@1.0.0")]);
     cpSync(join(FIXTURES, "kit"), join(channelDir(), "kits", "still", "1.0.0", "kit"), { recursive: true });
-    expect((await refusal(() => sealKit({ channelDir: channelDir(), name: "still", version: "1.0.0" }))).message).toContain("application kit");
+    const still = await refusal(() => sealKit({ channelDir: channelDir(), name: "still", version: "1.0.0" }));
+    expect([still.code, still.message]).toEqual(["kit-shadows", expect.stringContaining("application kit")]);
+    expect((await refusal(() => sealKit({ channelDir: channelDir(), name: "nowhere", version: "1.0.0" }))).code).toBe("missing-kit");
+  });
+
+  it("refuses a pin that is not a pin, or a kit pinned twice, before touching the disk", async () => {
+    await sealedCard();
+    const { manifestFile } = await releaseDrawingTheCard();
+    rmSync(join(dir(), "episode-spec.json"));
+    const manifest = JSON.parse(readFileSync(manifestFile, "utf-8"));
+    for (const [kits, said] of [
+      [[null], "kits[0] is not a kit pin"],
+      [[{ name: "../../x", version: "1.0.0", level: "channel" }], "kits[0] is not a kit pin"],
+      [[{ name: "sample-card", version: "1.0.0" }], "kits[0] is not a kit pin"],
+      [[{ name: "sample-card", version: "1.0.0", level: "channel" }, { name: "sample-card", version: "1.0.0", level: "series" }], "pinned twice"],
+    ] as const) {
+      writeFileSync(manifestFile, `${JSON.stringify({ ...manifest, kits }, null, 2)}\n`);
+      const e = await refusal(() => sealTemplateCode(seriesDir(), "poetry-short", "1.0.0"));
+      expect([e.code, e.message]).toEqual(["bad-template", expect.stringContaining(said)]);
+    }
   });
 });
 

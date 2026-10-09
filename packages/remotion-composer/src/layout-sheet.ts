@@ -71,7 +71,7 @@ function refuse(message: string): never {
 
 export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<LayoutSheetResult> {
   const library = await readLibraryKits(options.kits ?? []);
-  const checked = validateTimeline(options.timeline, {kits: library});
+  const checked = validateTimeline(options.timeline, {kits: library.versions});
   if (!checked.ok) {
     const code = checked.problems[0]!.code;
     throw new ComposerError(code, `the timeline cannot be rendered: ${checked.problems.map((p) => `${p.code} at ${p.path}`).join('; ')}`, checked.problems);
@@ -111,7 +111,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
       if (asset.kind === 'video') assetFrames[staged.files[id]!] = videoFrames(staged.sources[id]!, timeline.fps);
     }
     await mkdir(path.join(outDir, 'frames'), {recursive: true});
-    const entryPoint = await libraryEntry(work, options.kits ?? []);
+    const entryPoint = await libraryEntry(library);
     const frames: LayoutSheetFrame[] = picks.map((p, index) => ({
       index,
       frame: p.frame,

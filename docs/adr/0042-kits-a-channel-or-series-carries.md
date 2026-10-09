@@ -29,9 +29,11 @@ ADR-0041 put a series' compiler and validator in its release. What they draw wit
 - **Compiling.** Kit props are validated as an application kit's.
 - **Rendering and the layout sheet.**
   - They receive the kits as files plus hashes.
-  - The composer generates the Remotion bundle's entry: the library kits are registered, then the root renders.
+  - The composer reads each kit's bytes, checks their hash and loads them.
+  - It writes those exact bytes, with a generated Remotion entry, into a folder named by the kits' hashes. The entry registers the library kits, then the root renders. Webpack bundles the bytes that were checked, and the bundle is the same render after render. Webpack names modules by path, so a random folder would defeat the render cache, which hashes the whole bundle.
+  - The externals resolve from the application first, so a `node_modules` beside a kit never brings a second React.
   - The sheet's kit lock holds a library kit's bundle hash, so a kit change makes the sheet stale.
-  - The render cache already hashes the whole bundle.
+  - A `name@version` is pinned and handed once, never twice.
 - **`vpr kit verify`** checks the bundle is the sealed one, warns when the source no longer builds to it, and holds each example's props to the kit's schema.
 
 ## Consequences
@@ -39,3 +41,4 @@ ADR-0041 put a series' compiler and validator in its release. What they draw wit
 - **Moving out.** A format's look and drawing can live with the channel, versioned in its repository. Phase 4 moves dentro-i-versi's kits out.
 - **Lookup.** A timeline names a kit `name@version`. The application's kit wins, and a library kit can't take its name. The release's pins list exactly which library kits exist for it.
 - **Sharing.** Library kits share the application's React, Remotion and zod. A kit that needs another package bundles it.
+- **No kit toolbox yet.** The composer's fonts and text measuring aren't importable by a library kit yet: the package exports only its index, and the fonts are `.woff2` files. Phase 3 (the toolbox) and phase 4 (dentro-i-versi's kits moving out) supply them.

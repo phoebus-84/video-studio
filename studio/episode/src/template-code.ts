@@ -27,7 +27,10 @@ const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const ROLES = ["compiler", "validator"] as const;
 type Role = (typeof ROLES)[number];
 
-export type TemplateCodeCode = "missing-template" | "bad-template" | "release-pinned" | "build-failed" | "bad-code" | "no-code" | "no-esbuild";
+export type TemplateCodeCode =
+  | "missing-template" | "bad-template" | "release-pinned" | "build-failed" | "bad-code" | "no-code" | "no-esbuild"
+  // A kit's (avg-d1x, phase 2).
+  | "missing-kit" | "bad-kit" | "kit-shadows";
 
 export class TemplateCodeError extends Error {
   constructor(readonly code: TemplateCodeCode, message: string) {
