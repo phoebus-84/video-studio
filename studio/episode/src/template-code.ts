@@ -20,6 +20,7 @@ import { compileSpec, checkSeries } from "@studio/series";
 import { SERIES_TEMPLATE_MANIFEST } from "@studio/contracts/src/layout.mjs";
 import { SERIES_TEMPLATE_FILES, validateSeriesTemplate, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
 import { releaseCodeOf } from "./release-code.js";
+import { pinnedKitHashes } from "./kit-code.js";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -128,6 +129,18 @@ function packageKeyOf(file: string, cache: Map<string, string>): string {
  * inside the release.
  */
 async function build(releaseDir: string, role: Role): Promise<string> {
+  return bundleSource(releaseDir, `${role}/index.ts`, { platform: "node" });
+}
+
+/**
+ * Bundle `entry` (relative to `root`) into one CommonJS file: the same
+ * wherever `root` and the app are. `external` packages stay `require`s (a
+ * kit's React, Remotion and zod: the application's own); `jsx` compiles TSX
+ * for React's automatic runtime.
+ */
+export async function bundleSource(root: string, entry: string, options: { platform: "node" | "neutral"; external?: string[]; jsx?: boolean }): Promise<string> {
+  const releaseDir = root;
+  const external = options.external ?? [];
   const require = createRequire(import.meta.url);
   let esbuild: typeof import("esbuild");
   try {
@@ -147,8 +160,9 @@ async function build(releaseDir: string, role: Role): Promise<string> {
     name: "release-code",
     setup(b) {
       b.onResolve({ filter: /.*/ }, (args) => {
-        if (args.kind === "entry-point") return name("release", sourceOf(releaseDir, role));
+        if (args.kind === "entry-point") return name("release", join(releaseDir, entry));
         if (args.path.startsWith("node:") || builtins.has(args.path) || builtins.has(args.path.split("/")[0]!)) return { path: args.path, external: true };
+        if (external.some((e) => args.path === e || args.path.startsWith(`${e}/`))) return { path: args.path, external: true };
         const importer = real.get(`${args.namespace}:${args.importer}`);
         if (!importer) return { errors: [{ text: `cannot place ${args.path}: its importer ${args.importer} is unknown` }] };
         if (args.path.startsWith(".")) {
@@ -177,10 +191,11 @@ async function build(releaseDir: string, role: Role): Promise<string> {
   };
   try {
     const out = await esbuild.build({
-      entryPoints: [`${role}/index.ts`],
+      entryPoints: [entry],
       absWorkingDir: releaseDir,
       bundle: true,
-      platform: "node",
+      platform: options.platform,
+      ...(options.jsx ? { jsx: "automatic" as const } : {}),
       format: "cjs",
       target: "node20",
       write: false,
@@ -194,7 +209,7 @@ async function build(releaseDir: string, role: Role): Promise<string> {
     return out.outputFiles[0]!.text;
   } catch (error) {    const errors = (error as { errors?: { text: string; location?: { file: string; line: number } }[] }).errors ?? [];
     const detail = errors.map((e) => `${e.location ? `${e.location.file}:${e.location.line}: ` : ""}${e.text}`).join("; ");
-    return fail("build-failed", `${role}/index.ts does not build: ${detail || (error as Error).message}`);
+    return fail("build-failed", `${entry} does not build: ${detail || (error as Error).message}`);
   }
 }
 
@@ -227,7 +242,9 @@ export async function sealTemplateCode(seriesDir: string, id: string, version: s
     if (!loaded.ok) fail("bad-code", `${role}/index.ts: ${loaded.message}`);
     manifest[role] = { id: manifest[role].id, version: manifest[role].version, bundle: { path: bundlePath(role), hash } };
   }
-  if (Object.keys(built).length === 0) fail("no-code", `${label} has neither compiler/index.ts nor validator/index.ts`);
+  // The library kits it pins (avg-d1x): each sealed, its kit.json's hash filled in.
+  if (Array.isArray(manifest.kits)) manifest.kits = pinnedKitHashes(seriesDir, manifest.kits);
+  if (Object.keys(built).length === 0 && !manifest.kits?.length) fail("no-code", `${label} has neither compiler/index.ts nor validator/index.ts, and pins no kits`);
 
   const files: Record<string, string> = {};
   for (const [roleName, name] of Object.entries(SERIES_TEMPLATE_FILES)) {

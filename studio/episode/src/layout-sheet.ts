@@ -17,7 +17,7 @@ import { drawingCodeHash, renderLayoutSheet, timelineKits, type LockedKit } from
 import { canonicalJson } from "@studio/contracts/src/receipt.mjs";
 import { decideEditTimeline, SeriesRulesError, type TimelineDecision } from "./episode-render.js";
 import { EDIT_TIMELINE_PATH, type BuildOptions } from "./edit-timeline-builder.js";
-import { isSpecDriven, loadEpisode, sharedRootsOf } from "./series-compile.js";
+import { isSpecDriven, libraryKitsOf, loadEpisode, sharedRootsOf } from "./series-compile.js";
 import { sheetInstants, type SheetRules } from "./sheet-instants.js";
 
 export const LAYOUT_SHEET_DIR = "artifacts/layout-sheet";
@@ -80,7 +80,7 @@ function rulesFor(episodeDir: string, options: BuildOptions): SheetRulesSource {
 
 /** What the sheet of this decision would be made from; throws what decideEditTimeline throws. */
 function inputsOf(episodeDir: string, options: BuildOptions, decision: TimelineDecision) {
-  const kits = timelineKits(decision.timeline as never);
+  const kits = timelineKits(decision.timeline as never, libraryKitsOf(episodeDir, options));
   if (kits === null) throw new Error("a kit of this timeline is not one this studio has");
   const rules = rulesFor(episodeDir, options);
   const renderer = drawingCodeHash();
@@ -113,7 +113,7 @@ export async function makeLayoutSheet(episodeDir: string, options: BuildOptions)
   const final = join(episodeDir, LAYOUT_SHEET_DIR);
   let report: LayoutSheetReport;
   try {
-    const result = await renderLayoutSheet({ timeline: decision.timeline, assetRoot: episodeDir, sharedRoots: sharedRootsOf(episodeDir), picks, outDir: temp, scale: SHEET_SCALE });
+    const result = await renderLayoutSheet({ timeline: decision.timeline, assetRoot: episodeDir, sharedRoots: sharedRootsOf(episodeDir), picks, outDir: temp, scale: SHEET_SCALE, kits: libraryKitsOf(episodeDir, options) });
     report = {
       createdAt: new Date().toISOString(),
       timeline: { path: EDIT_TIMELINE_PATH, hash: inputs.timeline },

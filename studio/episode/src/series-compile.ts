@@ -20,6 +20,9 @@ import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
 import { THEME_FILE, themeReleasePath, validateChannelTheme, type ChannelTheme } from "@studio/contracts/src/channel-themes.mjs";
 import { PINS_DIR, sourceDir, validateSourcePin } from "@studio/contracts/src/source-pins.mjs";
 import { releaseCodeOf } from "./release-code.js";
+import { kitDirOf, readKitRelease } from "./kit-code.js";
+import { isApplicationKit } from "@av/remotion-composer";
+import { KIT_BUNDLE, KIT_RELEASE_FILE } from "@studio/contracts/src/kit-releases.mjs";
 
 export const NARRATION_TAKES_PATH = "artifacts/narration/takes.json";
 /** What the loader offers from assets/: every file in each folder, as <prefix>-<name>. */
@@ -99,6 +102,17 @@ export function loadEpisode(
     if (error instanceof Stop) return { ok: false, problems: error.problems };
     throw error;
   }
+}
+
+/**
+ * The library kits a spec-driven episode's release pins (avg-d1x), as a
+ * render or a layout sheet receives them; none for an episode without a spec
+ * or one that does not load (its timeline cannot be decided either).
+ */
+export function libraryKitsOf(episodeDir: string, options: { episodeRef: { channel: string; series: string; episode: string } }): { name: string; version: string; file: string; hash: string }[] {
+  if (!isSpecDriven(episodeDir)) return [];
+  const loaded = loadEpisode(episodeDir, options);
+  return loaded.ok ? (loaded.input.kits ?? []).map(({ name, version, file, hash }) => ({ name, version, file, hash })) : [];
 }
 
 /**
@@ -261,6 +275,24 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     (code as Record<string, unknown>)[role] = loaded.code;
   }
 
+  // ── The library kits it pins (avg-d1x): the channel's or the series' own ──
+  const kits: NonNullable<CompileInput["kits"]> = [];
+  const channelDir = dirname(dirname(seriesDir));
+  for (const pin of (template.kits ?? []) as { name: string; version: string; level: "channel" | "series"; hash: string }[]) {
+    const place = { channelDir, name: pin.name, version: pin.version, ...(pin.level === "series" ? { series: basename(seriesDir) } : {}) };
+    const dir = kitDirOf(place);
+    const within = pin.level === "series" ? seriesDir : channelDir;
+    const manifestKey = relative(episodeDir, join(dir, KIT_RELEASE_FILE)).split(sep).join("/");
+    const label = `${pin.level} kit ${pin.name}@${pin.version}`;
+    const manifestBytes = read(join(dir, KIT_RELEASE_FILE), within, () => stop("missing-kit", manifestKey, `${manifestKey} is missing: the release pins ${label}`));
+    if (sha256(manifestBytes) !== pin.hash) stop("kit-mismatch", manifestKey, `${manifestKey} is not the kit the release pinned (${pin.hash}): a kit never changes, make a new version`);
+    read(join(dir, KIT_BUNDLE), within, () => stop("missing-kit", `${manifestKey.replace(/kit\.json$/, KIT_BUNDLE)}`, `${label}'s ${KIT_BUNDLE} is missing`));
+    if (isApplicationKit(pin.name, pin.version)) stop("kit-shadows", manifestKey, `${label} takes an application kit's name and version`);
+    const release = readKitRelease(dir, pin);
+    if (!release.ok) return stop(release.code, manifestKey, release.message);
+    kits.push({ name: pin.name, version: pin.version, file: release.file, hash: release.release.bundle.hash, kit: release.kit });
+  }
+
   // ── Narration takes and their timing ──────────────────────────────────────
   const takesBytes = read(join(episodeDir, NARRATION_TAKES_PATH), episodeDir,
     () => stop("missing-narration", NARRATION_TAKES_PATH, `${NARRATION_TAKES_PATH} is missing: record and verify the narration takes first`));
@@ -382,7 +414,6 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   const sources: NonNullable<CompileInput["sources"]> = {};
   const pinsDir = join(episodeDir, PINS_DIR);
   const pinFiles = existsSync(pinsDir) ? readdirSync(pinsDir).filter((n) => n.endsWith(".json") && !n.startsWith(".")).sort() : [];
-  const channelDir = dirname(dirname(seriesDir));
   for (const name of pinFiles) {
     const pinKey = `${PINS_DIR}/${name}`;
     let pinDoc: any;
@@ -443,7 +474,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
   }
 
-  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}), ...(Object.keys(sources).length > 0 ? { sources } : {}), ...(Object.keys(code).length > 0 ? { code } : {}) }, releaseKey, warnings };
+  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}), ...(Object.keys(sources).length > 0 ? { sources } : {}), ...(Object.keys(code).length > 0 ? { code } : {}), ...(kits.length > 0 ? { kits } : {}) }, releaseKey, warnings };
 }
 
 const IN_TIMELINE = /^\$\.(tracks|profile|durationInFrames|resolution|assets|sections)\b/;
