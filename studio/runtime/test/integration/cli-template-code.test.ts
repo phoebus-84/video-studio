@@ -38,7 +38,8 @@ function vpr(root: string, args: string[]) {
   return { status: result.status ?? 1, json: result.stdout ? JSON.parse(result.stdout) : null, stderr: result.stderr };
 }
 
-describe("vpr template seal / verify", () => {
+// Each test spawns the CLI several times and builds with esbuild: seconds, not milliseconds.
+describe("vpr template seal / verify", { timeout: 60_000 }, () => {
   it("seals the release's code, then verifies it against its fixtures", () => {
     const { root, release } = library();
     const sealed = vpr(root, ["seal", "sample/poetry", "poetry-short", "1.0.0"]);
