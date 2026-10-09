@@ -29,6 +29,12 @@ None of these needs a key.
 | `internet-archive` | Internet Archive | video, audio, image | `licenseurl` |
 | `openverse` | Openverse (Flickr, museums, Jamendo…) | image, audio | the source's licence and landing page |
 
+With a free key in the environment:
+
+| id | Collection | Media | Licence evidence |
+|---|---|---|---|
+| `freesound` (`FREESOUND_API_KEY`) | Freesound | audio | `license` URL per sound. The file is the HQ preview (OGG, about 192 kbps): the original needs a user's OAuth. `rendition: "preview-hq-ogg"` says so. |
+
 ## Licences
 
 - **Each item's licence becomes one of:**

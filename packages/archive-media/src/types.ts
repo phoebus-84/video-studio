@@ -36,6 +36,8 @@ export interface ArchiveItem {
   /** The original file: never a thumbnail. Empty in a search result that must be completed by `item`. */
   fileUrl: string;
   previewUrl?: string;
+  /** When the file is not the uploaded original, which rendition it is (Freesound's "preview-hq-ogg" without OAuth). */
+  rendition?: string;
   mime?: string;
   width?: number;
   height?: number;

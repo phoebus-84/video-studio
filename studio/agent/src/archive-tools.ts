@@ -19,6 +19,7 @@ import { ArchiveError, createArchive, DEFAULT_POLICY, type Archive, type Licence
 import { checkProvenance, fetchIntoWorkspace } from "@studio/episode";
 import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
 import { WORKSPACE_PARAMS, workspaceOf } from "./workspace-target.js";
+import { readEnv } from "./config.js";
 
 const USER_AGENT = "video-studio-archive-media/0.1 (https://github.com/phoebus-84/video-studio)";
 const SLUG = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -75,7 +76,17 @@ const fail = (error: unknown) => ({
 export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Archive } = {}): void {
   const libraryRoot = () => process.env.AVG_LIBRARY_ROOT || join(process.cwd(), "library");
   let shared: Archive | undefined = options.archive;
-  const archive = () => (shared ??= createArchive({ userAgent: USER_AGENT, cacheDir: join(homedir(), ".cache", "video-studio", "archive-media") }));
+  // Provider keys from the environment, else the project's .env (FREESOUND_API_KEY), never in the code.
+  const archive = async () => {
+    if (!shared) {
+      const keys = await readEnv();
+      shared = createArchive({
+        userAgent: USER_AGENT, cacheDir: join(homedir(), ".cache", "video-studio", "archive-media"),
+        env: { ...process.env, ...(keys.FREESOUND_API_KEY ? { FREESOUND_API_KEY: keys.FREESOUND_API_KEY } : {}) },
+      });
+    }
+    return shared;
+  };
   const checkNames = (...names: (string | undefined)[]) => {
     for (const n of names) if (n !== undefined && !SLUG.test(n)) throw new Error(`"${n}" is not a slug`);
   };
@@ -85,14 +96,14 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
     label: "Search Archive Media",
     description:
       "Search free archive and stock collections for pictures, videos or sounds with verifiable licences: the Art Institute of Chicago, the Met, " +
-      "the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and Openverse. Each candidate gives its licence, size, " +
+      "the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and Openverse; Freesound's recorded sounds too when FREESOUND_API_KEY is set (its HQ preview, said so in the record). Each candidate gives its licence, size, " +
       "credit, preview and landing page, and whether the channel's policy allows fetching it (and why not). Fetch one with pva_fetch_media.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug: its settings decide which licences are allowed" }),
       series: Type.Optional(Type.String({ description: "Series slug, when its settings override the channel's" })),
       query: Type.String({ description: "What to look for, in English for the museums (e.g. 'storm painting', 'lightning')" }),
       mediaType: Type.Optional(StringEnum(["image", "video", "audio"], { description: "Default image" })),
-      providers: Type.Optional(Type.Array(Type.String(), { description: "Only these: aic, met, cleveland, commons, nasa, internet-archive, openverse" })),
+      providers: Type.Optional(Type.Array(Type.String(), { description: "Only these: aic, met, cleveland, commons, nasa, internet-archive, openverse, freesound" })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 30, description: "Per provider, default 8" })),
       onlyAllowed: Type.Optional(Type.Boolean({ description: "Leave out what the policy would refuse (default true)" })),
     }),
@@ -100,7 +111,7 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
       try {
         checkNames(params.channel, params.series);
         const settings = archiveSettings(libraryRoot(), params.channel, params.series);
-        const result = await archive().search(params.query, {
+        const result = await (await archive()).search(params.query, {
           mediaType: (params.mediaType ?? "image") as "image" | "video" | "audio", limit: params.limit ?? 8,
           ...(params.providers ? { providers: params.providers } : {}), policy: settings.policy, quality: settings.quality,
         });
@@ -147,7 +158,7 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
         if (!existsSync(dir)) throw new Error(`there is no episode ${ws.label}`);
         const settings = archiveSettings(libraryRoot(), params.channel, params.series);
         const got = await fetchIntoWorkspace(dir, {
-          archive: archive(), provider: params.provider, id: params.id, name: params.name,
+          archive: await archive(), provider: params.provider, id: params.id, name: params.name,
           policy: settings.policy, quality: settings.quality, ...(params.replace ? { replace: true } : {}),
         });
         const f = got.record.file;

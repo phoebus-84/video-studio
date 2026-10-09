@@ -580,6 +580,10 @@ Openverse, none of which needs a key.
 - **What a file brings.** It arrives in `assets/` with `<name>.source.json`
   (its provider, licence and credit) and the provider's response as evidence
   in `artifacts/provenance/`. `ATTRIBUTIONS.md` is made from the records.
+- **Freesound.** Its recorded effects and ambiences come in when
+  `FREESOUND_API_KEY` is in Pi's environment. The key is free at
+  freesound.org/apiv2/apply. The file is Freesound's high-quality preview,
+  and its record says so.
 - **Policy.** A channel decides which licences it accepts in `settings.yaml`.
   The default is public domain, CC0, CC BY and CC BY-SA, with at least
   1600 px on an image's long side.

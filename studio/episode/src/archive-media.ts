@@ -87,7 +87,7 @@ export async function fetchIntoWorkspace(workspaceDir: string, options: FetchInt
         id: got.item.id, title: got.item.title,
         ...(got.item.creator ? { creator: got.item.creator } : {}), ...(got.item.date ? { date: got.item.date } : {}),
         ...(got.item.institution ? { institution: got.item.institution } : {}),
-        landingUrl: got.item.landingUrl, fileUrl: got.item.fileUrl,
+        landingUrl: got.item.landingUrl, fileUrl: got.item.fileUrl, ...(got.item.rendition ? { rendition: got.item.rendition } : {}),
       },
       licence: {
         id: got.item.licence.id, ...(got.item.licence.basis ? { basis: got.item.licence.basis } : {}),

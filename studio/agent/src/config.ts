@@ -44,6 +44,8 @@ export interface EnvOverrides {
   AVG_GATEWAY_TOKEN?: string;
   FAL_KEY?: string;
   AVG_TTS_WORKER_URL?: string;
+  /** Freesound's API key for archive media (avg-fe8.7). */
+  FREESOUND_API_KEY?: string;
 }
 
 // ── Client types ────────────────────────────────────────────────────────────
@@ -80,7 +82,7 @@ export const DEFAULT_TTS_WORKER_URL = "http://127.0.0.1:5197";
 /**
  * Read environment overrides (never logs values).
  */
-async function readEnv(): Promise<EnvOverrides> {
+export async function readEnv(): Promise<EnvOverrides> {
   const fromFile: EnvOverrides = {};
   try {
     const raw = await fs.readFile(path.resolve(process.cwd(), ".env"), "utf-8");
@@ -90,6 +92,7 @@ async function readEnv(): Promise<EnvOverrides> {
       "AVG_GATEWAY_TOKEN",
       "FAL_KEY",
       "AVG_TTS_WORKER_URL",
+      "FREESOUND_API_KEY",
     ]);
     for (const line of raw.split(/\r?\n/)) {
       const match = line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
@@ -110,6 +113,7 @@ async function readEnv(): Promise<EnvOverrides> {
     AVG_GATEWAY_TOKEN: process.env.AVG_GATEWAY_TOKEN ?? fromFile.AVG_GATEWAY_TOKEN,
     FAL_KEY: process.env.FAL_KEY ?? fromFile.FAL_KEY,
     AVG_TTS_WORKER_URL: process.env.AVG_TTS_WORKER_URL ?? fromFile.AVG_TTS_WORKER_URL,
+    FREESOUND_API_KEY: process.env.FREESOUND_API_KEY ?? fromFile.FREESOUND_API_KEY,
   };
 }
 
