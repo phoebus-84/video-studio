@@ -21,6 +21,7 @@ import { SERIES_TEMPLATE_MANIFEST } from "@studio/contracts/src/layout.mjs";
 import { SERIES_TEMPLATE_FILES, validateSeriesTemplate, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
 import { releaseCodeOf } from "./release-code.js";
 import { kitDirOf, pinnedKitHashes, readKitRelease } from "./kit-code.js";
+import { isApplicationKit } from "@av/remotion-composer";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -336,7 +337,13 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
   // The library kits it pins (ADR-0042), as the loader hands them to a compile.
   const kits: { name: string; version: string; file: string; hash: string; kit: unknown }[] = [];
   const channelDir = dirname(dirname(seriesDir));
+  const pinnedKits = new Set<string>();
   for (const pin of (manifest.kits ?? []) as { name: string; version: string; level: "channel" | "series"; hash: string }[]) {
+    // What the loader refuses, verify refuses: a kit pinned twice, an application kit's name.
+    const label = `${pin.name}@${pin.version}`;
+    if (pinnedKits.has(label)) { problems.push({ code: "kit-duplicate", message: `${label} is pinned twice` }); continue; }
+    pinnedKits.add(label);
+    if (isApplicationKit(pin.name, pin.version)) { problems.push({ code: "kit-shadows", message: `${label} takes an application kit's name and version` }); continue; }
     const place = { channelDir, name: pin.name, version: pin.version, ...(pin.level === "series" ? { series: basename(seriesDir) } : {}) };
     const read = readKitRelease(kitDirOf(place), pin);
     if (!read.ok) {

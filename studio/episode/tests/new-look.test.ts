@@ -51,8 +51,14 @@ function newLook(version: string, change?: (schema: any) => void): string {
   return release(version, { version, text: themeText }, change);
 }
 
-/** A schema whose panels are one of two shapes: a picture cued by a word, or a still held for seconds. */
+/**
+ * A schema whose panels are one of two shapes: a picture cued by a word, or a
+ * still held for seconds. A cue is a word, so "__FILL__" breaks the first
+ * branch: the union then fails at the panel holding it, and only the
+ * placeholder excuses that.
+ */
 const withUnion = (schema: any) => {
+  schema.$defs.Panel.properties.cue.pattern = "^[\\p{L}]+$";
   schema.$defs.Held = { type: "object", additionalProperties: false, required: ["assetId", "seconds"], properties: { assetId: { type: "string", minLength: 1 }, seconds: { type: "number", minimum: 0 } } };
   schema.properties.panels.items = { oneOf: [{ $ref: "#/$defs/Panel" }, { $ref: "#/$defs/Held" }] };
 };

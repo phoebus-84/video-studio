@@ -37,7 +37,7 @@ export function checkSeries(input: ValidateInput): CheckResult {
         code: "unknown-validator",
         severity: "error",
         path: "$.template.validator",
-        message: `${ref.id}@${ref.version}: ${available.length > 0 ? `available ${available.join(", ")}` : "no validator with this id"}`,
+        message: `${ref.id}@${ref.version}: ${available.length > 0 ? `available ${available.join(", ")}` : "the application has no validator with this id: a series' own validator lives in its release (ADR-0041, ADR-0044); move the episode onto a release that carries it (pva_upgrade_spec)"}`,
       }],
     };
   }

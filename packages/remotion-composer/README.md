@@ -31,23 +31,12 @@ timeline gets exactly the version it names; `listKits(profileIds)` gives each
 version's description, layer, profiles, examples and a preview per profile
 it is drawn for (`previews/<name>@<version>.<profile>.png`).
 
-The Dentro i versi short's kits (CreativeStudio's `sala8`, drawn for
-`vertical-1080x1920` only; ADR-0039):
-
-| Kit | Layer | What it draws |
-|---|---|---|
-| `museum-hall@1.0.0` | fill | The hall: room image, the screen with its pictures, their camera moves and picture effects, lightning, lights and spill, wind, shatter, pedestal, blackout and its bolt |
-| `room-effect@1.0.0` | fill | One effect in the room, inside the camera: `nebbia-sala`, `vapore`, `note`, `uccelli`, `foglie`, `incanto`, `apparizione` (a cut-out figure), `fantasma` |
-| `verse-plate@1.0.0` | overlay | A verse on its plate, words lit as they are said, strong words bold, the paraphrase under it |
-| `interprete@1.0.0` | fill | The actor: poses, expressions, gaze, blinks, the mouth from the voice's energy, teleport in and out, the bow |
-| `lower-third@1.0.0` | overlay | The title card: kicker, Anton title on one or two lines, growing cyan rule, author |
-| `title-chip@1.0.0` | overlay | The compact title · author chip |
-| `brand-mark@1.0.0` | overlay | The «DENTRO I VERSI» mark |
-
-They share frozen library modules in `src/kits/lib/` — `stage-math`,
-`fonts`, `stage-props`, `hall-fx`, `interprete`, `dentro-i-versi` (the
-palette) — and load Anton, Fraunces and Inter from `@fontsource` 5.3.0
-before the first frame.
+A channel's or a series' own kits live in its library, not here (ADR-0042,
+ADR-0044). They draw with the frozen library modules in `src/kits/lib/` —
+`stage-math`, `stage-props`, `fonts`, `font-metrics`, `look`,
+`lesson-stage`, `interprete` and the rest — imported by version as
+`@av/remotion-composer/kits/lib/<name>/<version>` (ADR-0043). The fonts load
+Anton, Fraunces and Inter from `@fontsource` 5.3.0 before the first frame.
 
 The lesson stage's kits are channel-neutral (ADR-0040): each takes `look` —
 colour roles, font roles by family, shared measures (`lib/look/1.0.0.ts`) —
