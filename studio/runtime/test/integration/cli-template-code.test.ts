@@ -71,4 +71,16 @@ describe("vpr template seal / verify", { timeout: 60_000 }, () => {
     const refused = vpr(root, ["seal", "sample/poetry", "poetry-short", "1.0.0"]);
     expect([refused.status, refused.json.code]).toEqual([2, "release-pinned"]);
   });
+
+  it("keeps an episode as a fixture of its release, once", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "cli-template-code-"));
+    roots.push(root);
+    specEpisode(path.join(root, "sample", "series", "poetry", "episodes", "morning"), { channel: "sample", series: "poetry", episode: "morning" });
+    const kept = vpr(root, ["fixture", "sample/poetry/morning", "morning"]);
+    expect([kept.status, kept.json.release, kept.json.path], kept.stderr).toEqual([0, "poetry-short@1.0.0", "templates/poetry-short/1.0.0/fixtures/morning/input.json"]);
+    expect(JSON.parse(readFileSync(path.join(root, "sample", "series", "poetry", kept.json.path), "utf-8")).spec.kind).toBe("EpisodeSpec");
+    const again = vpr(root, ["fixture", "sample/poetry/morning", "morning"]);
+    expect([again.status, again.json.code]).toEqual([2, "fixture-exists"]);
+    expect(vpr(root, ["fixture", "sample/poetry/morning"]).status).toBe(1);
+  });
 });

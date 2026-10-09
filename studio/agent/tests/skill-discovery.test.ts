@@ -93,3 +93,17 @@ it("discovers composed flat/folder skills and scopes layout-2 series overrides",
     await expect(catalog.load("missing")).rejects.toThrow("Skill not found");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it("discovers the author-series skill: product kind first, a series' code in its channel's library", async () => {
+  const root = await mkdtemp(join(tmpdir(), "author-series-skill-"));
+  try {
+    const builtInPath = fileURLToPath(new URL("../../../skills/studio/", import.meta.url));
+    const catalog = await discoverSkills({ libraryRoot: root, builtInPath });
+    expect(catalog.list({ source: "built-in" }).find(s => s.id === "author-series")?.description).toContain("spec-driven series");
+    const skill = await catalog.load("author-series");
+    for (const step of ["blender-animation", "vpr template seal", "vpr kit seal", "vpr template fixture", "skills/<series>-episode.md", "vpr channel media"]) {
+      expect(skill).toContain(step);
+    }
+    expect(skill).toContain("Never put a channel's or a series' rules, code or names in the application");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

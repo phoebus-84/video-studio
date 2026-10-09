@@ -44,3 +44,8 @@ The operator's rule (2026-10-09): the application holds generic code and capabil
 - **A series format is library data plus library code.** The application runs it without knowing it, and it is versioned in its channel's repository.
 - **The application runs code from the library**, in its own process. It is a local, single-user system; isolation from the user's own code is avg-qr4.8's OS question, not this one's.
 - **The registry stays.** It holds the starter compilers and what phase 4 has not moved yet.
+
+## Amendment (avg-d1x, phase 5)
+
+A release's fixtures come from real episodes: `vpr template fixture` keeps an episode's compile input in its release. A pinned release's goldens still never change, but `verify --update` may add the golden of a new fixture: evidence grows, it is never rewritten. Without this, a series' first release, pinned by its first episode, could never hold that episode as a test.
+

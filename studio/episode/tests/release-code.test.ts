@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { checkEpisode, compileEpisode, loadEpisode } from "../src/series-compile.js";
-import { sealTemplateCode, TemplateCodeError, verifyTemplateCode } from "../src/template-code.js";
+import { captureFixture, sealTemplateCode, TemplateCodeError, verifyTemplateCode } from "../src/template-code.js";
 import { editSpec, releaseCodeEpisode, specEpisode } from "../src/testing.js";
 
 /**
@@ -177,18 +177,32 @@ describe("verifying", () => {
     return releaseDir;
   }
 
-  it("asks for the goldens, writes them when told to before any episode pins it, then passes", async () => {
+  it("asks for the goldens, writes them when told to, then passes", async () => {
     const releaseDir = await withFixture();
     const first = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0");
     expect(first.ok).toBe(false);
     expect(first.fixtures).toEqual([{ name: "morning", ok: false, message: "no expected-timeline.json: verify --update writes it" }]);
 
-    expect((await refusal(() => verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true }))).code).toBe("release-pinned");
-    rmSync(join(dir(), "episode-spec.json"));
     await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
     const verified = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0");
     expect(verified).toEqual({ ok: true, problems: [], warnings: [], fixtures: [{ name: "morning", ok: true }] });
     expect(readFileSync(join(releaseDir, "fixtures", "morning", "expected-timeline.json"), "utf-8")).toContain('"kind": "EditTimeline"');
+  });
+
+  it("writes a pinned release's new golden, never rewrites one it has", async () => {
+    const releaseDir = await withFixture();
+    // The episode pins the release: a fixture without a golden still gets one, as evidence added.
+    const added = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
+    expect(added.fixtures).toEqual([{ name: "morning", ok: true, message: "golden written" }]);
+    const golden = join(releaseDir, "fixtures", "morning", "expected-timeline.json");
+    writeFileSync(golden, "{}\n");
+    const kept = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
+    expect(kept.fixtures).toEqual([{ name: "morning", ok: false, message: "compiles differently from its expected-timeline.json, which a pinned release never rewrites" }]);
+    expect(readFileSync(golden, "utf-8")).toBe("{}\n");
+    // Unpinned, the golden is rewritten.
+    rmSync(join(dir(), "episode-spec.json"));
+    expect((await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true })).fixtures[0]!.ok).toBe(true);
+    expect(readFileSync(golden, "utf-8")).toContain('"kind": "EditTimeline"');
   });
 
   it("warns of a source changed after sealing, and finds a changed bundle and a golden that no longer matches", async () => {
@@ -228,6 +242,34 @@ describe("verifying", () => {
     const dry = await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true, dryRun: true });
     expect(dry.fixtures).toEqual([{ name: "morning", ok: true, message: "golden would be written" }]);
     expect(existsSync(join(releaseDir, "fixtures", "morning", "expected-timeline.json"))).toBe(false);
+  });
+});
+
+describe("captureFixture", () => {
+  it("keeps an episode's compile input as a fixture of its release, which verify then holds to its golden", async () => {
+    const { releaseDir } = await releaseCodeEpisode(dir(), REF);
+    const captured = captureFixture(dir(), { ...opts(), name: "morning" });
+    expect(captured).toEqual({ release: "poetry-short@1.0.0", path: "templates/poetry-short/1.0.0/fixtures/morning/input.json" });
+    const text = readFileSync(join(releaseDir, "fixtures", "morning", "input.json"), "utf-8");
+    const input = JSON.parse(text);
+    expect(Object.keys(input).sort()).toEqual(["assets", "inputs", "narration", "spec", "template", "timings"]);
+    // Nothing of this machine: the fixture travels with the channel's repository.
+    expect(text).not.toContain(root);
+    await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0", { update: true });
+    expect((await verifyTemplateCode(seriesDir(), "poetry-short", "1.0.0")).fixtures).toEqual([{ name: "morning", ok: true }]);
+  });
+
+  it("writes into another release of the same template when told to, and refuses what it cannot keep", async () => {
+    const { releaseDir } = await releaseCodeEpisode(dir(), REF);
+    cpSync(releaseDir, join(seriesDir(), "templates", "poetry-short", "1.1.0"), { recursive: true });
+    expect(captureFixture(dir(), { ...opts(), name: "morning", to: "1.1.0" }).path).toBe("templates/poetry-short/1.1.0/fixtures/morning/input.json");
+    const code = (call: () => unknown) => { try { call(); } catch (e) { if (e instanceof TemplateCodeError) return e.code; throw e; } return "ok"; };
+    expect(code(() => captureFixture(dir(), { ...opts(), name: "morning", to: "1.1.0" }))).toBe("fixture-exists");
+    expect(code(() => captureFixture(dir(), { ...opts(), name: "Bad Name" }))).toBe("bad-fixture");
+    expect(code(() => captureFixture(dir(), { ...opts(), name: "other", to: "9.9.9" }))).toBe("missing-template");
+    rmSync(join(dir(), "artifacts", "narration", "takes.json"));
+    expect(code(() => captureFixture(dir(), { ...opts(), name: "other" }))).toBe("episode-not-loading");
+    expect(existsSync(join(releaseDir, "fixtures", "other"))).toBe(false);
   });
 });
 
