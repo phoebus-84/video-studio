@@ -141,7 +141,11 @@ async function build(releaseDir: string, role: Role): Promise<string> {
  * kit's React, Remotion and zod: the application's own); `jsx` compiles TSX
  * for React's automatic runtime.
  */
-export async function bundleSource(root: string, entry: string, options: { platform: "node" | "neutral"; external?: string[]; jsx?: boolean }): Promise<string> {
+export async function bundleSource(
+  root: string,
+  entry: string,
+  options: { platform: "node" | "neutral"; external?: string[]; jsx?: boolean; forbidden?: { prefix: string; message: string }[] },
+): Promise<string> {
   const releaseDir = root;
   const external = options.external ?? [];
   const require = createRequire(import.meta.url);
@@ -166,6 +170,8 @@ export async function bundleSource(root: string, entry: string, options: { platf
         if (args.kind === "entry-point") return name("release", join(releaseDir, entry));
         if (args.path.startsWith("node:") || builtins.has(args.path) || builtins.has(args.path.split("/")[0]!)) return { path: args.path, external: true };
         if (external.some((e) => args.path === e || args.path.startsWith(`${e}/`))) return { path: args.path, external: true };
+        const refused = options.forbidden?.find((f) => args.path === f.prefix || args.path.startsWith(`${f.prefix}/`));
+        if (refused) return { errors: [{ text: `${args.path}: ${refused.message}` }] };
         const importer = real.get(`${args.namespace}:${args.importer}`);
         if (!importer) return { errors: [{ text: `cannot place ${args.path}: its importer ${args.importer} is unknown` }] };
         if (args.path.startsWith(".")) {

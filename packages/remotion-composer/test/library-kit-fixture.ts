@@ -28,10 +28,34 @@ export async function buildLibraryKit(dir: string, options: {name?: string; vers
   await writeFile(path.join(dir, 'index.tsx'), options.source ?? SAMPLE_KIT(options.name ?? 'sample-card', options.version ?? '1.0.0'));
   const out = await esbuild.build({
     entryPoints: [path.join(dir, 'index.tsx')], bundle: true, format: 'cjs', platform: 'browser', write: false, jsx: 'automatic',
-    external: ['react', 'react/jsx-runtime', 'remotion', 'zod'], logLevel: 'silent',
+    external: ['react', 'react/jsx-runtime', 'remotion', 'zod', '@av/remotion-composer'], logLevel: 'silent',
   });
   const bytes = Buffer.from(out.outputFiles[0]!.contents);
   const file = path.join(dir, 'kit.cjs');
   await writeFile(file, bytes);
   return {file, bytes, hash: `sha256:${createHash('sha256').update(bytes).digest('hex')}`};
 }
+
+/**
+ * A kit that draws with the composer's toolbox (avg-d1x phase 3): its fonts,
+ * loaded once for every kit, and its stage maths, imported from the package
+ * by version and left external, so it shares the application's copy.
+ */
+export const TOOLBOX_KIT = `
+import React from "react";
+import { AbsoluteFill, useCurrentFrame } from "remotion";
+import { z } from "zod";
+import { useLookFonts } from "@av/remotion-composer/kits/lib/fonts/1.1.0";
+import { ease } from "@av/remotion-composer/kits/lib/stage-math/1.0.0";
+export const kit = {
+  name: "toolbox-card", version: "1.0.0",
+  description: "A colour card with a title in the look's sans, drawn with the composer's toolbox",
+  props: z.object({ text: z.string(), color: z.string().regex(/^#[0-9a-f]{6}$/) }).strict(),
+  component: ({ props }: { props: { text: string; color: string } }) => {
+    const fonts = useLookFonts({ display: "Anton", serif: "Fraunces", sans: "Inter" });
+    const frame = useCurrentFrame();
+    return <AbsoluteFill style={{ background: props.color, color: "#ffffff", fontFamily: fonts.sans, fontSize: 96, opacity: 0.5 + 0.5 * ease(frame / 30) }}>{props.text}</AbsoluteFill>;
+  },
+  examples: [],
+};
+`;

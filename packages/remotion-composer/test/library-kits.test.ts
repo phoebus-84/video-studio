@@ -13,7 +13,7 @@ import {isApplicationKit, resolveKit} from '../src/kits/index.js';
 import {libraryEntry, loadLibraryKit, readLibraryKits} from '../src/library-kits.js';
 import {validateTimeline} from '../src/validate.js';
 import {clone, fixture} from './helpers.js';
-import {buildLibraryKit} from './library-kit-fixture.js';
+import {buildLibraryKit, TOOLBOX_KIT} from './library-kit-fixture.js';
 
 /** The explainer's frame, drawn with one item of the sample kit. */
 function cardTimeline(props: Record<string, unknown> = {text: 'from the library', color: '#1b2a4a'}) {
@@ -81,6 +81,15 @@ describe('library kits', () => {
     // Webpack reads the bytes that were hashed, not the library's file again.
     assert.deepEqual(await readFile(path.join(path.dirname(entry), 'kit-0.cjs')), built.bytes);
     assert.equal(resolveKit('sample-card', '1.0.0'), undefined);
+  });
+
+  it('loads a kit that draws with the composer’s toolbox, imported by version and left to the application', async () => {
+    const built = await buildLibraryKit(path.join(dir, 'toolbox'), {source: TOOLBOX_KIT});
+    const text = built.bytes.toString('utf-8');
+    assert.match(text, /require\("@av\/remotion-composer\/kits\/lib\/fonts\/1\.1\.0"\)/, 'the toolbox stays external: one copy, the application’s');
+    const loaded = loadLibraryKit(built.file, built.bytes, built.hash);
+    assert.ok(loaded.ok, !loaded.ok ? loaded.message : '');
+    assert.equal(loaded.kit.name, 'toolbox-card');
   });
 
   it('refuses a kit handed twice', async () => {

@@ -231,6 +231,35 @@ describe("verifying", () => {
   });
 });
 
+it("inlines the toolbox a release's compiler imports by version (avg-d1x, phase 3)", async () => {
+  const { releaseDir } = await releaseCodeEpisode(dir(), REF);
+  cpSync(join(releaseDir, "compiler", "index.ts"), join(releaseDir, "compiler", "base.ts"));
+  writeFileSync(join(releaseDir, "compiler", "index.ts"), [
+    'import type { SeriesCompiler } from "@studio/series";',
+    'import { kitsOf } from "@studio/series/toolbox/1.0.0";',
+    'import { compiler as base } from "./base";',
+    'export const compiler: SeriesCompiler = { ...base, compile(input) {',
+    '  const result = base.compile(input);',
+    '  if (result.ok) result.warnings.push(`draws with ${kitsOf(result.timeline).join(", ")}`);',
+    '  return result;',
+    '} };',
+  ].join("\n"));
+  // Sealing refuses a pinned release: the spec steps aside, then pins the new seal.
+  const spec = join(dir(), "episode-spec.json");
+  const aside = readFileSync(spec);
+  rmSync(spec);
+  const sealed = await sealTemplateCode(seriesDir(), "poetry-short", "1.0.0");
+  writeFileSync(spec, aside);
+  editSpec(dir(), (doc) => { doc.template.hash = sealed.hash; });
+
+  const bundle = readFileSync(join(releaseDir, "compiler", "compiler.cjs"), "utf-8");
+  expect(bundle).not.toContain('require("@studio/series');
+  expect(bundle).toContain("function kitsOf(");
+  const compiled = compileEpisode(dir(), opts());
+  expect(compiled.ok, JSON.stringify(!compiled.ok && compiled.problems)).toBe(true);
+  expect(compiled.ok && compiled.warnings).toContainEqual(expect.stringMatching(/^draws with .*@1\.0\.0/));
+});
+
 it("leaves a release without code on the registered compiler", () => {
   specEpisode(dir(), REF);
   const compiled = compileEpisode(dir(), opts());

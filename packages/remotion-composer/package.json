@@ -5,14 +5,18 @@
   "type": "module",
   "description": "Renders a layered, kit-based edit timeline (studio.video/v1alpha2) with Remotion, then normalises loudness with FFmpeg",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "bin": {
     "render-timeline": "./dist/cli.js",
     "layout-sheet": "./dist/sheet-cli.js"
   },
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./kits/lib/*": {
+      "types": "./dist/kits/lib/*.d.ts",
+      "default": "./dist/kits/lib/*.js"
+    }
   },
   "scripts": {
     "build": "tsc",

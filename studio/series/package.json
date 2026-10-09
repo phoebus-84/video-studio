@@ -12,7 +12,11 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./fixtures/*": "./fixtures/*"
+    "./fixtures/*": "./fixtures/*",
+    "./toolbox/*": {
+      "types": "./dist/toolbox/*.d.ts",
+      "default": "./dist/toolbox/*.js"
+    }
   },
   "files": [
     "dist/",

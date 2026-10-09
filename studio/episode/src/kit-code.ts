@@ -19,8 +19,15 @@ import { bundleSource, TemplateCodeError } from "./template-code.js";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-/** What a kit draws with that is the application's, never its own copy. */
-export const KIT_EXTERNALS = ["react", "react-dom", "remotion", "@remotion", "zod"];
+/**
+ * What a kit draws with that is the application's, never its own copy:
+ * React, Remotion, zod, and the composer's toolbox — its frozen libraries,
+ * imported by version (`@av/remotion-composer/kits/lib/<name>/<version>`),
+ * so a library kit loads the fonts and measures the text as every kit does.
+ */
+export const KIT_EXTERNALS = ["react", "react-dom", "remotion", "@remotion", "zod", "@av/remotion-composer/kits/lib"];
+/** The rest of the composer is the renderer itself: a kit never draws with it. */
+const KIT_FORBIDDEN = [{ prefix: "@av/remotion-composer", message: "a kit imports only its kit libraries, @av/remotion-composer/kits/lib/<name>/<version>, never the composer itself" }];
 
 const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const fail = (code: ConstructorParameters<typeof TemplateCodeError>[0], message: string): never => {
@@ -85,7 +92,7 @@ export async function sealKit(place: KitPlace, options: { dryRun?: boolean } = {
   const pinned = kitPinnedBy(place);
   if (pinned.length > 0) fail("release-pinned", `${label} is pinned by ${pinned.join(", ")}: a pinned kit never changes; make a new version`);
   if (!existsSync(join(dir, KIT_SOURCE))) fail("no-code", `${label} has no ${KIT_SOURCE}`);
-  const text = await bundleSource(dir, KIT_SOURCE, { platform: "neutral", external: KIT_EXTERNALS, jsx: true });
+  const text = await bundleSource(dir, KIT_SOURCE, { platform: "neutral", external: KIT_EXTERNALS, forbidden: KIT_FORBIDDEN, jsx: true });
   const bundleHash = sha256(text);
   const loaded = loadLibraryKit(join(dir, KIT_BUNDLE), Buffer.from(text), bundleHash);
   if (!loaded.ok) fail("bad-kit", `${KIT_SOURCE}: ${loaded.message}`);
@@ -118,7 +125,7 @@ export async function verifyKit(place: KitPlace): Promise<KitVerification> {
   const examples: KitVerification["examples"] = [];
   const read = readKitRelease(dir, place);
   if (!read.ok) return { ok: false, problems: [{ code: read.code, message: read.message }], warnings, examples };
-  if (existsSync(join(dir, KIT_SOURCE)) && sha256(await bundleSource(dir, KIT_SOURCE, { platform: "neutral", external: KIT_EXTERNALS, jsx: true })) !== read.release.bundle.hash) {
+  if (existsSync(join(dir, KIT_SOURCE)) && sha256(await bundleSource(dir, KIT_SOURCE, { platform: "neutral", external: KIT_EXTERNALS, forbidden: KIT_FORBIDDEN, jsx: true })) !== read.release.bundle.hash) {
     warnings.push({ code: "rebuild-differs", message: `${KIT_SOURCE} no longer builds to ${KIT_BUNDLE}: its source, or the studio code it inlines, changed since sealing; the sealed bundle is what runs` });
   }
   for (const example of read.kit.examples ?? []) {
