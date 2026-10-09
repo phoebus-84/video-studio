@@ -140,7 +140,8 @@ describe("fetch", () => {
   });
 
   it("refuses a name that could leave the folder, a provider that is not there, and a file larger than allowed", async () => {
-    const { fake } = web({ "https://files.example/big.mp4": [{ body: Buffer.alloc(2048), type: "video/mp4" }] });
+    const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(2036)]);
+    const { fake } = web({ "https://files.example/big.mp4": [{ body: mp4, type: "video/mp4" }] });
     const archive = createArchive({ userAgent: "ua", registry: [provider(item({ mediaType: "video", fileUrl: "https://files.example/big.mp4", height: 1080 }))], fetch: fake, sleep: noSleep });
     await expect(archive.fetch("fake", "1", { dir, name: "../x" })).rejects.toThrow(/not a file name/);
     await expect(archive.fetch("nowhere", "1", { dir, name: "x" })).rejects.toMatchObject({ code: "provider-unknown" });
@@ -154,5 +155,51 @@ describe("fetch", () => {
     expect(extensionOf("audio/x-flac", "https://x/a")).toBe(".flac");
     expect(extensionOf("", "https://x/a/b.WEBM?x=1")).toBe(".webm");
     expect(tooSmall({ mediaType: "video", height: 480 }, DEFAULT_QUALITY)).toContain("720p");
+  });
+});
+
+describe("review fixes", () => {
+  /** A body sent in chunks, `gapMs` apart. */
+  function slow(chunks: Buffer[], gapMs: number) {
+    return new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (const c of chunks) {
+          await new Promise((r) => setTimeout(r, gapMs));
+          controller.enqueue(new Uint8Array(c));
+        }
+        controller.close();
+      },
+    });
+  }
+
+  it("lets a long download run while bytes keep coming, and stops one that stalls", async () => {
+    const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(100)]);
+    const chunks = [mp4, Buffer.alloc(100), Buffer.alloc(100), Buffer.alloc(100), Buffer.alloc(100)];
+    const steady = (async () => new Response(slow(chunks, 40), { headers: { "content-type": "video/mp4" } })) as unknown as typeof fetch;
+    const http = createHttp({ userAgent: "ua", fetch: steady, sleep: noSleep, minIntervalMs: 0, timeoutMs: 100 });
+    const got = await http.download("https://files.example/v.mp4", join(dir, "v.mp4"));
+    expect(got.bytes).toBe(mp4.length + 400);
+    const stalled = (async () => new Response(slow([mp4, Buffer.alloc(10)], 250), { headers: { "content-type": "video/mp4" } })) as unknown as typeof fetch;
+    const stuck = createHttp({ userAgent: "ua", fetch: stalled, sleep: noSleep, minIntervalMs: 0, timeoutMs: 100 });
+    await expect(stuck.download("https://files.example/s.mp4", join(dir, "s.mp4"))).rejects.toThrow();
+    expect(readdirSync(dir).filter((f) => f.startsWith("s.mp4"))).toEqual([]);
+  });
+
+  it("checks a video or a sound on its bytes: a page is never saved as one", async () => {
+    const { fake } = web({ "https://files.example/v": [{ body: "<html>log in</html>", type: "text/html" }], "https://files.example/b": [{ body: Buffer.alloc(64), type: "application/octet-stream" }] });
+    for (const url of ["https://files.example/v", "https://files.example/b"]) {
+      const archive = createArchive({ userAgent: "ua", registry: [provider(item({ mediaType: "video", fileUrl: url, height: 1080 }))], fetch: fake, sleep: noSleep });
+      await expect(archive.fetch("fake", "1", { dir, name: "v" })).rejects.toMatchObject({ code: "wrong-type" });
+    }
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it("checks a video's height with a probe when the provider did not say it", async () => {
+    const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(100)]);
+    const { fake } = web({ "https://files.example/v.mp4": [{ body: mp4, type: "video/mp4" }] });
+    const archive = createArchive({ userAgent: "ua", registry: [provider(item({ mediaType: "video", fileUrl: "https://files.example/v.mp4" }))], fetch: fake, sleep: noSleep });
+    await expect(archive.fetch("fake", "1", { dir, name: "v", probe: async () => ({ width: 640, height: 360 }) })).rejects.toMatchObject({ code: "too-small" });
+    const ok = await archive.fetch("fake", "1", { dir, name: "v", probe: async () => ({ width: 1920, height: 1080, durationSeconds: 12 }) });
+    expect([ok.width, ok.height, ok.durationSeconds]).toEqual([1920, 1080, 12]);
   });
 });

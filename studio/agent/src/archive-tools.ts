@@ -27,19 +27,41 @@ export interface ArchiveSettings {
   quality: Quality;
 }
 
-/** The channel's `archiveMedia`, the series' over it; the defaults where neither says. */
+const KINDS = /^(public-domain|CC0|CC-BY(-NC)?(-SA|-ND)?|provider:[a-z0-9-]+)$/;
+
+/**
+ * The channel's `archiveMedia`, the series' over it; the defaults where
+ * neither says. Settings it cannot follow are an error, never a silent
+ * fallback to a looser policy.
+ */
 export function archiveSettings(libraryRoot: string, channel: string, series?: string): ArchiveSettings {
   const read = (dir: string): Record<string, unknown> => {
     const file = join(dir, "settings.yaml");
     if (!existsSync(file)) return {};
-    const doc = parseYaml(readFileSync(file, "utf-8")) as { archiveMedia?: Record<string, unknown> } | null;
-    return doc?.archiveMedia && typeof doc.archiveMedia === "object" ? doc.archiveMedia : {};
+    // A file of only comments is no settings.
+    const text = readFileSync(file, "utf-8");
+    if (text.split("\n").every((line) => /^\s*(#.*)?$/.test(line))) return {};
+    const doc = parseYaml(text, { filename: file }) as { archiveMedia?: unknown } | null | undefined;
+    const section = doc?.archiveMedia;
+    if (section === undefined || section === null) return {};
+    if (typeof section !== "object" || Array.isArray(section)) throw new Error(`${file}: archiveMedia must be a mapping`);
+    return section as Record<string, unknown>;
   };
   const merged = { ...read(channelPath(libraryRoot, channel)), ...(series ? read(seriesPath(libraryRoot, channel, series)) : {}) };
-  const licences = Array.isArray(merged.licences) && merged.licences.every((l) => typeof l === "string") ? (merged.licences as string[]) : DEFAULT_POLICY.allow;
+  let licences = DEFAULT_POLICY.allow;
+  if (merged.licences !== undefined) {
+    if (!Array.isArray(merged.licences) || merged.licences.length === 0 || !merged.licences.every((l) => typeof l === "string" && KINDS.test(l))) {
+      throw new Error(`archiveMedia.licences must be a list of licence kinds (public-domain, CC0, CC-BY, CC-BY-SA, CC-BY-NC…), not ${JSON.stringify(merged.licences)}`);
+    }
+    licences = merged.licences as string[];
+  }
   const quality: Quality = {};
-  if (typeof merged.minImageLongSide === "number") quality.minImageLongSide = merged.minImageLongSide;
-  if (typeof merged.minVideoHeight === "number") quality.minVideoHeight = merged.minVideoHeight;
+  for (const key of ["minImageLongSide", "minVideoHeight"] as const) {
+    const value = merged[key];
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 1) throw new Error(`archiveMedia.${key} must be a positive number of pixels, not ${JSON.stringify(value)}`);
+    quality[key] = value;
+  }
   return { policy: { allow: licences }, quality };
 }
 

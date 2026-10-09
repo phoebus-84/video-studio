@@ -10,7 +10,8 @@ import type { ArchiveItem, Http, Provider } from "../types.js";
 const API = "https://openaccess-api.clevelandart.org/api/artworks";
 
 function toItem(work: any): ArchiveItem | null {
-  const image = work?.images?.print ?? work?.images?.web ?? work?.images?.full;
+  // print, else the full TIFF: the web image is too small for video.
+  const image = work?.images?.print ?? work?.images?.full ?? work?.images?.web;
   if (!image?.url) return null;
   const statement = `share_license_status: ${work.share_license_status ?? "none"}`;
   const licence = work.share_license_status === "CC0" ? licenceFromName("CC0", statement)! : unknownLicence(statement);

@@ -22,7 +22,11 @@ export function validateMediaProvenance(doc) {
   return validate.errors.map((e) => ({ code: "schema", path: `$${e.instancePath.replace(/\//g, ".")}`, message: e.message }));
 }
 
-const escape = (text) => String(text).replace(/([\\`*_[\]|])/g, "\\$1");
+/** One line of Markdown: whitespace collapsed, HTML and Markdown characters escaped. */
+const escape = (text) => String(text)
+  .replace(/\s+/g, " ").trim()
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/([\\`*_[\]|])/g, "\\$1");
 
 /**
  * ATTRIBUTIONS.md for these records, sorted by file: every credit, where it

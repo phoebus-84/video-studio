@@ -6,7 +6,8 @@ import { closeSync, openSync, readSync } from "node:fs";
 export function imageSize(file: string): { width: number; height: number; mime: string } | null {
   const fd = openSync(file, "r");
   try {
-    const head = Buffer.alloc(256 * 1024);
+    // Metadata (ICC profiles, XMP, previews) can come before a JPEG's frame header.
+    const head = Buffer.alloc(4 * 1024 * 1024);
     const n = readSync(fd, head, 0, head.length, 0);
     return sizeOf(head.subarray(0, n));
   } finally {

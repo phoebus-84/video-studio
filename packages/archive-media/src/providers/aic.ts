@@ -36,7 +36,7 @@ function toItem(work: any, iiifBase: string, userAgent: string): ArchiveItem | n
     institution,
     landingUrl: `https://www.artic.edu/artworks/${work.id}`,
     fileUrl: `${iiifBase}/${work.image_id}/full/${width},/0/default.jpg`,
-    previewUrl: `${iiifBase}/${work.image_id}/full/843,/0/default.jpg`,
+    // No preview URL: AIC's IIIF answers only requests naming themselves (AIC-User-Agent), which a viewer does not.
     mime: "image/jpeg",
     width,
     ...(height ? { height } : {}),

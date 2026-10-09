@@ -45,7 +45,11 @@ lightning, a recorded thunderstorm.
    - It says how many it left out. `onlyAllowed: false` shows them with the
      reason.
 2. **Choose by eye and by fit.** Open the `preview`, and read the title,
-   creator and date. Reject:
+   creator and date.
+   - The Art Institute of Chicago gives no preview. Its images answer only
+     requests naming themselves, so open its landing page instead.
+   - Sounds have no playable preview. Choose them by title, length and
+     source, and say to the person that you could not listen to them. Reject:
    - a detail when you need the whole work;
    - a reproduction with a frame or a museum label, unless wanted;
    - a watermark;
@@ -60,8 +64,13 @@ lightning, a recorded thunderstorm.
      - `<name>.source.json` beside it;
      - the provider's response, kept as evidence;
      - `ATTRIBUTIONS.md`, made again.
-   - **What it refuses:** an unknown or disallowed licence, a file smaller
-     than asked, and a name already used, unless `replace: true`.
+   - **What it refuses:**
+     - an unknown or disallowed licence;
+     - a file smaller than asked, or one that is not the medium it claims to
+       be;
+     - a Freesound sound through Openverse, which offers only a preview;
+     - a name already used, unless `replace: true`. Even then, never a file
+       that did not come from the archive.
 4. **Credit.**
    - `ATTRIBUTIONS.md` is the list of credits for the video description and
      the delivery. Never write it by hand.

@@ -19,6 +19,8 @@ function toItem(result: any, mediaType: MediaType): ArchiveItem | null {
   const creator = result.creator || undefined;
   const institution = result.source || result.provider || undefined;
   const duration = Number(result.duration);
+  // Openverse hands Freesound's preview MP3, not the original sound: not ours to call an original.
+  const previewOnly = String(result.source ?? result.provider ?? "").toLowerCase() === "freesound";
   return {
     provider: "openverse",
     id: `${ENDPOINT[mediaType]}/${result.id}`,
@@ -27,7 +29,7 @@ function toItem(result: any, mediaType: MediaType): ArchiveItem | null {
     ...(creator ? { creator } : {}),
     ...(institution ? { institution } : {}),
     landingUrl: result.foreign_landing_url || `https://openverse.org/${mediaType}/${result.id}`,
-    fileUrl: result.url,
+    fileUrl: previewOnly ? "" : result.url,
     ...(result.thumbnail ? { previewUrl: result.thumbnail } : {}),
     ...(result.width ? { width: result.width, height: result.height } : {}),
     ...(result.filesize ? { bytes: result.filesize } : {}),
@@ -37,6 +39,9 @@ function toItem(result: any, mediaType: MediaType): ArchiveItem | null {
     raw: result,
   };
 }
+
+/** Why fetch would have no file: Openverse's Freesound sounds are previews. */
+export const PREVIEW_ONLY_NOTE = "Openverse gives only Freesound's preview: fetch the original from Freesound itself";
 
 export const openverse: Provider = {
   id: "openverse",
@@ -54,6 +59,7 @@ export const openverse: Provider = {
     const body = await http.json(`${API}/${match[1]}/${match[2]}/`, { cache: false });
     const item = toItem(body, match[1] === "images" ? "image" : "audio");
     if (!item) throw new ArchiveError("no-file", `Openverse's ${id} has no file`);
+    if (!item.fileUrl) throw new ArchiveError("no-file", `Openverse's ${id}: ${PREVIEW_ONLY_NOTE}`);
     return item;
   },
 };

@@ -71,6 +71,25 @@ describe("fetchIntoWorkspace", () => {
   });
 });
 
+describe("review fixes", () => {
+  it("never replaces a file that did not come from the archive", async () => {
+    const archive = archiveWith(ITEM, png(3000, 2000));
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(join(ws, "assets/images"), { recursive: true });
+    writeFileSync(join(ws, "assets/images/hero.png"), "my own picture");
+    await expect(fetchIntoWorkspace(ws, { archive, provider: "museum", id: "24645", name: "hero", replace: true })).rejects.toThrow(/not from the archive/);
+    expect(readFileSync(join(ws, "assets/images/hero.png"), "utf-8")).toBe("my own picture");
+  });
+
+  it("keeps a credit on one line whatever the title holds", async () => {
+    const odd = { ...ITEM, title: "Storm\n<script>x</script> & sea", attribution: "«Storm\n<script>x</script> & sea». Public domain" };
+    await fetchIntoWorkspace(ws, { archive: archiveWith(odd, png(3000, 2000)), provider: "museum", id: "24645", name: "odd" });
+    const text = readFileSync(join(ws, "ATTRIBUTIONS.md"), "utf-8");
+    expect(text).toContain("«Storm &lt;script&gt;x&lt;/script&gt; &amp; sea». Public domain");
+    expect(text.split("\n").filter((l) => l.startsWith("- **")).length).toBe(1);
+  });
+});
+
 describe("checkProvenance", () => {
   it("finds a file replaced by hand, evidence gone, a record broken, and stale attributions", async () => {
     const got = await fetchIntoWorkspace(ws, { archive: archiveWith(ITEM, png(3000, 2000)), provider: "museum", id: "24645", name: "wave" });

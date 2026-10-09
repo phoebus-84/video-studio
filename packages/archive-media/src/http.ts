@@ -61,20 +61,28 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
     await mine;
   }
 
-  async function request(url: string, headers: Record<string, string> = {}): Promise<Response> {
+  /**
+   * The response, its headers within `timeoutMs`. Its body is the caller's to
+   * read; `abort` stops it (a download aborts when bytes stop coming).
+   */
+  async function request(url: string, headers: Record<string, string> = {}): Promise<{ response: Response; abort: () => void }> {
     for (let attempt = 0; ; attempt++) {
       await turn(url);
       let response: Response;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new Error(`no answer from ${new URL(url).host} within ${timeoutMs} ms`)), timeoutMs);
       try {
-        response = await doFetch(url, { headers: { "User-Agent": options.userAgent, ...headers }, signal: AbortSignal.timeout(timeoutMs), redirect: "follow" });
+        response = await doFetch(url, { headers: { "User-Agent": options.userAgent, ...headers }, signal: controller.signal, redirect: "follow" });
       } catch (error) {
+        clearTimeout(timer);
         if (attempt < MAX_RETRIES) {
           await sleep(1000 * 2 ** attempt);
           continue;
         }
         throw new ArchiveError("http", `${new URL(url).host}: ${(error as Error).message}`);
       }
-      if (response.ok) return response;
+      clearTimeout(timer);
+      if (response.ok) return { response, abort: () => controller.abort(new Error(`${new URL(url).host} stopped sending for ${timeoutMs} ms`)) };
       if (RETRY.has(response.status) && attempt < MAX_RETRIES) {
         const wait = retryAfter(response.headers.get("retry-after"), now()) ?? 1000 * 2 ** attempt;
         if (wait <= MAX_WAIT_MS) {
@@ -100,8 +108,9 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
           if (now() - hit.at < ttl) return hit.body;
         } catch { /* a miss */ }
       }
-      const response = await request(url, { Accept: "application/json", ...headers });
-      const text = await response.text();
+      const { response, abort } = await request(url, { Accept: "application/json", ...headers });
+      const timer = setTimeout(abort, timeoutMs);
+      const text = await response.text().finally(() => clearTimeout(timer));
       let body: unknown;
       try {
         body = JSON.parse(text);
@@ -115,7 +124,7 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
       return body;
     },
     async download(url, file, { headers, maxBytes = 2 * 1024 ** 3 } = {}) {
-      const response = await request(url, headers);
+      const { response, abort } = await request(url, headers);
       const declared = Number(response.headers.get("content-length"));
       if (Number.isFinite(declared) && declared > maxBytes) {
         await response.body?.cancel().catch(() => undefined);
@@ -123,10 +132,19 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
       }
       if (!response.body) throw new ArchiveError("bad-response", `${url} sent no body`);
       mkdirSync(dirname(file), { recursive: true });
-      const partial = `${file}.part`;
+      const partial = `${file}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.part`;
       const hash = createHash("sha256");
       let bytes = 0;
-      const counted = Readable.fromWeb(response.body as never).map((chunk: Buffer) => {
+      // No limit on the whole download, only on silence: a long video arrives as long as bytes keep coming.
+      const source = Readable.fromWeb(response.body as never);
+      const stall = () => {
+        abort();
+        source.destroy(new ArchiveError("http", `${new URL(url).host} stopped sending for ${timeoutMs} ms`));
+      };
+      let idle = setTimeout(stall, timeoutMs);
+      const counted = source.map((chunk: Buffer) => {
+        clearTimeout(idle);
+        idle = setTimeout(stall, timeoutMs);
         bytes += chunk.length;
         if (bytes > maxBytes) throw new ArchiveError("too-large", `${url} is more than ${maxBytes} bytes`);
         hash.update(chunk);
@@ -137,7 +155,10 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
         renameSync(partial, file);
       } catch (error) {
         rmSync(partial, { force: true });
-        throw error;
+        if (error instanceof ArchiveError) throw error;
+        throw new ArchiveError("http", `${new URL(url).host}: ${(error as Error).message}`);
+      } finally {
+        clearTimeout(idle);
       }
       return { sha256: `sha256:${hash.digest("hex")}`, bytes, mime: (response.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase() };
     },

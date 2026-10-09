@@ -43,10 +43,20 @@ None of these needs a key.
 - **Verifying it.** Each item keeps its landing page, its licence URL and the
   provider's own response (`raw`), so the licence can be checked by anyone.
 
+## Not an original
+
+Openverse hands Freesound's sounds only as a preview MP3: such an item has no
+file to fetch. The Art Institute of Chicago's IIIF answers only requests that
+carry `AIC-User-Agent`, so its items have no preview URL a viewer could open.
+
 ## Quality
 
 The default minimums are 1600 px on an image's long side and 720p for a
-video. An image's size is read again from the bytes that arrived. Openverse
+video.
+- **Pictures:** the size is read again from the bytes that arrived.
+- **Videos and sounds:** they are recognized by their first bytes, so a login
+  page is never saved as one. Their height and length come from the
+  caller's `probe` (the studio uses ffprobe). Openverse
 serves Flickr images at about 1024 px, below that bar.
 
 ## Being a good client
@@ -56,6 +66,8 @@ serves Flickr images at about 1024 px, below that bar.
 - **Pacing:** requests to one host are spaced 250 ms apart.
 - **Retries:** 429, 502, 503 and 504 are retried, honouring `Retry-After` up
   to 30 s.
+- **Timeouts:** headers must arrive within 30 s. A download may last as long
+  as bytes keep coming, and stops after 30 s of silence.
 - **Cache:** JSON answers can be cached on disk for a day (`cacheDir`).
 
 ## Tests

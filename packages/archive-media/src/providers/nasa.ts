@@ -15,9 +15,8 @@ const GUIDELINES = "https://www.nasa.gov/nasa-brand-center/images-and-media/";
 function toItem(entry: any, fileUrl = ""): ArchiveItem | null {
   const data = entry?.data?.[0];
   if (!data?.nasa_id || !["image", "video", "audio"].includes(data.media_type)) return null;
-  const text = [data.description, data.title, data.photographer, data.secondary_creator, ...(data.keywords ?? [])].filter(Boolean).join(" ");
-  const thirdParty = /©|copyright|\(c\)\s*\d{4}/i.test(text);
-  const statement = thirdParty ? "NASA media guidelines; the item mentions a copyright" : "NASA media guidelines: not copyrighted in the US unless noted";
+  const thirdParty = thirdPartyOf(data);
+  const statement = thirdParty ? `NASA media guidelines; ${thirdParty}` : "NASA media guidelines: not copyrighted in the US unless noted";
   const licence = thirdParty ? unknownLicence(statement) : { id: "public-domain", basis: "NASA media guidelines", url: GUIDELINES, attributionRequired: false, statement };
   const title = String(data.title ?? data.nasa_id);
   const creator = data.photographer || data.secondary_creator || data.center || undefined;
@@ -39,6 +38,28 @@ function toItem(entry: any, fileUrl = ""): ArchiveItem | null {
     attribution: creditLine({ title, creator, date, institution: "NASA", licence: licence.id === "public-domain" ? "Public domain (NASA)" : "Licence unknown", licenceUrl: licence.url }),
     raw: entry,
   };
+}
+
+/** NASA's centres and its own credits: anything else credited is a third party's. */
+const NASA_CENTRES = /^(ARC|AFRC|DFRC|GRC|GSFC|HQ|JPL|JSC|KSC|LARC|LaRC|MSFC|SSC|WSTF|WFF|NASA)$/i;
+const NASA_CREDIT = /^(NASA|JPL|Caltech|NASA[\s/-].*|JPL[\s/-].*|.*\bNASA\b.*)$/i;
+const OTHER_AGENCY = /\b(ESA|JAXA|Roscosmos|CSA|ISRO|CNES|DLR|ASI|Getty|AP Photo|Associated Press|Reuters|AFP|SpaceX|Blue Origin|Boeing|Lockheed|Northrop|Hubble Heritage|STScI)\b/i;
+
+/**
+ * Why an item is not NASA's own, or null when it is: free only when its
+ * centre is NASA's and every credit names NASA (or JPL), never another agency.
+ */
+export function thirdPartyOf(data: Record<string, any>): string | null {
+  const text = [data.description, data.title, ...(data.keywords ?? [])].filter(Boolean).join(" ");
+  if (/©|copyright|\(c\)\s*\d{4}/i.test(text)) return "the item mentions a copyright";
+  if (data.center && !NASA_CENTRES.test(String(data.center).trim())) return `its centre "${data.center}" is not NASA's`;
+  for (const credit of [data.photographer, data.secondary_creator].filter(Boolean).map(String)) {
+    if (OTHER_AGENCY.test(credit) || !NASA_CREDIT.test(credit.trim())) return `credited to ${credit}`;
+  }
+  const credited = /(?:image|photo|video)?\s*credits?:\s*([^.\n]+)/i.exec(text);
+  if (credited && (OTHER_AGENCY.test(credited[1]!) || !/\b(NASA|JPL)\b/i.test(credited[1]!))) return `credited to ${credited[1]!.trim()}`;
+  if (OTHER_AGENCY.test(text)) return "another agency or company is named";
+  return null;
 }
 
 /** The original among an asset's files: ~orig, else the largest named rendition. */

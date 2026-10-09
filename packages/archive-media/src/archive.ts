@@ -8,6 +8,7 @@ import { renameSync, rmSync } from "node:fs";
 import { ArchiveError } from "./errors.js";
 import { createHttp, type ArchiveHttp, type HttpOptions } from "./http.js";
 import { imageSize } from "./image-size.js";
+import { sniffMedia } from "./media-sniff.js";
 import { DEFAULT_POLICY, licenceAllowed, type LicencePolicy } from "./licence.js";
 import { PROVIDERS } from "./providers/index.js";
 import type { ArchiveItem, MediaType, Provider } from "./types.js";
@@ -52,6 +53,7 @@ export interface FetchResult {
   mime: string;
   width?: number;
   height?: number;
+  durationSeconds?: number;
   /** When the record was read and the file downloaded. */
   retrievedAt: string;
 }
@@ -142,7 +144,11 @@ export function createArchive(options: ArchiveOptions) {
      * its licence allowed by the policy, its size at least the quality, its
      * bytes the medium it claims. Nothing is left behind on a refusal.
      */
-    async fetch(providerId: string, id: string, opts: { dir: string; name: string; policy?: LicencePolicy; quality?: Quality; maxBytes?: number }): Promise<FetchResult> {
+    async fetch(providerId: string, id: string, opts: {
+      dir: string; name: string; policy?: LicencePolicy; quality?: Quality; maxBytes?: number;
+      /** Measures a downloaded video or sound (ffprobe, say): this package reads only pictures itself. */
+      probe?: (file: string) => Promise<{ width?: number; height?: number; durationSeconds?: number } | null>;
+    }): Promise<FetchResult> {
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(opts.name)) throw new ArchiveError("bad-response", `"${opts.name}" is not a file name (letters, digits, . _ -)`);
       const s = provider(providerId);
       const item = await s.provider.item(id, http, s.key);
@@ -153,7 +159,7 @@ export function createArchive(options: ArchiveOptions) {
       if (small) throw new ArchiveError("too-small", `${s.provider.label} ${id}: ${small}`);
       if (!item.fileUrl) throw new ArchiveError("no-file", `${s.provider.label} ${id} names no file`);
       const retrievedAt = new Date().toISOString();
-      const staging = join(opts.dir, `.${opts.name}.download`);
+      const staging = join(opts.dir, `.${opts.name}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.download`);
       const got = await http.download(item.fileUrl, staging, { ...(item.fileHeaders ? { headers: item.fileHeaders } : {}), ...(opts.maxBytes ? { maxBytes: opts.maxBytes } : {}) });
       const refuse = (code: "wrong-type" | "too-small", message: string): never => {
         rmSync(staging, { force: true });
@@ -162,6 +168,7 @@ export function createArchive(options: ArchiveOptions) {
       let mime = got.mime;
       let width: number | undefined;
       let height: number | undefined;
+      let durationSeconds = item.durationSeconds;
       if (item.mediaType === "image") {
         const size = imageSize(staging);
         if (!size) refuse("wrong-type", `the file is not a picture this package can read (sent as ${got.mime || "nothing"})`);
@@ -169,14 +176,25 @@ export function createArchive(options: ArchiveOptions) {
         const after = tooSmall({ mediaType: "image", width, height }, quality);
         if (after) refuse("too-small", `the file is ${after}`);
       } else {
-        const kind = kindOfMime(mime) ?? kindOfMime(item.mime ?? "");
-        if (kind && kind !== item.mediaType) refuse("wrong-type", `the file was sent as ${mime}, not ${item.mediaType}`);
+        // The bytes say what it is, not the header: a 200 with a login page is not a video.
+        const sniffed = sniffMedia(staging);
+        if (!sniffed) refuse("wrong-type", `the file is not a ${item.mediaType} this package recognizes (sent as ${got.mime || "nothing"})`);
+        if (sniffed!.mediaType !== item.mediaType) refuse("wrong-type", `the file is ${sniffed!.mime}, not ${item.mediaType}`);
+        mime = kindOfMime(got.mime) === item.mediaType ? got.mime : sniffed!.mime;
         width = item.width;
         height = item.height;
+        const probed = opts.probe ? await opts.probe(staging).catch(() => null) : null;
+        if (probed) {
+          width = probed.width ?? width;
+          height = probed.height ?? height;
+          durationSeconds = probed.durationSeconds ?? durationSeconds;
+        }
+        const after = tooSmall({ mediaType: item.mediaType, ...(width ? { width } : {}), ...(height ? { height } : {}) }, quality);
+        if (after) refuse("too-small", `the file is ${after}`);
       }
       const file = join(opts.dir, `${opts.name}${extensionOf(mime, item.fileUrl)}`);
       renameSync(staging, file);
-      return { item, file, sha256: got.sha256, bytes: got.bytes, mime, ...(width ? { width } : {}), ...(height ? { height } : {}), retrievedAt };
+      return { item, file, sha256: got.sha256, bytes: got.bytes, mime, ...(width ? { width } : {}), ...(height ? { height } : {}), ...(durationSeconds ? { durationSeconds } : {}), retrievedAt };
     },
   };
 }

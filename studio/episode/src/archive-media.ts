@@ -5,6 +5,7 @@
 // artifacts/provenance/<sha256>.json as evidence; ATTRIBUTIONS.md is made
 // again from every record. checkProvenance says when any of it no longer holds.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -51,14 +52,23 @@ export async function fetchIntoWorkspace(workspaceDir: string, options: FetchInt
   if (taken.length > 0 && !options.replace) {
     throw new ArchiveError("bad-response", `${folder} already has ${taken.join(", ")}: choose another name, or replace it`);
   }
+  // Only what the archive brought may be replaced: a file without its record is someone's own.
+  const previous = existsSync(join(dir, `${options.name}${PROVENANCE_SUFFIX}`))
+    ? (JSON.parse(readFileSync(join(dir, `${options.name}${PROVENANCE_SUFFIX}`), "utf-8")) as { file?: { path?: string } })
+    : null;
+  const own = taken.filter((f) => previous?.file?.path !== `${folder}/${f}`);
+  if (own.length > 0) {
+    throw new ArchiveError("bad-response", `${folder}/${own.join(", ")} is not from the archive (no record names it): it is never replaced; choose another name`);
+  }
   // Fetched aside, then put in place: a refusal leaves the workspace as it was.
-  const staging = join(dir, `.fetch-${options.name}`);
+  const staging = join(dir, `.fetch-${options.name}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`);
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
   try {
     const got = await options.archive.fetch(options.provider, options.id, {
       dir: staging, name: options.name,
       ...(options.policy ? { policy: options.policy } : {}), ...(options.quality ? { quality: options.quality } : {}), ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
+      probe: async (file) => probeMedia(file),
     });
     const fileName = got.file.slice(staging.length + 1);
     const evidenceText = `${JSON.stringify(got.item.raw, null, 2)}\n`;
@@ -70,7 +80,7 @@ export async function fetchIntoWorkspace(workspaceDir: string, options: FetchInt
       file: {
         path: `${folder}/${fileName}`, hash: got.sha256, bytes: got.bytes, mime: got.mime,
         ...(got.width ? { width: got.width } : {}), ...(got.height ? { height: got.height } : {}),
-        ...(got.item.durationSeconds ? { durationSeconds: got.item.durationSeconds } : {}),
+        ...(got.durationSeconds ? { durationSeconds: got.durationSeconds } : {}),
       },
       provider: { id: got.item.provider, label: options.archive.providers().find((p) => p.id === got.item.provider)?.label ?? got.item.provider },
       item: {
@@ -92,14 +102,33 @@ export async function fetchIntoWorkspace(workspaceDir: string, options: FetchInt
     if (problems.length > 0) throw new ArchiveError("bad-response", `the provider's record does not make a valid provenance: ${problems.map((p) => `${p.path} ${p.message}`).join("; ")}`);
     mkdirSync(join(workspaceDir, EVIDENCE_DIR), { recursive: true });
     writeFileSync(join(workspaceDir, evidencePath), evidenceText);
-    for (const old of taken) rmSync(join(dir, old), { force: true });
+    // The new file and its record first; the old one goes only once they are in place.
     renameSync(got.file, join(dir, fileName));
     const recordPath = `${folder}/${options.name}${PROVENANCE_SUFFIX}`;
-    writeFileSync(join(workspaceDir, recordPath), `${JSON.stringify(record, null, 2)}\n`);
+    writeFileSync(join(workspaceDir, `${recordPath}.tmp`), `${JSON.stringify(record, null, 2)}\n`);
+    renameSync(join(workspaceDir, `${recordPath}.tmp`), join(workspaceDir, recordPath));
+    for (const old of taken) if (old !== fileName) rmSync(join(dir, old), { force: true });
     writeAttributions(workspaceDir);
     return { record, path: record.file.path, recordPath };
   } finally {
     rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+/** A video's or a sound's size and length, by ffprobe; null when it cannot say. */
+export function probeMedia(file: string): { width?: number; height?: number; durationSeconds?: number } | null {
+  const run = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", file], { encoding: "utf-8", timeout: 30_000 });
+  if (run.status !== 0 || !run.stdout) return null;
+  try {
+    const info = JSON.parse(run.stdout) as { streams?: { codec_type?: string; width?: number; height?: number }[]; format?: { duration?: string } };
+    const video = info.streams?.find((s) => s.codec_type === "video" && s.width && s.height);
+    const duration = Number(info.format?.duration);
+    return {
+      ...(video ? { width: video.width!, height: video.height! } : {}),
+      ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: duration } : {}),
+    };
+  } catch {
+    return null;
   }
 }
 

@@ -132,3 +132,41 @@ describe("Internet Archive", () => {
     expect(item.fileUrl).toBe("https://archive.org/download/Flickr-9430591870/Toronto_Hail-9430591870.mp4");
   });
 });
+
+describe("review fixes", () => {
+  it("NASA: free only when credited to NASA; another agency's or a photographer's credit is unknown", async () => {
+    const entry = (data: Record<string, unknown>) => ({ collection: { items: [{ data: [{ nasa_id: "x", media_type: "image", title: "T", center: "JSC", ...data }], links: [] }] } });
+    const one = async (data: Record<string, unknown>) => (await nasa.search("q", opts(), { userAgent: "t", json: async () => entry(data) }))[0]!.licence.id;
+    expect(await one({ secondary_creator: "NASA/JPL-Caltech" })).toBe("public-domain");
+    expect(await one({})).toBe("public-domain");
+    expect(await one({ secondary_creator: "ESA/Hubble" })).toBe("unknown");
+    expect(await one({ photographer: "Getty Images" })).toBe("unknown");
+    expect(await one({ description: "A launch. Image credit: SpaceX" })).toBe("unknown");
+    expect(await one({ center: "Not a centre" })).toBe("unknown");
+  });
+
+  it("Cleveland: the full TIFF when there is no print, never the small web image", async () => {
+    const http: Http = { userAgent: "t", json: async () => ({ data: { id: 1, title: "T", share_license_status: "CC0", url: "https://clevelandart.org/art/1", images: { web: { url: "https://x/1_web.jpg", width: "800", height: "600" }, full: { url: "https://x/1_full.tif", width: "4000", height: "3000" } } } }) };
+    expect((await cleveland.item("1", http)).fileUrl).toBe("https://x/1_full.tif");
+  });
+
+  it("Internet Archive: two different licences on one item make it unknown", async () => {
+    const http: Http = { userAgent: "t", json: async () => ({ metadata: { identifier: "a", mediatype: "audio", title: "A", licenseurl: ["https://creativecommons.org/licenses/by/4.0/", "https://creativecommons.org/licenses/by-nc/4.0/"] }, files: [{ name: "a.flac", source: "original", size: "10" }] }) };
+    expect((await internetArchive.item("a", http)).licence.id).toBe("unknown");
+  });
+});
+
+describe("review fixes: what is not an original", () => {
+  it("Openverse: a Freesound sound is only a preview, so it has no file to fetch", async () => {
+    const result = { id: "8bee509f-b566-4b57-9251-9adf44e55728", title: "Thunder", url: "https://cdn.freesound.org/previews/1/1-hq.mp3", license: "cc0", source: "freesound", foreign_landing_url: "https://freesound.org/s/1" };
+    const http: Http = { userAgent: "t", json: async (url) => (url.includes("/audio/?") ? { results: [result] } : result) };
+    const [found] = await openverse.search("thunder", opts("audio"), http);
+    expect(found!.fileUrl).toBe("");
+    await expect(openverse.item("audio/8bee509f-b566-4b57-9251-9adf44e55728", http)).rejects.toThrow(/only Freesound's preview/);
+  });
+
+  it("AIC offers no preview URL a viewer cannot open", async () => {
+    const http = recorded([[/artworks\/search/, "aic-search.json"]]);
+    expect((await aic.search("storm", opts(), http))[0]!.previewUrl).toBeUndefined();
+  });
+});

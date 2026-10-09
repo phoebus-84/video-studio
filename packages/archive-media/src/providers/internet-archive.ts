@@ -25,9 +25,10 @@ export function originalFile(files: any[], mediaType: MediaType): any | undefine
 }
 
 function base(doc: any, mediaType: MediaType): Omit<ArchiveItem, "fileUrl" | "raw"> {
-  const licenceUrl = first(doc.licenseurl);
-  const statement = licenceUrl ? `licenseurl: ${licenceUrl}` : "no licenseurl";
-  const licence = licenceFromUrl(licenceUrl, statement) ?? unknownLicence(statement);
+  const urls: string[] = [...new Set<string>((Array.isArray(doc.licenseurl) ? doc.licenseurl : [doc.licenseurl]).filter(Boolean).map(String))];
+  const statement = urls.length ? `licenseurl: ${urls.join(", ")}` : "no licenseurl";
+  // Two different licences on one item: which one holds is not verifiable.
+  const licence = (urls.length === 1 ? licenceFromUrl(urls[0], statement) : null) ?? unknownLicence(statement);
   const title = String(first(doc.title) ?? doc.identifier);
   const creator = first(doc.creator) || undefined;
   const date = first(doc.date) ? String(first(doc.date)).slice(0, 10) : undefined;
