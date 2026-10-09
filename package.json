@@ -9,6 +9,7 @@
   },
   "packageManager": "bun@1.2.0",
   "workspaces": [
+    "packages/archive-media",
     "packages/blender",
     "packages/codex-image",
     "packages/elevenlabs",

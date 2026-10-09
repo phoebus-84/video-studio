@@ -60,6 +60,7 @@
   "dependencies": {
     "@av/blender": "workspace:*",
     "@av/terminal-recorder": "workspace:*",
+    "@av/archive-media": "workspace:*",
     "@av/remotion-composer": "workspace:*",
     "@av/video-composer": "workspace:*",
     "js-yaml": "^5.2.2",
