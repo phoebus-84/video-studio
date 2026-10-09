@@ -9,7 +9,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {clone, fixture} from './helpers.js';
-import {buildLibraryKit} from './library-kit-fixture.js';
+import {buildLibraryKit, TOOLBOX_KIT} from './library-kit-fixture.js';
 
 const enabled = process.env.REMOTION_E2E === '1';
 
@@ -36,6 +36,25 @@ describe('a library kit in a real layout sheet', {skip: !enabled && 'set REMOTIO
       const [r, g, b] = [1, 3, 5].map((i) => parseInt(centre(result.frames[0]!.path).slice(i, i + 2), 16));
       // JPEG: near the card's colour, not exactly it.
       assert.ok(Math.abs(r! - 0x1b) < 8 && Math.abs(g! - 0x2a) < 8 && Math.abs(b! - 0x4a) < 8, `centre is ${centre(result.frames[0]!.path)}`);
+    } finally {
+      await rm(root, {recursive: true, force: true});
+    }
+  });
+
+  it('draws a kit that uses the composer’s toolbox — its fonts and stage maths — from the application’s one copy', async () => {
+    const {renderLayoutSheet} = await import('../dist/index.js');
+    const root = await mkdtemp(path.join(tmpdir(), 'library-kit-toolbox-'));
+    try {
+      const built = await buildLibraryKit(path.join(root, 'channel', 'kits', 'toolbox-card', '1.0.0'), {source: TOOLBOX_KIT});
+      const doc = clone(fixture('explainer.json'));
+      doc.durationInFrames = 30;
+      doc.assets = {};
+      doc.tracks = [{id: 'main', type: 'visual', z: 0, items: [{id: 'card', from: 0, duration: 30, kit: {name: 'toolbox-card', version: '1.0.0'}, props: {text: 'Inter', color: '#1b2a4a'}}]}];
+      const kits = [{name: 'toolbox-card', version: '1.0.0', file: built.file, hash: built.hash}];
+      // The fonts hold the frame until they load: a render that finishes drew with them.
+      const result = await renderLayoutSheet({timeline: doc, assetRoot: root, picks: [{frame: 29, label: 'end'}], outDir: path.join(root, 'sheet'), kits});
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(centre(result.frames[0]!.path).slice(i, i + 2), 16));
+      assert.ok(Math.abs(r! - 0x1b) < 10 && Math.abs(g! - 0x2a) < 10 && Math.abs(b! - 0x4a) < 10, `centre is ${centre(result.frames[0]!.path)}`);
     } finally {
       await rm(root, {recursive: true, force: true});
     }

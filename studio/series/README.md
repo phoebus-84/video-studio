@@ -70,6 +70,17 @@ for the compile input) with the exact findings — code, severity, path, in
 order. `test/validators-golden.test.ts` holds every version to them; a new
 rule is a new version, never a changed case.
 
+## The toolbox
+
+`@studio/series/toolbox/<version>` (ADR-0043): what a series' compiler or
+validator, in the application or in a series release (ADR-0041), imports
+rather than copies. Each version is frozen; a release's seal inlines the one
+it imports.
+
+| Version | Holds |
+|---|---|
+| `toolbox/1.0.0` | `frames(seconds, fps)`, `round3`, `tokens`, `normalizeWord(word, locale = "it-IT")`, `noise(i)`, `isObject`, `lanes(items)`, `findWord(words, word, {n, locale, prefix})`, `problem(code, path, message)`, `kitsOf(timeline)` |
+
 ## Adding a compiler or a version
 
 - One file per version: `src/compilers/<id>/<version>.ts`, exporting

@@ -489,6 +489,14 @@ node studio/runtime/dist/src/cli.js kit seal my-channel my-card 1.0.0 --library 
 node studio/runtime/dist/src/cli.js kit verify my-channel/my-series my-hall 1.0.0 --library "$PWD/library"
 ```
 
+**The toolbox** (ADR-0043) is what library code imports and never copies:
+- a compiler or validator imports `@studio/series/toolbox/1.0.0`. It holds
+  `frames`, `round3`, `tokens`, `normalizeWord`, `noise`, `lanes`,
+  `findWord`, `kitsOf` and more; `template seal` inlines it;
+- a kit imports the composer's libraries by version,
+  `@av/remotion-composer/kits/lib/fonts/1.1.0`, `…/stage-math/1.0.0` and the
+  rest; `kit seal` leaves them to the studio, so the fonts load once.
+
 **`vpr select`** puts an earlier candidate back in place. The gateway offers
 the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`
 lists the candidates.

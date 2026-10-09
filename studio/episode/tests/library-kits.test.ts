@@ -182,6 +182,24 @@ it("a series' own kit works the same, from the series' kits/", async () => {
   expect(compiled.ok, JSON.stringify(!compiled.ok && compiled.problems)).toBe(true);
 });
 
+it("leaves the composer's toolbox to the application when it seals a kit that uses it", async () => {
+  const kitDir = join(channelDir(), "kits", "toolbox-card", "1.0.0");
+  mkdirSync(join(kitDir, "kit"), { recursive: true });
+  writeFileSync(join(kitDir, "kit", "index.tsx"), [
+    'import React from "react";',
+    'import { AbsoluteFill } from "remotion";',
+    'import { z } from "zod";',
+    'import { useLookFonts } from "@av/remotion-composer/kits/lib/fonts/1.1.0";',
+    'export const kit = { name: "toolbox-card", version: "1.0.0", description: "a card in the look\'s sans", props: z.object({ text: z.string() }).strict(),',
+    '  component: ({ props }: { props: { text: string } }) => { const f = useLookFonts({ display: "Anton", serif: "Fraunces", sans: "Inter" }); return <AbsoluteFill style={{ fontFamily: f.sans }}>{props.text}</AbsoluteFill>; },',
+    '  examples: [] };',
+  ].join("\n"));
+  await sealKit({ channelDir: channelDir(), name: "toolbox-card", version: "1.0.0" });
+  const bundle = readFileSync(join(kitDir, "kit.cjs"), "utf-8");
+  expect(bundle).toContain('require("@av/remotion-composer/kits/lib/fonts/1.1.0")');
+  expect(bundle).not.toContain("woff2");
+});
+
 describe("verifying a kit", () => {
   it("passes a sealed kit, warns when its source moved on, and holds its examples to its props", async () => {
     const { kitDir } = await sealedCard();

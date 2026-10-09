@@ -19,8 +19,13 @@ import { bundleSource, TemplateCodeError } from "./template-code.js";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-/** What a kit draws with that is the application's, never its own copy. */
-export const KIT_EXTERNALS = ["react", "react-dom", "remotion", "@remotion", "zod"];
+/**
+ * What a kit draws with that is the application's, never its own copy:
+ * React, Remotion, zod, and the composer's toolbox — its frozen libraries,
+ * imported by version (`@av/remotion-composer/kits/lib/<name>/<version>`),
+ * so a library kit loads the fonts and measures the text as every kit does.
+ */
+export const KIT_EXTERNALS = ["react", "react-dom", "remotion", "@remotion", "zod", "@av/remotion-composer"];
 
 const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const fail = (code: ConstructorParameters<typeof TemplateCodeError>[0], message: string): never => {

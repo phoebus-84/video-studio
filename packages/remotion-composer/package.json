@@ -12,7 +12,11 @@
     "layout-sheet": "./dist/sheet-cli.js"
   },
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./kits/lib/*": {
+      "types": "./dist/kits/lib/*.d.ts",
+      "default": "./dist/kits/lib/*.js"
+    }
   },
   "scripts": {
     "build": "tsc",
