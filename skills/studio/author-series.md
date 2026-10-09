@@ -163,12 +163,18 @@ is listed here:
      - then `vpr kit verify …`.
    - **Pin it.** List it in the manifest's `kits` as
      `{"name", "version", "level": "channel"|"series"}`.
+   - **Order matters.** Seal and verify a kit before a release pins it: a
+     pinned kit is never resealed. To change it, make the next kit version.
 7. **Seal and verify the release.**
    - `vpr template seal <channel>/<series> <id> 1.0.0` builds the bundles,
      pins the kits' hashes and writes the files' hashes.
    - `vpr template verify <channel>/<series> <id> 1.0.0` checks them.
    - Fix the source and seal again until verify passes. Sealing is refused
      once an episode pins the release.
+   - With no fixtures, verify checks the bundles but never runs the
+     compiler. Before the first episode, you may write a small synthetic
+     `fixtures/<name>/input.json` (spec, takes, word timings, assets) to run
+     it; replace it with a real episode in step 9.
 8. **The first episode**, as any episode of the series:
    - `pva_create_episode`;
    - `pva_init_spec` with the exact release, then the `fill-episode-spec`
