@@ -991,12 +991,60 @@ async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
   }
 }
 
-/** `vpr template release`: a new release of a series template, a copy of `--from`, pinned to a sealed theme. */
+/**
+ * `vpr template seal|verify` (avg-d1x): a release's own compiler and
+ * validator, built and checked by @studio/episode, loaded at run time as
+ * `vpr status` loads the studio's reader: that package depends on this one.
+ */
+async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDir: string, id: string, version: string, update: boolean): Promise<number> {
+  type Verified = { ok: boolean; problems: { code: string; message: string }[]; warnings: { code: string; message: string }[]; fixtures: { name: string; ok: boolean; message?: string }[] };
+  const episode = "@studio/episode";
+  let mod: {
+    sealTemplateCode: (s: string, i: string, v: string, o: { dryRun?: boolean }) => Promise<{ hash: string; code: Record<string, { path: string; hash: string }> }>;
+    verifyTemplateCode: (s: string, i: string, v: string, o: { update?: boolean; dryRun?: boolean }) => Promise<Verified>;
+    TemplateCodeError: new (...a: never[]) => Error & { code: string };
+  };
+  try {
+    mod = await import(episode);
+  } catch (error) {
+    emit(ctx, { error: `the studio's episode package could not be loaded: ${error instanceof Error ? error.message : String(error)}` });
+    return EX_RUNTIME;
+  }
+  try {
+    if (sub === "seal") {
+      const sealed = await mod.sealTemplateCode(seriesDir, id, version, { dryRun: ctx.dryRun });
+      const built = Object.entries(sealed.code).map(([role, b]) => `${role} ${b.path}`).join(", ");
+      emit(ctx, { message: `${ctx.dryRun ? "[DRY RUN] " : ""}${id}@${version} ${ctx.dryRun ? "would be sealed" : "sealed"}: ${built}; verify it with vpr template verify`, ...sealed, dryRun: ctx.dryRun });
+      return EX_OK;
+    }
+    const verified = await mod.verifyTemplateCode(seriesDir, id, version, { update, dryRun: ctx.dryRun });
+    const fixtures = verified.fixtures.map((f) => `${f.ok ? "✓" : "✗"} ${f.name}${f.message ? `: ${f.message}` : ""}`).join("; ");
+    const said = `${id}@${version}: ${verified.ok ? "verified" : "NOT verified"}` +
+      `${verified.problems.length ? `; ${verified.problems.map((p) => p.message).join("; ")}` : ""}` +
+      `${fixtures ? `; fixtures: ${fixtures}` : "; no fixtures"}`;
+    emit(ctx, {
+      ...(verified.ok ? { message: said } : { error: said }),
+      ...(verified.warnings.length ? { warning: verified.warnings.map((w) => w.message).join("; ") } : {}),
+      ...verified,
+    });
+    return verified.ok ? EX_OK : EX_RUNTIME;
+  } catch (error) {
+    if (!(error instanceof mod.TemplateCodeError)) throw error;
+    emit(ctx, { error: error.message, code: error.code });
+    return EX_RUNTIME;
+  }
+}
+
+/** `vpr template release|seal|verify`: a new release of a series template (a copy of `--from`, pinned to a sealed theme), or its own code sealed and verified. */
 async function cmdTemplate(ctx: CliContext, args: string[]): Promise<number> {
-  const usage = "Usage: vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] [--library <path>]";
+  const usage = "Usage: vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] [--library <path>] | " +
+    "vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--dry-run]";
   const libraryRoot = libraryFrom(args);
   const [sub, target, id, version] = positionalArgs(args);
   const parts = target?.split("/") ?? [];
+  if ((sub === "seal" || sub === "verify") && libraryRoot && parts.length === 2 && parts.every(isNamePart) && id && version) {
+    return cmdTemplateCode(ctx, sub, seriesPath(libraryRoot, parts[0]!, parts[1]!), id, version, args.includes("--update"));
+  }
   const from = flagValue(args, "--from");
   const themeArg = flagValue(args, "--theme");
   const theme = themeArg?.match(/^([^@]+)@([^@]+)$/);
@@ -1721,7 +1769,7 @@ const COMMANDS: Record<string, CliCommand> = {
   sheet: { name: "sheet", description: "Review an episode's layout sheet: approve it, reject it with a note, or see its review; a spec-driven episode renders only with an approval of its current sheet", usage: "vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode>", examples: ["vpr sheet approve dentro-i-versi/short/san-martino", "vpr sheet reject dentro-i-versi/short/san-martino --note 'the verse bar covers the hand at 0:12'", "vpr sheet status dentro-i-versi/short/san-martino"], run: cmdSheet },
   reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve dentro-i-versi/short/san-martino san-martino-v1 --dry-run", "vpr reference verify dentro-i-versi/short short-room san-martino-v1", "vpr reference withdraw dentro-i-versi/short short-room san-martino-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
   theme: { name: "theme", description: "Seal a theme release: its files and their hashes in theme.json, so a changed room never passes for the released one", usage: "vpr theme seal <channel>/<theme>/<version> [--library <path>]", examples: ["vpr theme seal dentro-i-versi/dentro-i-versi/1.1.0"], run: cmdTheme },
-  template: { name: "template", description: "Release a series template: a copy of an earlier release, optionally pinned to a sealed theme (a new look)", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] [--library <path>]", examples: ["vpr template release dentro-i-versi/long dentro-i-versi-long 1.1.0 --from 1.0.0 --theme dentro-i-versi@1.1.0", "vpr template release dentro-i-versi/long dentro-i-versi-long 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
+  template: { name: "template", description: "Release a series template (a copy of an earlier release, optionally pinned to a sealed theme), seal its own compiler and validator, or verify them against its fixtures", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] | vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--library <path>]", examples: ["vpr template seal sample/poetry poetry-short 1.1.0", "vpr template verify sample/poetry poetry-short 1.1.0", "vpr template release dentro-i-versi/long dentro-i-versi-long 1.1.0 --from 1.0.0 --theme dentro-i-versi@1.1.0", "vpr template release dentro-i-versi/long dentro-i-versi-long 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },

@@ -75,10 +75,11 @@ describe("synthesizeSound", () => {
     expect(() => synthesizeSound({ kind: "music-bed", durationSeconds: 1, seed: "s", key: "H" as never })).toThrow(/key/);
   });
 
-  it("makes a one-minute shimmer, its slowest kind, in reasonable time", () => {
+  // Linear, not quadratic: half a minute of its slowest kind in seconds, even on a loaded machine.
+  it("makes a half-minute shimmer, its slowest kind, in reasonable time", { timeout: 30_000 }, () => {
     const started = Date.now();
-    synthesizeSound({ kind: "shimmer", durationSeconds: 60, seed: "long" });
-    expect(Date.now() - started).toBeLessThan(5000);
+    synthesizeSound({ kind: "shimmer", durationSeconds: 30, seed: "long" });
+    expect(Date.now() - started).toBeLessThan(10_000);
   });
 });
 

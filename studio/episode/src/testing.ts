@@ -5,16 +5,19 @@
 // small placeholder files unless the caller writes real ones.
 
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { signReceipt } from "@studio/contracts/src/receipt.mjs";
 import { buildSheetReview, LAYOUT_SHEET_REPORT, SHEET_REVIEW_PATH } from "@studio/contracts/src/sheet-reviews.mjs";
 import { inventory } from "@studio/contracts/src/source-pins.mjs";
+import { sealTemplateCode } from "./template-code.js";
 
 const require = createRequire(import.meta.url);
 const RELEASE = dirname(require.resolve("@studio/contracts/fixtures/series-template/example/templates/poetry-short/1.0.0/series-template.json"));
 const INPUT = require.resolve("@studio/series/fixtures/poetry-short/1.0.0/input.json");
+/** poetry-short@1.0.0's compiler and validator as a release's own code (avg-d1x). */
+const RELEASE_CODE = dirname(require.resolve("@studio/series/fixtures/release-code/poetry-short/compiler/index.ts"));
 const DIV_INPUT = require.resolve("@studio/series/fixtures/dentro-i-versi-short/1.0.0/input.json");
 /** The long's golden fixture, for each released compiler version. */
 const divLongInput = (version: string) => require.resolve(`@studio/series/fixtures/dentro-i-versi-long/${version}/input.json`);
@@ -194,4 +197,28 @@ export async function divLongEpisode(
     usedBy: ["timeline"], pinnedAt: "2026-10-09T12:00:00.000Z", files,
   }, null, 2)}\n`);
   return { episodeDir, episodeRef };
+}
+
+/**
+ * specEpisode, with its release running its own code (avg-d1x): the
+ * poetry-short compiler and validator copied into the release as source and
+ * sealed, the spec pinned to the sealed release. Returns the release's
+ * directory and its manifest's hash.
+ */
+export async function releaseCodeEpisode(
+  episodeDir: string,
+  episodeRef: { channel: string; series: string; episode: string },
+  options: SpecEpisodeOptions = {},
+): Promise<{ releaseDir: string; hash: string }> {
+  specEpisode(episodeDir, episodeRef, options);
+  const seriesDir = dirname(dirname(episodeDir));
+  const releaseDir = join(seriesDir, "templates", "poetry-short", "1.0.0");
+  cpSync(dirname(RELEASE_CODE), releaseDir, { recursive: true });
+  // Sealing refuses a pinned release: the spec steps aside while it is sealed, then pins the sealed one.
+  const spec = join(episodeDir, "episode-spec.json");
+  renameSync(spec, `${spec}.aside`);
+  const sealed = await sealTemplateCode(seriesDir, "poetry-short", "1.0.0");
+  renameSync(`${spec}.aside`, spec);
+  editSpec(episodeDir, (doc) => { doc.template.hash = sealed.hash; });
+  return { releaseDir, hash: sealed.hash };
 }

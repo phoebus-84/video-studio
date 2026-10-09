@@ -447,6 +447,31 @@ node studio/runtime/dist/src/cli.js template release my-channel/my-series my-tem
   --from 1.0.0 --theme my-theme@1.1.0 --library "$PWD/library"
 ```
 
+**`vpr template seal`** and **`vpr template verify`** handle a series
+release's own code (ADR-0041). A release may hold its compiler and validator
+as source, `compiler/index.ts` and `validator/index.ts`, exporting `compiler`
+and `validator`.
+- **`template seal`** builds each into one self-contained file
+  (`compiler/compiler.cjs`), names it with its hash in `series-template.json`,
+  and rehashes the release's files. Episodes on that release then compile with
+  it, not with the application's registered compiler. It refuses a release an
+  episode pins: make a new one with `template release --from`, change its code,
+  seal it.
+- **`template verify`** checks:
+  - that the bundles are the sealed ones;
+  - that the source still builds to them (a warning only: the studio code it
+    inlines may have changed since, and the sealed bundle is what runs);
+  - that each `fixtures/<name>/input.json` compiles, and passes the
+    validator, to its `expected-timeline.json`.
+
+  `--update` writes the goldens, before any episode pins the release;
+  `--dry-run` writes nothing.
+
+```bash
+node studio/runtime/dist/src/cli.js template seal my-channel/my-series my-template 1.1.0 --library "$PWD/library"
+node studio/runtime/dist/src/cli.js template verify my-channel/my-series my-template 1.1.0 --library "$PWD/library"
+```
+
 **`vpr select`** puts an earlier candidate back in place. The gateway offers
 the same thing as `POST …/stages/:stage/select`, and `GET …/episodes/:episode/takes`
 lists the candidates.

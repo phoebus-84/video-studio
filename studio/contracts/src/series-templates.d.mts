@@ -6,8 +6,11 @@ export declare const SERIES_TEMPLATE_FILES: Readonly<{
   template: "episode-spec.template.json";
   standard: "FORMAT.md";
 }>;
-export interface SeriesComponentRef { id: string; version: string }
-export interface TemplatePin extends SeriesComponentRef { hash: string }
+/** A self-contained CommonJS module the release sealed (avg-d1x), relative to the release. */
+export interface CodeBundle { path: string; hash: string }
+/** With `bundle`, the release's own code; without, the application's registered compiler or validator. */
+export interface SeriesComponentRef { id: string; version: string; bundle?: CodeBundle }
+export interface TemplatePin { id: string; version: string; hash: string }
 export interface SeriesFileRef { path: string; hash: string }
 export interface SeriesEpisodeRef { channel: string; series: string; episode: string }
 /** One layout-sheet instant per matching section (avg-3th.1). */

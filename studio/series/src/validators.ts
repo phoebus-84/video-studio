@@ -4,6 +4,7 @@
 // with.
 
 import type { CheckResult, SeriesValidator, ValidateInput } from "./types.js";
+import { releaseCode } from "./compile.js";
 import { validator as poetryShort100 } from "./validators/poetry-short/1.0.0.js";
 import { validator as dentroIVersiShort100 } from "./validators/dentro-i-versi-short/1.0.0.js";
 import { validator as dentroIVersiLong100 } from "./validators/dentro-i-versi-long/1.0.0.js";
@@ -25,7 +26,11 @@ export function listValidators(): { id: string; version: string; description: st
 export function checkSeries(input: ValidateInput): CheckResult {
   const ref = input.template.validator;
   if (!ref) return { validator: null, findings: [] };
-  const validator = resolveValidator(ref.id, ref.version);
+  const own = releaseCode(input, "validator");
+  if (own && "problem" in own) {
+    return { validator: `${ref.id}@${ref.version}`, findings: [{ ...own.problem, severity: "error" }] };
+  }
+  const validator = own ? own.code : resolveValidator(ref.id, ref.version);
   if (!validator) {
     const available = listValidators().filter((v) => v.id === ref.id).map((v) => `${v.id}@${v.version}`);
     return {

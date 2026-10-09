@@ -19,6 +19,7 @@ import { SERIES_TEMPLATE_FILES, validateEpisodeSpec, validateTemplateBundle } fr
 import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
 import { THEME_FILE, themeReleasePath, validateChannelTheme, type ChannelTheme } from "@studio/contracts/src/channel-themes.mjs";
 import { PINS_DIR, sourceDir, validateSourcePin } from "@studio/contracts/src/source-pins.mjs";
+import { releaseCodeOf } from "./release-code.js";
 
 export const NARRATION_TAKES_PATH = "artifacts/narration/takes.json";
 /** What the loader offers from assets/: every file in each folder, as <prefix>-<name>. */
@@ -195,7 +196,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     const real = realpathSync(file);
     const root = realpathSync(within);
     if (real !== root && !real.startsWith(root + sep)) {
-      const where = within === episodeDir ? "the episode" : within === seriesDir ? "the series" : "its theme release";
+      const where = within === episodeDir ? "the episode" : within === seriesDir ? "the series" : "its release";
       stop("path-escape", key, `${key} leads outside ${where} (${real})`);
     }
     if (!statSync(real).isFile()) stop("not-a-file", key, `${key} is not a file`);
@@ -245,6 +246,20 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   const specProblems = validateEpisodeSpec(spec, bundle);
   if (specProblems.length > 0) throw new Stop(at(EPISODE_SPEC_PATH, specProblems));
   const template = JSON.parse(bundle.manifest);
+
+  // ── The release's own code (avg-d1x): its sealed compiler and validator ──
+  const code: NonNullable<CompileInput["code"]> = {};
+  for (const role of ["compiler", "validator"] as const) {
+    const ref = template[role] as { id: string; version: string; bundle?: { path: string; hash: string } } | undefined;
+    if (!ref?.bundle) continue;
+    const key = `${releaseKey}/${ref.bundle.path}`;
+    const file = join(releaseDir, ref.bundle.path);
+    const bytes = read(file, releaseDir, () => stop("missing-code", key, `${key} is missing: the release names it, so it was sealed with it (vpr template seal)`));
+    if (sha256(bytes) !== ref.bundle.hash) stop("code-mismatch", key, `${key} is not the code the release sealed (${ref.bundle.hash}): a release never changes, make a new one`);
+    const loaded = releaseCodeOf(role, file, bytes, ref.bundle.hash, ref);
+    if (!loaded.ok) return stop("bad-code", key, `${key}: ${loaded.message}`);
+    (code as Record<string, unknown>)[role] = loaded.code;
+  }
 
   // ── Narration takes and their timing ──────────────────────────────────────
   const takesBytes = read(join(episodeDir, NARRATION_TAKES_PATH), episodeDir,
@@ -428,7 +443,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
   }
 
-  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}), ...(Object.keys(sources).length > 0 ? { sources } : {}) }, releaseKey, warnings };
+  return { ok: true, input: { spec, template, narration, timings, assets, inputs, ...(theme ? { theme } : {}), ...(Object.keys(sources).length > 0 ? { sources } : {}), ...(Object.keys(code).length > 0 ? { code } : {}) }, releaseKey, warnings };
 }
 
 const IN_TIMELINE = /^\$\.(tracks|profile|durationInFrames|resolution|assets|sections)\b/;
