@@ -464,13 +464,24 @@ and `validator`.
   - that each `fixtures/<name>/input.json` compiles, and passes the
     validator, to its `expected-timeline.json`.
 
-  `--update` writes the goldens, before any episode pins the release;
-  `--dry-run` writes nothing.
+  `--update` writes the goldens; once an episode pins the release, only the
+  goldens it lacks, never rewriting one. `--dry-run` writes nothing.
+- **`template fixture`** keeps a real episode's compile input (spec, takes,
+  timings, assets, named relative to the episode) as
+  `fixtures/<name>/input.json` of its release, or of another release of the
+  same template with `--to <version>`; `verify --update` then writes its
+  golden.
 
 ```bash
 node studio/runtime/dist/src/cli.js template seal my-channel/my-series my-template 1.1.0 --library "$PWD/library"
 node studio/runtime/dist/src/cli.js template verify my-channel/my-series my-template 1.1.0 --library "$PWD/library"
+node studio/runtime/dist/src/cli.js template fixture my-channel/my-series/ep001 ep001 --library "$PWD/library"
 ```
+
+**Writing a new series** is Pi's `author-series` skill. It decides first
+whether the product is a spec-driven series at all, then writes, seals and
+verifies everything the series needs in its channel's library, ending with a
+series-local skill for its episodes.
 
 **`vpr kit seal`** and **`vpr kit verify`** handle a kit a channel or a
 series carries (ADR-0042). The kit lives in `library/<channel>/kits/<name>/<version>/`

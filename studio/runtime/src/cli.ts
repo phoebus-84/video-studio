@@ -1096,12 +1096,13 @@ async function cmdKit(ctx: CliContext, args: string[]): Promise<number> {
   }
 }
 
-async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDir: string, id: string, version: string, update: boolean): Promise<number> {
+async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify" | "fixture", seriesDir: string, id: string, version: string, update: boolean, fixture?: { episodeRef: { channel: string; series: string; episode: string }; to?: string }): Promise<number> {
   type Verified = { ok: boolean; problems: { code: string; message: string }[]; warnings: { code: string; message: string }[]; fixtures: { name: string; ok: boolean; message?: string }[] };
   const episode = "@studio/episode";
   let mod: {
     sealTemplateCode: (s: string, i: string, v: string, o: { dryRun?: boolean }) => Promise<{ hash: string; code: Record<string, { path: string; hash: string }> }>;
     verifyTemplateCode: (s: string, i: string, v: string, o: { update?: boolean; dryRun?: boolean }) => Promise<Verified>;
+    captureFixture: (e: string, o: { episodeRef: { channel: string; series: string; episode: string }; name: string; to?: string; dryRun?: boolean }) => { release: string; path: string };
     TemplateCodeError: new (...a: never[]) => Error & { code: string };
   };
   try {
@@ -1111,6 +1112,11 @@ async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDi
     return EX_RUNTIME;
   }
   try {
+    if (sub === "fixture" && fixture) {
+      const captured = mod.captureFixture(join(seriesDir, "episodes", fixture.episodeRef.episode), { episodeRef: fixture.episodeRef, name: id, ...(fixture.to ? { to: fixture.to } : {}), dryRun: ctx.dryRun });
+      emit(ctx, { message: `${ctx.dryRun ? "[DRY RUN] " : ""}${captured.release}: ${fixture.episodeRef.episode} ${ctx.dryRun ? "would be kept" : "kept"} as fixture "${id}" (${captured.path}); write its golden with vpr template verify --update`, ...captured, dryRun: ctx.dryRun });
+      return EX_OK;
+    }
     if (sub === "seal") {
       const sealed = await mod.sealTemplateCode(seriesDir, id, version, { dryRun: ctx.dryRun });
       const built = Object.entries(sealed.code).map(([role, b]) => `${role} ${b.path}`).join(", ");
@@ -1138,12 +1144,19 @@ async function cmdTemplateCode(ctx: CliContext, sub: "seal" | "verify", seriesDi
 /** `vpr template release|seal|verify`: a new release of a series template (a copy of `--from`, pinned to a sealed theme), or its own code sealed and verified. */
 async function cmdTemplate(ctx: CliContext, args: string[]): Promise<number> {
   const usage = "Usage: vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] [--library <path>] | " +
-    "vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--dry-run]";
+    "vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--dry-run] | " +
+    "vpr template fixture <channel>/<series>/<episode> <fixture-name> [--to <version>] [--dry-run]";
   const libraryRoot = libraryFrom(args);
   const [sub, target, id, version] = positionalArgs(args);
   const parts = target?.split("/") ?? [];
   if ((sub === "seal" || sub === "verify") && libraryRoot && parts.length === 2 && parts.every(isNamePart) && id && version) {
     return cmdTemplateCode(ctx, sub, seriesPath(libraryRoot, parts[0]!, parts[1]!), id, version, args.includes("--update"));
+  }
+  // `fixture <channel>/<series>/<episode> <name>`: `id` holds the fixture's name.
+  if (sub === "fixture" && libraryRoot && parts.length === 3 && parts.every(isNamePart) && id && (!args.includes("--to") || flagValue(args, "--to"))) {
+    const [channel, series, episode] = parts as [string, string, string];
+    const to = flagValue(args, "--to");
+    return cmdTemplateCode(ctx, "fixture", seriesPath(libraryRoot, channel, series), id, "", false, { episodeRef: { channel, series, episode }, ...(to ? { to } : {}) });
   }
   const from = flagValue(args, "--from");
   const themeArg = flagValue(args, "--theme");
@@ -1526,6 +1539,8 @@ const VALUE_FLAGS = new Set([
   "--note", "--reason",
   // `template release`'s (avg-dcf.6.10, avg-dcf.6.9).
   "--from", "--theme", "--compiler", "--validator",
+  // `template fixture`'s (avg-d1x, phase 5).
+  "--to",
 ]);
 
 /**
@@ -1871,7 +1886,7 @@ const COMMANDS: Record<string, CliCommand> = {
   theme: { name: "theme", description: "Seal a theme release: its files and their hashes in theme.json, so a changed room never passes for the released one", usage: "vpr theme seal <channel>/<theme>/<version> [--library <path>]", examples: ["vpr theme seal my-channel/my-theme/1.1.0"], run: cmdTheme },
   channel: { name: "channel", description: "Make a channel its own git repository (its heavy media named by hash in media.lock.jsonl), update that list, or check this machine's media against it", usage: "vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--prune] [--verify] [--library <path>]", examples: ["vpr channel init my-channel --commit", "vpr channel media my-channel", "vpr channel media my-channel --check", "vpr channel media my-channel --prune"], run: cmdChannel },
   kit: { name: "kit", description: "Seal a kit the channel or a series carries in the library (kit/index.tsx → kit.cjs, kit.json), or verify it", usage: "vpr kit seal <channel>[/<series>] <name> <version> [--dry-run] | vpr kit verify <channel>[/<series>] <name> <version> [--library <path>]", examples: ["vpr kit seal sample sample-card 1.0.0", "vpr kit verify sample/poetry hall 1.0.0"], run: cmdKit },
-  template: { name: "template", description: "Release a series template (a copy of an earlier release, optionally pinned to a sealed theme), seal its own compiler and validator, or verify them against its fixtures", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] | vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] [--library <path>]", examples: ["vpr template seal sample/poetry poetry-short 1.1.0", "vpr template verify sample/poetry poetry-short 1.1.0", "vpr template release my-channel/my-series my-template 1.1.0 --from 1.0.0 --theme my-theme@1.1.0", "vpr template release my-channel/my-series my-template 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
+  template: { name: "template", description: "Release a series template (a copy of an earlier release, optionally pinned to a sealed theme), seal its own compiler and validator, verify them against its fixtures, or keep an episode as a fixture", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] | vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] | vpr template fixture <channel>/<series>/<episode> <fixture-name> [--to <version>] [--library <path>]", examples: ["vpr template fixture my-channel/my-series/ep001 ep001","vpr template seal sample/poetry poetry-short 1.1.0", "vpr template verify sample/poetry poetry-short 1.1.0", "vpr template release my-channel/my-series my-template 1.1.0 --from 1.0.0 --theme my-theme@1.1.0", "vpr template release my-channel/my-series my-template 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
   select: { name: "select", description: "Make an earlier candidate a stage's take; an operator's selection locks it", usage: "vpr select <channel>/<series>/<episode> <stage-id> <attempt> [--expect <attempt|none>] [--json] [--dry-run]", examples: ["vpr select my-channel/my-series/ep001 illustrations 2 --expect 3"], run: cmdSelect },
   doctor: { name: "doctor", description: "Validate workspace against canonical tree", usage: "vpr doctor --library <path> [--channel X] [--series Y] [--episode Z] [--json]", examples: ["vpr doctor --library /tmp/library", "vpr doctor --library . --channel my-channel --series season-1 --json"], run: cmdDoctor },

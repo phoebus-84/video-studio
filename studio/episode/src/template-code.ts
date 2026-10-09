@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { builtinModules, createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -21,6 +21,7 @@ import { SERIES_TEMPLATE_MANIFEST } from "@studio/contracts/src/layout.mjs";
 import { SERIES_TEMPLATE_FILES, validateSeriesTemplate, validateTemplateBundle } from "@studio/contracts/src/series-templates.mjs";
 import { releaseCodeOf } from "./release-code.js";
 import { kitDirOf, pinnedKitHashes, readKitRelease } from "./kit-code.js";
+import { loadEpisode } from "./series-compile.js";
 import { isApplicationKit } from "@av/remotion-composer";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -31,7 +32,9 @@ type Role = (typeof ROLES)[number];
 export type TemplateCodeCode =
   | "missing-template" | "bad-template" | "release-pinned" | "build-failed" | "bad-code" | "no-code" | "no-esbuild"
   // A kit's (avg-d1x, phase 2).
-  | "missing-kit" | "bad-kit" | "kit-shadows";
+  | "missing-kit" | "bad-kit" | "kit-shadows"
+  // Capturing an episode as a fixture (avg-d1x, phase 5).
+  | "bad-fixture" | "fixture-exists" | "episode-not-loading";
 
 export class TemplateCodeError extends Error {
   constructor(readonly code: TemplateCodeCode, message: string) {
@@ -295,16 +298,14 @@ export interface CodeVerification {
 /**
  * Is the release's code the sealed code, does its source still build to it,
  * and do its fixtures (fixtures/<name>/input.json) compile to their golden
- * timelines (expected-timeline.json)? `update` writes the goldens instead,
- * refused once an episode pins the release.
+ * timelines (expected-timeline.json)? `update` writes the goldens instead;
+ * once an episode pins the release, only the goldens it lacks: a pinned
+ * release's evidence grows, never changes.
  */
 export async function verifyTemplateCode(seriesDir: string, id: string, version: string, options: { update?: boolean; dryRun?: boolean } = {}): Promise<CodeVerification> {
   const releaseDir = releaseDirOf(seriesDir, id, version);
   const label = `${id}@${version}`;
-  if (options.update && !options.dryRun) {
-    const pinned = pinnedBy(seriesDir, id, version);
-    if (pinned.length > 0) fail("release-pinned", `${label} is pinned by ${pinned.join(", ")}: its goldens never change`);
-  }
+  const pinned = !!options.update && pinnedBy(seriesDir, id, version).length > 0;
   const { manifest, text: manifestText } = readManifest(releaseDir, label);
   // The manifest's shape first: a bundle path is only read once the contract has held it to compiler/ or validator/.
   const shape = validateSeriesTemplate(manifest);
@@ -387,16 +388,53 @@ export async function verifyTemplateCode(seriesDir: string, id: string, version:
     }
     const text = `${JSON.stringify(result.timeline, null, 2)}\n`;
     const golden = join(dir, "expected-timeline.json");
-    if (options.update) {
+    if (options.update && !(pinned && existsSync(golden))) {
       if (!options.dryRun) writeFileSync(golden, text);
       fixtures.push({ name, ok: true, message: options.dryRun ? "golden would be written" : "golden written" });
     } else if (!existsSync(golden)) {
       fixtures.push({ name, ok: false, message: "no expected-timeline.json: verify --update writes it" });
     } else if (readFileSync(golden, "utf-8") !== text) {
-      fixtures.push({ name, ok: false, message: "compiles differently from its expected-timeline.json" });
+      fixtures.push({ name, ok: false, message: `compiles differently from its expected-timeline.json${pinned ? ", which a pinned release never rewrites" : ""}` });
     } else {
       fixtures.push({ name, ok: true });
     }
   }
   return { ok: problems.length === 0 && fixtures.every((f) => f.ok), problems, warnings, fixtures };
+}
+
+/**
+ * Keep an episode's compile input — its spec, takes, timings and assets as
+ * the loader reads them — as `fixtures/<name>/input.json` of its release (or
+ * of another release `to` of the same template). Then `verify --update`
+ * writes its golden: what the release's code makes of a real episode, held.
+ * Nothing of this machine goes in: the input names files relative to the
+ * episode, and the code and kits the loader adds are left out.
+ */
+export function captureFixture(
+  episodeDir: string,
+  options: { episodeRef: { channel: string; series: string; episode: string }; name: string; to?: string; dryRun?: boolean },
+): { release: string; path: string } {
+  if (!SLUG.test(options.name)) fail("bad-fixture", `"${options.name}" is not a fixture name (lowercase words joined by -)`);
+  const loaded = loadEpisode(episodeDir, { episodeRef: options.episodeRef });
+  if (!loaded.ok) return fail("episode-not-loading", `the episode does not load: ${loaded.problems.map((p) => `${p.code} at ${p.path}: ${p.message}`).join("; ")}`);
+  const { code: _code, kits: _kits, ...input } = loaded.input;
+  const id = input.template.id;
+  const version = options.to ?? input.template.version;
+  const seriesDir = dirname(dirname(resolve(episodeDir)));
+  const releaseDir = releaseDirOf(seriesDir, id, version);
+  const dir = join(releaseDir, "fixtures", options.name);
+  if (existsSync(dir)) fail("fixture-exists", `${id}@${version} already has a fixture "${options.name}"`);
+  if (!options.dryRun) {
+    // Written aside and moved in whole: a failed write leaves no half fixture behind.
+    const staging = `${dir}.tmp-${process.pid}`;
+    mkdirSync(staging, { recursive: true });
+    try {
+      writeFileSync(join(staging, "input.json"), `${JSON.stringify(input, null, 2)}\n`);
+      renameSync(staging, dir);
+    } catch (error) {
+      rmSync(staging, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  return { release: `${id}@${version}`, path: relative(seriesDir, join(dir, "input.json")).split(sep).join("/") };
 }
