@@ -14,9 +14,20 @@
       "required": ["id", "version"],
       "properties": {
         "id": { "$ref": "identity.schema.json#/$defs/Slug" },
-        "version": { "$ref": "#/$defs/TemplateVersion" }
+        "version": { "$ref": "#/$defs/TemplateVersion" },
+        "bundle": { "$ref": "#/$defs/CodeBundle" }
       },
-      "description": "A reviewed repository registry entry, not executable code, a module path or a URL."
+      "description": "The compiler or validator the release runs: with `bundle`, the release's own sealed code (avg-d1x); without, the application's registered one."
+    },
+    "CodeBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hash"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^(compiler|validator)/[a-z0-9][a-z0-9._-]*\\.cjs$" },
+        "hash": { "$ref": "identity.schema.json#/$defs/ContentHash" }
+      },
+      "description": "A self-contained CommonJS module built by `vpr template seal` from the release's source, relative to the release; `hash` is its sha256."
     },
     "TemplatePin": {
       "type": "object",

@@ -13,6 +13,12 @@ export type TemplateVersion = string;
 export interface SeriesComponentRef {
   id: Slug;
   version: TemplateVersion;
+  bundle?: CodeBundle;
+}
+
+export interface CodeBundle {
+  path: string;
+  hash: ContentHash;
 }
 
 export interface TemplatePin {

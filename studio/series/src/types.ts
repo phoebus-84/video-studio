@@ -50,6 +50,12 @@ export interface CompileInput {
    * source-<pin>-image-<name>.
    */
   sources?: Record<string, { narration: NarrationTakes; timings: Record<string, WordTiming> }>;
+  /**
+   * The release's own code, loaded by the episode's loader from its sealed
+   * bundles (avg-d1x): present exactly when the manifest's `compiler.bundle`
+   * or `validator.bundle` is. Not data: never in a fixture's input.json.
+   */
+  code?: { compiler?: SeriesCompiler; validator?: SeriesValidator };
 }
 
 /** Something in the input that stops compilation, located by a JSON path. */
