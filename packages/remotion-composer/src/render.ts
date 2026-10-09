@@ -5,7 +5,6 @@
 import {mkdir, mkdtemp, rm, stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
 import {bundle} from '@remotion/bundler';
 import {renderMedia, selectComposition} from '@remotion/renderer';
 import {stageAssets, sha256} from './assets.js';
@@ -15,6 +14,7 @@ import {isAudioItem} from './schema.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
 import {renderWithCache} from './cached-render.js';
+import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
 import type {CacheReport} from './render-cache.js';
 
 export interface RenderTimelineOptions {
@@ -31,6 +31,8 @@ export interface RenderTimelineOptions {
   onProgress?: (progress: number) => void;
   /** Overrides the timeline's `profile.loudness`. */
   loudness?: LoudnessTarget;
+  /** Kits the channel or the series carries (avg-d1x), beside the application's. */
+  kits?: readonly LibraryKit[];
 }
 
 export interface RenderResult {
@@ -47,7 +49,8 @@ export interface RenderResult {
 }
 
 export async function renderTimeline(options: RenderTimelineOptions): Promise<RenderResult> {
-  const checked = validateTimeline(options.timeline);
+  const library = await readLibraryKits(options.kits ?? []);
+  const checked = validateTimeline(options.timeline, {kits: library});
   if (!checked.ok) {
     const code = checked.problems[0]!.code;
     throw new ComposerError(code, `the timeline cannot be rendered: ${checked.problems.map((p) => `${p.code} at ${p.path}`).join('; ')}`, checked.problems);
@@ -65,7 +68,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       if (asset.kind === 'video') assetFrames[staged.files[id]!] = videoFrames(staged.sources[id]!, timeline.fps);
     }
     const inputProps = {timeline, files: staged.files, assetFrames};
-    const entryPoint = path.join(path.dirname(fileURLToPath(import.meta.url)), 'remotion-entry.js');
+    const entryPoint = await libraryEntry(work, options.kits ?? []);
     const hasAudio = timeline.tracks.some((t) => t.type === 'audio' && !t.muted && t.items.some(isAudioItem));
     const output = path.resolve(options.outputPath);
     await mkdir(path.dirname(output), {recursive: true});
@@ -76,7 +79,10 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     try {
       // The bundle — which copies the staged public directory — lives in the work
       // directory, so it is removed with it, on success and on failure.
-      const serveUrl = await bundle({entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle')});
+      const serveUrl = await bundle({
+        entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle'),
+        ...(options.kits?.length ? {webpackOverride: resolveFromApplication} : {}),
+      });
       const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps});
       if (options.cacheDir) {
         cache = await renderWithCache({

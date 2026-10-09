@@ -56,7 +56,22 @@ const key = (name: string, version: string) => `${name}@${version}`;
 const byKey = new Map(KIT_VERSIONS.map((k) => [key(k.name, k.version), k]));
 
 /** The exact version a timeline names, or undefined. */
-export const resolveKit = (name: string, version: string): KitVersion | undefined => byKey.get(key(name, version));
+/**
+ * Kits a channel or a series carries in the library (avg-d1x), registered by
+ * the generated bundle entry before the root renders. Node-side callers pass
+ * theirs explicitly instead (validateTimeline's `kits`).
+ */
+const library = new Map<string, KitVersion>();
+export function registerLibraryKits(kits: readonly KitVersion[]): void {
+  for (const k of kits) library.set(key(k.name, k.version), k);
+}
+
+/** The exact version a timeline names: the application's, else one of `extra`, else one registered from the library. */
+export const resolveKit = (name: string, version: string, extra?: readonly KitVersion[]): KitVersion | undefined =>
+  byKey.get(key(name, version)) ?? extra?.find((k) => k.name === name && k.version === version) ?? library.get(key(name, version));
+
+/** Whether the application itself has this kit version: a library kit may never take its name@version. */
+export const isApplicationKit = (name: string, version: string): boolean => byKey.has(key(name, version));
 
 /** The versions available for a kit name, e.g. ["1.0.0", "1.1.0"]. */
 export const kitVersions = (name: string): string[] =>

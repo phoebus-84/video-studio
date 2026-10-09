@@ -12,7 +12,10 @@ const member = (key: string | number) =>
   typeof key === 'number' ? `[${key}]` : /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`;
 const pathOf = (base: string, issue: ZodIssue) => base + issue.path.map(member).join('');
 
-export function validateTimeline(doc: unknown): {ok: true; timeline: EditTimeline} | {ok: false; problems: ComposerProblem[]} {
+import type {KitVersion} from './kits/types.js';
+
+/** `kits`: the library kits (avg-d1x) the timeline may also draw with, beside the application's. */
+export function validateTimeline(doc: unknown, options: {kits?: readonly KitVersion[]} = {}): {ok: true; timeline: EditTimeline} | {ok: false; problems: ComposerProblem[]} {
   const parsed = EditTimelineSchema.safeParse(doc);
   if (!parsed.success) {
     return {ok: false, problems: parsed.error.issues.map((i) => ({code: 'invalid-timeline' as const, message: i.message, path: pathOf('$', i)}))};
@@ -47,7 +50,7 @@ export function validateTimeline(doc: unknown): {ok: true; timeline: EditTimelin
     track.items.forEach((item, ii) => {
       if (isAudioItem(item)) return;
       const p = `$.tracks[${ti}].items[${ii}]`;
-      const kit = resolveKit(item.kit.name, item.kit.version);
+      const kit = resolveKit(item.kit.name, item.kit.version, options.kits ?? []);
       if (!kit) {
         const versions = kitVersions(item.kit.name);
         const known = versions.length > 0 ? `available ${versions.map((v) => `${item.kit.name}@${v}`).join(', ')}` : `no kit "${item.kit.name}"`;

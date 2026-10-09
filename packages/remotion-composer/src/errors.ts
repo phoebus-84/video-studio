@@ -1,6 +1,7 @@
 export type ComposerErrorCode =
   | 'invalid-timeline'
   | 'unknown-kit'
+  | 'bad-kit'
   | 'bad-props'
   | 'wrong-profile'
   | 'missing-asset'
