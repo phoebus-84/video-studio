@@ -1,3 +1,4 @@
+import {defaultRenderConcurrency} from './concurrency.js';
 import {execFile} from 'node:child_process';
 import {readFile, readdir, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
@@ -73,7 +74,7 @@ export async function renderWithCache(options: {
     .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
     .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
   const plan = planVideo(timeline, await rendererKey(serveUrl), assetFrames);
-  const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
+  const common = {composition, serveUrl, concurrency: options.concurrency ?? defaultRenderConcurrency()};
   const silentProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
   // Reuse one browser across misses, rather than launching Chrome each second.
   // A whole-video hit with no audio never opens it.

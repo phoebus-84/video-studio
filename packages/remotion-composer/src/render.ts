@@ -14,6 +14,7 @@ import {isAudioItem} from './schema.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
 import {renderWithCache} from './cached-render.js';
+import {defaultRenderConcurrency} from './concurrency.js';
 import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
 import type {CacheReport} from './render-cache.js';
 
@@ -93,7 +94,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
         composition, serveUrl, inputProps,
         codec: 'h264', audioCodec: 'aac', enforceAudioTrack: true,
         outputLocation: rendered,
-        concurrency: options.concurrency ?? null,
+        concurrency: options.concurrency ?? defaultRenderConcurrency(),
         imageFormat: 'jpeg', jpegQuality: 92, pixelFormat: 'yuv420p', colorSpace: 'bt709',
         onProgress: ({progress}) => options.onProgress?.(progress),
       });
