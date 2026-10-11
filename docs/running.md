@@ -110,6 +110,17 @@ A tool whose capability is not ready will fail rather than silently degrade.
 `npm run doctor` tells you which are ready; `pva_capability_status` tells the
 agent the same thing from inside a session.
 
+### Render memory
+
+A render opens one Chrome tab per worker, each holding the frame's pictures
+and kits: about 2 GB with large paintings.
+- **The default.** An episode's render (`pva_compose_video`) uses as many
+  tabs as the available memory allows, at most half the cores and at least one. On macOS,
+  inactive pages count as available.
+- **When memory is short,** for instance with a virtual machine running, it
+  renders with one tab: slower, but Chrome does not crash.
+- **Overriding it.** `AVG_RENDER_CONCURRENCY=<n>` forces the number of tabs.
+
 ### The layout sheet
 
 Before a render is spent, look at the **layout sheet**: small stills of the

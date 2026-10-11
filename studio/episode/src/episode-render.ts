@@ -10,6 +10,7 @@
 // passed its audit (avg-3th.3).
 // ---------------------------------------------------------------------------
 
+import { defaultRenderConcurrency } from "./render-concurrency.js";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -396,6 +397,8 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
       sharedRoots: sharedRootsOf(episodeDir),
       kits: libraryKitsOf(episodeDir, options),
       cacheDir: join(episodeDir, ".cache", "remotion"),
+      // As many Chrome tabs as memory allows: a starved render crashes its browser (avg-dcf.8).
+      concurrency: defaultRenderConcurrency(),
       outputPath: partialPath,
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     });
