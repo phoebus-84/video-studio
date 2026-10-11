@@ -1,12 +1,15 @@
-// How many Chrome tabs a render uses when nobody says. Each tab holds the
+// How many Chrome tabs an episode's render uses. Decided by the studio, not
+// the composer: the composer's code is part of what a layout sheet pictures,
+// and how many tabs render it changes no frame.
+// Each tab holds the
 // frame's pictures and kits, about two gigabytes with large paintings: a
 // render that starved the machine crashed its browser at the same frames
 // until it ran with one tab (avg-dcf.8). So: as many tabs as the memory
 // available allows, never more than half the cores, at least one.
 // AVG_RENDER_CONCURRENCY forces it.
 
-import {spawnSync} from 'node:child_process';
-import {cpus, freemem, platform} from 'node:os';
+import { spawnSync } from "node:child_process";
+import { cpus, freemem, platform } from "node:os";
 
 const PER_TAB = 2 * 1024 ** 3;
 

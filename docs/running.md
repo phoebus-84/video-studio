@@ -114,8 +114,8 @@ agent the same thing from inside a session.
 
 A render opens one Chrome tab per worker, each holding the frame's pictures
 and kits: about 2 GB with large paintings.
-- **The default.** Unless told otherwise, it uses as many tabs as the
-  available memory allows, at most half the cores and at least one. On macOS,
+- **The default.** An episode's render (`pva_compose_video`) uses as many
+  tabs as the available memory allows, at most half the cores and at least one. On macOS,
   inactive pages count as available.
 - **When memory is short,** for instance with a virtual machine running, it
   renders with one tab: slower, but Chrome does not crash.
