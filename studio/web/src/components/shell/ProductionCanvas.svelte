@@ -24,6 +24,7 @@
   import StageDetail from "../episode/StageDetail.svelte";
   import StoryboardTab from "../storyboard/StoryboardTab.svelte";
   import NarrationTab from "../narration/NarrationTab.svelte";
+  import AudioTab from "../audio/AudioTab.svelte";
   import RenderViewer from "../render/RenderViewer.svelte";
   import AgentBar from "../agent/AgentBar.svelte";
 
@@ -141,6 +142,8 @@
         <StoryboardTab />
       {:else if studio.view === "narration"}
         <NarrationTab />
+      {:else if studio.view === "audio"}
+        <AudioTab />
       {:else if studio.view === "render"}
         <RenderViewer />
       {/if}

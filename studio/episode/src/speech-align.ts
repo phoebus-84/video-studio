@@ -16,6 +16,7 @@ const exec = promisify(execFile);
 
 export type AlignErrorCode =
   | "no-such-take"
+  | "no-edit"
   | "audio-changed"
   | "no-language"
   | "worker-unreachable"

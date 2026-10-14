@@ -21,6 +21,7 @@ export type View =
   | "files"
   | "storyboard"
   | "narration"
+  | "audio"
   | "render";
 
 export type InspectorTab =
@@ -57,6 +58,7 @@ export const VIEWS: Record<Level, ViewDef[]> = {
     { key: "files", label: "Files" },
     { key: "storyboard", label: "Storyboard" },
     { key: "narration", label: "Narration" },
+    { key: "audio", label: "Audio" },
     { key: "render", label: "Render" },
   ],
 };

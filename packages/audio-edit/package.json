@@ -1,0 +1,33 @@
+{
+  "name": "@av/audio-edit",
+  "version": "0.1.0",
+  "description": "Audio editing for every project: clips cut and joined with crossfades, layered tracks with gains, automation and ducking, a mastered mix (loudness, true peak, trims), analysis and waveform peaks \u2014 one ffmpeg graph per recipe, deterministic (avg-8hs.5)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

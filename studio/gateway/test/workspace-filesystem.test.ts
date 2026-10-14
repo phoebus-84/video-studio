@@ -174,4 +174,33 @@ describe("FileSystemWorkspaceService", () => {
     expect(detail.scenes.map((s: any) => s.id)).toEqual(["s1"]);
     expect(detail.render.file).toBe("render-1.mp4");
   });
+
+  // Immutable releases live in output/<render-id>/…, and output/current.json is
+  // the pointer to them. The runtime's artifact discovery resolves output.mp4
+  // through that pointer, so a scan that only read the top level of output/
+  // contradicted the studio's own contract: a delivered episode — Carabinieri
+  // "Alla fonte", "Il miracolo", "I due colleghi" — showed no render at all.
+  it("follows output/current.json into an immutable release directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gateway-workspace-"));
+    roots.push(root);
+    const episode = join(root, "wordless-comedy", "series", "give-me-time", "episodes", "the-run-up");
+    await Promise.all([
+      mkdir(join(episode, "artifacts"), { recursive: true }),
+      mkdir(join(episode, "output", "the-run-up-v002"), { recursive: true }),
+    ]);
+    await writeFile(join(episode, "artifacts", "episode.json"), JSON.stringify({ scenes: [{ id: "s1", durationSeconds: 4, kind: "animation" }] }));
+    await writeFile(join(episode, "output", "the-run-up-v002", "the-run-up.mp4"), "media");
+    await writeFile(
+      join(episode, "output", "current.json"),
+      JSON.stringify({ renderId: "the-run-up-v002", path: "the-run-up-v002/the-run-up.mp4" }),
+    );
+
+    const workspace = new FileSystemWorkspaceService([root]);
+    const detail = await workspace.getEpisode("wordless-comedy", "give-me-time", "the-run-up") as any;
+
+    const prefix = "/library/wordless-comedy/series/give-me-time/episodes/the-run-up";
+    expect(detail.render.url).toBe(`${prefix}/output/the-run-up-v002/the-run-up.mp4`);
+    // An animation beat with no artwork previews the render it belongs to.
+    expect(detail.scenes[0].asset.url).toBe(detail.render.url);
+  });
 });

@@ -7,7 +7,7 @@
    * registers a take: that stays Pi's.
    */
   import { onDestroy } from "svelte";
-  import { episodeMediaUrl } from "$lib/episode-media";
+  import { mediaUrl } from "$lib/episode-media";
   import { inOrder, wordAt, type NarrationTakesAnswer, type TakeView } from "$lib/narration-takes";
 
   let { answer }: { answer: NarrationTakesAnswer } = $props();
@@ -21,7 +21,10 @@
   /** Each play asks for a generation; a fetch that comes back after another click, or after the tab closed, is dropped. */
   let generation = 0;
 
-  const keyOf = (take: TakeView) => `${take.audio?.series ?? ""}/${take.audio?.episode ?? ""}/${take.id}`;
+  const keyOf = (take: TakeView) => {
+    const a = take.audio as Record<string, string> | null;
+    return `${a?.series ?? ""}/${a?.episode ?? a?.source ?? ""}/${take.id}`;
+  };
   const own = $derived(inOrder(answer.units, answer.takes));
   const totalSeconds = $derived(own.reduce((sum, row) => sum + (row.take.durationSeconds ?? 0) + (row.pauseBefore ?? 0), 0));
 
@@ -47,7 +50,7 @@
     error = null;
     loading = key;
     const mine = generation;
-    const made = await episodeMediaUrl(take.audio, take.audio.path);
+    const made = await mediaUrl(take.audio, take.audio.path);
     if (mine !== generation) {
       if (made) URL.revokeObjectURL(made);
       return;
@@ -120,7 +123,7 @@
   {/if}
 
   {#each answer.sources as source, s (`${source.pin}#${s}`)}
-    <h5 class="tp-source">From {source.pin} <span>({source.episode.series}/{source.episode.episode})</span></h5>
+    <h5 class="tp-source">From {source.pin} <span>({source.episode ? `${source.episode.series}/${source.episode.episode}` : `sources/${source.source?.name}`})</span></h5>
     <ol class="tp-list">
       {#each inOrder(source.units, source.takes) as row, i (`${row.unit ?? ""}#${i}`)}
         {@render takeRow(row.take, row.pauseBefore, true)}
