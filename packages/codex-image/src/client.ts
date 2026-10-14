@@ -29,7 +29,7 @@ import type {
 } from "./types.js";
 
 /** Routing model for the subscription transport. */
-const DEFAULT_ROUTING_MODEL = "gpt-6.1";
+const DEFAULT_ROUTING_MODEL = "gpt-6.1-sol";
 /** Image model for the API transport. */
 const DEFAULT_API_MODEL = "gpt-image-2";
 const DEFAULT_API_BASE_URL = "https://api.openai.com";

@@ -66,9 +66,9 @@ describe("CodexImageClient", () => {
       assert.equal(image.outputFormat, "png");
       assert.equal(calls.length, 1);
       assert.match(calls[0]!.url, /backend-api\/codex\/responses/);
-      assert.equal(image.model, "gpt-6.1");
+      assert.equal(image.model, "gpt-6.1-sol");
       const body = JSON.parse(String(calls[0]!.init.body));
-      assert.equal(body.model, "gpt-6.1");
+      assert.equal(body.model, "gpt-6.1-sol");
       assert.deepEqual(body.tools, [{ type: "image_generation", output_format: "png" }]);
     });
 

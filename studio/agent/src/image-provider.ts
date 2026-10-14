@@ -6,7 +6,7 @@
 // rather than in code:
 //
 //   image:
-//     provider: openai-codex          # or openai-codex/gpt-6.1
+//     provider: openai-codex          # or openai-codex/gpt-6.1-sol
 //     provider: fal-ai/flux/dev       # anything else is a fal model id
 //
 // This module owns the mapping from that string to a provider, and the studio
@@ -21,7 +21,7 @@ import { seriesPath, channelPath } from "@studio/contracts/src/layout.mjs";
 /** fal model used when a series expresses no preference. */
 export const DEFAULT_FAL_MODEL = "fal-ai/flux/dev";
 /** Routing model used when a series asks for Codex without naming one. */
-export const DEFAULT_CODEX_MODEL = "gpt-6.1";
+export const DEFAULT_CODEX_MODEL = "gpt-6.1-sol";
 
 /** The OpenAI subscription provider, as Pi's model registry names it. */
 export const CODEX_PROVIDER = "openai-codex";

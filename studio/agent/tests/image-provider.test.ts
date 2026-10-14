@@ -38,9 +38,9 @@ describe("image provider resolution", () => {
     });
 
     it("treats a bare openai-codex as the plan with a default routing model", () => {
-      expect(DEFAULT_CODEX_MODEL).toBe("gpt-6.1");
-      expect(parseProvider("openai-codex")).toEqual({ kind: "codex", model: "gpt-6.1" });
-      expect(parseProvider("openai-codex/")).toEqual({ kind: "codex", model: "gpt-6.1" });
+      expect(DEFAULT_CODEX_MODEL).toBe("gpt-6.1-sol");
+      expect(parseProvider("openai-codex")).toEqual({ kind: "codex", model: "gpt-6.1-sol" });
+      expect(parseProvider("openai-codex/")).toEqual({ kind: "codex", model: "gpt-6.1-sol" });
     });
 
     it("takes the routing model from the suffix", () => {
