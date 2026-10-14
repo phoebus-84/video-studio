@@ -22,6 +22,31 @@ npm run build
 npm test
 ```
 
+## Recovering an exhausted retry limit
+
+An operator can authorize **one** further attempt, without deleting failures,
+changing the global cap, selecting an old take, or accepting any output:
+
+```bash
+vpr retry channel/series/episode animatic --after-attempt 5 \
+  --note 'Generation repaired; the pose is now accepted' --library /path/to/library
+```
+
+Run this in the operator's own terminal, not Pi's headless shell. The normal
+operator credential is required, including for `--dry-run`. The signed
+`stage-retry-granted` journal record binds the episode, stage definition,
+last lease and next attempt. A second grant for the same attempt is idempotent;
+claiming consumes it even if that attempt later fails or times out. Review,
+dependency, attendance and budget checks still run normally. `--after-attempt`
+refuses a stale operator decision. Restart a gateway already running older
+runtime code before asking it to claim the newly authorized attempt.
+
+This is recovery, **not** a pause command: do not report a successful pose test
+as a failed animatic merely to end a review conversation. Prepare/review the pose
+before claiming the full animatic stage. Never invent a successful completion
+to reset retries. Existing erroneous failures remain in history; explain them
+in the operator's retry note.
+
 ## Package structure
 
 ```text

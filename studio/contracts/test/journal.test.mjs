@@ -228,6 +228,23 @@ describe("episode journal", () => {
     assert.deepEqual(parseJournal("\n\n"), []);
   });
 
+  it("requires the signed retry decision fields without inventing a completion", async () => {
+    const data = {
+      stageId: "animatic", decision: "retry", origin: "human", episode: "c/s/e",
+      at: new Date().toISOString(), note: "repaired", binding: {
+        planHash: "hash", afterAttempt: 3, afterLeaseId: "lease-3", nextAttempt: 4,
+      }, signature: "test-shape-only",
+    };
+    const input = { type: "stage-retry-granted", actor: "human", episode: { channel: "c", series: "s", episode: "e" }, data };
+    const written = await appendJournalEvent(dir, input);
+    assert.equal(written.type, "stage-retry-granted");
+    assert.equal((await read()).length, 1);
+    for (const field of Object.keys(data)) {
+      const missing = { ...data }; delete missing[field];
+      assert.throws(() => buildJournalEvent({ ...input, data: missing }), /must carry/);
+    }
+  });
+
   it("accepts approval-rejected as an event type", () => {
     const e = buildJournalEvent({
       type: "approval-rejected", actor: "runtime",

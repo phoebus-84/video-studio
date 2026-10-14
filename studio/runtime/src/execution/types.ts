@@ -187,7 +187,9 @@ export type OutcomeStatus =
    */
   | "claimed"
   /** `select()` put a take in place, or found it already there (avg-qr4.6). */
-  | "selected";
+  | "selected"
+  /** The operator permitted one next attempt without accepting any outputs. */
+  | "retry_granted";
 
 export interface StageOutcome {
   /** Null when nothing was selected. */

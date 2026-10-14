@@ -9,6 +9,7 @@ export type JournalEventType =
   | "stage-started"
   | "stage-completed"
   | "stage-failed"
+  | "stage-retry-granted"
   | "attempt-recorded"
   | "approval-granted"
   | "approval-requested"

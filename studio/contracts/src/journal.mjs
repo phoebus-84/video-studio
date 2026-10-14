@@ -65,6 +65,7 @@ export const JOURNAL_EVENTS = Object.freeze([
   "stage-started",
   "stage-completed",
   "stage-failed",
+  "stage-retry-granted",
   "attempt-recorded",
   "approval-granted",
   "approval-requested",
@@ -108,6 +109,7 @@ const REQUIRED_EXECUTION_FIELDS = Object.freeze({
   "stage-completed": ["stageId", "leaseId", "attemptNumber", "outputs"],
   "stage-failed": ["stageId", "leaseId", "attemptNumber", "error"],
   "attempt-recorded": ["stageId", "leaseId", "attemptNumber", "outcome"],
+  "stage-retry-granted": ["stageId", "decision", "origin", "episode", "at", "note", "binding", "signature"],
   // Not replayed by execution state, but a selection that names no attempt
   // or no hashes cannot be checked against the candidate it claims to pick
   // (avg-qr4.6) — the same reason the five above must name their lease.

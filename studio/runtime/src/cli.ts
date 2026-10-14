@@ -1287,6 +1287,38 @@ async function cmdSelect(ctx: CliContext, args: string[]): Promise<number> {
   return o.status === "selected" ? EX_OK : EX_RUNTIME;
 }
 
+// ── retry: an operator grants exactly one additional attempt ────────────────
+
+async function cmdRetry(ctx: CliContext, args: string[]): Promise<number> {
+  const { pipeline: pipelineName, remaining } = extractPipeline(args);
+  const parsed = remaining[0] ? parsePath(remaining[0]) : null;
+  const stageId = remaining[1];
+  const afterAttempt = Number(flagValue(args, "--after-attempt"));
+  const note = flagValue(args, "--note");
+  if (!parsed || !stageId || stageId.startsWith("--") || !Number.isInteger(afterAttempt) || afterAttempt < 1 || !note?.trim() || note.startsWith("--")) {
+    emit(ctx, { error: "Usage: vpr retry <channel>/<series>/<episode> <stage-id> --after-attempt <n> --note <reason> [--json] [--dry-run]" });
+    return EX_USAGE;
+  }
+  let credential;
+  try {
+    credential = resolveCliCredential();
+  } catch (e) {
+    emit(ctx, { error: `${e instanceof Error ? e.message : String(e)}. Nothing was recorded.` });
+    return EX_RUNTIME;
+  }
+  const ttl = claimTtlMs();
+  if (!ttl.ok) { emit(ctx, { error: ttl.error }); return EX_USAGE; }
+  const pipeline = pipelineFor(ctx, args, parsed, pipelineName);
+  if (typeof pipeline === "number") return pipeline;
+  const service = makeService(args, ttl.value, credential.operatorKey);
+  const out = await service.grantRetry(parsed, pipeline, stageId, {
+    principal: credential.principal, afterAttempt, note, dryRun: ctx.dryRun,
+  });
+  if (!out.ok) { emit(ctx, { error: out.error.message, code: out.error.code }); return exitCodeFor(out.error); }
+  emit(ctx, { message: out.value.reason, ...outcomeFields(out.value) });
+  return out.value.status === "retry_granted" || out.value.status === "would-run" ? EX_OK : EX_RUNTIME;
+}
+
 // ── run / complete ──────────────────────────────────────────────────────────
 
 /**
@@ -1877,6 +1909,7 @@ const COMMANDS: Record<string, CliCommand> = {
   // propagation existed); avg-qr4.3 task 9 gave the service a `StalenessReport`
   // to compute for it, so it plans like any other mode now — given `--stages`.
   rerun: { name: "rerun", description: "Plan targeted reruns: which stages re-run, which are preserved", usage: "vpr rerun <channel>/<series>/<episode> [--mode retry-current|rerun-selected|rerun-affected-downstream|full-rebuild] [--stages a,b] [--json] [--dry-run]", examples: ["vpr rerun my-channel/my-series/ep001 --mode full-rebuild"], run: cmdRerun },
+  retry: { name: "retry", description: "Operator: grant one additional attempt after the retry cap, preserving history and gates", usage: "vpr retry <channel>/<series>/<episode> <stage-id> --after-attempt <n> --note <reason> [--json] [--dry-run]", examples: ["vpr retry my-channel/my-series/ep001 animatic --after-attempt 5 --note 'generation repaired; resume the approved pose'"], run: cmdRetry },
   approve: { name: "approve", description: "Approve a manual gate for a stage", usage: "vpr approve <channel>/<series>/<episode> <stage-id> [--json] [--dry-run]", examples: ["vpr approve my-channel/my-series/ep001 render-outro --dry-run"], run: cmdApprove },
   reject: { name: "reject", description: "Reject a stage's output, with a reason", usage: "vpr reject <channel>/<series>/<episode> <stage-id> --note <text> [--json] [--dry-run]", examples: ["vpr reject my-channel/my-series/ep001 script --note 'the wolf is too frightening'"], run: cmdReject },
   pin: { name: "pin", description: "Pin shared material (a channel source or another episode), verify it, or renew it to accept a new version", usage: "vpr pin add <channel>/<series>/<episode> <id> --source channel:<name>|episode:<series>/<episode> --used-by <stage>[,<stage>...] [--path <p>]... | vpr pin verify <channel>/<series>/<episode> | vpr pin renew <channel>/<series>/<episode> <id> [--pipeline <name>] [--json] [--dry-run]", examples: ["vpr pin add my-channel/my-series/ep001 source --source channel:my-source --used-by narration", "vpr pin verify my-channel/my-series/ep001", "vpr pin renew my-channel/my-series/ep001 source"], run: cmdPin },
