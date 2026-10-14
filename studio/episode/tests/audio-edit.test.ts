@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateAudioEdit } from "@studio/contracts/src/audio-edits.mjs";
 import { editAudio, editRecordFor, resolveEdit, type EditRecipe } from "../src/audio-edit.js";
+import { alignTake } from "../src/take-align.js";
+import { registerTake } from "../src/take-register.js";
+import { validateWordTiming } from "@studio/contracts/src/word-timing.mjs";
 
 /**
  * Audio editing in a workspace (avg-8hs.5), on synthetic takes: each "word"
@@ -75,6 +78,32 @@ describe("montage of two takes", () => {
     expect(validateAudioEdit(JSON.parse(readFileSync(join(ws, recordPath), "utf-8")))).toEqual([]);
     expect(existsSync(join(ws, "assets/takes/recita.wav.peaks.json"))).toBe(true);
     expect(editRecordFor(ws, record.output.hash)?.path).toBe(recordPath);
+  });
+});
+
+describe("an edited take", () => {
+  it("registers like any take and takes its timing from the edit, with no new alignment", async () => {
+    const words = ["uno", "due", "tre", "quattro"];
+    const { takes } = take("a", words, 440, [0.4, 0.4, 0.4]);
+    take("b", words, 660, [0.5, 0.5, 0.5], takes);
+    const { record } = await editAudio(ws, { output: { path: "assets/takes/montata.wav" }, tracks: [{ id: "voice", clips: [
+      { id: "a", source: { take: "a" }, out: { word: "due", edge: "end" }, at: 0 },
+      { id: "b", source: { take: "b" }, in: { word: "tre", edge: "start" }, at: "after", crossfade: 0.02 },
+    ] }], pauses: [{ take: "b", after: "tre", seconds: 0.9 }] });
+    await registerTake(ws, { take: "recita", audio: "assets/takes/montata.wav", text: words.join(" "), language: "it", voice: { provider: "audio-edit", settings: { record: "assets/takes/montata.wav.edit.json" } } });
+    const aligned = await alignTake(ws, { take: "recita", provider: "derived" });
+    expect(aligned.timing.alignment).toMatchObject({ provider: "audio-edit", method: "derived", model: "assets/takes/montata.wav.edit.json" });
+    expect(aligned.timing.words.map((w: { text: string }) => w.text)).toEqual(words);
+    expect(validateWordTiming(aligned.timing, { audioHash: record.output.hash })).toEqual([]);
+    // The reshaped pause is in the timing: «quattro» comes 0.9 s after «tre».
+    const w = aligned.timing.words as { start: number; end: number }[];
+    expect(w[3]!.start - w[2]!.end).toBeCloseTo(0.9, 1);
+  });
+
+  it("says when no edit made a take's audio", async () => {
+    const { takes } = take("a", ["uno", "due"], 440, [0.4]);
+    expect(takes.length).toBe(1);
+    await expect(alignTake(ws, { take: "a", provider: "derived" })).rejects.toMatchObject({ code: "no-edit" });
   });
 });
 

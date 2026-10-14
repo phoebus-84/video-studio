@@ -19,7 +19,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { quietestPoint, renderRecipe, scan, type Clip, type Master, type Recipe, type Track } from "@av/audio-edit";
 import { EDIT_SUFFIX, PEAKS_SUFFIX, validateAudioEdit, type AudioEditPlacement, type AudioEditRecord } from "@studio/contracts/src/audio-edits.mjs";
-import { TAKES_PATH } from "./take-align.js";
 
 export type WordRef = number | string | { word: number | string; occurrence?: number };
 export interface WordAnchor { word: number | string; occurrence?: number; edge: "start" | "end" }
@@ -46,6 +45,7 @@ export class EditError extends Error {
   }
 }
 
+const TAKES_PATH = "artifacts/narration/takes.json";
 const OUTPUT_DIRS = ["assets/takes/", "assets/sounds/", "artifacts/audio/"];
 /** Gaps narrower than this hold no clean cut. */
 const MIN_GAP = 0.02;

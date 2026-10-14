@@ -1,0 +1,89 @@
+[
+  {
+    "apiVersion": "studio.video/v1alpha1",
+    "kind": "AudioEdit",
+    "recipe": {
+      "output": {
+        "path": "assets/takes/recita.wav"
+      },
+      "tracks": [
+        {
+          "id": "voice",
+          "clips": [
+            {
+              "id": "a",
+              "source": {
+                "take": "a"
+              },
+              "out": {
+                "word": "cuore",
+                "edge": "end"
+              },
+              "at": 0
+            }
+          ]
+        }
+      ]
+    },
+    "resolved": {
+      "output": {},
+      "tracks": [
+        {
+          "id": "voice",
+          "clips": [
+            {
+              "id": "a",
+              "source": "assets/takes/a.wav",
+              "in": 0,
+              "out": 12.48,
+              "at": 0
+            }
+          ]
+        }
+      ]
+    },
+    "inputs": {
+      "assets/takes/a.wav": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "artifacts/timing/a.json": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "output": {
+      "path": "assets/takes/recita.wav",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "durationSeconds": 12.48
+    },
+    "placements": [
+      {
+        "track": "voice",
+        "clip": "a",
+        "source": "assets/takes/a.wav",
+        "in": 0,
+        "out": 12.48,
+        "start": 0,
+        "end": 12.48,
+        "fadeIn": 0,
+        "fadeOut": 0,
+        "take": "a"
+      }
+    ],
+    "report": {
+      "loudness": {
+        "integrated": -17.2,
+        "range": 4.1,
+        "truePeak": -2.3
+      },
+      "normalization": "none",
+      "clipped": 0,
+      "headTrim": 0,
+      "joins": [],
+      "concerns": []
+    },
+    "words": [
+      {
+        "text": "Gemmea",
+        "start": 0.0,
+        "end": 0.56
+      }
+    ],
+    "createdAt": "2026-10-14T10:00:00.000Z"
+  }
+]
