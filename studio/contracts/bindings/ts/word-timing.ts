@@ -29,8 +29,8 @@ export interface Alignment {
   /** Open vocabulary, e.g. elevenlabs, whisper-cpp. */
   provider: string;
   model?: string;
-  /** forced: aligned against known text; asr: transcribed and snapped to the text. */
-  method: "forced" | "asr";
+  /** forced: aligned against known text; asr: transcribed and snapped to the text; derived: carried through an audio edit from the timings of the takes it was cut from (avg-8hs.5). */
+  method: "forced" | "asr" | "derived";
   createdAt: string;
 }
 

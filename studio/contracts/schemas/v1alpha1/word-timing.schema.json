@@ -51,7 +51,7 @@
       "properties": {
         "provider": { "type": "string", "minLength": 1, "description": "Open vocabulary, e.g. elevenlabs, whisper-cpp." },
         "model": { "type": "string", "minLength": 1 },
-        "method": { "type": "string", "enum": ["forced", "asr"], "description": "forced: aligned against known text; asr: transcribed and snapped to the text." },
+        "method": { "type": "string", "enum": ["forced", "asr", "derived"], "description": "forced: aligned against known text; asr: transcribed and snapped to the text; derived: carried through an audio edit from the timings of the takes it was cut from (avg-8hs.5)." },
         "createdAt": { "type": "string", "format": "date-time" }
       }
     },
