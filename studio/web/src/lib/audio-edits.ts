@@ -48,6 +48,46 @@ export interface Mark {
 
 const fileName = (path: string) => path.split("/").pop() ?? path;
 
+type Loose = Record<string, any>;
+
+/**
+ * A record as the gateway read it, with what it lacks given its empty
+ * default: a record written before a field existed is still drawn.
+ */
+export function recordOf(raw: unknown): EditRecord {
+  const r = (raw ?? {}) as Loose;
+  const report = (r.report ?? {}) as Loose;
+  const loudness = (report.loudness ?? {}) as Loose;
+  const list = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  return {
+    output: { path: String(r.output?.path ?? ""), hash: String(r.output?.hash ?? ""), durationSeconds: Number(r.output?.durationSeconds) || 0 },
+    resolved: { tracks: list(r.resolved?.tracks) },
+    placements: list(r.placements),
+    report: {
+      loudness: { integrated: loudness.integrated ?? null, range: loudness.range ?? null, truePeak: loudness.truePeak ?? null },
+      normalization: String(report.normalization ?? "none"),
+      clipped: Number(report.clipped) || 0,
+      headTrim: Number(report.headTrim) || 0,
+      joins: list(report.joins),
+      concerns: list(report.concerns),
+    },
+    ...(Array.isArray(r.words) ? { words: r.words } : {}),
+    ...(Array.isArray(r.pauses) ? { pauses: r.pauses } : {}),
+    createdAt: String(r.createdAt ?? ""),
+  };
+}
+
+/** The takes the edit reads, once per source file: what "before" plays. */
+export function takesOf(record: EditRecord): { take: string; source: string; key: string }[] {
+  const out: { take: string; source: string; key: string }[] = [];
+  for (const p of record.placements) {
+    if (!p.take) continue;
+    const key = `${p.source}#${p.take}`;
+    if (!out.some((t) => t.key === key)) out.push({ take: p.take, source: p.source, key });
+  }
+  return out;
+}
+
 /** The tracks in the recipe's order, each with its clips where they landed. */
 export function lanesOf(record: EditRecord): Lane[] {
   const tracks = record.resolved.tracks ?? [];

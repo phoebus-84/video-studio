@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { envelope, lanesOf, marksOf, placeOf, whereLabel, type EditRecord } from "../../src/lib/audio-edits";
+import { envelope, lanesOf, marksOf, placeOf, recordOf, takesOf, whereLabel, type EditRecord } from "../../src/lib/audio-edits";
 
 const record: EditRecord = {
   output: { path: "assets/takes/recita-pause.wav", hash: "sha256:x", durationSeconds: 3 },
@@ -47,5 +47,24 @@ describe("the Audio tab's layout", () => {
     expect(env).toHaveLength(4);
     expect(env[3]![1]).toBeCloseTo(0.99, 2);
     expect(envelope(null, 0, 1, 4)).toEqual([]);
+  });
+});
+
+describe("recordOf and takesOf", () => {
+  it("gives a record missing fields its empty defaults, so the tab still draws it", () => {
+    const r = recordOf({ kind: "AudioEdit", output: { path: "assets/a.wav", hash: "h", durationSeconds: 2 } });
+    expect(r.placements).toEqual([]);
+    expect(r.resolved.tracks).toEqual([]);
+    expect(r.report.joins).toEqual([]);
+    expect(r.report.concerns).toEqual([]);
+    expect(r.report.loudness).toEqual({ integrated: null, range: null, truePeak: null });
+    expect(lanesOf(r)).toEqual([]);
+    expect(marksOf(r)).toEqual([]);
+  });
+
+  it("lists each take once per source it was read from, a path with a | included", () => {
+    const p = (take: string | undefined, source: string) => ({ track: "v", clip: "c", source, in: 0, out: 1, start: 0, end: 1, fadeIn: 0, fadeOut: 0, ...(take ? { take } : {}) });
+    const r = recordOf({ output: { path: "o.wav", hash: "h", durationSeconds: 1 }, placements: [p("t1", "a|b.wav"), p("t1", "a|b.wav"), p("t1", "other.wav"), p(undefined, "bed.wav")] });
+    expect(takesOf(r)).toEqual([{ take: "t1", source: "a|b.wav", key: "a|b.wav#t1" }, { take: "t1", source: "other.wav", key: "other.wav#t1" }]);
   });
 });

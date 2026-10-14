@@ -9,7 +9,7 @@
    */
   import { onDestroy } from "svelte";
   import { mediaUrl } from "$lib/episode-media";
-  import { envelope, lanesOf, marksOf, placeOf, wordIndexAt, type AudioEditEntry, type LaneClip } from "$lib/audio-edits";
+  import { envelope, lanesOf, marksOf, placeOf, takesOf, wordIndexAt, type AudioEditEntry, type LaneClip } from "$lib/audio-edits";
 
   let { entry }: { entry: AudioEditEntry } = $props();
 
@@ -17,18 +17,21 @@
   const duration = $derived(Math.max(0.01, record.output.durationSeconds));
   const lanes = $derived(lanesOf(record));
   const marks = $derived(marksOf(record));
-  const takes = $derived([...new Set(record.placements.filter((p) => p.take).map((p) => `${p.take}|${p.source}`))].map((k) => { const [take, source] = k.split("|"); return { take: take!, source: source! }; }));
+  const takes = $derived(takesOf(record));
 
   let width = $state(800);
   let canvas = $state<HTMLCanvasElement | null>(null);
-  let now = $state(0);
+  let overlay = $state<HTMLCanvasElement | null>(null);
+  /** Where the edit's output is, while it plays; -1 when it does not. */
+  let now = $state(-1);
   let playing = $state<string | null>(null);
   let error = $state<string | null>(null);
   let audio: HTMLAudioElement | null = null;
   let url: string | null = null;
   let stopAt = Infinity;
-  let offset = 0;
   let frame = 0;
+  /** Each play takes a generation; a fetch answered after another click, or after the view closed, is dropped. */
+  let generation = 0;
 
   const LANE = 34;
   const WAVE = 90;
@@ -42,20 +45,28 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   }
 
-  function draw() {
-    const c = canvas;
-    if (!c) return;
+  function context(c: HTMLCanvasElement): CanvasRenderingContext2D {
     const dpr = window.devicePixelRatio || 1;
-    c.width = Math.round(width * dpr);
-    c.height = Math.round(height * dpr);
+    const w = Math.round(width * dpr);
+    const h = Math.round(height * dpr);
+    if (c.width !== w) c.width = w;
+    if (c.height !== h) c.height = h;
     const g = c.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, width, height);
+    g.font = "10px system-ui, sans-serif";
+    return g;
+  }
+
+  /** What does not move: ruler, waveform, lanes, marks. Drawn when the edit or the width changes. */
+  function draw() {
+    const c = canvas;
+    if (!c) return;
+    const g = context(c);
     const text = color("--vs-text-secondary", "#888");
     const faint = color("--vs-border-subtle", "#ddd");
     const accent = color("--vs-accent", "#3b82f6");
     const danger = color("--vs-danger", "#dc2626");
-    g.font = "10px system-ui, sans-serif";
     // ruler
     const step = duration > 60 ? 10 : duration > 20 ? 5 : 1;
     g.fillStyle = text;
@@ -69,12 +80,6 @@
     const mid = RULER + WAVE / 2;
     g.fillStyle = accent;
     env.forEach(([lo, hi], i) => g.fillRect(i, mid - hi * (WAVE / 2), 1, Math.max(1, (hi - lo) * (WAVE / 2))));
-    // words
-    const current = wordIndexAt(record.words, now);
-    (record.words ?? []).forEach((w, i) => {
-      g.fillStyle = i === current ? accent : text;
-      g.fillText(w.text, x(w.start), RULER + WAVE + 12);
-    });
     // lanes
     lanes.forEach((lane, l) => {
       const top = RULER + WAVE + WORDS + l * LANE;
@@ -114,56 +119,83 @@
       g.beginPath(); g.moveTo(x(m.at), RULER); g.lineTo(x(m.at), height); g.stroke();
       g.lineWidth = 1;
     }
-    // playhead
-    if (playing === "output") {
-      g.strokeStyle = danger;
+  }
+
+  /** What moves: the words, the current one lit, and the playhead. Cheap, drawn every frame. */
+  function drawOverlay() {
+    const c = overlay;
+    if (!c) return;
+    const g = context(c);
+    const text = color("--vs-text-secondary", "#888");
+    const accent = color("--vs-accent", "#3b82f6");
+    const current = now >= 0 ? wordIndexAt(record.words, now) : -1;
+    (record.words ?? []).forEach((w, i) => {
+      g.fillStyle = i === current ? accent : text;
+      g.fillText(w.text, x(w.start), RULER + WAVE + 12);
+    });
+    if (now >= 0) {
+      g.strokeStyle = color("--vs-danger", "#dc2626");
       g.beginPath(); g.moveTo(x(now), 0); g.lineTo(x(now), height); g.stroke();
     }
   }
 
   $effect(() => {
-    void width; void now; void playing; void entry;
+    void width; void height; void entry;
     draw();
   });
+  $effect(() => {
+    void width; void height; void entry; void now;
+    drawOverlay();
+  });
 
-  function stop() {
+  function release() {
     cancelAnimationFrame(frame);
     if (audio) { audio.pause(); audio.onended = null; }
     audio = null;
     if (url) URL.revokeObjectURL(url);
     url = null;
-    playing = null;
   }
 
-  async function play(key: string, path: string, from = 0, to = Infinity, at = 0) {
+  function stop() {
+    generation += 1;
+    release();
+    playing = null;
+    now = -1;
+  }
+
+  /** Plays `path` from `from` to `to`; `output` says it is the edit itself, whose time the playhead shows. */
+  async function play(key: string, path: string, from = 0, to = Infinity, output = false) {
     if (playing === key) return stop();
     stop();
+    const mine = generation;
     error = null;
-    const made = await mediaUrl(placeOf(entry.where), path);
-    if (!made) { error = `${path} could not be read`; return; }
-    url = made;
-    audio = new Audio(made);
-    stopAt = to;
-    offset = at - from;
-    audio.currentTime = from;
-    audio.onended = stop;
     playing = key;
-    await audio.play().catch(() => { error = "the browser refused to play"; stop(); });
+    const made = await mediaUrl(placeOf(entry.where), path);
+    if (mine !== generation) { if (made) URL.revokeObjectURL(made); return; }
+    if (!made) { error = `${path} could not be read`; playing = null; return; }
+    url = made;
+    const a = new Audio(made);
+    audio = a;
+    stopAt = to;
+    a.currentTime = from;
+    a.onended = stop;
+    await a.play().catch(() => { if (mine === generation) { error = "the browser refused to play"; stop(); } });
+    if (mine !== generation) return;
     const tick = () => {
-      if (!audio) return;
-      now = audio.currentTime + offset;
+      if (mine !== generation || !audio) return;
+      if (output) now = audio.currentTime;
       if (audio.currentTime >= stopAt) return stop();
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
   }
 
-  const playClip = (clip: LaneClip) => play(`clip:${clip.id}`, clip.source, clip.in, clip.out, clip.start);
+  const clipKey = (track: string, clip: LaneClip) => `clip:${track}/${clip.id}`;
 
   function seek(event: MouseEvent) {
-    if (playing !== "output" || !audio || !canvas) return;
-    const box = canvas.getBoundingClientRect();
-    audio.currentTime = ((event.clientX - box.left) / box.width) * duration;
+    if (playing !== "output" || !audio || !overlay) return;
+    const box = overlay.getBoundingClientRect();
+    audio.currentTime = Math.max(0, Math.min(duration, ((event.clientX - box.left) / box.width) * duration));
   }
 
   onDestroy(stop);
@@ -180,15 +212,16 @@
       </span>
     </div>
     <div class="ae-buttons">
-      <button onclick={() => play("output", record.output.path)}>{playing === "output" ? "Stop" : "Play the edit"}</button>
-      {#each takes as t (t.take)}
-        <button onclick={() => play(`take:${t.take}`, t.source)} title="The take as it was before the edit">{playing === `take:${t.take}` ? "Stop" : `Before: ${t.take}`}</button>
+      <button onclick={() => play("output", record.output.path, 0, Infinity, true)}>{playing === "output" ? "Stop" : "Play the edit"}</button>
+      {#each takes as t (t.key)}
+        <button onclick={() => play(`take:${t.key}`, t.source)} title={`The take as it was before the edit: ${t.source}`}>{playing === `take:${t.key}` ? "Stop" : `Before: ${t.take}`}</button>
       {/each}
     </div>
   </header>
 
   <div class="ae-canvas" bind:clientWidth={width}>
-    <canvas bind:this={canvas} style:width="{width}px" style:height="{height}px" onclick={seek} aria-label="Waveform, words, tracks and marks of the edit"></canvas>
+    <canvas bind:this={canvas} style:width="{width}px" style:height="{height}px" aria-hidden="true"></canvas>
+    <canvas class="ae-overlay" bind:this={overlay} style:width="{width}px" style:height="{height}px" onclick={seek} aria-label="Waveform, words, tracks and marks of the edit; click to move the playhead while the edit plays"></canvas>
   </div>
 
   {#if error}<p class="ae-bad" role="alert">{error}</p>{/if}
@@ -200,7 +233,7 @@
         {#each lanes as lane (lane.track)}
           {#each lane.clips.filter((c) => !c.room) as clip (`${lane.track}/${clip.id}`)}
             <li>
-              <button onclick={() => playClip(clip)}>{playing === `clip:${clip.id}` ? "■" : "▶"}</button>
+              <button onclick={() => play(clipKey(lane.track, clip), clip.source, clip.in, clip.out)} aria-label={`Play ${lane.track}/${clip.id} from its source`}>{playing === clipKey(lane.track, clip) ? "■" : "▶"}</button>
               <span class="ae-mono">{lane.track}/{clip.id}</span> {clip.label} {clip.in.toFixed(2)}–{clip.out.toFixed(2)} s → {clip.start.toFixed(2)} s
             </li>
           {/each}
@@ -227,8 +260,9 @@
   .ae-head span { font-size: var(--vs-text-xs); color: var(--vs-text-secondary); }
   .ae-buttons { display: flex; gap: var(--vs-space-2); flex-wrap: wrap; }
   .ae-buttons button, .ae-clips button { border: 1px solid var(--vs-border); border-radius: var(--vs-radius-sm); background: var(--vs-bg-raised); padding: 2px var(--vs-space-2); cursor: pointer; font-size: var(--vs-text-xs); }
-  .ae-canvas { width: 100%; border: 1px solid var(--vs-border-subtle); border-radius: var(--vs-radius-md); background: var(--vs-bg-inset); overflow: hidden; }
-  canvas { display: block; cursor: crosshair; }
+  .ae-canvas { position: relative; width: 100%; border: 1px solid var(--vs-border-subtle); border-radius: var(--vs-radius-md); background: var(--vs-bg-inset); overflow: hidden; }
+  canvas { display: block; }
+  .ae-overlay { position: absolute; inset: 0; cursor: crosshair; }
   .ae-columns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--vs-space-4); }
   h5 { margin: 0 0 var(--vs-space-1); font-size: var(--vs-text-sm); color: var(--vs-text-primary); }
   ul { list-style: none; margin: 0; padding: 0; font-size: var(--vs-text-xs); color: var(--vs-text-secondary); }
