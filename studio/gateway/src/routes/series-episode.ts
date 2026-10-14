@@ -13,7 +13,7 @@ import type { FastifyInstance } from "fastify";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { episodePath } from "@studio/contracts/src/layout.mjs";
+import { episodePath, sourcePath } from "@studio/contracts/src/layout.mjs";
 import { reviewSheet, sheetReviewStatus } from "@studio/runtime";
 import { ErrorCode, GatewayError } from "../errors/index.js";
 
@@ -100,12 +100,13 @@ interface TakeView {
   role?: string;
   voice: unknown;
   durationSeconds: number | null;
-  audio: (EpisodeRef & { path: string }) | null;
+  /** Where the take's audio is: an episode's file, or a channel source's (avg-8hs.5). */
+  audio: ((EpisodeRef | { channel: string; source: string }) & { path: string }) | null;
   words: { text: string; start: number; end: number }[] | null;
 }
 
 /** An episode's takes.json, each take with its audio's place and its timing's words. */
-function takesOf(dir: string, ref: EpisodeRef): { units: unknown[]; takes: TakeView[] } {
+function takesOf(dir: string, ref: EpisodeRef | { channel: string; source: string }): { units: unknown[]; takes: TakeView[] } {
   const doc = readJson(join(dir, TAKES));
   if (!doc || !Array.isArray(doc.takes)) return { units: [], takes: [] };
   const takes = (doc.takes as any[]).map((take): TakeView => {
@@ -129,18 +130,56 @@ function takesOf(dir: string, ref: EpisodeRef): { units: unknown[]; takes: TakeV
   return { units: Array.isArray(doc.units) ? doc.units : [], takes };
 }
 
-/** The episodes this one pins as its source (ADR-0035), and their takes, read-only. */
-function sourcesOf(libraryRoot: string, dir: string, ref: EpisodeRef) {
+/** The episodes and channel sources this one pins (ADR-0035), by pin id. */
+type Pinned = { pin: string; kind: "episode"; episode: EpisodeRef; dir: string } | { pin: string; kind: "source"; name: string; dir: string };
+
+function pinsOf(libraryRoot: string, dir: string, ref: EpisodeRef): Pinned[] {
   const pinsDir = join(dir, "source", "pins");
   if (!existsSync(pinsDir)) return [];
-  return readdirSync(pinsDir).filter((name) => name.endsWith(".json") && !name.startsWith(".")).sort().flatMap((name) => {
+  return readdirSync(pinsDir).filter((name) => name.endsWith(".json") && !name.startsWith(".")).sort().flatMap((name): Pinned[] => {
     const pin = readJson(join(pinsDir, name));
     const source = pin?.source;
-    if (source?.kind !== "episode" || !SLUG.test(source.series ?? "") || !SLUG.test(source.episode ?? "")) return [];
-    const sourceRef = { channel: ref.channel, series: source.series as string, episode: source.episode as string };
-    const sourceDir = episodePath(libraryRoot, sourceRef.channel, sourceRef.series, sourceRef.episode);
-    return [{ pin: pin.id as string, episode: sourceRef, ...takesOf(sourceDir, sourceRef) }];
+    if (source?.kind === "episode" && SLUG.test(source.series ?? "") && SLUG.test(source.episode ?? "")) {
+      const episode = { channel: ref.channel, series: source.series as string, episode: source.episode as string };
+      return [{ pin: pin.id as string, kind: "episode" as const, episode, dir: episodePath(libraryRoot, episode.channel, episode.series, episode.episode) }];
+    }
+    if (source?.kind === "channel-source" && SLUG.test(source.name ?? "")) {
+      return [{ pin: pin.id as string, kind: "source" as const, name: source.name as string, dir: sourcePath(libraryRoot, ref.channel, source.name) }];
+    }
+    return [];
   });
+}
+
+/** The pinned episodes' and channel sources' takes, read-only. */
+function sourcesOf(libraryRoot: string, dir: string, ref: EpisodeRef) {
+  return pinsOf(libraryRoot, dir, ref).map((p) => p.kind === "episode"
+    ? { pin: p.pin, episode: p.episode, ...takesOf(p.dir, p.episode) }
+    : { pin: p.pin, source: { channel: ref.channel, name: p.name }, ...takesOf(p.dir, { channel: ref.channel, source: p.name }) });
+}
+
+/** Every <file>.edit.json under a workspace's assets/ and artifacts/, with its peaks; unreadable ones named. */
+function editsIn(dir: string): { recordPath: string; record: unknown; peaks: unknown }[] & { invalid?: string[] } {
+  const out: { recordPath: string; record: unknown; peaks: unknown }[] & { invalid?: string[] } = [];
+  const invalid: string[] = [];
+  const walk = (rel: string) => {
+    const full = join(dir, rel);
+    if (!existsSync(full)) return;
+    for (const entry of readdirSync(full, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name.startsWith(".")) continue;
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(child);
+      else if (entry.name.endsWith(".edit.json")) {
+        const record = readJson(join(dir, child));
+        if (record?.kind !== "AudioEdit" || typeof record?.output?.path !== "string") { invalid.push(child); continue; }
+        const peaks = readJson(join(dir, `${record.output.path}.peaks.json`));
+        out.push({ recordPath: child, record, peaks: Array.isArray(peaks?.peaks) ? peaks : null });
+      }
+    }
+  };
+  walk("assets");
+  walk("artifacts");
+  out.invalid = invalid;
+  return out;
 }
 
 export function registerSeriesEpisodeRoutes(app: FastifyInstance, options: { libraryRoot: string; operatorKey: string | null }): void {
@@ -204,6 +243,22 @@ export function registerSeriesEpisodeRoutes(app: FastifyInstance, options: { lib
     const outcome = reviewSheet({ libraryRoot, ref, key: operatorKey, decision, ...(note?.trim() ? { note: note.trim() } : {}) });
     if (!outcome.ok) return reply.status(409).send({ error: outcome.code, message: outcome.message });
     return { ok: true, review: outcome.value.review };
+  });
+
+  app.get("/api/channels/:channel/series/:series/episodes/:episode/audio-edits", {
+    schema: { description: "The audio edits (<file>.edit.json) of an episode and of the episodes and channel sources it pins, with their waveform peaks.", tags: ["series"], params: episodeParams },
+  }, async (request) => {
+    const ref = parseEpisode(request.params as Record<string, string>);
+    const dir = dirOf(ref);
+    const own = editsIn(dir);
+    const invalid = [...(own.invalid ?? [])];
+    const edits: unknown[] = own.map((e) => ({ where: { kind: "episode", ...ref }, ...e }));
+    for (const p of pinsOf(libraryRoot, dir, ref)) {
+      const found = editsIn(p.dir);
+      const where = p.kind === "episode" ? { kind: "episode", ...p.episode, pin: p.pin } : { kind: "source", channel: ref.channel, source: p.name, pin: p.pin };
+      edits.push(...found.map((e) => ({ where, ...e })));
+    }
+    return { edits, invalid };
   });
 
   app.get("/api/channels/:channel/series/:series/episodes/:episode/narration-takes", {

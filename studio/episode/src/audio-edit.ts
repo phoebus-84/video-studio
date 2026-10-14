@@ -39,7 +39,7 @@ export interface EditRecipe {
 }
 
 export class EditError extends Error {
-  constructor(readonly code: "bad-recipe" | "no-such-take" | "no-timing" | "no-such-word" | "no-room", message: string, readonly path?: string) {
+  constructor(readonly code: "bad-recipe" | "no-such-take" | "audio-changed" | "no-timing" | "stale-timing" | "no-such-word" | "no-room", message: string, readonly path?: string) {
     super(message);
     this.name = "EditError";
   }
@@ -65,6 +65,8 @@ interface TakeInfo {
   words: { text: string; start: number; end: number }[];
   duration: number;
   rms: number[];
+  /** It has a timing, but not of this audio, or not readable. */
+  stale?: boolean;
 }
 
 /** A file the recipe names, inside the workspace once links are followed. */
@@ -95,6 +97,21 @@ function wordIndex(take: TakeInfo, ref: WordRef, where: string): number {
   return at;
 }
 
+/** A gain curve seen from `offset` seconds into it: its value there becomes its first point. */
+function shiftCurve(points: [number, number][], offset: number): [number, number][] {
+  if (offset <= 0) return points;
+  const at = (t: number) => {
+    if (t <= points[0]![0]) return points[0]![1];
+    for (let k = 1; k < points.length; k++) {
+      const [t0, v0] = points[k - 1]!;
+      const [t1, v1] = points[k]!;
+      if (t < t1) return v0 + ((v1 - v0) * (t - t0)) / (t1 - t0);
+    }
+    return points[points.length - 1]![1];
+  };
+  return [[0, r6(at(offset))], ...points.filter(([t]) => t > offset + 1e-6).map(([t, v]) => [r6(t - offset), v] as [number, number])];
+}
+
 /** Where to cut beside a word: the quietest point of the gap before its start, or after its end. */
 function cutAt(take: TakeInfo, anchor: WordAnchor, where: string, concerns: string[]): number {
   const i = wordIndex(take, anchor, where);
@@ -109,7 +126,7 @@ function cutAt(take: TakeInfo, anchor: WordAnchor, where: string, concerns: stri
 }
 
 /** The take's quietest stretch of ROOM_TONE seconds, inside a pause between words when it has one. */
-function roomTone(take: TakeInfo): [number, number] {
+function roomTone(take: TakeInfo, concerns: string[]): [number, number] {
   let best: [number, number] | null = null;
   let bestRms = Infinity;
   const windows = ROOM_TONE / 0.01;
@@ -122,7 +139,10 @@ function roomTone(take: TakeInfo): [number, number] {
     }
   };
   for (let i = 1; i < take.words.length; i++) consider(take.words[i - 1]!.end + 0.03, take.words[i]!.start - 0.03);
-  if (!best) consider(0, take.duration);
+  if (!best) {
+    concerns.push(`take "${take.id}" has no pause of ${ROOM_TONE + 0.06} s between words: its room tone was taken from its quietest stretch anywhere, which may hold breath or speech`);
+    consider(0, take.duration);
+  }
   if (!best) throw new EditError("no-room", `take "${take.id}" has no ${ROOM_TONE} s of quiet to lengthen a pause with`);
   return best;
 }
@@ -131,9 +151,12 @@ function roomTone(take: TakeInfo): [number, number] {
  * Turn the workspace recipe into @av/audio-edit's: takes to their audio
  * files, words to seconds, pauses to splices and room tone.
  */
-export async function resolveEdit(dir: string, recipe: EditRecipe): Promise<{ resolved: Recipe; takes: Map<string, TakeInfo>; clipTakes: Map<string, string>; roomOf: Map<string, string>; inputs: Record<string, string>; concerns: string[] }> {
+export async function resolveEdit(dir: string, recipe: EditRecipe): Promise<{ resolved: Recipe; takes: Map<string, TakeInfo>; clipTakes: Map<string, string>; roomOf: Map<string, string>; pieceOf: Map<string, string>; inputs: Record<string, string>; concerns: string[]; reshaped: { take: string; word: string; before: number; after: number; p: number; delta: number }[] }> {
   if (!recipe?.output?.path || !OUTPUT_DIRS.some((d) => recipe.output.path.startsWith(d)) || recipe.output.path.includes("..")) {
     throw new EditError("bad-recipe", `$.output.path: an edit writes into ${OUTPUT_DIRS.join(", ")}`, "$.output.path");
+  }
+  if (!Array.isArray(recipe.tracks) || recipe.tracks.length === 0 || !recipe.tracks.every((t) => t && Array.isArray(t.clips))) {
+    throw new EditError("bad-recipe", "$.tracks: a list of tracks, each with its clips", "$.tracks");
   }
   const takesDoc = existsSync(join(dir, TAKES_PATH)) ? JSON.parse(readFileSync(join(dir, TAKES_PATH), "utf-8")) : { takes: [] };
   const takes = new Map<string, TakeInfo>();
@@ -151,24 +174,31 @@ export async function resolveEdit(dir: string, recipe: EditRecipe): Promise<{ re
     const take = (takesDoc.takes ?? []).find((t: any) => t?.id === id);
     if (!take) throw new EditError("no-such-take", `${where}: ${TAKES_PATH} has no take "${id}"`, where);
     const audio = read(take.audio.path, where);
-    if (inputs[audio] !== take.audio.hash) throw new EditError("no-such-take", `${where}: ${take.audio.path} is not the audio take "${id}" recorded`, where);
+    if (inputs[audio] !== take.audio.hash) throw new EditError("audio-changed", `${where}: ${take.audio.path} is not the audio take "${id}" recorded: register the take again`, where);
     let words: TakeInfo["words"] = [];
+    let stale = false;
     if (take.timing?.path) {
       const timingPath = read(take.timing.path, where);
-      const timing = JSON.parse(readFileSync(join(dir, timingPath), "utf-8"));
-      if (inputs[timingPath] === take.timing.hash && timing?.audio?.hash === take.audio.hash) words = timing.words.filter((w: any) => Number.isFinite(w.start) && Number.isFinite(w.end));
+      let timing: any = null;
+      try { timing = JSON.parse(readFileSync(join(dir, timingPath), "utf-8")); } catch { /* stale below */ }
+      if (inputs[timingPath] === take.timing.hash && timing?.audio?.hash === take.audio.hash && Array.isArray(timing?.words)) {
+        words = timing.words.filter((w: any) => typeof w?.text === "string" && Number.isFinite(w.start) && Number.isFinite(w.end));
+      } else stale = true;
     }
     const scanned = await scan(join(dir, audio));
-    const info: TakeInfo = { id, path: audio, words, duration: scanned.durationSeconds, rms: scanned.rms };
+    const info: TakeInfo = { id, path: audio, words, duration: scanned.durationSeconds, rms: scanned.rms, stale };
     takes.set(id, info);
     return info;
   };
   const needWords = (take: TakeInfo, where: string) => {
+    if (take.stale) throw new EditError("stale-timing", `${where}: take "${take.id}"'s timing is not of its audio (or unreadable): align it again (pva_align_take)`, where);
     if (take.words.length === 0) throw new EditError("no-timing", `${where}: take "${take.id}" has no timing to cut on words: align it first (pva_align_take)`, where);
   };
 
   // Pauses, by take: where each falls, and how much it changes.
-  const pausesByTake = new Map<string, { at: number; delta: number; where: string }[]>();
+  const pausesByTake = new Map<string, { at: number; delta: number; where: string; word: string; used?: boolean }[]>();
+  /** What each reshaped pause was and became, for the record. */
+  const reshaped: { take: string; word: string; before: number; after: number; p: number; delta: number }[] = [];
   for (const [k, p] of (recipe.pauses ?? []).entries()) {
     const where = `$.pauses[${k}]`;
     if (typeof p.seconds !== "number" || !(p.seconds >= 0)) throw new EditError("bad-recipe", `${where}.seconds: a number of seconds ≥ 0`, where);
@@ -188,13 +218,18 @@ export async function resolveEdit(dir: string, recipe: EditRecipe): Promise<{ re
         delta = -room;
       }
     }
-    if (Math.abs(delta) >= 0.005) pausesByTake.set(take.id, [...(pausesByTake.get(take.id) ?? []), { at, delta, where }]);
+    if (Math.abs(delta) >= 0.005) {
+      pausesByTake.set(take.id, [...(pausesByTake.get(take.id) ?? []), { at, delta, where, word: take.words[i]!.text }]);
+      reshaped.push({ take: take.id, word: take.words[i]!.text, before: r6(current), after: r6(current + delta), p: at, delta });
+    }
   }
 
   // Clips: sources to paths, anchors to seconds, then split at the pauses they hold.
   const clipTakes = new Map<string, string>();
   /** Room-tone pieces: cut from a take, but carrying none of its words. */
   const roomOf = new Map<string, string>();
+  /** Every piece a pause made, by "track/piece", to the clip it was cut from. */
+  const pieceOf = new Map<string, string>();
   const tracks: Track[] = [];
   for (const [t, track] of recipe.tracks.entries()) {
     const clips: Clip[] = [];
@@ -211,40 +246,51 @@ export async function resolveEdit(dir: string, recipe: EditRecipe): Promise<{ re
         const a = cut(from, "in") ?? 0;
         const b = cut(to, "out") ?? take.duration;
         const pauses = (pausesByTake.get(take.id) ?? []).filter((p) => p.at > a + WORD_GUARD && p.at < b - WORD_GUARD).sort((x, y) => x.at - y.at);
+        for (const p of pauses) p.used = true;
         // The clip in pieces: up to each pause, the room tone it gains (or the time it loses), on to the next.
+        const pieces: { room: boolean; in: number; out: number }[] = [];
         let start = a;
-        let part = 0;
-        const piece = (pin: number, pout: number, extra: Partial<Clip>) => {
-          const id = part === 0 ? clip.id : `${clip.id}.${part}`;
-          clips.push({ ...(part === 0 ? rest : { at: "after" as const }), ...extra, id, source: take.path, in: r6(pin), out: r6(pout) } as Clip);
-          clipTakes.set(`${track.id}/${id}`, take.id);
-          part++;
-        };
         for (const p of pauses) {
           if (p.delta > 0) {
-            piece(start, p.at, part === 0 ? {} : { crossfade: SPLICE });
+            pieces.push({ room: false, in: start, out: p.at });
             // Each room-tone piece overlaps the one before by SPLICE, and the take's next piece overlaps the last:
             // the pieces must add up to delta + SPLICE beyond their own overlaps.
-            const [r0, r1] = roomTone(take);
+            const [r0, r1] = roomTone(take, concerns);
             const need = p.delta + SPLICE;
             let filled = 0;
             while (filled < need - 1e-6) {
               const len = Math.max(Math.min(r1 - r0, need - filled + SPLICE), 2 * SPLICE + 0.001);
-              clips.push({ id: `${clip.id}.room${part}`, source: take.path, in: r6(r0), out: r6(r0 + len), at: "after", crossfade: SPLICE });
-              roomOf.set(`${track.id}/${clip.id}.room${part}`, take.id);
-              part++;
+              pieces.push({ room: true, in: r0, out: r0 + len });
               filled += len - SPLICE;
             }
             start = p.at;
           } else {
             // The splice's own crossfade takes SPLICE: cut that much less.
-            const cut = -p.delta - SPLICE;
-            if (cut <= 0) continue;
-            piece(start, p.at - cut / 2, part === 0 ? {} : { crossfade: SPLICE });
-            start = p.at + cut / 2;
+            const removed = -p.delta - SPLICE;
+            if (removed <= 0) continue;
+            pieces.push({ room: false, in: start, out: p.at - removed / 2 });
+            start = p.at + removed / 2;
           }
         }
-        piece(start, b, part === 0 ? {} : { crossfade: SPLICE });
+        pieces.push({ room: false, in: start, out: b });
+        // The clip's own placement and fade-in go to its first piece, its fade-out to its last, its gain to all;
+        // its automation continues across the pieces, each shifted to where it starts.
+        const { gain, fadeIn, fadeOut, automation, crossfade, at } = rest as Clip;
+        let offset = 0;
+        pieces.forEach((piece, k) => {
+          const id = k === 0 ? clip.id : piece.room ? `${clip.id}.room${k}` : `${clip.id}.${k}`;
+          const last = k === pieces.length - 1;
+          clips.push({
+            id, source: take.path, in: r6(piece.in), out: r6(piece.out),
+            ...(k === 0 ? { at, ...(crossfade ? { crossfade } : {}), ...(fadeIn ? { fadeIn } : {}) } : { at: "after" as const, crossfade: SPLICE }),
+            ...(gain ? { gain } : {}),
+            ...(last && fadeOut ? { fadeOut } : {}),
+            ...(automation?.length ? { automation: shiftCurve(automation, offset) } : {}),
+          } as Clip);
+          (piece.room ? roomOf : clipTakes).set(`${track.id}/${id}`, take.id);
+          pieceOf.set(`${track.id}/${id}`, clip.id);
+          offset += piece.out - piece.in - (k + 1 < pieces.length ? SPLICE : 0);
+        });
       } else {
         const path = read(source.path, `${where}.source`);
         if (typeof from === "object" || typeof to === "object") throw new EditError("bad-recipe", `${where}: only a take's clip can cut on words`, where);
@@ -253,12 +299,18 @@ export async function resolveEdit(dir: string, recipe: EditRecipe): Promise<{ re
     }
     tracks.push({ ...track, clips } as Track);
   }
+  for (const [takeId, list] of pausesByTake) {
+    for (const p of list) if (!p.used) concerns.push(`${p.where}: the pause after «${p.word}» in take "${takeId}" is in no clip of the recipe (or at a cut): nothing was reshaped`);
+  }
+  if (inputs[recipe.output.path] !== undefined || (takesDoc.takes ?? []).some((t: any) => t?.audio?.path === recipe.output.path)) {
+    throw new EditError("bad-recipe", `$.output.path: ${recipe.output.path} is a file the edit reads, or a take's audio: write a new file`, "$.output.path");
+  }
   const resolved: Recipe = {
     output: { ...(recipe.output.sampleRate ? { sampleRate: recipe.output.sampleRate } : {}), ...(recipe.output.channels ? { channels: recipe.output.channels } : {}) },
     tracks,
     ...(recipe.master ? { master: recipe.master } : {}),
   };
-  return { resolved, takes, clipTakes, roomOf, inputs, concerns };
+  return { resolved, takes, clipTakes, roomOf, pieceOf, inputs, concerns, reshaped };
 }
 
 /** The words the output carries: each take clip's words, moved to where the clip landed. */
@@ -284,7 +336,12 @@ function carriedWords(placements: AudioEditPlacement[], takes: Map<string, TakeI
  * <output>.peaks.json (min/max per 10 ms) for drawing it.
  */
 export async function editAudio(dir: string, recipe: EditRecipe, options: { now?: () => Date } = {}): Promise<{ record: AudioEditRecord; recordPath: string }> {
-  const { resolved, takes, clipTakes, roomOf, inputs, concerns } = await resolveEdit(dir, recipe);
+  const { resolved, takes, clipTakes, roomOf, pieceOf, inputs, concerns, reshaped } = await resolveEdit(dir, recipe);
+  // The joins inside a clip a pause split are splices of its own room tone: measured against silence, never a jump to report.
+  const ownSplice = (j: { track: string; before: string; after: string }) => {
+    const a = pieceOf.get(`${j.track}/${j.before}`);
+    return a !== undefined && a === pieceOf.get(`${j.track}/${j.after}`);
+  };
   const outputPath = join(dir, recipe.output.path);
   const result = await renderRecipe(resolved, { root: dir, output: outputPath });
   const placements: AudioEditPlacement[] = result.placements.map((p) => {
@@ -307,9 +364,16 @@ export async function editAudio(dir: string, recipe: EditRecipe, options: { now?
         truePeak: Number.isFinite(result.loudness.truePeak) ? result.loudness.truePeak : null,
       },
       normalization: result.normalization, clipped: result.clipped, headTrim: result.headTrim,
-      joins: result.joins, concerns: [...concerns, ...result.concerns],
+      joins: result.joins.filter((j) => !ownSplice(j)),
+      concerns: [...concerns, ...result.concerns.filter((c) => !result.joins.some((j) => ownSplice(j) && c.includes(`(${j.track}: ${j.before} → ${j.after})`)))],
     },
     ...(takes.size > 0 ? { words: carriedWords(result.placements, takes, clipTakes, result.durationSeconds) } : {}),
+    // Each reshaped pause where it falls: the end of the take's piece that stops at it.
+    ...(reshaped.length > 0 ? { pauses: reshaped.flatMap((r) => {
+      const slack = Math.max(0, -r.delta) / 2 + 0.002;
+      const piece = result.placements.find((p) => clipTakes.get(`${p.track}/${p.clip}`) === r.take && Math.abs(p.out - r.p) <= slack);
+      return piece ? [{ take: r.take, word: r.word, before: r.before, after: r.after, at: piece.end }] : [];
+    }) } : {}),
     createdAt: (options.now?.() ?? new Date()).toISOString(),
   };
   const problems = validateAudioEdit(record);

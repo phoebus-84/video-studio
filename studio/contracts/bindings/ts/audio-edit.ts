@@ -55,5 +55,13 @@ export interface AudioEdit {
     start: number;
     end: number;
   }[];
+  /** The pauses the edit reshaped: after which word of which take, how long it was, how long it is, and where it falls on the output. */
+  pauses?: {
+    take: string;
+    word: string;
+    before: number;
+    after: number;
+    at: number;
+  }[];
   createdAt: string;
 }

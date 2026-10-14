@@ -18,6 +18,7 @@ export interface AudioEditRecord {
     concerns: string[];
   };
   words?: { text: string; start: number; end: number }[];
+  pauses?: { take: string; word: string; before: number; after: number; at: number }[];
   createdAt: string;
 }
 export declare function validateAudioEdit(doc: unknown): { code: string; path: string; message: string }[];

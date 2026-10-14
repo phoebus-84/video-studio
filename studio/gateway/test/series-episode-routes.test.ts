@@ -215,3 +215,54 @@ describe("GET narration-takes", () => {
     }]);
   });
 });
+
+describe("channel sources and audio edits (avg-8hs.5)", () => {
+  /** A file of the channel source `novembre`. */
+  const writeSource = (root: string, path: string, content: string) => {
+    const full = join(root, REF.channel, "sources", "novembre", path);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, content);
+  };
+  const record = (path: string, extra: Record<string, unknown> = {}) => JSON.stringify({
+    apiVersion: "studio.video/v1alpha1", kind: "AudioEdit", recipe: {}, resolved: {}, inputs: {},
+    output: { path, hash: sha(path), durationSeconds: 28.8 },
+    placements: [{ track: "voice", clip: "r", source: "assets/takes/recita.wav", in: 0, out: 10, start: 0, end: 10, fadeIn: 0, fadeOut: 0, take: "recita" }],
+    report: { loudness: { integrated: -16, range: 3, truePeak: -1.2 }, normalization: "gain", clipped: 0, headTrim: 0.1, joins: [], concerns: [] },
+    words: [{ text: "Gemmea", start: 0.1, end: 0.6 }], createdAt: "2026-10-14T10:00:00.000Z", ...extra,
+  });
+
+  it("gives the takes of a pinned channel source, addressed in the channel", async () => {
+    const lib = library();
+    lib.write(REF, "episode-spec.json", "{}");
+    lib.write(REF, "source/pins/fonte.json", JSON.stringify({ id: "fonte", source: { kind: "channel-source", name: "novembre" } }));
+    writeSource(lib.root, "artifacts/narration/takes.json", JSON.stringify({
+      takes: [{ id: "recita", text: "Gemmea l'aria", voice: { provider: "qwen-local" }, audio: { path: "assets/takes/recita.1ac662cf.wav", durationSeconds: 28.8 } }],
+      units: [{ id: "recital", sequence: [{ take: "recita" }] }],
+    }));
+    const app = await appOn(lib.root);
+    const body = (await app.inject({ url: `${BASE}/narration-takes` })).json();
+    expect(body.sources).toEqual([{
+      pin: "fonte", source: { channel: REF.channel, name: "novembre" },
+      units: [{ id: "recital", sequence: [{ take: "recita" }] }],
+      takes: [{ id: "recita", text: "Gemmea l'aria", voice: { provider: "qwen-local" }, durationSeconds: 28.8, audio: { channel: REF.channel, source: "novembre", path: "assets/takes/recita.1ac662cf.wav" }, words: null }],
+    }]);
+  });
+
+  it("lists the audio edits of the episode and of its pinned sources, with their peaks", async () => {
+    const lib = library();
+    lib.write(REF, "episode-spec.json", "{}");
+    lib.write(REF, "assets/sounds/letto.wav.edit.json", record("assets/sounds/letto.wav"));
+    lib.write(REF, "assets/sounds/letto.wav.peaks.json", JSON.stringify({ window: 0.01, peaks: [[-0.1, 0.1]] }));
+    lib.write(REF, "assets/sounds/broken.wav.edit.json", "{ not json");
+    lib.write(REF, "source/pins/fonte.json", JSON.stringify({ id: "fonte", source: { kind: "channel-source", name: "novembre" } }));
+    writeSource(lib.root, "assets/takes/recita-pause.wav.edit.json", record("assets/takes/recita-pause.wav"));
+    const app = await appOn(lib.root);
+    const body = (await app.inject({ url: `${BASE}/audio-edits` })).json();
+    expect(body.edits.map((e: any) => [e.where, e.recordPath, e.peaks?.peaks?.length ?? null])).toEqual([
+      [{ kind: "episode", ...REF }, "assets/sounds/letto.wav.edit.json", 1],
+      [{ kind: "source", channel: REF.channel, source: "novembre", pin: "fonte" }, "assets/takes/recita-pause.wav.edit.json", null],
+    ]);
+    expect(body.edits[0].record.report.normalization).toBe("gain");
+    expect(body.invalid).toEqual(["assets/sounds/broken.wav.edit.json"]);
+  });
+});

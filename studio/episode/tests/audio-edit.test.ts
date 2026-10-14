@@ -120,6 +120,9 @@ describe("pauses", () => {
     const gap = pcm("assets/takes/long.wav", long.record.words![1]!.end + 0.1, 0.5);
     expect(Math.max(...gap.map(Math.abs))).toBeLessThan(0.02);
     expect(long.record.report.joins.every((j) => !j.click)).toBe(true);
+    expect(long.record.pauses).toEqual([{ take: "r", word: "nebbia", before: 0.3, after: 0.8, at: expect.any(Number) }]);
+    expect(long.record.pauses![0]!.at).toBeGreaterThan(long.record.words![1]!.end);
+    expect(long.record.pauses![0]!.at).toBeLessThan(long.record.words![2]!.start);
   });
 
   it("shortens a pause, never closer than 40 ms to a word, and says when it cannot go further", async () => {
@@ -129,6 +132,37 @@ describe("pauses", () => {
     const tooShort = await editAudio(ws, { output: { path: "assets/takes/tight.wav" }, tracks: [{ id: "v", clips: [{ id: "r", source: { take: "r" }, at: 0 }] }], pauses: [{ take: "r", after: "la", seconds: 0 }] });
     expect(tooShort.record.words![1]!.start - tooShort.record.words![0]!.end).toBeGreaterThanOrEqual(0.07);
     expect(tooShort.record.report.concerns.join("\n")).toMatch(/can only shrink/);
+  });
+});
+
+describe("review fixes", () => {
+  it("keeps a clip's gain on every piece a pause makes, its fade-out on the last, and no false jumps at the splices", async () => {
+    take("r", ["la", "nebbia", "sale"], 330, [0.3, 0.3]);
+    const plain = await editAudio(ws, { output: { path: "assets/takes/p.wav" }, tracks: [{ id: "v", clips: [{ id: "c", source: { take: "r" }, at: 0, gain: -12, fadeOut: 0.2 }] }] });
+    const paused = await editAudio(ws, { output: { path: "assets/takes/q.wav" }, tracks: [{ id: "v", clips: [{ id: "c", source: { take: "r" }, at: 0, gain: -12, fadeOut: 0.2 }] }], pauses: [{ take: "r", after: "nebbia", seconds: 0.9 }] });
+    // «sale», after the pause, at the same level as without it.
+    const level = (rel: string, from: number) => { const x = pcm(rel, from, 0.2); let s = 0; for (const v of x) s += v * v; return 10 * Math.log10(s / x.length); };
+    expect(level("assets/takes/q.wav", paused.record.words![2]!.start + 0.02) - level("assets/takes/p.wav", plain.record.words![2]!.start + 0.02)).toBeCloseTo(0, 0);
+    expect(paused.record.report.concerns).toEqual([]);
+    const placed = paused.record.placements.filter((p) => p.track === "v");
+    expect(placed[0]!.fadeOut).toBe(0.012);
+    expect(placed[placed.length - 1]!.fadeOut).toBe(0.2);
+  });
+
+  it("says when a pause reshapes nothing, and never writes over a take it reads", async () => {
+    take("r", ["la", "nebbia", "sale"], 330, [0.3, 0.3]);
+    const none = await editAudio(ws, { output: { path: "assets/takes/n.wav" }, tracks: [{ id: "v", clips: [{ id: "c", source: { take: "r" }, out: { word: "la", edge: "end" }, at: 0 }] }], pauses: [{ take: "r", after: "nebbia", seconds: 0.9 }] });
+    expect(none.record.report.concerns.join("\n")).toMatch(/the pause after «nebbia» .* is in no clip/);
+    await expect(editAudio(ws, { output: { path: "assets/takes/r.wav" }, tracks: [{ id: "v", clips: [{ id: "c", source: { take: "r" }, at: 0 }] }] })).rejects.toMatchObject({ code: "bad-recipe" });
+  });
+
+  it("names a stale timing and changed audio for what they are", async () => {
+    take("r", ["la", "nebbia"], 330, [0.3]);
+    const code = async () => { try { await resolveEdit(ws, { output: { path: "assets/takes/x.wav" }, tracks: [{ id: "v", clips: [{ id: "c", source: { take: "r" }, out: { word: "la", edge: "end" }, at: 0 }] }] }); } catch (e) { return (e as { code: string }).code; } return "ok"; };
+    writeFileSync(join(ws, "artifacts/timing/r.json"), "{}\n");
+    expect(await code()).toBe("stale-timing");
+    writeFileSync(join(ws, "assets/takes/r.wav"), "another take");
+    expect(await code()).toBe("audio-changed");
   });
 });
 
