@@ -66,6 +66,23 @@ describe("CodexImageClient", () => {
       assert.equal(image.outputFormat, "png");
       assert.equal(calls.length, 1);
       assert.match(calls[0]!.url, /backend-api\/codex\/responses/);
+      assert.equal(image.model, "gpt-6.1");
+      const body = JSON.parse(String(calls[0]!.init.body));
+      assert.equal(body.model, "gpt-6.1");
+      assert.deepEqual(body.tools, [{ type: "image_generation", output_format: "png" }]);
+    });
+
+    it("preserves an explicitly requested routing model", async () => {
+      const { impl, calls } = recorder([sseResponse([imageEvent()])]);
+      const client = new CodexImageClient({
+        transport: { kind: "subscription", token: TOKEN },
+        fetchImpl: impl,
+      });
+
+      const image = await client.generate({ prompt: "a fox", model: "custom-routing-model" });
+
+      assert.equal(image.model, "custom-routing-model");
+      assert.equal(JSON.parse(String(calls[0]!.init.body)).model, "custom-routing-model");
     });
 
     it("explains a refusal using the model's own words", async () => {

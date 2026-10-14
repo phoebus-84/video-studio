@@ -107,7 +107,7 @@ describe("imageGenerationStatus", () => {
 
   it("reports the codex route a series resolves, ready with a login even without FAL_KEY", async () => {
     const status = await imageGenerationStatus({ libraryRoot: library("openai-codex"), series: SERIES, falConfigured: false, codexLoggedIn: async () => true });
-    expect(status).toEqual({ available: true, detail: "dentro-i-versi/long uses openai-codex/gpt-5.5: openai-codex ready (logged in)" });
+    expect(status).toEqual({ available: true, detail: "dentro-i-versi/long uses openai-codex/gpt-6.1: openai-codex ready (logged in)" });
   });
 
   it("reports the fal route as not ready without FAL_KEY, whatever the login", async () => {

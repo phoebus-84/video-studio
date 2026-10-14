@@ -60,6 +60,10 @@ await client.generate({ prompt: "…", size: "1536x1024", quality: "high" });
 `size` and `quality` are only honoured by the `api` transport; the subscription
 backend does not expose them.
 
+The subscription transport defaults to `gpt-6.1` for **routing only**; the
+backend chooses the image model. Pass `model` to override the routing model.
+The API transport still defaults to the image model `gpt-image-2`.
+
 ## Errors
 
 Every failure is a `CodexImageError` with a `code`:
