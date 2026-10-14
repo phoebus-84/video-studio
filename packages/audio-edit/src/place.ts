@@ -50,6 +50,7 @@ export function checkRecipe(recipe: Recipe): void {
       nonNegative(clip.fadeOut, `${cp}.fadeOut`);
       nonNegative(clip.crossfade, `${cp}.crossfade`);
       if (clip.crossfade && c === 0) bad(`${cp}.crossfade`, "the first clip of a track has nothing to cross into");
+      if (clip.crossfade && clip.at !== "after") bad(`${cp}.crossfade`, 'a crossfade overlaps the clip before: it needs at: "after"');
       if (clip.automation !== undefined) {
         if (!Array.isArray(clip.automation) || clip.automation.length === 0) bad(`${cp}.automation`, "a list of [seconds, dB] points");
         let last = -1;
@@ -85,6 +86,7 @@ export function place(recipe: Recipe, durations: Record<string, number>): Placem
   const out: Placement[] = [];
   recipe.tracks.forEach((track, t) => {
     let previous: Placement | undefined;
+    let beforePrevious: Placement | undefined;
     track.clips.forEach((clip: Clip, c) => {
       const cp = `$.tracks[${t}].clips[${c}]`;
       const length = durations[clip.source];
@@ -104,9 +106,16 @@ export function place(recipe: Recipe, durations: Record<string, number>): Placem
         track: track.id, clip: clip.id, source: clip.source, in: r6(from), out: r6(from + span),
         start: r6(start), end: r6(start + span), fadeIn: r6(Math.max(clip.fadeIn ?? 0, crossfade)), fadeOut: r6(clip.fadeOut ?? 0),
       };
-      if (crossfade > 0 && previous) previous.fadeOut = r6(Math.max(previous.fadeOut, crossfade));
+      if (crossfade > 0 && previous) {
+        previous.fadeOut = r6(Math.max(previous.fadeOut, crossfade));
+        // The clip before now fades both ways: its fades must still fit it.
+        if (previous.fadeIn + previous.fadeOut > previous.end - previous.start + 1e-6) bad(`${cp}.crossfade`, `with the crossfade before it, ${previous.clip}'s fades are longer than ${previous.clip}`);
+      }
+      // A crossfade overlaps one clip, never two.
+      if (beforePrevious && placed.start < beforePrevious.end - 1e-6) bad(`${cp}.crossfade`, `reaches back into ${beforePrevious.clip}, two clips before`);
       if (placed.fadeIn + placed.fadeOut > span + 1e-6) bad(`${cp}`, "its fades are longer than the clip");
       out.push(placed);
+      beforePrevious = previous;
       previous = placed;
     });
   });

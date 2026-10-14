@@ -71,7 +71,8 @@ export function buildGraph(recipe: Recipe, placements: Placement[], resolve: (so
       `aresample=${sampleRate}`, `aformat=sample_fmts=fltp:sample_rates=${sampleRate}:channel_layouts=${layout}`,
     ];
     if (clip.gain) steps.push(`volume=${n6(clip.gain)}dB`);
-    if (clip.automation?.length) steps.push(`volume='pow(10,(${curveExpression(clip.automation)})/20)':eval=frame`);
+    // Evaluated every 64 samples: once per decoded frame (~90 ms) would move the gain in audible steps.
+    if (clip.automation?.length) steps.push("asetnsamples=n=64:p=0", `volume='pow(10,(${curveExpression(clip.automation)})/20)':eval=frame`);
     if (p.fadeIn > 0) steps.push(`afade=t=in:st=0:d=${n6(p.fadeIn)}:curve=qsin`);
     if (p.fadeOut > 0) steps.push(`afade=t=out:st=${n6(span - p.fadeOut)}:d=${n6(p.fadeOut)}:curve=qsin`);
     // To the sample: a millisecond delay would leave gaps or overlaps of up to half a millisecond at every join.
@@ -88,7 +89,7 @@ export function buildGraph(recipe: Recipe, placements: Placement[], resolve: (so
     if (track.gain) steps.push(`volume=${n6(track.gain)}dB`);
     if (track.duck) {
       const spans = placements.filter((p) => p.track === track.duck!.under).map((p) => [p.start, p.end] as [number, number]);
-      steps.push(`volume='pow(10,(${duckExpression(spans, track.duck.gain, track.duck.attack ?? 0.25, track.duck.release ?? 0.6)})/20)':eval=frame`);
+      steps.push("asetnsamples=n=64:p=0", `volume='pow(10,(${duckExpression(spans, track.duck.gain, track.duck.attack ?? 0.25, track.duck.release ?? 0.6)})/20)':eval=frame`);
     }
     const sum = labels.length > 1 ? `amix=inputs=${labels.length}:normalize=0:dropout_transition=0` : "anull";
     chains.push(`${labels.map((l) => `[${l}]`).join("")}${[sum, ...steps].join(",")}[t${t}]`);

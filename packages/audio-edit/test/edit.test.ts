@@ -67,7 +67,7 @@ describe("rendering", () => {
     const lower = await render({ output: {}, tracks: [{ id: "t", clips: [{ id: "a", source: "a.wav", at: 0, gain: -6 }] }] }, "lower.wav");
     expect(rmsDb(pcm(lower.path)) - rmsDb(pcm(flat.path))).toBeCloseTo(-6, 0);
     const ramp = await render({ output: {}, tracks: [{ id: "t", clips: [{ id: "a", source: "a.wav", at: 0, automation: [[0, 0], [1, -20]] }] }] }, "ramp.wav");
-    const early = rmsDb(pcm(ramp.path, 0, 0.1));
+    const early = rmsDb(pcm(ramp.path, 0, 0.02));
     const late = rmsDb(pcm(ramp.path, 1.5, 0.5));
     expect(early - late).toBeCloseTo(20, 0);
   });

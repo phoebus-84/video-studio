@@ -3,6 +3,7 @@
 // RMS just before against just after, the crossfade excluded).
 
 import { spawn } from "node:child_process";
+import { AudioEditError } from "./errors.js";
 import { FFMPEG } from "./media.js";
 import type { Placement } from "./types.js";
 
@@ -18,9 +19,13 @@ export interface JoinReport {
 }
 
 async function samples(file: string, from: number, seconds: number, sampleRate: number): Promise<Float32Array> {
-  const ff = spawn(FFMPEG(), ["-hide_banner", "-v", "error", "-ss", String(Math.max(0, from)), "-t", String(seconds), "-i", file, "-ac", "1", "-ar", String(sampleRate), "-f", "f32le", "-"], { stdio: ["ignore", "pipe", "ignore"] });
+  const ff = spawn(FFMPEG(), ["-hide_banner", "-v", "error", "-ss", String(Math.max(0, from)), "-t", String(seconds), "-i", file, "-ac", "1", "-ar", String(sampleRate), "-f", "f32le", "-"], { stdio: ["ignore", "pipe", "pipe"] });
   const chunks: Buffer[] = [];
+  let stderr = "";
+  ff.stderr.on("data", (d) => (stderr += d));
   for await (const c of ff.stdout as AsyncIterable<Buffer>) chunks.push(c);
+  const code: number = await new Promise((r) => ff.on("close", r));
+  if (code !== 0) throw new AudioEditError("ffmpeg-failed", `reading ${file} for the join report: ${stderr.trim().split("\n")[0]}`);
   const buf = Buffer.concat(chunks);
   return new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
 }
@@ -47,8 +52,9 @@ export async function joinReport(file: string, placements: Placement[], sampleRa
       if (next.start > prev.end + 0.05) continue; // a gap: not a join
       const at = next.start;
       const window = 0.35;
-      const x = await samples(file, at - window, 2 * window + Math.max(0, prev.end - next.start), sampleRate);
-      const centre = Math.round(Math.min(window, at) * sampleRate);
+      const readFrom = Math.max(0, at - window);
+      const x = await samples(file, readFrom, (at - readFrom) + window + Math.max(0, prev.end - next.start), sampleRate);
+      const centre = Math.round((at - readFrom) * sampleRate);
       // Click: the largest step within ±3 ms of the join, against the steps of the 50 ms around it.
       const near = Math.round(0.003 * sampleRate);
       const around = Math.round(0.05 * sampleRate);
@@ -61,10 +67,14 @@ export async function joinReport(file: string, placements: Placement[], sampleRa
       }
       const typical = n ? motion / n : 0;
       const click = step > 0.05 && step > 12 * Math.max(typical, 1e-4);
+      // Level: each side measured inside its own clip, the crossfade excluded.
       const overlap = Math.round(Math.max(0, prev.end - next.start) * sampleRate);
       const span = Math.round(0.3 * sampleRate);
-      const before = rmsDb(x, centre - span, centre);
-      const after = rmsDb(x, centre + overlap, centre + overlap + span);
+      const beforeFrom = Math.max(centre - span, Math.round((prev.start - readFrom) * sampleRate));
+      const afterTo = Math.min(centre + overlap + span, Math.round((next.end - readFrom) * sampleRate));
+      const enough = Math.round(0.05 * sampleRate);
+      const before = centre - beforeFrom >= enough ? rmsDb(x, beforeFrom, centre) : null;
+      const after = afterTo - (centre + overlap) >= enough ? rmsDb(x, centre + overlap, afterTo) : null;
       out.push({ track, before: prev.clip, after: next.clip, at, click, jumpDb: before === null || after === null ? null : Math.round((after - before) * 10) / 10 });
     }
   }
