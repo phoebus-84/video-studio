@@ -288,10 +288,39 @@ export class FileSystemWorkspaceService implements WorkspaceService {
             return enriched;
           }));
 
-          // ── Render deliverable: output/<render-id>.mp4 (canonical) or artifacts/final.mp4 (legacy) ──
+          // ── Render deliverable ──
+          //
+          // `output/current.json` is the canonical pointer: the runtime's own
+          // artifact discovery resolves `output.mp4`/`final-video.mp4` through
+          // it (see studio/runtime/src/artifacts/discovery.ts). Episodes that
+          // keep every release immutable in `output/<render-id>/…` therefore
+          // have a finished film that this scan never saw — the studio showed
+          // "no render" for a delivered episode. Honour the pointer first, and
+          // fall back to the flat scan and the legacy `artifacts/final.mp4`.
           let render: Record<string, unknown> | null = null;
           try {
+            const statRender = async (relative: string): Promise<{ p: string; url: string; mtime: number } | null> => {
+              try {
+                const p = path.join(epPath, relative);
+                const stat = await fs.stat(p);
+                if (!stat.isFile()) return null;
+                return { p, url: urlFor(relative), mtime: stat.mtimeMs };
+              } catch { return null; }
+            };
             const candidates: Array<{ p: string; url: string; mtime: number }> = [];
+            let pointerCandidate: { p: string; url: string; mtime: number } | null = null;
+            try {
+              const pointer = JSON.parse(
+                await fs.readFile(path.join(epPath, "output", "current.json"), "utf-8"),
+              ) as { path?: unknown };
+              if (
+                typeof pointer.path === "string" &&
+                !path.isAbsolute(pointer.path) &&
+                !pointer.path.includes("..")
+              ) {
+                pointerCandidate = await statRender(path.join("output", pointer.path));
+              }
+            } catch { /* no canonical pointer */ }
             try {
               const outDir = path.join(epPath, "output");
               for (const f of (await fs.readdir(outDir)).filter((f) => f.endsWith(".mp4"))) {
@@ -299,11 +328,9 @@ export class FileSystemWorkspaceService implements WorkspaceService {
                 candidates.push({ p, url: urlFor(`output/${f}`), mtime: (await fs.stat(p)).mtimeMs });
               }
             } catch { /* no output dir */ }
-            try {
-              const p = path.join(epPath, "artifacts", "final.mp4");
-              candidates.push({ p, url: urlFor("artifacts/final.mp4"), mtime: (await fs.stat(p)).mtimeMs });
-            } catch { /* no legacy render */ }
-            const latest = candidates.sort((a, b) => b.mtime - a.mtime)[0];
+            const legacyCandidate = await statRender(path.join("artifacts", "final.mp4"));
+            if (legacyCandidate) candidates.push(legacyCandidate);
+            const latest = pointerCandidate ?? candidates.sort((a, b) => b.mtime - a.mtime)[0];
             if (latest) {
               const stat = await fs.stat(latest.p);
               render = { url: latest.url, file: path.basename(latest.p), size: stat.size, generatedAt: stat.mtime.toISOString() };
