@@ -10,7 +10,7 @@ import { registerProductionRoutes } from "./production.js";
 import { registerSeriesEpisodeRoutes } from "./series-episode.js";
 import type { PiRpcHealth } from "../rpc/health.js";
 import type { AdapterBridge } from "../rpc/adapter-bridge.js";
-import type { PiProcessManager } from "../rpc/process-manager.js";
+import type { AgentSessionManager } from "../rpc/agent-sessions.js";
 
 /**
  * Register all REST API routes.
@@ -47,7 +47,7 @@ export function registerRoutes(
   piHealth?: PiRpcHealth,
   adapterBridge?: AdapterBridge,
   /** Owns Pi processes; created once by the server, not per request. */
-  piManager?: PiProcessManager,
+  piManager?: AgentSessionManager,
 ): void {
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/health", {
@@ -119,6 +119,8 @@ export function registerRoutes(
       // while the work sat on disk. Publishing the roots lets a client detect
       // that instead of guessing.
       libraryRoots: canonicalizeRoots(config.libraryRoots),
+      // Which agent the studio's intents reach (AVG_AGENT_BACKEND).
+      agent: piManager ? { backend: piManager.backend, label: piManager.label } : null,
     };
   });
 
@@ -163,6 +165,7 @@ export function registerRoutes(
           episode: body.episode,
           sessionId: session.identity.sessionId,
           pid: session.identity.pid,
+          backend: piManager.backend,
         });
       } catch (err: any) {
         piHealth.setError(err.message);

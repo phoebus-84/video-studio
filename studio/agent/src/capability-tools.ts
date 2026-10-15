@@ -90,7 +90,8 @@ async function generateImageViaCodex(
   const token = await registry.getApiKeyForProvider(CODEX_PROVIDER);
   if (!token) {
     throw new Error(
-      `No ${CODEX_PROVIDER} credential. Run /login in Pi and pick ChatGPT Plus/Pro, ` +
+      `No ${CODEX_PROVIDER} credential. Run /login in Pi and pick ChatGPT Plus/Pro ` +
+        `(outside Pi, \`codex login\` or AVG_CODEX_TOKEN also work), ` +
         `or set this series' image.provider back to a fal model.`,
     );
   }

@@ -42,6 +42,23 @@ export interface Anchor {
 
 class AgentStore {
   sending = $state(false);
+  /** The agent's name as the gateway reports it: Pi, or Claude (AVG_AGENT_BACKEND). */
+  name = $state("Pi");
+  #named = false;
+
+  /** Ask the gateway which agent it runs. Once; Pi until it answers. */
+  async loadName(): Promise<string> {
+    if (!this.#named) {
+      this.#named = true;
+      try {
+        const root = await getGatewayClient().fetchJSON<{ agent?: { label?: string } | null }>("/");
+        if (root.agent?.label) this.name = root.agent.label;
+      } catch {
+        /* An unreachable gateway is reported when a message is sent. */
+      }
+    }
+    return this.name;
+  }
 
   /**
    * Send guidance about the current anchor.
@@ -58,7 +75,7 @@ class AgentStore {
     if (!anchor.episodeSlug) {
       return {
         kind: "unavailable",
-        text: "Pi takes guidance per episode — open one to steer it",
+        text: `${this.name} takes guidance per episode — open one to steer it`,
       };
     }
 
@@ -79,19 +96,19 @@ class AgentStore {
       );
 
       if (result.status === "accepted" || result.status === "queued") {
-        return { kind: "working", text: `Pi ${result.action} · about ${anchor.label}` };
+        return { kind: "working", text: `${this.name} ${result.action} · about ${anchor.label}` };
       }
       return {
         kind: "error",
-        text: `Pi rejected that: ${String(result.data?.["reason"] ?? result.action)}`,
+        text: `${this.name} rejected that: ${String(result.data?.["reason"] ?? result.action)}`,
       };
     } catch (err) {
       return {
         kind: "unavailable",
         text:
           err instanceof Error
-            ? `Could not reach Pi — ${err.message}`
-            : "Could not reach Pi",
+            ? `Could not reach ${this.name} — ${err.message}`
+            : `Could not reach ${this.name}`,
       };
     } finally {
       this.sending = false;

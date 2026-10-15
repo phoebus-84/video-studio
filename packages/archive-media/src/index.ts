@@ -7,3 +7,4 @@ export * from "./media-sniff.js";
 export { createHttp, retryAfter, type ArchiveHttp, type DownloadResult, type HttpOptions } from "./http.js";
 export * from "./archive.js";
 export { PROVIDERS } from "./providers/index.js";
+export * from "./mapillary-api.js";

@@ -16,7 +16,7 @@ adapters both call this package, so a tool and a stage never disagree.
 | `narration-manifest.ts` | The canonical `artifacts/narration/narration-manifest.json`: build, measure, validate, write |
 | `scene-images.ts` | Scene images in reading order and their lengths (legacy episodes) |
 | `edit-timeline-builder.ts` | `buildEditTimeline`: the timeline of an episode without a spec |
-| `series-compile.ts` | `loadEpisode`, `compileEpisode`, `checkEpisode`: a spec-driven episode, read, checked, compiled, held to its series' rules; offers `assets/images/*` as `image-<name>` and `assets/sounds/*` as `sound-<name>`; reads the channel theme the release pins (ADR-0040), every file inside that release, held to the hashes a sealed release lists (`theme-mismatch`; an unsealed one loads with a `theme-unsealed` warning), and offers its rooms as `theme-<room>`; reads the episodes it pins (`source/pins/<id>.json`, ADR-0035), held to each pin's inventory (`pin-mismatch`), and offers their pictures as `source-<pin>-image-<name>`, their takes as `source-<pin>-narration-<take>` and their takes and timings as `sources`; `sharedRootsOf`: that theme release and the pinned episodes, which renders and layout sheets may take assets from |
+| `series-compile.ts` | `loadEpisode`, `compileEpisode`, `checkEpisode`: a spec-driven episode, read, checked, compiled, held to its series' rules; offers `assets/images/*` as `image-<name>` and `assets/sounds/*` as `sound-<name>`, video clips in `assets/video/*` as `video-<name>` (also `source-<pin>-video-<name>` for pinned clips); reads the channel theme the release pins (ADR-0040), every file inside that release, held to the hashes a sealed release lists (`theme-mismatch`; an unsealed one loads with a `theme-unsealed` warning), and offers its rooms as `theme-<room>`; reads the episodes it pins (`source/pins/<id>.json`, ADR-0035), held to each pin's inventory (`pin-mismatch`), and offers their pictures as `source-<pin>-image-<name>`, their takes as `source-<pin>-narration-<take>` and their takes and timings as `sources`; `sharedRootsOf`: that theme release and the pinned episodes, which renders and layout sheets may take assets from |
 | `episode-render.ts` | `writeEditTimeline`, `decideEditTimeline`, `currentEditTimeline`, `renderEpisode` |
 | `spec-init.ts` | `initEpisodeSpec`: a draft spec pinned to an exact template release; never replaces one. `upgradeEpisodeSpec`: the spec moved to a newer release of its template, its data kept and checked against the new schema |
 | `references.ts` | `proposeReference`: freeze an episode as a proposed golden reference |
@@ -30,6 +30,30 @@ adapters both call this package, so a tool and a stage never disagree.
 `@studio/episode/testing` exports `specEpisode`, `editSpec` and `sha256`: a
 complete poetry-short episode on disk, from `@studio/series`'s golden fixture,
 for tests.
+
+## Archive scene assets
+
+`reuseLocalMedia` and `deriveMedia` are async. Pass the destination series'
+`policy` and `quality`; the default is the normal conservative archive policy.
+Mapillary productions accept the same settings plus an `AbortSignal`. ND
+cropping/trimming is refused, independent of permission to download. Every
+produced clip has measured dimensions/duration, a unique asset name and
+self-contained evidence: `studio-media-derivation` version 1 embeds verified
+parent records, their hashes, original evidence and the operation. Provenance
+checks recurse through those snapshots after an asset is reused elsewhere.
+Legacy derivations without a verified chain must be regenerated.
+
+FFmpeg runs asynchronously with bounded stderr, timeouts and cancellation.
+Private staging directories hold work in progress. New assets/sidecars are
+published without replacing an existing file; failures remove partial media.
+Content-addressed, unreferenced evidence may remain after a failed publish.
+Both source and destination paths are realpath-checked; pointing the library
+itself at another location is supported, escaping a workspace through an asset
+symlink is not. These checks do not claim isolation against a hostile process
+running as the same OS user.
+
+Video scenes are offered to compilers, not inserted automatically: a series'
+compiler and validator still decide which clips and durations belong in its edit.
 
 ## Commands
 

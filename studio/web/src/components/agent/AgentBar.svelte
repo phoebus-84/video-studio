@@ -45,6 +45,15 @@
     suggestionsFor(studio.view, files.selectedPresentation?.viewer),
   );
 
+  /* The gateway says which agent is behind the bar; Pi until it answers. */
+  $effect(() => {
+    void agent.loadName().then((name) => {
+      if (studio.agentStatus.kind === "idle" && studio.agentStatus.text === "Pi is idle") {
+        studio.agentStatus = { kind: "idle", text: `${name} is idle` };
+      }
+    });
+  });
+
   async function send() {
     if (agent.sending) return;
     const text = studio.agentDraft;
@@ -84,8 +93,8 @@
     <input
       type="text"
       class="agent-input"
-      placeholder="Ask Pi to change this, or describe what is wrong…"
-      aria-label="Message to Pi about {anchor.label}"
+      placeholder="Ask {agent.name} to change this, or describe what is wrong…"
+      aria-label="Message to {agent.name} about {anchor.label}"
       bind:value={studio.agentDraft}
       onkeydown={onKeydown}
     />

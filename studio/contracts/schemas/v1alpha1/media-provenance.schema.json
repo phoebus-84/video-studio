@@ -186,7 +186,7 @@
               "$ref": "identity.schema.json#/$defs/ContentHash"
             }
           },
-          "description": "The provider's own response for the item when it was fetched, named by its hash."
+          "description": "The provider response, or self-contained studio-media-derivation v1 evidence with hashed parent provenance snapshots and their evidence bytes, named by its hash."
         }
       },
       "description": "<file>.source.json beside an archive file in a workspace's assets/."

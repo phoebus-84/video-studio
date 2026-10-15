@@ -50,6 +50,17 @@ describe("pinned episodes in loadEpisode", () => {
     for (const take of takes) expect(assets[`source-fonte-narration-${take}`]!.kind).toBe("audio");
   });
 
+  it("offers pinned video clips and rejects them if they change", async () => {
+    const video = join(dirOf(SOURCE), "assets/video"); mkdirSync(video, { recursive: true });
+    writeFileSync(join(video, "walk.mp4"), "clip"); await pin();
+    const loaded = loadEpisode(dirOf(REF), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    expect(loaded.input.assets["source-fonte-video-walk"]).toMatchObject({ kind: "video", path: "../source/assets/video/walk.mp4" });
+    writeFileSync(join(video, "walk.mp4"), "changed");
+    const changed = loadEpisode(dirOf(REF), { episodeRef: REF });
+    expect(changed.ok ? null : changed.problems[0]!.code).toBe("pin-mismatch");
+  });
+
   it("refuses a pinned file changed since the pin, naming it", async () => {
     await pin();
     const takes = JSON.parse(readFileSync(join(dirOf(SOURCE), "artifacts", "narration", "takes.json"), "utf-8"));

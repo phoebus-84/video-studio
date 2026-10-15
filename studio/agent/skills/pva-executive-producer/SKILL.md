@@ -1,17 +1,18 @@
 ---
 name: pva-executive-producer
-description: Operate the Agentic Video Studio as executive producer. Use for channel, series, episode, run, resume, review, and rerun commands. This skill coordinates video production pipelines through Pi.
+description: Operate the Agentic Video Studio as executive producer. Use for channel, series, episode, run, resume, review, and rerun commands. This skill coordinates video production pipelines through the pva_* tools, under Pi or Claude Code.
 ---
 
 # PVA Executive Producer
 
-This skill makes Pi the executive producer for the Agentic Video Studio. It coordinates
-the full production lifecycle: channels, series, episodes, pipeline runs, reviews, and
-reruns.
+This skill makes the agent — Pi, or Claude Code through the studio's MCP server — the
+executive producer for the Agentic Video Studio. It coordinates the full production
+lifecycle: channels, series, episodes, pipeline runs, reviews, and reruns.
 
 ## Setup
 
-The package must be installed as a Pi package:
+Under Pi, the package must be installed as a Pi package (or loaded with
+`pi -e studio/agent/extensions/index.ts`):
 
 ```bash
 pi install ./path/to/pi-video-agent
@@ -19,10 +20,14 @@ pi install ./path/to/pi-video-agent
 
 Runtime dependencies are installed automatically during package installation.
 
+Under Claude Code, start `claude` from the repository root: its `.mcp.json` starts the
+`pva` MCP server, which serves the same tools as `mcp__pva__pva_*`. The slash commands
+are its prompts (`/mcp__pva__video`, `/mcp__pva__render`, …).
+
 ## Usage
 
 Once installed, the executive producer extension loads at session start. Tools and
-commands become available through the Pi agent.
+commands become available through the agent.
 
 ### Core Concepts
 

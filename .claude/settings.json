@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "mcp__pva__pva_version",
+      "mcp__pva__pva_diagnostics",
+      "mcp__pva__pva_config",
+      "mcp__pva__pva_health",
+      "mcp__pva__pva_rpc_health",
+      "mcp__pva__pva_capability_status",
+      "mcp__pva__pva_channels",
+      "mcp__pva__pva_series",
+      "mcp__pva__pva_episodes",
+      "mcp__pva__pva_episode_detail",
+      "mcp__pva__pva_journal",
+      "mcp__pva__pva_snapshot",
+      "mcp__pva__pva_budget_status",
+      "mcp__pva__pva_check_staleness",
+      "mcp__pva__pva_list_skills",
+      "mcp__pva__pva_load_skill",
+      "mcp__pva__pva_gather_context",
+      "mcp__pva__pva_sources",
+      "mcp__pva__pva_check_provenance",
+      "mcp__pva__pva_probe_media",
+      "mcp__pva__pva_voices"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && node --import tsx studio/agent/claude/session-start.ts",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/studio/agent/claude/inbox-hook.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

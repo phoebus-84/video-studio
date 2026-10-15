@@ -25,7 +25,8 @@ export function hasBinary(name, component) {
         (Number(match[1]) === 5 && Number(match[2]) === 2)
       );
     }
-    execFileSync("/bin/sh", ["-c", 'command -v -- "$1"', "sh", bin], { stdio: "ignore", timeout: 5000 });
+    if (process.platform === "win32") execFileSync("where", [bin], { stdio: "ignore", timeout: 5000 });
+    else execFileSync("/bin/sh", ["-c", 'command -v -- "$1"', "sh", bin], { stdio: "ignore", timeout: 5000 });
     return true;
   } catch { return false; }
 }
