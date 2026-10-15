@@ -21,6 +21,7 @@
   },
   "include": [
     "extensions/**/*.ts",
+    "mcp/**/*.ts",
     "skills/**/*.ts",
     "tests/**/*.ts"
   ],

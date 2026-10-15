@@ -69,6 +69,7 @@
     "@av/codex-image": "workspace:*",
     "@av/fal-media": "workspace:*",
     "@studio/contracts": "workspace:*",
-    "@studio/episode": "workspace:*"
+    "@studio/episode": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.1"
   }
 }

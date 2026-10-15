@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pva": {
+      "command": "node",
+      "args": ["--import", "tsx", "studio/agent/mcp/server.ts"]
+    }
+  }
+}
