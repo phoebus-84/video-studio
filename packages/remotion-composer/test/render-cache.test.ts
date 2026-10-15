@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {cachedVideo, missRuns, planVideo, VideoCache, type VideoPlan, type VideoSegment} from '../src/render-cache.js';
+import {cachedVideo, missRuns, planAudio, planVideo, VideoCache, type VideoPlan, type VideoSegment} from '../src/render-cache.js';
 import type {EditTimeline, VisualItem} from '../src/schema.js';
 
 import {cacheTimeline} from './cache-fixture.js';
@@ -209,6 +209,33 @@ describe('video cache storage and execution', () => {
     await run(planVideo(doc, 'r'));
     assert.deepEqual(calls, [[30]], 'the untouched seconds around it are reused');
   }));
+
+  it('reports progress inside a run, not only when it ends', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const seen: number[] = [];
+    await cachedVideo({
+      plan, cacheDir: path.join(root, 'cache'), work: await mkdtemp(path.join(root, 'work-')),
+      renderRun: async (segments, outputs, onProgress) => {
+        onProgress(0.5);
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+      },
+      concatenate: async (_files, output) => { await writeFile(output, 'joined'); },
+      onProgress: (p) => seen.push(p),
+    });
+    assert.deepEqual(seen, [0, 0.5, 1]);
+  }));
+});
+
+describe('audio key', () => {
+  it('changes with the sound, not with the pictures', () => {
+    const doc = cacheTimeline();
+    const key = planAudio(doc, 'r', 48000);
+    (doc.tracks[1]!.items[0] as VisualItem).props.text = 'Changed';
+    assert.equal(planAudio(doc, 'r', 48000), key, 'a caption edit keeps the soundtrack');
+    doc.assets.voice = {...doc.assets.voice!, hash: `sha256:${'d'.repeat(64)}`};
+    assert.notEqual(planAudio(doc, 'r', 48000), key, 'new voice media is a new soundtrack');
+    assert.notEqual(planAudio(cacheTimeline(), 'other renderer', 48000), key);
+  });
 });
 
 describe('miss runs', () => {

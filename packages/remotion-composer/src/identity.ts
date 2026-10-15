@@ -15,14 +15,20 @@ const CODE = /\.(js|ts|tsx|json)$/;
 
 /**
  * The modules whose code never changes a frame (avg-dcf.6.13): the rendered
- * file's checks, the final file's sound, per-frame audio gain. A sheet stays
- * current when only these change; the render cache keeps its segments when
- * only the first two do (volume is in the browser bundle, which the cache
- * hashes whole). Not the probe: it counts a clip's frames, which decide when
- * the clip holds or loops. Every other module counts as drawing until it is
- * named here.
+ * file's checks, the final file's sound, per-frame audio gain, and the Node
+ * side that only decides how drawn frames are encoded, cut into cached
+ * segments and joined (cached-render, render-cache) or how the command lines
+ * call the renderer (cli, sheet-cli). A sheet stays current when only these
+ * change: a faster render must not send a person back to re-read pictures that
+ * did not change. The render cache still keys on the encoding modules
+ * (ENCODING): they change the bytes of a segment. Not the probe: it counts a
+ * clip's frames, which decide when the clip holds or loops. Every other
+ * module counts as drawing until it is named here.
  */
-export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'volume']);
+export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'volume', 'cached-render', 'render-cache', 'cli', 'sheet-cli']);
+
+/** The modules that never draw but decide a cached segment's bytes: the render cache keys on them. */
+export const ENCODING: ReadonlySet<string> = new Set(['cached-render', 'render-cache']);
 
 /**
  * Whether a code file can change what a frame shows. `file` is its path from
@@ -31,7 +37,14 @@ export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'v
  */
 export function drawsPictures(file: string): boolean {
   if (/[\\/]/.test(file)) return true;
-  return !NOT_DRAWING.has(file.replace(/\.(tsx?|jsx?|json)$/, ''));
+  return !NOT_DRAWING.has(moduleName(file));
+}
+
+const moduleName = (file: string) => file.replace(/\.(tsx?|jsx?|json)$/, '');
+
+/** Whether a code file can change a cached segment's bytes: what draws, and how it is encoded and cut. */
+export function shapesSegments(file: string): boolean {
+  return drawsPictures(file) || ENCODING.has(moduleName(file));
 }
 
 function codeFiles(dir: string, base = dir): [string, string][] {

@@ -7,8 +7,8 @@ import {promisify} from 'node:util';
 import {ensureBrowser, openBrowser, renderMedia} from '@remotion/renderer';
 import type {VideoConfig} from 'remotion';
 import {sha256} from './assets.js';
-import {drawsPictures} from './identity.js';
-import {cachedVideo, cacheKey, planVideo, type CacheReport} from './render-cache.js';
+import {shapesSegments} from './identity.js';
+import {cachedVideo, cacheKey, planAudio, planVideo, VideoCache, type CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
 
 const exec = promisify(execFile);
@@ -21,8 +21,8 @@ const encoding = {
   pixelFormat: 'yuv420p', colorSpace: 'bt709', muted: true,
 } as const;
 
-/** The render cache's hash of the Node-side code: every module but those that never draw. */
-export const runtimeCodeHashes = (dir: string) => codeHashes(dir, drawsPictures);
+/** The render cache's hash of the Node-side code: every module that draws, encodes or cuts a segment. */
+export const runtimeCodeHashes = (dir: string) => codeHashes(dir, shapesSegments);
 
 async function codeHashes(dir: string, keep: (file: string) => boolean = () => true, base = dir): Promise<unknown[]> {
   const rows: unknown[] = [];
@@ -55,6 +55,12 @@ async function rendererKey(serveUrl: string): Promise<string> {
   });
 }
 
+/** Keyframes only where gopSize puts them: the encoding step gets -sc_threshold 0 after its -g. */
+function keyframesEverySecond({args}: {args: string[]}): string[] {
+  const at = args.indexOf('-g');
+  return at < 0 ? args : [...args.slice(0, at + 2), '-sc_threshold', '0', ...args.slice(at + 2)];
+}
+
 export async function renderWithCache(options: {
   inputProps: TimelineProps;
   composition: VideoConfig;
@@ -72,27 +78,61 @@ export async function renderWithCache(options: {
   const assetFrames = Object.fromEntries(Object.entries(inputProps.files)
     .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
     .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
-  const plan = planVideo(timeline, await rendererKey(serveUrl), assetFrames);
+  const renderer = await rendererKey(serveUrl);
+  const plan = planVideo(timeline, renderer, assetFrames);
   const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
   const silentProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
   // Reuse one browser across misses, rather than launching Chrome each second.
   // A whole-video hit with no audio never opens it.
   let browser: Awaited<ReturnType<typeof openBrowser>> | undefined;
   const getBrowser = async () => browser ??= await openBrowser('chrome');
+  // The pictures and the soundtrack are rendered side by side, each reported
+  // by how far it is: the audio pass draws nothing, so it no longer waits for
+  // the last frame before it starts.
+  let videoDone = 0, audioDone = hasAudio ? 0 : 1;
+  const report = () => options.onProgress?.(videoDone * 0.8 + audioDone * 0.2);
+  const audio = path.join(work, 'audio.wav');
+  const sampleRate = 48000;
+  const audioWarnings: string[] = [];
+  const soundtrack = async (): Promise<boolean> => {
+    if (!hasAudio) return false;
+    // The mix is cached on its own key: a change to the pictures alone, or a
+    // render of the same audio again, skips the pass.
+    const cache = new VideoCache(path.join(options.cacheDir, 'audio'), audioWarnings, '.wav');
+    const key = planAudio(timeline, renderer, sampleRate);
+    if (await cache.get(key, audio)) {
+      audioDone = 1;
+      report();
+      return true;
+    }
+    // Keep ALL audio tracks: ducking looks up other tracks in the timeline.
+    // No visual kits are mounted for this pass and no video frames are encoded.
+    const audioProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'audio')}};
+    await renderMedia({
+      ...common, puppeteerInstance: await getBrowser(), inputProps: audioProps, codec: 'wav', enforceAudioTrack: true,
+      outputLocation: audio, sampleRate,
+      onProgress: ({progress}) => { audioDone = progress; report(); },
+    });
+    await cache.put(key, audio);
+    return false;
+  };
   try {
-    const {video, report} = await cachedVideo({
+    const [{video, report: cacheReport}, audioReused] = await Promise.all([cachedVideo({
       plan, cacheDir: options.cacheDir, work,
-      onProgress: (p) => options.onProgress?.(p * 0.8),
-      renderRun: async (segments, outputs) => {
+      onProgress: (p) => { videoDone = p; report(); },
+      renderRun: async (segments, outputs, onRunProgress) => {
         // One renderer call for the whole run, every tab busy across it. A
         // keyframe every second (gopSize) puts one at each segment's first
         // frame: segments start on multiples of fps and so does the run, so
-        // ffmpeg cuts it into the cached segments without re-encoding.
+        // ffmpeg cuts it into the cached segments without re-encoding. x264
+        // would also start a GOP at each scene cut, which resets the count and
+        // moves every later keyframe off the second: scene-cut detection off.
         const first = segments[0]!, last = segments.at(-1)!;
         const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
         await renderMedia({
           ...common, ...encoding, puppeteerInstance: await getBrowser(), inputProps: silentProps, outputLocation: whole,
-          frameRange: [first.from, last.to], gopSize: timeline.fps,
+          frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
+          onProgress: ({progress}) => onRunProgress(progress),
         });
         if (segments.length === 1) return;
         const cuts = segments.slice(1).map((segment) => segment.from - first.from);
@@ -116,17 +156,10 @@ export async function renderWithCache(options: {
         await writeFile(list, files.map((file) => `file '${path.basename(file)}'`).join('\n'));
         await run(['-f', 'concat', '-safe', '1', '-i', list, '-map', '0:v:0', '-c:v', 'copy', '-an', output]);
       },
-    });
-    const audio = path.join(work, 'audio.wav');
+    }), soundtrack()]);
+    cacheReport.warnings.push(...audioWarnings);
     if (hasAudio) {
-      // Keep ALL audio tracks: ducking looks up other tracks in the timeline.
-      // No visual kits are mounted for this pass and no video frames are encoded.
-      const audioProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'audio')}};
-      await renderMedia({
-        ...common, puppeteerInstance: await getBrowser(), inputProps: audioProps, codec: 'wav', enforceAudioTrack: true,
-        outputLocation: audio, sampleRate: 48000,
-        onProgress: ({progress}) => options.onProgress?.(0.8 + progress * 0.2),
-      });
+      cacheReport.audioReused = audioReused;
       // Lossless audio intermediate: loudnorm does the sole final AAC encode.
       await run(['-i', video, '-i', audio, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', options.output]);
     } else {
@@ -138,7 +171,7 @@ export async function renderWithCache(options: {
       ]);
     }
     options.onProgress?.(1);
-    return report;
+    return cacheReport;
   } finally {
     await browser?.close({silent: true});
   }

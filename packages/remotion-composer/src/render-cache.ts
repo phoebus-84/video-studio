@@ -1,4 +1,5 @@
-// Disposable, content-addressed video cache. Audio never enters these keys.
+// Disposable, content-addressed render cache. Audio never enters the video
+// keys, and pictures never enter the audio key: each is reused on its own.
 // A segment is rendered at its ORIGINAL frame range, not a rebased timeline:
 // kit animation, clip trims and crossfades keep their absolute/local clocks.
 import {createHash, randomUUID} from 'node:crypto';
@@ -34,6 +35,8 @@ export interface CacheReport {
   segmentsReused: number;
   segmentsRendered: number;
   totalSegments: number;
+  /** The mixed soundtrack came from the cache: no audio pass ran. */
+  audioReused?: boolean;
   /** Cache I/O is best effort, never a reason to lose a valid render. */
   warnings: string[];
 }
@@ -59,15 +62,28 @@ export function planVideo(timeline: EditTimeline, renderer: string, assetFrames:
   return {key: cacheKey(segments), segments};
 }
 
+/**
+ * The key of the mixed soundtrack: the audio tracks whole (ducking reads the
+ * other audio tracks) and the media they play. Nothing drawn changes it.
+ */
+export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: number): string {
+  const tracks = timeline.tracks.filter((track) => track.type === 'audio');
+  const ids = new Set<string>();
+  assetRefs(tracks, ids);
+  for (const track of tracks) for (const item of track.items) if ('asset' in item) ids.add(item.asset);
+  const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
+  return cacheKey({version: 1, kind: 'audio', renderer, fps: timeline.fps, duration: timeline.durationInFrames, sampleRate, tracks, assets});
+}
+
 /** Atomic publication + a digest prevent interrupted writes or corruption from being hits. */
 export class VideoCache {
-  constructor(private root: string, private warnings: string[]) {}
+  constructor(private root: string, private warnings: string[], private ext = '.mp4') {}
 
   async get(key: string, destination: string): Promise<boolean> {
     try {
       const record = JSON.parse(await readFile(path.join(this.root, `${key}.json`), 'utf8')) as {hash: string};
       if (!/^sha256:[a-f0-9]{64}$/.test(record.hash)) return false;
-      await copyFile(path.join(this.root, `${key}.mp4`), destination);
+      await copyFile(path.join(this.root, `${key}${this.ext}`), destination);
       if (await sha256(destination) === record.hash) return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.warnings.push(`Cache read missed: ${(error as Error).message}`);
@@ -80,15 +96,15 @@ export class VideoCache {
     const temp = path.join(this.root, `.${key}.${randomUUID()}`);
     try {
       await mkdir(this.root, {recursive: true});
-      await copyFile(source, `${temp}.mp4`);
-      const hash = await sha256(`${temp}.mp4`);
+      await copyFile(source, `${temp}${this.ext}`);
+      const hash = await sha256(`${temp}${this.ext}`);
       await writeFile(`${temp}.json`, JSON.stringify({hash}));
-      await rename(`${temp}.mp4`, path.join(this.root, `${key}.mp4`));
+      await rename(`${temp}${this.ext}`, path.join(this.root, `${key}${this.ext}`));
       await rename(`${temp}.json`, path.join(this.root, `${key}.json`));
     } catch (error) {
       this.warnings.push(`Cache write skipped: ${(error as Error).message}`);
     } finally {
-      await Promise.all([`${temp}.mp4`, `${temp}.json`].map((p) => rm(p, {force: true}).catch(() => {})));
+      await Promise.all([`${temp}${this.ext}`, `${temp}.json`].map((p) => rm(p, {force: true}).catch(() => {})));
     }
   }
 }
@@ -115,8 +131,11 @@ export async function cachedVideo(options: {
   plan: VideoPlan;
   cacheDir: string;
   work: string;
-  /** Render consecutive segments in one go, writing outputs[i] for segments[i]. */
-  renderRun: (segments: VideoSegment[], outputs: string[]) => Promise<void>;
+  /**
+   * Render consecutive segments in one go, writing outputs[i] for segments[i];
+   * it may report how far it is through the run (0–1) as it goes.
+   */
+  renderRun: (segments: VideoSegment[], outputs: string[], onProgress: (progress: number) => void) => Promise<void>;
   concatenate: (files: string[], output: string) => Promise<void>;
   onProgress?: (progress: number) => void;
   /** Longest run rendered by one call, in segments (default 120: two minutes at one second each). */
@@ -138,12 +157,16 @@ export async function cachedVideo(options: {
     if (await segments.get(segment.key, files[index]!)) report.segmentsReused++;
     else missing.push(index);
   }
-  options.onProgress?.(report.segmentsReused / plan.segments.length);
+  const total = plan.segments.length;
+  options.onProgress?.(report.segmentsReused / total);
   for (const run of missRuns(missing, options.maxRunSegments ?? 120)) {
-    await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!));
+    // Within a run, progress moves with its frames rather than jumping at its end.
+    const done = report.segmentsReused + report.segmentsRendered;
+    await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!),
+      (p) => options.onProgress?.((done + Math.min(Math.max(p, 0), 1) * run.length) / total));
     for (const index of run) await segments.put(plan.segments[index]!.key, files[index]!);
     report.segmentsRendered += run.length;
-    options.onProgress?.((report.segmentsReused + report.segmentsRendered) / plan.segments.length);
+    options.onProgress?.((report.segmentsReused + report.segmentsRendered) / total);
   }
   await options.concatenate(files, video);
   await whole.put(plan.key, video);
