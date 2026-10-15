@@ -762,8 +762,8 @@ Paid calls are journal records (avg-91o). Before a paid tool calls a provider,
 it **reserves** the call's estimated price. Afterwards it **settles** the
 reservation with what the provider charged. If the call never reached the
 provider, or the provider refused it, the tool **releases** the reservation
-instead. Today the paid tools are `pva_generate_image` on a fal model and
-`pva_generate_minimax_h3_video`. The Codex image provider bills your
+instead. Today the paid tools are `pva_generate_image` on a fal model,
+`pva_generate_minimax_h3_video` and `pva_generate_wan_video`. The Codex image provider bills your
 ChatGPT plan, not money, so it reserves nothing.
 
 The limit is the nearest `budget:` in `settings.yaml`, looked up in the

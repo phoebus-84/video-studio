@@ -36,7 +36,7 @@
     "check:paths": "node tools/check-no-foreign-paths.mjs",
     "check:boundaries": "node tools/check-boundaries.mjs",
     "check:contracts": "npm run check --workspace @studio/contracts",
-    "check:pipelines": "node studio/pipelines/lint/validate-pipeline.js studio/pipelines/pipelines/*.yaml",
+    "check:pipelines": "node studio/pipelines/lint/validate-pipeline.js studio/pipelines/pipelines",
     "check": "npm run check:paths && npm run check:boundaries && npm run check:contracts && npm run check:pipelines && npm run docs:check && npm run typecheck && npm test",
     "test:tools": "node --test tools/test/*.test.mjs",
     "test": "npm run test:tools && node tools/run-all.mjs test",

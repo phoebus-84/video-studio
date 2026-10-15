@@ -1,23 +1,27 @@
 // How many Chrome tabs an episode's render uses. Decided by the studio, not
 // the composer: the composer's code is part of what a layout sheet pictures,
 // and how many tabs render it changes no frame.
-// Each tab holds the
-// frame's pictures and kits, about two gigabytes with large paintings: a
-// render that starved the machine crashed its browser at the same frames
-// until it ran with one tab (avg-dcf.8). So: as many tabs as the memory
-// available allows, never more than half the cores, at least one.
+// Decided on the machine that renders, when it renders: as many tabs as the
+// memory available allows, never more than two thirds of the cores, at least
+// one. A tab takes far less than was once budgeted (two gigabytes each, which
+// left one tab on a 16 GB machine): rendering an ambient episode with eight
+// tabs took about 110 MB each and was four times faster than with one. The
+// budget keeps a wide margin over that, because a render that starved the
+// machine crashed its browser at the same frames until it ran with one tab
+// (avg-dcf.8). Two thirds of the cores leaves room for FFmpeg and the system;
+// eight tabs on twelve threads was the fastest measured.
 // AVG_RENDER_CONCURRENCY forces it.
 
 import { spawnSync } from "node:child_process";
 import { cpus, freemem, platform } from "node:os";
 
-const PER_TAB = 2 * 1024 ** 3;
+const PER_TAB = 320 * 1024 ** 2;
 
 export function renderConcurrency(options: {freeBytes: number; cpus: number; env: Record<string, string | undefined>}): number {
   const forced = options.env.AVG_RENDER_CONCURRENCY;
   if (forced !== undefined && /^[1-9]\d*$/.test(forced.trim())) return Number(forced.trim());
   const byMemory = Math.floor(options.freeBytes / PER_TAB);
-  const byCores = Math.floor(options.cpus / 2);
+  const byCores = Math.floor((options.cpus * 2) / 3);
   return Math.max(1, Math.min(byMemory, byCores));
 }
 

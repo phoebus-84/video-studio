@@ -110,9 +110,22 @@ describe("makeLayoutSheet", () => {
     expect(r.warnings).toEqual(["rule 2 (end+5s) falls outside section poem"]);
   });
 
+  it("keeps a sheet that already pictures the timeline, and the review beside it", async () => {
+    const first = await makeLayoutSheet(dir(), { episodeRef: REF });
+    writeFileSync(at("artifacts/layout-sheet/review.json"), "a person's review");
+    const before = readFileSync(at(LAYOUT_SHEET_REPORT), "utf-8");
+    const again = await makeLayoutSheet(dir(), { episodeRef: REF });
+    expect(again.reused).toBe(true);
+    expect(first.reused).toBeUndefined();
+    expect(readFileSync(at(LAYOUT_SHEET_REPORT), "utf-8")).toBe(before);
+    expect(readFileSync(at("artifacts/layout-sheet/review.json"), "utf-8")).toBe("a person's review");
+  });
+
   it("replaces the previous sheet whole", async () => {
     await makeLayoutSheet(dir(), { episodeRef: REF });
     writeFileSync(at("artifacts/layout-sheet/frames/999.jpg"), "a still from before");
+    // A damaged still: the sheet no longer is the one rendered, so it is drawn again.
+    writeFileSync(at("artifacts/layout-sheet/frames/000.jpg"), "damaged");
     await makeLayoutSheet(dir(), { episodeRef: REF });
     expect(existsSync(at("artifacts/layout-sheet/frames/999.jpg"))).toBe(false);
     expect(leftovers()).toEqual([]);
@@ -121,6 +134,7 @@ describe("makeLayoutSheet", () => {
   it("keeps the previous sheet, and leaves nothing behind, when rendering fails", async () => {
     await makeLayoutSheet(dir(), { episodeRef: REF });
     const before = readFileSync(at(LAYOUT_SHEET_REPORT), "utf-8");
+    writeFileSync(at("artifacts/layout-sheet/frames/000.jpg"), "damaged");
     failAfterWriting = true;
     await expect(makeLayoutSheet(dir(), { episodeRef: REF })).rejects.toThrow(/the browser went away/);
     expect(readFileSync(at(LAYOUT_SHEET_REPORT), "utf-8")).toBe(before);

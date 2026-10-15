@@ -19,6 +19,20 @@ function ffmpeg(args: string[]): Buffer {
 }
 const videoBytes = (file: string) => ffmpeg(['-i', file, '-map', '0:v:0', '-c', 'copy', '-f', 'h264', '-']);
 const pixels = (file: string) => ffmpeg(['-i', file, '-map', '0:v:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+const FRAME = 320 * 180 * 3;
+// Same frames, within lossy-encoding noise. A segment cut from a run of
+// segments is encoded with its neighbours in x264's lookahead, so it is not
+// byte-identical to the same segment encoded alone, nor to an uncached render;
+// timing or composition mistakes are far above this bound. Reported per frame:
+// deepEqual on two 13 MB buffers runs out of memory building its diff.
+function assertFramesClose(actual: Buffer, reference: Buffer, label: string) {
+  assert.equal(actual.length, reference.length, `${label}: frame count`);
+  for (let frame = 0; frame < actual.length / FRAME; frame++) {
+    let error = 0;
+    for (let i = frame * FRAME; i < (frame + 1) * FRAME; i++) error += Math.abs(actual[i]! - reference[i]!);
+    assert.ok(error / FRAME < 3, `${label}: frame ${frame} mean pixel error ${error / FRAME}`);
+  }
+}
 
 it('real cache: crossfade/clip/captions, audio-only reuse, partial rebuild, corruption and asset checks', {skip: !enabled && 'set REMOTION_E2E=1', timeout: 300_000}, async () => {
   const {renderTimeline} = await import('../dist/index.js');
@@ -66,19 +80,12 @@ it('real cache: crossfade/clip/captions, audio-only reuse, partial rebuild, corr
     assert.equal(partial.cache!.segmentsReused, 2);
     assert.equal(partial.cache!.segmentsRendered, 1);
     const fresh = await render(path.join(root, 'fresh-cache'));
-    assert.deepEqual(pixels(partial.path), pixels(fresh.path), 'partial rebuild matches a clean segmented render, at every frame');
+    const actual = pixels(partial.path);
+    assertFramesClose(actual, pixels(fresh.path), 'partial rebuild vs a clean segmented render');
     // Compare all frames against the uncached renderer. Separate GOPs can
     // change lossy compression, but not animation timing or composition.
     const uncached = await renderTimeline({timeline, assetRoot: root, outputPath: path.join(root, 'uncached.mp4'), concurrency: 2});
-    const actual = pixels(partial.path);
-    const reference = pixels(uncached.path);
-    assert.equal(actual.length, reference.length);
-    for (let frame = 0; frame < 75; frame++) {
-      const start = frame * 320 * 180 * 3;
-      let error = 0;
-      for (let i = start; i < start + 320 * 180 * 3; i++) error += Math.abs(actual[i]! - reference[i]!);
-      assert.ok(error / (320 * 180 * 3) < 3, `frame ${frame} mean pixel error ${error / (320 * 180 * 3)}`);
-    }
+    assertFramesClose(actual, pixels(uncached.path), 'partial rebuild vs the uncached renderer');
 
     // Removing the whole cache exercises segment recovery, including a damaged segment.
     await rm(path.join(cacheDir, 'video'), {recursive: true});
@@ -86,7 +93,7 @@ it('real cache: crossfade/clip/captions, audio-only reuse, partial rebuild, corr
     for (const file of segments) await writeFile(path.join(cacheDir, 'segments', file), 'truncated');
     const recovered = await render();
     assert.equal(recovered.cache!.segmentsRendered, 3);
-    assert.deepEqual(pixels(recovered.path), actual);
+    assertFramesClose(pixels(recovered.path), actual, 'recovered cache vs partial rebuild');
 
     // Removing narration switches to silent delivery without re-encoding video.
     timeline.tracks = timeline.tracks.filter((t) => t.type === 'visual');

@@ -431,7 +431,8 @@ export function registerPipelineTools(pi: ExtensionAPI): void {
     // estimates of calls still open, which count against the limit.
     description:
       "Get the episode's budget from its spend ledger: the limit, what has been spent, what is reserved by " +
-      "calls still open, and what remains. Paid tools (pva_generate_image on fal, pva_generate_minimax_h3_video) " +
+      "calls still open, and what remains. Paid tools (pva_generate_image on fal, pva_generate_minimax_h3_video, " +
+      "pva_generate_wan_video) " +
       "are refused once a call would pass the limit; only the operator can raise it or release a reservation.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),

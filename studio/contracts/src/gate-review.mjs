@@ -16,7 +16,8 @@
 // avg-i1x is closed.
 // ---------------------------------------------------------------------------
 
-import { readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { JOURNAL_ACTORS } from "./journal.mjs";
@@ -67,16 +68,21 @@ export async function hashArtifacts(episodeDir, relativePaths) {
         `and this path climbs out of it`,
       );
     }
-    let bytes;
+    const file = path.join(episodeDir, relative);
+    let size;
     try {
-      bytes = await readFile(path.join(episodeDir, relative));
+      size = (await stat(file)).size;
     } catch {
       throw new Error(`Cannot hash "${relative}": no such file under ${episodeDir}`);
     }
-    if (bytes.length === 0) {
+    if (size === 0) {
       throw new Error(`Cannot hash "${relative}": the file is empty`);
     }
-    hashes.push({ path: relative, sha256: createHash("sha256").update(bytes).digest("hex") });
+    // Streamed: a long render is larger than any one buffer Node will allocate,
+    // and reading it whole failed as though the file were missing.
+    const hash = createHash("sha256");
+    for await (const chunk of createReadStream(file)) hash.update(chunk);
+    hashes.push({ path: relative, sha256: hash.digest("hex") });
   }
   return hashes;
 }

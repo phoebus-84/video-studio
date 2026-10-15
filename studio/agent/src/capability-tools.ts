@@ -38,6 +38,7 @@ import {
   resolveImageProvider,
 } from "./image-provider.js";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
+import { renderProgressBar } from "./render-progress.js";
 import {
   assembleNarrationSegments,
   buildNarrationManifest,
@@ -1308,20 +1309,25 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       profile: profileParam,
       label: Type.Optional(Type.String({ default: "render", description: "Lowercase kebab-case render label" })),
     }),
-    async execute(_toolCallId, params, signal) {
+    async execute(_toolCallId, params, signal, onUpdate) {
       const dir = episodeDir(params.channel, params.series, params.episode);
       const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
       try {
         return await withFileMutationQueue(join(dir, "output", "current.json"), async () => {
           if (signal?.aborted) throw new Error("cancelled");
+          const bar = renderProgressBar(Date.now());
           const render = await renderEpisode(dir, {
             episodeRef,
             ...(params.profile ? { profile: params.profile } : {}),
             ...(params.label ? { label: params.label } : {}),
+            onProgress(progress) {
+              const line = bar(progress, Date.now());
+              if (line) onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { progress } });
+            },
           });
           const mb = (render.result.sizeBytes / 1024 / 1024).toFixed(1);
           const lines = [
-            `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}`,
+            `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}, ${render.concurrency} Chrome tab(s)`,
             ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),
             ...(render.compiledBy
               ? [`compiled by ${render.compiledBy.compiler} from episode-spec.json revision ${render.compiledBy.revision}`
@@ -1410,6 +1416,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         const { report } = sheet;
         const lines = [
           `✅ layout sheet: ${report.frames.length} frames, ${report.sheet.columns}×${report.sheet.rows}, rules ${report.rules.source}`,
+          ...(sheet.reused ? ["it already pictured this timeline: kept as it was, with its review"] : []),
           `open it: ${sheet.sheetPath}`,
           `stills: ${join(dir, "artifacts", "layout-sheet", "frames")}`,
           `inputs ${report.inputsHash}`,
@@ -1843,10 +1850,10 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const caps: Record<string, { available: boolean; detail: string }> = {};
-      const { imageGenerationStatus, voiceWorkerStatus } = await import("./capability-status.js");
+      const { imageGenerationStatus, videoGenerationStatus, voiceWorkerStatus } = await import("./capability-status.js");
 
       // Generated media: the route the series resolves, each with its own readiness (avg-twq).
-      // H3 video generation specifically requires fal.ai.
+      // Video generation (MiniMax H3, Wan 2.2) specifically requires fal.ai.
       let falConfigured = false;
       try {
         falConfigured = Boolean((await resolveConfig()).falKeyRef);
@@ -1858,9 +1865,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         falConfigured,
         codexLoggedIn: async () => Boolean(registry && await registry.getApiKeyForProvider(CODEX_PROVIDER)),
       }).catch((e: unknown) => ({ available: false, detail: e instanceof Error ? e.message : String(e) }));
-      caps["video-generation"] = falConfigured
-        ? { available: true, detail: "fal.ai MiniMax H3 configured" }
-        : { available: false, detail: "FAL_KEY not set" };
+      // Video generation through fal: MiniMax H3 and Wan 2.2 turbo, each with its own line.
+      Object.assign(caps, videoGenerationStatus(falConfigured));
 
       // The voice worker: speech only with a CustomVoice model installed, alignment only with /align (avg-twq, avg-07q).
       Object.assign(caps, await voiceWorkerStatus(process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL));

@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {cachedVideo, planVideo, VideoCache, type VideoPlan} from '../src/render-cache.js';
+import {cachedVideo, missRuns, planAudio, planVideo, VideoCache, type VideoPlan, type VideoSegment} from '../src/render-cache.js';
 import type {EditTimeline, VisualItem} from '../src/schema.js';
 
 import {cacheTimeline} from './cache-fixture.js';
 
 const keys = (doc: EditTimeline, renderer = 'renderer-v1') => planVideo(doc, renderer).segments.map((s) => s.key);
 const changed = (a: string[], b: string[]) => a.flatMap((key, i) => key !== b[i] ? [i] : []);
+/** A run renderer that writes each segment with `write`, one after another. */
+const each = (write: (segment: VideoSegment, output: string) => Promise<void>) =>
+  async (segments: VideoSegment[], outputs: string[]) => { for (const [i, segment] of segments.entries()) await write(segment, outputs[i]!); };
 
 describe('video cache plan', () => {
   it('uses original inclusive one-second ranges, including a short tail', () => {
@@ -99,18 +102,21 @@ describe('video cache storage and execution', () => {
   it('renders cold, reuses the whole video, and only re-renders affected segments', async () => workspace(async (root) => {
     const doc = cacheTimeline();
     const cacheDir = path.join(root, 'cache');
-    const rendered: number[] = [];
+    const rendered: number[][] = [];
     let concatenations = 0;
     const run = async (plan: VideoPlan) => {
       const work = await mkdtemp(path.join(root, 'work-'));
       return cachedVideo({plan, cacheDir, work,
-        renderSegment: async (segment, output) => { rendered.push(segment.from); await writeFile(output, segment.key); },
+        renderRun: async (segments, outputs) => {
+          rendered.push(segments.map((segment) => segment.from));
+          await each(async (segment, output) => { await writeFile(output, segment.key); })(segments, outputs);
+        },
         concatenate: async (files, output) => { concatenations++; await writeFile(output, (await Promise.all(files.map((f) => readFile(f, 'utf8')))).join('')); },
       });
     };
     const first = await run(planVideo(doc, 'r'));
     assert.equal(first.report.segmentsRendered, 3);
-    assert.deepEqual(rendered, [0, 30, 60]);
+    assert.deepEqual(rendered, [[0, 30, 60]], 'a cold render is one renderer call, not one per second');
     rendered.length = 0;
     const second = await run(planVideo(doc, 'r'));
     assert.equal(second.report.wholeVideoReused, true);
@@ -118,7 +124,7 @@ describe('video cache storage and execution', () => {
     assert.deepEqual(rendered, []);
     doc.assets.a!.hash = `sha256:${'d'.repeat(64)}`;
     const third = await run(planVideo(doc, 'r'));
-    assert.deepEqual(rendered, [0, 30]);
+    assert.deepEqual(rendered, [[0, 30]]);
     assert.equal(third.report.segmentsReused, 1);
     assert.equal(third.report.segmentsRendered, 2);
     assert.notEqual(await readFile(first.video, 'utf8'), await readFile(third.video, 'utf8'));
@@ -149,15 +155,15 @@ describe('video cache storage and execution', () => {
     const work = path.join(root, 'work');
     await mkdir(work);
     let fail = true;
-    const renderSegment = async (segment: {from: number}, output: string) => {
+    const renderRun = each(async (segment, output) => {
       await writeFile(output, 'video');
       if (fail && segment.from === 30) throw new Error('Chrome failed');
-    };
+    });
     const concatenate = async (_files: string[], output: string) => { await writeFile(output, 'joined'); };
-    await assert.rejects(cachedVideo({plan, cacheDir, work, renderSegment, concatenate}), /Chrome failed/);
+    await assert.rejects(cachedVideo({plan, cacheDir, work, renderRun, concatenate, maxRunSegments: 1}), /Chrome failed/);
     assert.equal((await readdir(path.join(cacheDir, 'segments'))).length, 2);
     fail = false;
-    const resumed = await cachedVideo({plan, cacheDir, work, renderSegment, concatenate});
+    const resumed = await cachedVideo({plan, cacheDir, work, renderRun, concatenate});
     assert.equal(resumed.report.segmentsReused, 1);
     assert.equal(resumed.report.segmentsRendered, 2);
   }));
@@ -166,11 +172,76 @@ describe('video cache storage and execution', () => {
     const cacheDir = path.join(root, 'not-a-directory');
     await writeFile(cacheDir, 'file');
     const result = await cachedVideo({plan: planVideo(cacheTimeline(), 'r'), cacheDir, work: root,
-      renderSegment: async (_segment, output) => { await writeFile(output, 'video'); },
+      renderRun: each(async (_segment, output) => { await writeFile(output, 'video'); }),
       concatenate: async (_files, output) => { await writeFile(output, 'joined'); },
     });
     assert.equal(result.report.segmentsRendered, 3);
     assert.ok(result.report.warnings.length > 0);
     assert.equal(await readFile(result.video, 'utf8'), 'joined');
   }));
+
+  it('a failed run publishes none of its segments', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const cacheDir = path.join(root, 'cache');
+    const work = path.join(root, 'work');
+    await mkdir(work);
+    const renderRun = each(async (segment, output) => {
+      await writeFile(output, 'video');
+      if (segment.from === 30) throw new Error('Chrome failed');
+    });
+    await assert.rejects(cachedVideo({plan, cacheDir, work, renderRun, concatenate: async () => {}}), /Chrome failed/);
+    assert.deepEqual(await readdir(cacheDir).catch(() => []), [], 'the first segment was written but its run never finished');
+  }));
+
+  it('renders only the misses, grouped in consecutive runs', async () => workspace(async (root) => {
+    const doc = cacheTimeline();
+    const cacheDir = path.join(root, 'cache');
+    const calls: number[][] = [];
+    const run = (plan: VideoPlan, maxRunSegments?: number) => mkdtemp(path.join(root, 'work-')).then((work) => cachedVideo({
+      plan, cacheDir, work, ...(maxRunSegments ? {maxRunSegments} : {}),
+      renderRun: async (segments, outputs) => { calls.push(segments.map((s) => s.from)); await each(async (s, o) => writeFile(o, s.key))(segments, outputs); },
+      concatenate: async (_files, output) => { await writeFile(output, 'joined'); },
+    }));
+    await run(planVideo(doc, 'r'), 2);
+    assert.deepEqual(calls, [[0, 30], [60]], 'runs are capped');
+    calls.length = 0;
+    (doc.tracks[1]!.items[0] as VisualItem).props.text = 'Changed';
+    await run(planVideo(doc, 'r'));
+    assert.deepEqual(calls, [[30]], 'the untouched seconds around it are reused');
+  }));
+
+  it('reports progress inside a run, not only when it ends', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const seen: number[] = [];
+    await cachedVideo({
+      plan, cacheDir: path.join(root, 'cache'), work: await mkdtemp(path.join(root, 'work-')),
+      renderRun: async (segments, outputs, onProgress) => {
+        onProgress(0.5);
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+      },
+      concatenate: async (_files, output) => { await writeFile(output, 'joined'); },
+      onProgress: (p) => seen.push(p),
+    });
+    assert.deepEqual(seen, [0, 0.5, 1]);
+  }));
+});
+
+describe('audio key', () => {
+  it('changes with the sound, not with the pictures', () => {
+    const doc = cacheTimeline();
+    const key = planAudio(doc, 'r', 48000);
+    (doc.tracks[1]!.items[0] as VisualItem).props.text = 'Changed';
+    assert.equal(planAudio(doc, 'r', 48000), key, 'a caption edit keeps the soundtrack');
+    doc.assets.voice = {...doc.assets.voice!, hash: `sha256:${'d'.repeat(64)}`};
+    assert.notEqual(planAudio(doc, 'r', 48000), key, 'new voice media is a new soundtrack');
+    assert.notEqual(planAudio(cacheTimeline(), 'other renderer', 48000), key);
+  });
+});
+
+describe('miss runs', () => {
+  it('groups consecutive indexes, splits gaps and caps length', () => {
+    assert.deepEqual(missRuns([], 4), []);
+    assert.deepEqual(missRuns([0, 1, 2, 5, 6, 9], 4), [[0, 1, 2], [5, 6], [9]]);
+    assert.deepEqual(missRuns([0, 1, 2, 3, 4], 2), [[0, 1], [2, 3], [4]]);
+  });
 });
