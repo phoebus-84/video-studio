@@ -13,11 +13,13 @@ import { resolveConfig, checkServiceHealth } from "../src/config.js";
 import { registerWorkspaceTools } from "../src/workspace-tools.js";
 import { registerPipelineTools } from "../src/pipeline-tools.js";
 import { registerCapabilityTools } from "../src/capability-tools.js";
+import { registerWanTools } from "../src/wan-tools.js";
 import { registerBlenderTools } from "../src/blender-tools.js";
 import { registerArchiveTools } from "../src/archive-tools.js";
 import { registerMapillaryTools } from "../src/mapillary-tools.js";
 import { registerSourceTools } from "../src/source-tools.js";
 import { registerAudioTools } from "../src/audio-tools.js";
+import { registerLongExtendTools } from "../src/long-extend-tools.js";
 import { registerSkillTools } from "../src/skill-tools.js";
 import { registerSlashCommands } from "../src/slash-commands.js";
 import { registerTuiComponents } from "../src/tui-status.js";
@@ -295,11 +297,13 @@ export default function (pi: ExtensionAPI): void {
   // --- Register capability tools ----------------------------------------
 
   registerCapabilityTools(pi);
+  registerWanTools(pi);
   registerBlenderTools(pi);
   registerArchiveTools(pi);
   registerMapillaryTools(pi);
   registerSourceTools(pi);
   registerAudioTools(pi);
+  registerLongExtendTools(pi);
 
   // --- Register skill and context tools ---------------------------------
 

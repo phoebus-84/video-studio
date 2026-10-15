@@ -126,3 +126,22 @@ export async function imageGenerationStatus(options: {
     ? { available: codexReady, detail: `${label} uses ${CODEX_PROVIDER}/${provider.model}: ${codex}` }
     : { available: options.falConfigured, detail: `${label} uses fal ${provider.model}: ${fal}` };
 }
+
+/**
+ * Generated video: both fal routes need only FAL_KEY, but they are different
+ * tools at very different prices, so each says so on its own line.
+ */
+export function videoGenerationStatus(falConfigured: boolean): {
+  "video-generation": CapabilityReport;
+  "video-generation-wan": CapabilityReport;
+} {
+  const missing = "FAL_KEY not set";
+  return {
+    "video-generation": falConfigured
+      ? { available: true, detail: "fal.ai MiniMax H3 configured (pva_generate_minimax_h3_video, ~$0.48/clip)" }
+      : { available: false, detail: missing },
+    "video-generation-wan": falConfigured
+      ? { available: true, detail: "fal.ai Wan 2.2 A14B turbo configured (pva_generate_wan_video, $0.05–0.10/clip, end frame for loops)" }
+      : { available: false, detail: missing },
+  };
+}

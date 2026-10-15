@@ -1,6 +1,6 @@
 ---
 name: compose-video
-version: "0.5.0"
+version: "0.6.0"
 description: Compose the final video through the episode's edit timeline, rendered with Remotion
 inputs:
   - name: illustrations
@@ -113,6 +113,29 @@ recompiled and why) and lists every finding, writing nothing.
 - **Captions**: one `captions@1.1.0` per cue of a canonical narration
   manifest, inside the profile's safe zone. A manifest that is not canonical
   gives narration without captions, and the tool says why.
+
+## Long versions (1–10 hours)
+
+An ambient episode whose approved render is a seamless loop is published long
+too. Make the long version with `pva_extend_episode`, never by hand with
+ffmpeg or `pva_edit_audio` (its single mix graph does not get through an hour):
+
+- `hours` (0.25–10) or `durationSeconds`; `label` names the file
+  (`output/<label>-<hours>h-<timestamp>.mp4`, with `.plan.json` and
+  `.report.json` beside it). `current.json` does not move.
+- `music`: the music pieces, at least two, paths relative to the episode
+  (`{ path, in, out }` to choose a piece's playable stretch; a silent head and
+  tail are cut otherwise). Default: every audio file in `assets/music/`. The
+  soundtrack is **music only**: never put ambiences or effects from
+  `assets/sounds/` in it (ambient-through-time is music only unless the
+  operator says otherwise).
+- `master` defaults to the render `current.json` names; `seed` defaults to
+  one derived from the episode slug, so a rerun gives the same soundtrack.
+- The video is the master looped by stream copy; the soundtrack is a seeded
+  order that never repeats a piece back to back, mastered to −17 LUFS,
+  ≤ −1 dBTP, 3 s fade-in, 6 s fade-out. An hour takes about two minutes.
+- Read the summary's duration, loudness and concerns, then ask the operator
+  to approve it. The file is media: it stays in the library, never in git.
 
 ## Output Layout
 

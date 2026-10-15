@@ -777,6 +777,95 @@ export const minimaxH3ReferenceToVideo: EndpointProfile = defineProfile({
   pricing: H3_PRICING,
 });
 
+// ─── Wan 2.2 A14B (turbo) ──────────────────────────────────────────────
+//
+// Image to video, optionally toward an end frame (the same image twice makes
+// a closed loop). Schema and prices from fal's live API page,
+// https://fal.ai/models/fal-ai/wan/v2.2-a14b/image-to-video/turbo/api
+// (read 2026-10-15): the turbo endpoint takes no frame count, frame rate or
+// negative prompt — those belong to the non-turbo endpoint. Prices per video:
+// 720p $0.10, 580p $0.075, 480p $0.05.
+
+/** The turbo endpoint's price per video, by resolution (USD). */
+export const WAN_22_TURBO_PRICES_USD: Readonly<Record<"480p" | "580p" | "720p", number>> = Object.freeze({
+  "480p": 0.05,
+  "580p": 0.075,
+  "720p": 0.1,
+});
+
+/** Wan 2.2 A14B turbo — image to video, with an optional end frame. */
+export const wan22TurboImageToVideo: EndpointProfile = defineProfile({
+  profileId: "wan/v2.2-a14b/image-to-video/turbo@v1",
+  endpointId: "fal-ai/wan/v2.2-a14b/image-to-video/turbo",
+  operation: "image-to-video",
+  contractVersion: "v1",
+  parameterSchema: [
+    { name: "image_url", type: "string", required: true, description: "Opening frame." },
+    { name: "prompt", type: "string", required: true, description: "What moves, and how." },
+    {
+      name: "end_image_url",
+      type: "string",
+      required: false,
+      description: "Closing frame. The opening frame again makes a seamless loop.",
+    },
+    { name: "seed", type: "integer", required: false, description: "Omitted: fal picks one at random." },
+    {
+      name: "resolution",
+      type: "enum",
+      required: false,
+      defaultValue: "720p",
+      enumValues: ["480p", "580p", "720p"],
+      description: "Output resolution; it sets the price.",
+    },
+    {
+      name: "aspect_ratio",
+      type: "enum",
+      required: false,
+      defaultValue: "auto",
+      enumValues: ["auto", "16:9", "9:16", "1:1"],
+      description: "Frame shape; auto follows the input image.",
+    },
+    { name: "enable_safety_checker", type: "boolean", required: false, defaultValue: false, description: "Input safety check." },
+    { name: "enable_output_safety_checker", type: "boolean", required: false, defaultValue: false, description: "Output safety check." },
+    { name: "enable_prompt_expansion", type: "boolean", required: false, defaultValue: false, description: "Let an LLM expand the prompt." },
+    {
+      name: "acceleration",
+      type: "enum",
+      required: false,
+      defaultValue: "regular",
+      enumValues: ["none", "regular"],
+      description: "Speed-up; none is slower and closer to the full model.",
+    },
+    {
+      name: "video_quality",
+      type: "enum",
+      required: false,
+      defaultValue: "high",
+      enumValues: ["low", "medium", "high", "maximum"],
+      description: "Encoder quality of the output.",
+    },
+    {
+      name: "video_write_mode",
+      type: "enum",
+      required: false,
+      defaultValue: "balanced",
+      enumValues: ["fast", "balanced", "small"],
+      description: "Encoder speed/size trade-off.",
+    },
+  ],
+  capabilities: {
+    supportedAspectRatios: ["16:9", "9:16", "1:1"],
+    supportsSeed: true,
+    supportsReferenceImages: true,
+    maxReferenceImages: 2,
+    supportsNegativePrompt: false,
+    defaultImageSize: "16:9",
+  },
+  // The 720p price: the default, and the most a clip costs. The studio tool
+  // reserves the price of the resolution it actually asks for.
+  pricing: { unit: "inference", estimatedUnitCost: WAN_22_TURBO_PRICES_USD["720p"], currency: "USD" },
+});
+
 // ─── Registry ─────────────────────────────────────────────────────────
 
 const PROFILES: readonly EndpointProfile[] = Object.freeze([
@@ -786,6 +875,7 @@ const PROFILES: readonly EndpointProfile[] = Object.freeze([
   minimaxH3TextToVideo,
   minimaxH3ImageToVideo,
   minimaxH3ReferenceToVideo,
+  wan22TurboImageToVideo,
   deprecationExample,
 ]);
 

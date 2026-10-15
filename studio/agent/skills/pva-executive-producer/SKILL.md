@@ -50,6 +50,11 @@ commands become available through the agent.
 - `pva_render_vector_animation` — Validate or render a declarative rigged SVG animation.
 - `pva_synthesize_nonverbal_audio` — Generate deterministic speech-free character cues.
 - `pva_compose_multitrack_video` — Mix an animated clip with frame-addressed local audio cues into an immutable render.
+- `pva_generate_wan_video` — Animate one episode image with Wan 2.2 A14B turbo on fal ($0.10/clip at 720p,
+  $0.05 at 480p; on the spend ledger). `loop: true` ends on the same image: a closed loop. Prefer it to
+  `pva_generate_minimax_h3_video` (~$0.48/clip) for loops and small moving details; keep H3 for
+  performances, references and long shots. **Channel `ambient-through-time`: animate every live island with
+  this tool** (crop as `imagePath`, `loop: true`) — not MiniMax H3, and not through the CreativeStudio bridge.
 
 Create parents in order: channel, series, then episode. Creation is intentionally
 non-destructive: revise existing metadata with reviewed file edits rather than
