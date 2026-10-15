@@ -8,11 +8,20 @@
 // in parallel, each placing its clips by absolute sample, so the chunks join
 // without a seam. pva_edit_audio's single filter graph does not get through
 // an hour; this never holds more than a chunk.
+//
+// The mastered soundtrack is a file of its own, cached in assets/audio/
+// soundtracks/ on a key of the music bytes, the seed, the length and the
+// mastering settings. It does not depend on the pictures, so it can be made
+// while the operator is still judging the master (soundtrackOnly), and the
+// long version is then two stream copies written once: no re-encode, and no
+// +faststart pass rewriting gigabytes a second time for a file that is
+// uploaded, not streamed from disk.
 // ---------------------------------------------------------------------------
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { basename, extname, join } from "node:path";
@@ -158,6 +167,34 @@ async function measurePiece(ws: Workspace, entry: MusicEntry): Promise<Piece> {
   };
 }
 
+/** Bump when the soundtrack's making changes in a way the settings below do not capture. */
+const SOUNDTRACK_VERSION = 1;
+
+/** What a cached soundtrack was made from, and what the long version's plan and report need from it. */
+interface SoundtrackMeta {
+  key: string;
+  seed: number;
+  durationSeconds: number;
+  pieces: Piece[];
+  plan: MusicPlan;
+  mix: { integrated: number; truePeak: number };
+  chain: { gainDb: number; limiter: boolean; filter: string };
+  limit: number;
+}
+
+/** The cache key of a soundtrack: the music's bytes and trims, the seed, the length, and how it is mixed and mastered. */
+function soundtrackKey(ws: Workspace, entries: MusicEntry[], seed: number, durationSeconds: number): string {
+  const music = entries.map((e) => ({
+    path: e.path.replace(/\\/g, "/"),
+    in: e.in ?? null,
+    out: e.out ?? null,
+    sha256: createHash("sha256").update(readFileSync(join(ws.dir, e.path))).digest("hex"),
+  }));
+  return createHash("sha256")
+    .update(JSON.stringify({ v: SOUNDTRACK_VERSION, music, seed, durationSeconds, MASTER, PIECE_TARGET_LUFS, CHUNK_SECONDS, HEADROOM_DB, SAMPLE_RATE }))
+    .digest("hex");
+}
+
 export function registerLongExtendTools(pi: ExtensionAPI): void {
   const libraryRoot = () => process.env.AVG_LIBRARY_ROOT || join(process.cwd(), "library");
 
@@ -169,7 +206,9 @@ export function registerLongExtendTools(pi: ExtensionAPI): void {
       "under a music-only soundtrack drawn from the given pieces — a seeded order that never plays the same piece twice in a row, whole pieces " +
       "mostly and sometimes long sections, joined by 3–6 s crossfades or 1–3 s gaps, each levelled, mastered to -17 LUFS / -1 dBTP with a 3 s " +
       "fade-in and 6 s fade-out, AAC 192k. Writes output/<label>-<hours>h-<timestamp>.mp4 with .plan.json and .report.json beside it; " +
-      "output/current.json does not move. Music defaults to every audio file in assets/music/; ambiences and effects never go in.",
+      "output/current.json does not move. Music defaults to every audio file in assets/music/; ambiences and effects never go in. " +
+      "The mastered soundtrack is cached in assets/audio/soundtracks/: run with soundtrackOnly while the master is still under review, " +
+      "and the long version afterwards only copies the video and that soundtrack into one file.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
@@ -192,6 +231,9 @@ export function registerLongExtendTools(pi: ExtensionAPI): void {
       master: Type.Optional(Type.String({ description: "The looping master, relative to the episode. Default: the render output/current.json names" })),
       seed: Type.Optional(Type.Integer({ minimum: 0, description: "Seed of the music order. Default: derived from the episode slug, so a rerun gives the same soundtrack" })),
       label: Type.Optional(Type.String({ default: "long", description: "Lowercase kebab-case label of the output file" })),
+      soundtrackOnly: Type.Optional(
+        Type.Boolean({ description: "Only make (or find) the cached soundtrack, without the master: start it while the master is being reviewed" }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const started = Date.now();
@@ -214,15 +256,18 @@ export function registerLongExtendTools(pi: ExtensionAPI): void {
         if (!LABEL.test(label)) throw new Error(`label "${label}" is not lowercase kebab-case`);
 
         let masterPath = params.master;
-        if (masterPath === undefined) {
-          const currentFile = join(ws.dir, "output", "current.json");
-          if (!existsSync(currentFile)) throw new Error("the episode has no output/current.json: render it with pva_compose_video, or name the master");
-          masterPath = `output/${(JSON.parse(readFileSync(currentFile, "utf8")) as { path: string }).path}`;
+        let master: Awaited<ReturnType<typeof probe>> | null = null;
+        if (!params.soundtrackOnly) {
+          if (masterPath === undefined) {
+            const currentFile = join(ws.dir, "output", "current.json");
+            if (!existsSync(currentFile)) throw new Error("the episode has no output/current.json: render it with pva_compose_video, or name the master");
+            masterPath = `output/${(JSON.parse(readFileSync(currentFile, "utf8")) as { path: string }).path}`;
+          }
+          await guard(masterPath);
+          master = await probe(join(ws.dir, masterPath));
+          if (!master.streams.some((s) => s.codec_type === "video")) throw new Error(`${masterPath} has no video`);
+          if (!(master.duration > 0)) throw new Error(`${masterPath} has no duration`);
         }
-        await guard(masterPath);
-        const master = await probe(join(ws.dir, masterPath));
-        if (!master.streams.some((s) => s.codec_type === "video")) throw new Error(`${masterPath} has no video`);
-        if (!(master.duration > 0)) throw new Error(`${masterPath} has no duration`);
 
         const entries: MusicEntry[] = (params.music ?? defaultMusic(ws.dir)).map((m) => (typeof m === "string" ? { path: m } : m));
         for (const e of entries) {
@@ -237,79 +282,128 @@ export function registerLongExtendTools(pi: ExtensionAPI): void {
           if (line) onUpdate?.({ content: [{ type: "text" as const, text: line.replace(/^Rendering/, stage) }], details: { progress: value, stage } });
         };
 
-        // 1. The pieces: playable stretch and loudness.
-        let t0 = Date.now();
-        progress("Measuring music", 0);
-        const pieces = await pool(limit, entries.map((e) => () => measurePiece(ws, e)));
-        timings.measureSeconds = (Date.now() - t0) / 1000;
+        // ffmpeg's -progress lines, as a share of the long version's length.
+        const progressOf = (stage: string, from: number, span: number) => {
+          let buffered = "";
+          return (text: string) => {
+            buffered += text;
+            const lines = buffered.split("\n");
+            buffered = lines.pop() ?? "";
+            for (const line of lines) {
+              const m = /^out_time_us=(\d+)/.exec(line);
+              if (m) progress(stage, from + span * Math.min(1, Number(m[1]) / 1e6 / durationSeconds));
+            }
+          };
+        };
 
-        // 2. The plan.
+        // 1–3. The soundtrack: found in the cache, or measured, planned, mixed chunk by chunk and mastered once.
         const seed = params.seed ?? seedFrom(params.episode);
-        const plan: MusicPlan = planMusic(pieces, durationSeconds, seed);
+        const key = soundtrackKey(ws, entries, seed, durationSeconds);
+        const soundtrackDir = join(ws.dir, "assets", "audio", "soundtracks");
+        const soundtrackRel = `assets/audio/soundtracks/${key.slice(0, 16)}.m4a`;
+        const soundtrack = join(ws.dir, soundtrackRel);
+        const metaFile = soundtrack.replace(/\.m4a$/, ".json");
+        let meta: SoundtrackMeta | null = null;
+        if (existsSync(soundtrack) && statSync(soundtrack).size > 0 && existsSync(metaFile)) {
+          const cached = JSON.parse(readFileSync(metaFile, "utf8")) as SoundtrackMeta;
+          if (cached.key === key) meta = cached;
+        }
+        const soundtrackReused = meta !== null;
+        const soundtrackShare = params.soundtrackOnly ? 1 : 0.55;
+        if (!meta) {
+          // 1. The pieces: playable stretch and loudness.
+          let t0 = Date.now();
+          progress("Measuring music", 0);
+          const pieces = await pool(limit, entries.map((e) => () => measurePiece(ws, e)));
+          timings.measureSeconds = (Date.now() - t0) / 1000;
 
-        // 3. The soundtrack, chunk by chunk, in parallel.
-        t0 = Date.now();
-        workDir = join(ws.dir, "work", `extend-${stamp()}-${process.pid}`);
-        mkdirSync(workDir, { recursive: true });
-        let done = 0;
-        progress("Mixing music", 0.05);
-        const measured = await pool(
-          limit,
-          plan.chunks.map((chunk) => async () => {
-            const { inputs, graph } = chunkGraph(plan, chunk, (source) => join(ws.dir, source), HEADROOM_DB);
-            const graphFile = join(workDir!, `chunk-${chunk.index}.graph`);
-            writeFileSync(graphFile, graph);
-            const out = join(workDir!, `chunk-${String(chunk.index).padStart(4, "0")}.flac`);
-            const stderr = await run(
-              FFMPEG(),
-              ["-hide_banner", "-nostats", "-y", ...inputs, "-/filter_complex", graphFile, "-map", "[mix]", "-c:a", "flac", "-sample_fmt", "s32", "-ar", String(SAMPLE_RATE), "-ac", "2", out],
-              { signal },
-            );
-            done += 1;
-            progress("Mixing music", 0.05 + 0.5 * (done / plan.chunks.length));
-            return { out, seconds: (chunk.endSample - chunk.startSample) / SAMPLE_RATE, ...ebur128Summary(stderr) };
-          }),
-        );
-        timings.mixSeconds = (Date.now() - t0) / 1000;
+          // 2. The plan.
+          const plan: MusicPlan = planMusic(pieces, durationSeconds, seed);
 
-        // 4. Master and mux: the video looped by stream copy, the soundtrack mastered and encoded once.
-        t0 = Date.now();
-        const mix = combineLoudness(measured);
-        const chain = masterChain(mix, durationSeconds);
+          // 3. The mix, chunk by chunk, in parallel.
+          t0 = Date.now();
+          workDir = join(ws.dir, "work", `extend-${stamp()}-${process.pid}`);
+          mkdirSync(workDir, { recursive: true });
+          let done = 0;
+          progress("Mixing music", 0.05 * soundtrackShare);
+          const measured = await pool(
+            limit,
+            plan.chunks.map((chunk) => async () => {
+              const { inputs, graph } = chunkGraph(plan, chunk, (source) => join(ws.dir, source), HEADROOM_DB);
+              const graphFile = join(workDir!, `chunk-${chunk.index}.graph`);
+              writeFileSync(graphFile, graph);
+              const out = join(workDir!, `chunk-${String(chunk.index).padStart(4, "0")}.flac`);
+              const stderr = await run(
+                FFMPEG(),
+                ["-hide_banner", "-nostats", "-y", ...inputs, "-/filter_complex", graphFile, "-map", "[mix]", "-c:a", "flac", "-sample_fmt", "s32", "-ar", String(SAMPLE_RATE), "-ac", "2", out],
+                { signal },
+              );
+              done += 1;
+              progress("Mixing music", soundtrackShare * (0.05 + 0.6 * (done / plan.chunks.length)));
+              return { out, seconds: (chunk.endSample - chunk.startSample) / SAMPLE_RATE, ...ebur128Summary(stderr) };
+            }),
+          );
+          timings.mixSeconds = (Date.now() - t0) / 1000;
+
+          // Mastered and encoded once, on its own: the long version only copies it.
+          t0 = Date.now();
+          const mix = combineLoudness(measured);
+          const chain = masterChain(mix, durationSeconds);
+          const audioList = join(workDir, "audio.txt");
+          writeFileSync(audioList, measured.map((m) => concatLine(m.out)).join("\n") + "\n");
+          mkdirSync(soundtrackDir, { recursive: true });
+          partial = soundtrack.replace(/\.m4a$/, ".partial.m4a");
+          await run(
+            FFMPEG(),
+            [
+              "-hide_banner", "-nostats", "-y", "-progress", "pipe:1",
+              "-f", "concat", "-safe", "0", "-i", audioList,
+              "-af", chain.filter, "-c:a", MASTER.codec, "-b:a", MASTER.bitrate, "-ar", String(SAMPLE_RATE), "-ac", "2",
+              "-t", String(durationSeconds), "-f", "mp4", partial,
+            ],
+            { signal, onStdout: progressOf("Mastering music", soundtrackShare * 0.65, soundtrackShare * 0.35) },
+          );
+          renameSync(partial, soundtrack);
+          partial = null;
+          timings.masterAudioSeconds = (Date.now() - t0) / 1000;
+          meta = { key, seed, durationSeconds, pieces, plan, mix, chain, limit };
+          writeFileSync(metaFile, JSON.stringify(meta, null, 1));
+        }
+        const { pieces, plan, mix, chain } = meta;
+
+        if (params.soundtrackOnly || !master || !masterPath) {
+          timings.totalSeconds = (Date.now() - started) / 1000;
+          const text =
+            `✅ soundtrack ${soundtrackReused ? "already cached" : "ready"}: ${soundtrackRel} — ${hoursLabel(durationSeconds)} h, ` +
+            `${plan.clips.length} clips from ${pieces.length} pieces, seed ${seed}` +
+            (soundtrackReused ? "" : `; took ${clock(timings.totalSeconds * 1000)}`) +
+            `\nThe long version with the same music, seed and length will only copy it.`;
+          return { content: [{ type: "text" as const, text }], details: { soundtrack: soundtrackRel, key, reused: soundtrackReused, timings } };
+        }
+
+        // 4. Mux: the video looped and the soundtrack, both stream-copied, written once.
+        let t0 = Date.now();
         const loops = Math.ceil(durationSeconds / master.duration);
+        workDir ??= join(ws.dir, "work", `extend-${stamp()}-${process.pid}`);
+        mkdirSync(workDir, { recursive: true });
         const videoList = join(workDir, "video.txt");
-        const audioList = join(workDir, "audio.txt");
         writeFileSync(videoList, Array.from({ length: loops }, () => concatLine(join(ws.dir, masterPath!))).join("\n") + "\n");
-        writeFileSync(audioList, measured.map((m) => concatLine(m.out)).join("\n") + "\n");
         const outDir = join(ws.dir, "output");
         const base = `${label}-${hoursLabel(durationSeconds)}h-${stamp()}`;
         const output = join(outDir, `${base}.mp4`);
         partial = join(outDir, `${base}.partial.mp4`);
         progress("Muxing", 0.55);
-        let buffered = "";
         await run(
           FFMPEG(),
           [
             "-hide_banner", "-nostats", "-y", "-progress", "pipe:1",
             "-f", "concat", "-safe", "0", "-i", videoList,
-            "-f", "concat", "-safe", "0", "-i", audioList,
+            "-i", soundtrack,
             "-map", "0:v:0", "-map", "1:a:0",
-            "-c:v", "copy",
-            "-af", chain.filter, "-c:a", MASTER.codec, "-b:a", MASTER.bitrate, "-ar", String(SAMPLE_RATE), "-ac", "2",
-            "-t", String(durationSeconds), "-movflags", "+faststart", "-f", "mp4", partial,
+            "-c", "copy",
+            "-t", String(durationSeconds), "-f", "mp4", partial,
           ],
-          {
-            signal,
-            onStdout(text) {
-              buffered += text;
-              const lines = buffered.split("\n");
-              buffered = lines.pop() ?? "";
-              for (const line of lines) {
-                const m = /^out_time_us=(\d+)/.exec(line);
-                if (m) progress("Muxing", 0.55 + 0.4 * Math.min(1, Number(m[1]) / 1e6 / durationSeconds));
-              }
-            },
-          },
+          { signal, onStdout: progressOf("Muxing", 0.55, 0.4) },
         );
         renameSync(partial, output);
         partial = null;
@@ -377,7 +471,7 @@ export function registerLongExtendTools(pi: ExtensionAPI): void {
           requestedSeconds: durationSeconds,
           sizeBytes,
           video: { master: masterPath, loops, codec: "copy" },
-          audio: { mixLufs: mix.integrated, mixTruePeak: mix.truePeak, masterGainDb: chain.gainDb, limiter: chain.limiter, integratedLufs: final.integrated, truePeakDbtp: final.truePeak, codec: `${MASTER.codec} ${MASTER.bitrate}` },
+          audio: { soundtrack: soundtrackRel, soundtrackReused, mixLufs: mix.integrated, mixTruePeak: mix.truePeak, masterGainDb: chain.gainDb, limiter: chain.limiter, integratedLufs: final.integrated, truePeakDbtp: final.truePeak, codec: `${MASTER.codec} ${MASTER.bitrate}` },
           clips: plan.clips.length,
           chunks: plan.chunks.length,
           parallelism: limit,
@@ -392,7 +486,11 @@ export function registerLongExtendTools(pi: ExtensionAPI): void {
           `${concerns.length === 0 ? "✅" : "⚠️"} output/${base}.mp4 — ${result.duration.toFixed(2)} s (${hoursLabel(durationSeconds)} h), ${(sizeBytes / 1024 ** 3).toFixed(2)} GB; ` +
             `${final.integrated.toFixed(1)} LUFS, true peak ${final.truePeak.toFixed(1)} dBTP`,
           `video: ${masterPath} looped ${loops}× by stream copy; music: ${plan.clips.length} clips from ${pieces.length} pieces (${counts}), seed ${seed}`,
-          `took ${clock(timings.totalSeconds * 1000)}: measure ${clock(timings.measureSeconds * 1000)}, mix ${clock(timings.mixSeconds * 1000)} (${plan.chunks.length} chunks, ${limit} at once), ` +
+          `took ${clock(timings.totalSeconds * 1000)}: ` +
+            (soundtrackReused
+              ? `soundtrack from the cache (${soundtrackRel}), `
+              : `measure ${clock(timings.measureSeconds! * 1000)}, mix ${clock(timings.mixSeconds! * 1000)} (${plan.chunks.length} chunks, ${limit} at once), ` +
+                `master ${clock(timings.masterAudioSeconds! * 1000)}, `) +
             `mux ${clock(timings.muxSeconds * 1000)}, verify ${clock(timings.verifySeconds * 1000)}`,
           `plan and report: output/${base}.plan.json, output/${base}.report.json (current.json unchanged)`,
           ...concerns.map((c) => `- ${c}`),
