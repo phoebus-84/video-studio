@@ -20,4 +20,7 @@ export * from "./stage-evidence.js";
 export * from "./template-code.js";
 export * from "./kit-code.js";
 export * from "./archive-media.js";
+export * from "./local-media.js";
+export * from "./media-derivatives.js";
+export * from "./mapillary-produce.js";
 export * from "./take-verify.js";

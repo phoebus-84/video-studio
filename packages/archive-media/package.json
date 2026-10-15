@@ -29,5 +29,9 @@
     "node": ">=18"
   },
   "license": "UNLICENSED",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "undici": "^6.21.3"
+  }
 }

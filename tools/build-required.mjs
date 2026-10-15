@@ -85,6 +85,7 @@ for (const dir of REQUIRED) {
     cwd: join(ROOT, dir),
     encoding: "utf-8",
     env: process.env,
+    shell: process.platform === "win32",
   });
 
   if (result.status === 0) {

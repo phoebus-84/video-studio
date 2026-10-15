@@ -15,6 +15,7 @@ import { registerPipelineTools } from "../src/pipeline-tools.js";
 import { registerCapabilityTools } from "../src/capability-tools.js";
 import { registerBlenderTools } from "../src/blender-tools.js";
 import { registerArchiveTools } from "../src/archive-tools.js";
+import { registerMapillaryTools } from "../src/mapillary-tools.js";
 import { registerSourceTools } from "../src/source-tools.js";
 import { registerSkillTools } from "../src/skill-tools.js";
 import { registerSlashCommands } from "../src/slash-commands.js";
@@ -295,6 +296,7 @@ export default function (pi: ExtensionAPI): void {
   registerCapabilityTools(pi);
   registerBlenderTools(pi);
   registerArchiveTools(pi);
+  registerMapillaryTools(pi);
   registerSourceTools(pi);
 
   // --- Register skill and context tools ---------------------------------

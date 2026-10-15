@@ -583,11 +583,25 @@ short and a long. Each lives in `library/<channel>/sources/<name>/`.
 
 **Archive and stock media** (ADR-0046) come from public collections, free,
 each with a licence anyone can verify: the Art Institute of Chicago, the Met,
-the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and
-Openverse, none of which needs a key.
+the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive,
+Openverse, Rijksmuseum, Wellcome, iNaturalist, ccMixter, Iconify, Fluent/Noto/
+OpenMoji emoji and LottieFiles, none of which needs a key; with a key, Pexels,
+Pixabay, Unsplash, Coverr, Smithsonian, Jamendo, Mapillary and Freesound.
 - **Finding and fetching.** Pi finds them with `pva_search_media` and fetches
-  the original with `pva_fetch_media`. The `find-archive-media` skill says how
-  to choose.
+  the original with `pva_fetch_media` (pass `rendition` to pick a listed
+  provider rendition). The `find-archive-media` skill says how to choose.
+- **Reuse before re-fetching.** `pva_search_local_media` finds an asset already
+  licensed in the channel; `pva_reuse_local_media` copies its bytes, record and
+  evidence without calling a provider, and never copies the same SHA-256 twice.
+- **Vectors, emoji and animation.** Provider SVG is rasterized to an inert PNG
+  (never saved as active XML); LottieFiles is fetched as its MP4 rendition.
+- **Derivatives.** `pva_derive_media` trims and optionally centre-crops a
+  fetched video or sound into a new recorded asset; the original is untouched.
+- **Mapillary.** `pva_mapillary` (needs `MAPILLARY_TOKEN`) queries coverage,
+  a sequence, photos, history, map features and detections, and produces into
+  an episode: a still, a hyperlapse along a sequence, a pan inside a 360°
+  image, or a tiny planet. Every output carries the CC BY-SA 4.0 credit and,
+  for derivatives, the share-alike obligation.
 - **What a file brings.** It arrives in `assets/` with `<name>.source.json`
   (its provider, licence and credit) and the provider's response as evidence
   in `artifacts/provenance/`. `ATTRIBUTIONS.md` is made from the records.
@@ -595,6 +609,10 @@ Openverse, none of which needs a key.
   `FREESOUND_API_KEY` is in Pi's environment. The key is free at
   freesound.org/apiv2/apply. The file is Freesound's high-quality preview,
   and its record says so.
+- **Keys.** Besides Freesound: `PEXELS_API_KEY`, `PIXABAY_API_KEY`,
+  `UNSPLASH_ACCESS_KEY`, `COVERR_KEY`, `SMITHSONIAN_KEY`, `JAMENDO_CLIENT_ID`,
+  `MAPILLARY_TOKEN`. Platform licences (Pexels, Pixabay, Unsplash, Coverr,
+  LottieFiles, icon sets) are opt-in, e.g. `provider:pexels`.
 - **Policy.** A channel decides which licences it accepts in `settings.yaml`.
   The default is public domain, CC0, CC BY and CC BY-SA, with at least
   1600 px on an image's long side.

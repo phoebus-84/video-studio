@@ -23,7 +23,15 @@ const CASES: [string, string, MediaType][] = [
   ["nasa", "lightning", "image"],
   ["openverse", "thunderstorm", "image"],
   ["internet-archive", "thunderstorm", "video"],
+  ["wellcome", "storm", "image"],
+  ["rijksmuseum", "storm", "image"],
+  ["inaturalist", "robin", "image"],
+  ["ccmixter", "piano", "audio"],
+  ["iconify", "home", "image"],
+  ["emoji", "rocket", "image"],
+  ["lottie", "wave", "video"],
   ...(process.env.FREESOUND_API_KEY ? [["freesound", "wind leaves", "audio"] as [string, string, MediaType]] : []),
+  ...(process.env.MAPILLARY_TOKEN ? [["mapillary", "41.9028,12.4964", "image"] as [string, string, MediaType]] : []),
 ];
 
 describe.skipIf(!live)("live providers", { timeout: 180_000 }, () => {

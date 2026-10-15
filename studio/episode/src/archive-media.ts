@@ -28,6 +28,8 @@ export interface FetchIntoWorkspace {
   policy?: LicencePolicy;
   quality?: Quality;
   maxBytes?: number;
+  /** Provider rendition id, as advertised by search. */
+  rendition?: string;
   /** Replace a file of that name already fetched. */
   replace?: boolean;
 }
@@ -46,7 +48,8 @@ function namesakes(dir: string, name: string): string[] {
 export async function fetchIntoWorkspace(workspaceDir: string, options: FetchIntoWorkspace): Promise<{ record: MediaProvenance; path: string; recordPath: string }> {
   if (!NAME.test(options.name)) throw new ArchiveError("bad-response", `"${options.name}" is not an asset id (letters, digits, _ and -; at most 64)`);
   const item = await options.archive.item(options.provider, options.id);
-  const folder = MEDIA_DIRS[item.mediaType];
+  const selectedRendition = options.rendition ? item.renditions?.find((rendition) => rendition.id === options.rendition) : undefined;
+  const folder = MEDIA_DIRS[selectedRendition?.mediaType ?? item.mediaType];
   const dir = join(workspaceDir, folder);
   const taken = namesakes(dir, options.name);
   if (taken.length > 0 && !options.replace) {
@@ -68,6 +71,7 @@ export async function fetchIntoWorkspace(workspaceDir: string, options: FetchInt
     const got = await options.archive.fetch(options.provider, options.id, {
       dir: staging, name: options.name,
       ...(options.policy ? { policy: options.policy } : {}), ...(options.quality ? { quality: options.quality } : {}), ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
+      ...(options.rendition ? { rendition: options.rendition } : {}),
       probe: async (file) => probeMedia(file),
     });
     const fileName = got.file.slice(staging.length + 1);

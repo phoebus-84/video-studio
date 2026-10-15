@@ -8,8 +8,12 @@ import { createWriteStream, mkdirSync, readFileSync, renameSync, rmSync, writeFi
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { Agent, fetch as undiciFetch } from "undici";
 import { ArchiveError } from "./errors.js";
 import type { Http } from "./types.js";
+import { safeUrl } from "./providers/stock-common.js";
+
+const publicUrl = (url: string) => { const u = new URL(url); return `${u.origin}${u.pathname}`; };
 
 export interface HttpOptions {
   userAgent: string;
@@ -28,6 +32,9 @@ const RETRY = new Set([429, 502, 503, 504]);
 const MAX_RETRIES = 3;
 const MAX_WAIT_MS = 30_000;
 const DAY = 24 * 3600 * 1000;
+// ccMixter echoes JSON in X-JSON; Node's default header limit rejects normal search pages.
+// Bound the exception to 1 MiB and reuse a short-lived connection pool.
+const archiveDispatcher = new Agent({ maxHeaderSize: 1024 * 1024, keepAliveTimeout: 1000, keepAliveMaxTimeout: 1000 });
 
 export interface DownloadResult {
   sha256: string;
@@ -36,11 +43,14 @@ export interface DownloadResult {
 }
 
 export interface ArchiveHttp extends Http {
-  download(url: string, file: string, options?: { headers?: Record<string, string>; maxBytes?: number }): Promise<DownloadResult>;
+  download(url: string, file: string, options?: { headers?: Record<string, string>; maxBytes?: number; allowedHosts?: string[] }): Promise<DownloadResult>;
 }
 
 export function createHttp(options: HttpOptions): ArchiveHttp {
-  const doFetch = options.fetch ?? fetch;
+  const doFetch = options.fetch ?? ((url: string, init?: RequestInit) => undiciFetch(url, {
+    method: init?.method, headers: init?.headers as Record<string, string> | undefined,
+    body: init?.body as never, signal: init?.signal, redirect: init?.redirect, dispatcher: archiveDispatcher,
+  }) as unknown as Promise<Response>);
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = options.now ?? Date.now;
   const minInterval = options.minIntervalMs ?? 250;
@@ -65,21 +75,31 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
    * The response, its headers within `timeoutMs`. Its body is the caller's to
    * read; `abort` stops it (a download aborts when bytes stop coming).
    */
-  async function request(url: string, headers: Record<string, string> = {}): Promise<{ response: Response; abort: () => void }> {
+  async function request(url: string, headers: Record<string, string> = {}, allowedHosts?: string[], method: "GET" | "POST" = "GET", body?: string): Promise<{ response: Response; abort: () => void }> {
     for (let attempt = 0; ; attempt++) {
       await turn(url);
       let response: Response;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(new Error(`no answer from ${new URL(url).host} within ${timeoutMs} ms`)), timeoutMs);
       try {
-        response = await doFetch(url, { headers: { "User-Agent": options.userAgent, ...headers }, signal: controller.signal, redirect: "follow" });
+        let target = url;
+        for (let redirects = 0; ; redirects++) {
+          if (allowedHosts && !safeUrl(target, allowedHosts)) throw new ArchiveError("http", "Download URL outside provider CDN allowlist");
+          response = await doFetch(target, { method, body, headers: { "User-Agent": options.userAgent, ...headers }, signal: controller.signal, redirect: allowedHosts ? "manual" : "follow" });
+          if (!allowedHosts || ![301, 302, 303, 307, 308].includes(response.status)) break;
+          const location = response.headers.get("location");
+          await response.body?.cancel().catch(() => undefined);
+          if (!location || redirects >= 5) throw new ArchiveError("http", "Invalid or excessive download redirects");
+          target = new URL(location, target).href;
+        }
       } catch (error) {
         clearTimeout(timer);
+        if (error instanceof ArchiveError) throw error;
         if (attempt < MAX_RETRIES) {
           await sleep(1000 * 2 ** attempt);
           continue;
         }
-        throw new ArchiveError("http", `${new URL(url).host}: ${(error as Error).message}`);
+        throw new ArchiveError("http", `${new URL(url).host}: request failed`);
       }
       clearTimeout(timer);
       if (response.ok) return { response, abort: () => controller.abort(new Error(`${new URL(url).host} stopped sending for ${timeoutMs} ms`)) };
@@ -92,39 +112,53 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
         }
       }
       await response.body?.cancel().catch(() => undefined);
-      throw new ArchiveError(response.status === 404 ? "not-found" : "http", `${new URL(url).host} answered ${response.status} for ${url}`);
+      throw new ArchiveError(response.status === 404 ? "not-found" : "http", `${new URL(url).host} answered ${response.status} for ${publicUrl(url)}`);
     }
   }
 
-  const cacheFile = (url: string) => options.cacheDir && join(options.cacheDir, `${createHash("sha256").update(url).digest("hex")}.json`);
+  const cacheFile = (url: string, headers?: Record<string, string>, body?: unknown) => options.cacheDir && join(options.cacheDir,
+    `${createHash("sha256").update(JSON.stringify([url, Object.entries(headers ?? {}).sort(), body ?? null])).digest("hex")}.json`);
 
   return {
     userAgent: options.userAgent,
-    async json(url, { headers, cache = true } = {}) {
-      const file = cache ? cacheFile(url) : undefined;
+    async json(url, { headers, cache = true, method = "GET", body } = {}) {
+      const file = cache ? cacheFile(url, headers, body) : undefined;
       if (file) {
         try {
           const hit = JSON.parse(readFileSync(file, "utf-8")) as { at: number; body: unknown };
           if (now() - hit.at < ttl) return hit.body;
         } catch { /* a miss */ }
       }
-      const { response, abort } = await request(url, { Accept: "application/json", ...headers });
+      const payload = body === undefined ? undefined : JSON.stringify(body);
+      const { response, abort } = await request(url, { Accept: "application/json", ...(payload ? { "Content-Type": "application/json" } : {}), ...headers }, undefined, method, payload);
       const timer = setTimeout(abort, timeoutMs);
       const text = await response.text().finally(() => clearTimeout(timer));
-      let body: unknown;
+      let parsed: unknown;
       try {
-        body = JSON.parse(text);
+        // Some APIs echo their request (including keys). Never persist or return those secrets as provenance.
+        const secrets = [...new URL(url).searchParams].filter(([name]) => /^(key|api_key|client_id|token|access_token)$/i.test(name)).map(([, value]) => value);
+        for (const [name, value] of Object.entries(headers ?? {})) if (name.toLowerCase() === "authorization") secrets.push(value.replace(/^(Bearer|Client-ID)\s+/i, ""));
+        let clean = text;
+        for (const secret of secrets.filter((s) => s.length >= 6)) clean = clean.split(secret).join("[redacted]").split(encodeURIComponent(secret)).join("[redacted]");
+        parsed = JSON.parse(clean);
       } catch {
-        throw new ArchiveError("bad-response", `${new URL(url).host} did not answer JSON for ${url}`);
+        throw new ArchiveError("bad-response", `${new URL(url).host} did not answer JSON for ${publicUrl(url)}`);
       }
       if (file) {
         mkdirSync(dirname(file), { recursive: true });
-        writeFileSync(file, JSON.stringify({ at: now(), body }));
+        writeFileSync(file, JSON.stringify({ at: now(), body: parsed }));
       }
-      return body;
+      return parsed;
     },
-    async download(url, file, { headers, maxBytes = 2 * 1024 ** 3 } = {}) {
-      const { response, abort } = await request(url, headers);
+    async notify(url, { method, headers }) {
+      await turn(url);
+      const response = await doFetch(url, { method, headers: { "User-Agent": options.userAgent, ...headers }, redirect: "error", signal: AbortSignal.timeout(timeoutMs) })
+        .catch(() => { throw new ArchiveError("http", `Download accounting failed: ${new URL(url).host}`); });
+      await response.body?.cancel().catch(() => undefined);
+      if (!response.ok) throw new ArchiveError("http", `Download accounting failed: ${new URL(url).host} answered ${response.status}`);
+    },
+    async download(url, file, { headers, maxBytes = 2 * 1024 ** 3, allowedHosts } = {}) {
+      const { response, abort } = await request(url, headers, allowedHosts);
       const declared = Number(response.headers.get("content-length"));
       if (Number.isFinite(declared) && declared > maxBytes) {
         await response.body?.cancel().catch(() => undefined);

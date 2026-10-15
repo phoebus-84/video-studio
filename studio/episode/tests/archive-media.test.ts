@@ -21,6 +21,12 @@ function png(w: number, h: number, salt = 0) {
   return b;
 }
 
+function gif(w: number, h: number) {
+  const b = Buffer.alloc(16);
+  b.write("GIF89a", 0, "ascii"); b.writeUInt16LE(w, 6); b.writeUInt16LE(h, 8);
+  return b;
+}
+
 const ITEM: ArchiveItem = {
   provider: "museum", id: "24645", mediaType: "image", title: "The Great Wave", creator: "Hokusai", date: "1830/33", institution: "A Museum",
   landingUrl: "https://museum.example/artworks/24645", fileUrl: "https://files.example/wave.png",
@@ -48,6 +54,19 @@ describe("fetchIntoWorkspace", () => {
     expect(readFileSync(join(ws, "ATTRIBUTIONS.md"), "utf-8")).toContain("«The Great Wave» by Hokusai");
     expect(readdirSync(join(ws, "assets/images")).sort()).toEqual(["wave.png", "wave.source.json"]);
     expect(checkProvenance(ws)).toEqual({ ok: true, files: 1, problems: [] });
+  });
+
+  it("uses a rendition's medium to choose its workspace folder", async () => {
+    const animation: ArchiveItem = {
+      ...ITEM, mediaType: "video", fileUrl: "https://files.example/wave.mp4",
+      renditions: [{ id: "gif", fileUrl: "https://files.example/wave.gif", mediaType: "image", width: 2000, height: 2000 }],
+    };
+    const provider: Provider = { id: "museum", label: "A Museum", mediaTypes: ["video"], search: async () => [animation], item: async () => animation };
+    const fake = (async () => new Response(gif(2000, 2000), { headers: { "content-type": "image/gif" } })) as unknown as typeof fetch;
+    const archive = createArchive({ userAgent: "test", registry: [provider], fetch: fake, sleep: async () => undefined });
+    const got = await fetchIntoWorkspace(ws, { archive, provider: "museum", id: "24645", name: "wave", rendition: "gif" });
+    expect(got.path).toBe("assets/images/wave.gif");
+    expect(got.record.file.mime).toBe("image/gif");
   });
 
   it("leaves the workspace as it was on a refusal", async () => {
