@@ -93,6 +93,8 @@ function resolveAgentExtension(): string {
 }
 
 export class PiProcessManager {
+  readonly backend = "pi" as const;
+  readonly label = "Pi";
   private libraryRoot: string;
   private bus: EventBus;
   private idleTimeoutMs: number;

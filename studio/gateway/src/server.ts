@@ -5,6 +5,8 @@ import type { Config } from "./config/schema.js";
 import { registerRoutes } from "./routes/index.js";
 import { EventStreamManager } from "./events/bus.js";
 import { PiProcessManager } from "./rpc/process-manager.js";
+import { ClaudeSessionManager } from "./rpc/claude-manager.js";
+import { agentBackendFrom, type AgentSessionManager } from "./rpc/agent-sessions.js";
 import { WorkspaceWatcher } from "./events/watcher.js";
 import { registerEditorRoutes, registerChannelFileRoutes, registerSeriesFileRoutes } from "./routes/editor.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
@@ -156,13 +158,14 @@ export async function createGateway(
   const { PiRpcHealth } = await import("./rpc/health.js");
   const piHealth = new PiRpcHealth();
 
-  // Owns Pi processes for the lifetime of the gateway: one manager, sessions
-  // per episode, idle ones evicted. The start route used to build a throwaway
-  // manager per request and never spawn anything.
-  const piManager = new PiProcessManager({
-    libraryRoot,
-    bus: events.bus,
-  });
+  // Owns the agent's sessions for the lifetime of the gateway: one manager,
+  // sessions per episode, idle ones evicted. The start route used to build a
+  // throwaway manager per request and never spawn anything. Pi unless
+  // AVG_AGENT_BACKEND=claude, which runs the same tools under the Claude
+  // Agent SDK instead.
+  const piManager: AgentSessionManager = agentBackendFrom() === "claude"
+    ? new ClaudeSessionManager({ libraryRoot, bus: events.bus })
+    : new PiProcessManager({ libraryRoot, bus: events.bus });
   piManager.start();
 
   // ── Adapter bridge health ──────────────────────────────────────────────

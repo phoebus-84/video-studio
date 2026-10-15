@@ -2,10 +2,10 @@
 // Pi RPC health manager
 // ---------------------------------------------------------------------------
 // Reports health status for the Pi RPC component.
-// Wires into PiProcessManager when available.
+// Wires into AgentSessionManager when available.
 // ---------------------------------------------------------------------------
 
-import type { PiProcessManager } from "./process-manager.js";
+import type { AgentSessionManager } from "./agent-sessions.js";
 import type { ComponentHealth } from "../health/index.js";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export class PiRpcHealth {
-  private manager: PiProcessManager | null = null;
+  private manager: AgentSessionManager | null = null;
   private _connected = false;
   private _error: string | null = null;
   private _agentPackageFound: boolean;
@@ -25,8 +25,8 @@ export class PiRpcHealth {
     this._agentPackageFound = existsSync(pkgPath);
   }
 
-  /** Wire to a running PiProcessManager. */
-  setManager(manager: PiProcessManager): void {
+  /** Wire to a running AgentSessionManager. */
+  setManager(manager: AgentSessionManager): void {
     this.manager = manager;
     this._connected = true;
     this._error = null;
@@ -44,7 +44,7 @@ export class PiRpcHealth {
       const sessions = this.manager.activeSessions;
       return {
         status: "ready",
-        detail: `Pi RPC connected (${sessions} session${sessions !== 1 ? "s" : ""})`,
+        detail: `${this.manager.backend === "pi" ? "Pi RPC" : `${this.manager.label} agent`} connected (${sessions} session${sessions !== 1 ? "s" : ""})`,
         lastChecked: now,
       };
     }

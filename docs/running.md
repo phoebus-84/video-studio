@@ -297,6 +297,63 @@ and the studio compares the two. The report goes to
 Which pauses are too short is the series' or the channel's rule, in its skill
 or validator.
 
+## 1b. The same agent in Claude Code
+
+The tools above are written once, against Pi's extension API, in
+`studio/agent/`. Claude Code gets the same ones from an MCP server that hosts
+that extension unchanged (`studio/agent/mcp/server.ts`, ADR-0048). From the
+repository root:
+
+```bash
+claude
+```
+
+That is all: `.mcp.json` starts the `pva` server (Claude Code asks once to
+trust it), and `.claude/settings.json` adds the hooks below. Start it from the
+repository root, as with Pi: the server resolves `tsx` and the library from the
+directory it starts in. `npm run studio:mcp` runs the server alone, for any
+other MCP client.
+
+| Under Pi | Under Claude Code |
+|---|---|
+| tools `pva_*` | `mcp__pva__pva_*` (same names, descriptions, schemas) |
+| `/video`, `/render`, … | the server's prompts: `/mcp__pva__video create <c>/<s>/<e>`, `/mcp__pva__render …` |
+| skills from `.pi/skills/` | `.claude/skills/<name>/SKILL.md`, written by `npm run compose` from the same sets, plus `pva-executive-producer` |
+| the library-visibility warning at session start | a `SessionStart` hook (`studio/agent/claude/session-start.ts`) |
+| review activity starts a turn | live with `npm run studio:claude` (see below); otherwise it waits for your next prompt (a `UserPromptSubmit` hook) |
+| stage updates in the conversation | the same hook, on the next prompt |
+| the status bar | `studio/agent/claude/statusline.mjs` (opt in, below) |
+| `/login` for the Codex image route | Pi's login still works when Pi is installed; or `codex login`; or `AVG_CODEX_TOKEN` |
+
+Read-only tools (`pva_channels`, `pva_journal`, `pva_budget_status`, …) are
+allowed in `.claude/settings.json`; anything that writes or spends asks first,
+as Claude Code does. Under Pi nothing asks.
+
+**Live review activity.** Under Pi, an operator's review comment starts a turn
+as it arrives. Claude Code takes such a push only from a *channel*, a research
+preview that works in interactive sessions:
+
+```bash
+npm run studio:claude        # claude --dangerously-load-development-channels server:pva
+```
+
+Claude Code shows a confirmation at start. Without it the activity is not lost:
+it reaches the agent with your next prompt.
+
+**Status line.** It is a personal choice, so the repository does not set it.
+In `.claude/settings.local.json`:
+
+```json
+{ "statusLine": { "type": "command",
+    "command": "node \"$CLAUDE_PROJECT_DIR\"/studio/agent/claude/statusline.mjs" } }
+```
+
+**Long renders.** A tool call that runs past two minutes moves to the
+background in Claude Code and its result arrives when it settles. When the
+client asks for progress, the server reports it every minute, so a render is
+not taken for an idle call (Claude Code gives a silent stdio call 30 minutes;
+`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` changes that).
+
 ## 2. Agent plus gateway plus web studio
 
 The gateway owns Pi RPC processes and streams events to the browser. Start it
@@ -319,7 +376,8 @@ Two entries are *expected* not to be ready yet, and are not your setup being
 wrong:
 
 - `pi: Pi RPC not yet wired (vsg-e57.6)` — the gateway cannot yet drive Pi as a
-  subprocess. Until that lands, run the agent yourself as in section 1.
+  subprocess. Until that lands, run the agent yourself as in section 1, or
+  let the gateway run Claude (below).
 - `adapter: degraded` — a provider whose requirement is unmet. `FAL_KEY` unset
   means `image.generate` is unavailable; nothing is substituted for it.
 
@@ -333,6 +391,32 @@ npm run dev            # http://localhost:5173
 The agent finds the gateway at `http://127.0.0.1:5198` and authenticates with
 `library/.gateway-token`. Override with `AVG_GATEWAY_URL` and
 `AVG_GATEWAY_TOKEN`.
+
+### Which agent the studio drives
+
+The studio's agent bar sends intents (`POST /api/intent`) to one session per
+episode. By default that session is Pi's. With
+
+```bash
+AVG_AGENT_BACKEND=claude npx tsx src/index.ts config.json
+```
+
+it is a Claude Agent SDK session instead: the same tools (the MCP server of
+section 1b), the repository's `CLAUDE.md`, skills and hooks, the library the
+gateway serves, and the environment Pi would get (no operator key,
+`AVG_HEADLESS=1`). Intents become turns — a prompt, guidance, an answer, a
+rerun to plan, an edited artifact — cancel interrupts the turn in progress, and
+operator review activity starts one. What the agent does is published on the
+agent's event channel (`pi`): `agent_start`, `tool_execution_start`,
+`message_end`, `agent_end` (with its cost), each with `backend: "claude"`.
+`GET /` names the backend, and the agent bar says who it is talking to.
+
+Nobody is there to approve a tool call, so the session runs in Claude Code's
+`dontAsk` mode: the studio's tools, file reading and editing, the shell and
+skills are allowed — what Pi has — and anything else is refused. Change that
+with `AVG_CLAUDE_ALLOWED_TOOLS` and `AVG_CLAUDE_PERMISSION_MODE`. It uses the
+Claude credentials of the user running the gateway (`claude` login or
+`ANTHROPIC_API_KEY`); `AVG_CLAUDE_MODEL` picks the model.
 
 ## 3. Agent as an RPC subprocess
 
@@ -599,11 +683,25 @@ short and a long. Each lives in `library/<channel>/sources/<name>/`.
 
 **Archive and stock media** (ADR-0046) come from public collections, free,
 each with a licence anyone can verify: the Art Institute of Chicago, the Met,
-the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive and
-Openverse, none of which needs a key.
+the Cleveland Museum of Art, Wikimedia Commons, NASA, the Internet Archive,
+Openverse, Rijksmuseum, Wellcome, iNaturalist, ccMixter, Iconify, Fluent/Noto/
+OpenMoji emoji and LottieFiles, none of which needs a key; with a key, Pexels,
+Pixabay, Unsplash, Coverr, Smithsonian, Jamendo, Mapillary and Freesound.
 - **Finding and fetching.** Pi finds them with `pva_search_media` and fetches
-  the original with `pva_fetch_media`. The `find-archive-media` skill says how
-  to choose.
+  the original with `pva_fetch_media` (pass `rendition` to pick a listed
+  provider rendition). The `find-archive-media` skill says how to choose.
+- **Reuse before re-fetching.** `pva_search_local_media` finds an asset already
+  licensed in the channel; `pva_reuse_local_media` copies its bytes, record and
+  evidence without calling a provider, and never copies the same SHA-256 twice.
+- **Vectors, emoji and animation.** Provider SVG is rasterized to an inert PNG
+  (never saved as active XML); LottieFiles is fetched as its MP4 rendition.
+- **Derivatives.** `pva_derive_media` trims and optionally centre-crops a
+  fetched video or sound into a new recorded asset; the original is untouched.
+- **Mapillary.** `pva_mapillary` (needs `MAPILLARY_TOKEN`) queries coverage,
+  a sequence, photos, history, map features and detections, and produces into
+  an episode: a still, a hyperlapse along a sequence, a pan inside a 360°
+  image, or a tiny planet. Every output carries the CC BY-SA 4.0 credit and,
+  for derivatives, the share-alike obligation.
 - **What a file brings.** It arrives in `assets/` with `<name>.source.json`
   (its provider, licence and credit) and the provider's response as evidence
   in `artifacts/provenance/`. `ATTRIBUTIONS.md` is made from the records.
@@ -611,6 +709,10 @@ Openverse, none of which needs a key.
   `FREESOUND_API_KEY` is in Pi's environment. The key is free at
   freesound.org/apiv2/apply. The file is Freesound's high-quality preview,
   and its record says so.
+- **Keys.** Besides Freesound: `PEXELS_API_KEY`, `PIXABAY_API_KEY`,
+  `UNSPLASH_ACCESS_KEY`, `COVERR_KEY`, `SMITHSONIAN_KEY`, `JAMENDO_CLIENT_ID`,
+  `MAPILLARY_TOKEN`. Platform licences (Pexels, Pixabay, Unsplash, Coverr,
+  LottieFiles, icon sets) are opt-in, e.g. `provider:pexels`.
 - **Policy.** A channel decides which licences it accepts in `settings.yaml`.
   The default is public domain, CC0, CC BY and CC BY-SA, with at least
   1600 px on an image's long side.
@@ -770,6 +872,13 @@ the same absolute path for every process that needs to be the operator.
 | `AVG_HEADLESS` | unset (the gateway sets `1` for Pi) | Any value but empty or `0` makes `vpr` an agent without reading the operator key |
 | `FAL_KEY` | — | Required for `image.generate` / `image.edit` |
 | `AVG_TTS_WORKER_URL` | local worker | Speech synthesis endpoint |
+| `AVG_AGENT_BACKEND` | `pi` | Which agent the gateway runs per episode: `pi` or `claude` |
+| `AVG_CLAUDE_MODEL` | Claude Code's default | Model of the gateway's Claude sessions |
+| `AVG_CLAUDE_PERMISSION_MODE` | `dontAsk` | Permission mode of the gateway's Claude sessions |
+| `AVG_CLAUDE_ALLOWED_TOOLS` | `mcp__pva,Skill,Read,Write,Edit,Glob,Grep,Bash` | Tools those sessions use without asking |
+| `AVG_CLAUDE_CHANNEL` | unset (`npm run studio:claude` sets `1`) | The MCP server pushes review activity as channel events |
+| `AVG_CLAUDE_STATE_DIR` | `.claude/pva` | Where the MCP server leaves status and inbox for Claude Code's hooks |
+| `AVG_CODEX_TOKEN` | — | OpenAI Codex token for the image route outside Pi |
 
 Secrets are environment-only (ADR-0030). Put them in your shell profile or an
 untracked `.env`, never in a committed file.

@@ -3,8 +3,9 @@
 // its licence held to the policy, its size to the minimum, its file
 // downloaded, hashed and checked for what it claims to be.
 
+import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { renameSync, rmSync } from "node:fs";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { ArchiveError } from "./errors.js";
 import { createHttp, type ArchiveHttp, type HttpOptions } from "./http.js";
 import { imageSize } from "./image-size.js";
@@ -39,6 +40,14 @@ export interface Candidate extends ArchiveItem {
   refusal?: string;
 }
 
+export interface SearchFilters {
+  orientation?: "portrait" | "landscape" | "square";
+  minWidth?: number;
+  maxDurationSeconds?: number;
+  /** Interleave provider results instead of grouping them. */
+  diverse?: boolean;
+}
+
 export interface SearchResult {
   candidates: Candidate[];
   /** Providers that failed, by id: one failing never sinks the others. */
@@ -57,6 +66,11 @@ export interface FetchResult {
   /** When the record was read and the file downloaded. */
   retrievedAt: string;
 }
+
+const hashFile = (file: string) => {
+  const bytes = readFileSync(file);
+  return { sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, bytes: bytes.length };
+};
 
 const EXTENSION: Record<string, string> = {
   "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/tiff": ".tif",
@@ -110,10 +124,14 @@ export function createArchive(options: ArchiveOptions) {
     /** Every provider, whether it is enabled, and why not. */
     providers: () => status.map((s) => ({ id: s.provider.id, label: s.provider.label, mediaTypes: s.provider.mediaTypes, enabled: s.enabled, ...(s.reason ? { reason: s.reason } : {}) })),
 
-    async search(query: string, opts: { mediaType?: MediaType; limit?: number; providers?: string[]; policy?: LicencePolicy; quality?: Quality } = {}): Promise<SearchResult> {
+    async search(query: string, opts: SearchFilters & { mediaType?: MediaType; limit?: number; providers?: string[]; policy?: LicencePolicy; quality?: Quality } = {}): Promise<SearchResult> {
       const mediaType = opts.mediaType ?? "image";
       const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50);
       const quality = { ...DEFAULT_QUALITY, ...opts.quality };
+      for (const id of opts.providers ?? []) provider(id); // Explicit unknown/missing-key selections must not silently vanish.
+      for (const n of [opts.minWidth, opts.maxDurationSeconds]) {
+        if (n !== undefined && (!Number.isFinite(n) || n <= 0)) throw new ArchiveError("bad-response", "Search limits must be positive finite numbers");
+      }
       const chosen = status.filter((s) => s.enabled && s.provider.mediaTypes.includes(mediaType) && (!opts.providers || opts.providers.includes(s.provider.id)));
       const errors: SearchResult["errors"] = [];
       const lists = await Promise.all(chosen.map(async (s) => {
@@ -124,7 +142,20 @@ export function createArchive(options: ArchiveOptions) {
           return [];
         }
       }));
-      const candidates = lists.flat().map((item): Candidate => {
+      const ordered = opts.diverse ? Array.from({ length: Math.max(0, ...lists.map((l) => l.length)) }, (_, i) => lists.flatMap((l) => l[i] ? [l[i]!] : [])).flat() : lists.flat();
+      const candidates = ordered.filter((item) => {
+        // Explicit filters need evidence: unknown dimensions/duration do not satisfy them.
+        if (opts.minWidth && (!item.width || item.width < opts.minWidth)) return false;
+        if (opts.maxDurationSeconds && (!item.durationSeconds || item.durationSeconds > opts.maxDurationSeconds)) return false;
+        if (opts.orientation) {
+          if (!item.width || !item.height) return false;
+          const ratio = item.width / item.height;
+          if (opts.orientation === "portrait" && ratio >= 0.95) return false;
+          if (opts.orientation === "landscape" && ratio <= 1.05) return false;
+          if (opts.orientation === "square" && (ratio < 0.85 || ratio > 1.18)) return false;
+        }
+        return true;
+      }).map((item): Candidate => {
         const licence = licenceAllowed(item.licence, opts.policy ?? DEFAULT_POLICY);
         const small = tooSmall(item, quality);
         const refusal = !licence.ok ? licence.reason : small;
@@ -146,21 +177,44 @@ export function createArchive(options: ArchiveOptions) {
      */
     async fetch(providerId: string, id: string, opts: {
       dir: string; name: string; policy?: LicencePolicy; quality?: Quality; maxBytes?: number;
+      /** Select a provider-advertised rendition by its stable id. */
+      rendition?: string;
       /** Measures a downloaded video or sound (ffprobe, say): this package reads only pictures itself. */
       probe?: (file: string) => Promise<{ width?: number; height?: number; durationSeconds?: number } | null>;
     }): Promise<FetchResult> {
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(opts.name)) throw new ArchiveError("bad-response", `"${opts.name}" is not a file name (letters, digits, . _ -)`);
       const s = provider(providerId);
-      const item = await s.provider.item(id, http, s.key);
+      let item = await s.provider.item(id, http, s.key);
+      if (opts.rendition) {
+        const selected = item.renditions?.find((r) => r.id === opts.rendition);
+        if (!selected) throw new ArchiveError("not-found", `${s.provider.label} ${id} has no rendition "${opts.rendition}" (available: ${item.renditions?.map((r) => r.id).join(", ") || "none"})`);
+        // `id` and `label` name the rendition, never the item: only its file facts are merged in.
+        const { id: renditionId, label, ...facts } = selected;
+        item = { ...item, ...facts, rendition: label ?? renditionId };
+      }
       const allowed = licenceAllowed(item.licence, opts.policy ?? DEFAULT_POLICY);
       if (!allowed.ok) throw new ArchiveError("licence-refused", `${s.provider.label} ${id}: ${allowed.reason}`);
       const quality = { ...DEFAULT_QUALITY, ...opts.quality };
       const small = tooSmall(item, quality);
       if (small) throw new ArchiveError("too-small", `${s.provider.label} ${id}: ${small}`);
       if (!item.fileUrl) throw new ArchiveError("no-file", `${s.provider.label} ${id} names no file`);
+      await s.provider.beforeDownload?.(item, http, s.key);
       const retrievedAt = new Date().toISOString();
       const staging = join(opts.dir, `.${opts.name}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.download`);
-      const got = await http.download(item.fileUrl, staging, { ...(item.fileHeaders ? { headers: item.fileHeaders } : {}), ...(opts.maxBytes ? { maxBytes: opts.maxBytes } : {}) });
+      let got = await http.download(item.fileUrl, staging, { ...(item.fileHeaders ? { headers: item.fileHeaders } : {}), ...(opts.maxBytes ? { maxBytes: opts.maxBytes } : {}), ...(s.provider.downloadHosts ? { allowedHosts: s.provider.downloadHosts } : {}) });
+      // SVG is active XML in browsers. Never persist provider SVG: resvg parses it without scripts/network and emits inert PNG.
+      if (item.mediaType === "image" && (got.mime === "image/svg+xml" || /\.svg(?:$|[?#])/i.test(item.fileUrl))) {
+        try {
+          const { Resvg } = await import("@resvg/resvg-js");
+          // Rasterize large enough that the resulting PNG still meets the quality floor; the vector is not persisted.
+          const png = new Resvg(readFileSync(staging), { fitTo: { mode: "width", value: Math.max(2048, quality.minImageLongSide) }, font: { loadSystemFonts: false } }).render().asPng();
+          writeFileSync(staging, png);
+          got = { ...hashFile(staging), mime: "image/png" };
+        } catch {
+          rmSync(staging, { force: true });
+          throw new ArchiveError("wrong-type", `${s.provider.label} ${id}: its SVG could not be safely rasterized`);
+        }
+      }
       const refuse = (code: "wrong-type" | "too-small", message: string): never => {
         rmSync(staging, { force: true });
         throw new ArchiveError(code, `${s.provider.label} ${id}: ${message}`);

@@ -42,6 +42,7 @@ for (const dir of workspaces) {
     cwd: join(ROOT, dir),
     stdio: "inherit",
     env: process.env,
+    shell: process.platform === "win32",
   });
 
   if (result.status === 0) passed.push(dir);

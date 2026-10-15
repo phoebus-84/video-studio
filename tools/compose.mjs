@@ -22,6 +22,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, cpSync, readdirSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { checkRequirements } from "./requirements.mjs";
+import { syncClaudeSkills } from "./claude-skills.mjs";
 import { isCapability, CAPABILITIES } from "@studio/contracts/src/vocabulary.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -191,6 +192,17 @@ function syncSkills(sets) {
 
 const syncedSkills = syncSkills(profile.skills);
 
+// The same skills for Claude Code, plus the agent's own (Pi gets those from
+// the agent package's manifest).
+const CLAUDE_SKILLS = join(ROOT, ".claude", "skills");
+syncClaudeSkills(
+  [
+    ...profile.skills.map((setName) => CONFIG.skillSets[setName]?.path).filter(Boolean).map((p) => join(ROOT, p)),
+    join(ROOT, "studio", "agent", "skills"),
+  ],
+  CLAUDE_SKILLS,
+);
+
 // ── Write composed.json ─────────────────────────────────────────────────────
 
 const composed = {
@@ -225,7 +237,7 @@ log(`\nCapabilities:`);
 for (const [cap, info] of Object.entries(capabilities)) {
   log(`  ${info.ready ? "✓" : "!"} ${cap.padEnd(20)} <- ${info.provider}`);
 }
-log(`\nSkills: ${syncedSkills.length} synced into .pi/skills/`);
+log(`\nSkills: ${syncedSkills.length} synced into .pi/skills/ and .claude/skills/`);
 
 if (problems.length) {
   console.error(`\n✗ ${problems.length} composition problem(s):`);

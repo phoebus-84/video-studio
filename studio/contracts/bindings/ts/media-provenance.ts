@@ -49,7 +49,7 @@ export interface MediaProvenance {
   /** The credit line ATTRIBUTIONS.md prints. */
   attribution: string;
   retrievedAt: string;
-  /** The provider's own response for the item when it was fetched, named by its hash. */
+  /** The provider response, or self-contained studio-media-derivation v1 evidence with hashed parent provenance snapshots and their evidence bytes, named by its hash. */
   evidence: {
     path: string;
     hash: ContentHash;
