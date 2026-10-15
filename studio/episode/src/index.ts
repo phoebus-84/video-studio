@@ -24,3 +24,4 @@ export * from "./local-media.js";
 export * from "./media-derivatives.js";
 export * from "./mapillary-produce.js";
 export * from "./take-verify.js";
+export * from "./audio-edit.js";

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studio.video/v1alpha1/audio-edit.schema.json",
+  "title": "An audio file made by an edit: its recipe, what it resolved to, its inputs and output by hash, its report (avg-8hs.5)",
+  "$defs": {
+    "Hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "Path": { "type": "string", "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))[^\\\\]+$", "description": "Relative to the workspace." },
+    "Placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["track", "clip", "source", "in", "out", "start", "end", "fadeIn", "fadeOut"],
+      "properties": {
+        "track": { "type": "string" }, "clip": { "type": "string" }, "source": { "$ref": "#/$defs/Path" },
+        "in": { "type": "number", "minimum": 0 }, "out": { "type": "number", "minimum": 0 },
+        "start": { "type": "number" }, "end": { "type": "number" },
+        "fadeIn": { "type": "number", "minimum": 0 }, "fadeOut": { "type": "number", "minimum": 0 },
+        "take": { "type": "string", "description": "The take the clip was cut from, when its source is one." }
+      }
+    },
+    "AudioEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "recipe", "resolved", "inputs", "output", "placements", "report", "createdAt"],
+      "properties": {
+        "apiVersion": { "const": "studio.video/v1alpha1" },
+        "kind": { "const": "AudioEdit" },
+        "recipe": { "type": "object", "description": "As it was given: sources may name takes, cuts may name words, pauses may be reshaped." },
+        "resolved": { "type": "object", "description": "The time-only recipe it became (@av/audio-edit's Recipe), sources as workspace paths." },
+        "inputs": { "type": "object", "additionalProperties": { "$ref": "#/$defs/Hash" }, "description": "Every file read, by its path, with its hash." },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash", "durationSeconds"],
+          "properties": { "path": { "$ref": "#/$defs/Path" }, "hash": { "$ref": "#/$defs/Hash" }, "durationSeconds": { "type": "number", "exclusiveMinimum": 0 } }
+        },
+        "placements": { "type": "array", "items": { "$ref": "#/$defs/Placement" } },
+        "report": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["loudness", "normalization", "clipped", "joins", "concerns", "headTrim"],
+          "properties": {
+            "loudness": { "type": "object", "required": ["integrated", "range", "truePeak"], "properties": { "integrated": { "type": ["number", "null"] }, "range": { "type": ["number", "null"] }, "truePeak": { "type": ["number", "null"] } } },
+            "normalization": { "enum": ["none", "gain", "gain+limiter"] },
+            "clipped": { "type": "integer", "minimum": 0 },
+            "headTrim": { "type": "number", "minimum": 0 },
+            "joins": { "type": "array", "items": { "type": "object", "required": ["track", "before", "after", "at", "click", "jumpDb"] } },
+            "concerns": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "words": {
+          "type": "array",
+          "description": "The output's words, carried from the timings of the takes it was cut from, in output order.",
+          "items": { "type": "object", "additionalProperties": false, "required": ["text", "start", "end"], "properties": { "text": { "type": "string", "pattern": "^\\S+$" }, "start": { "type": "number", "minimum": 0 }, "end": { "type": "number", "minimum": 0 } } }
+        },
+        "pauses": {
+          "type": "array",
+          "description": "The pauses the edit reshaped: after which word of which take, how long it was, how long it is, and where it falls on the output.",
+          "items": { "type": "object", "additionalProperties": false, "required": ["take", "word", "before", "after", "at"], "properties": {
+            "take": { "type": "string" }, "word": { "type": "string" },
+            "before": { "type": "number", "minimum": 0 }, "after": { "type": "number", "minimum": 0 }, "at": { "type": "number" } } }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "description": "<output>.edit.json beside the file an edit made."
+    }
+  }
+}

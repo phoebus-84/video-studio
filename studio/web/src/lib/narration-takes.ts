@@ -2,6 +2,7 @@
 // (avg-goz): what the gateway answers, and which word is being said.
 
 import type { EpisodeRef } from "./sheet-review";
+import type { MediaPlace } from "./episode-media";
 
 export interface TakeWord {
   text: string;
@@ -17,7 +18,8 @@ export interface TakeView {
   role?: string;
   voice: { provider?: string; voiceId?: string; direction?: string; model?: string } | null;
   durationSeconds: number | null;
-  audio: (EpisodeRef & { path: string }) | null;
+  /** An episode's file, or a channel source's (avg-8hs.5). */
+  audio: (MediaPlace & { path: string }) | null;
   words: TakeWord[] | null;
 }
 
@@ -30,7 +32,8 @@ export interface NarrationTakesAnswer {
   specDriven: boolean;
   units: TakeUnit[];
   takes: TakeView[];
-  sources: { pin: string; episode: EpisodeRef; units: TakeUnit[]; takes: TakeView[] }[];
+  /** Pinned episodes (`episode`) or channel sources (`source`), read-only. */
+  sources: { pin: string; episode?: EpisodeRef; source?: { channel: string; name: string }; units: TakeUnit[]; takes: TakeView[] }[];
 }
 
 /** The index of the word being said at `t` seconds, or −1 before, between or after the words. */

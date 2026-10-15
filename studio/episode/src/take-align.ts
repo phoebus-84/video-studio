@@ -12,6 +12,7 @@
 // the ElevenLabs key and the spend function that pays for its calls.
 // ---------------------------------------------------------------------------
 
+import { editRecordFor } from "./audio-edit.js";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -26,7 +27,8 @@ export const timingPathFor = (takeId: string) => `artifacts/timing/${takeId}.jso
 /** Pauses inside the speech longer than this are reported (judging them is avg-8hs.3). */
 export const REPORTED_PAUSE_SECONDS = 0.35;
 
-export type AlignProvider = "qwen-local" | "elevenlabs";
+/** derived: the words an audio edit carried from the takes it was cut from (avg-8hs.5). */
+export type AlignProvider = "qwen-local" | "elevenlabs" | "derived";
 
 /** What aligning `minutes` of audio with ElevenLabs is estimated to cost, in US dollars (its profile). */
 export const elevenLabsAlignmentUsd = (minutes: number) => minutes * ELEVENLABS_PROFILES.forcedAlignment.usdPerMinute;
@@ -113,6 +115,14 @@ async function alignLocally(workerUrl: string | undefined, audioPath: string, te
   return { words: body.words, model: String(body.model ?? "unknown") };
 }
 
+/** The words the edit that made this audio carried; the edit's record names the model. */
+function derivedWords(episodeDir: string, hash: string, takeId: string): { words: RawWord[]; model: string } {
+  const found = editRecordFor(episodeDir, hash);
+  if (!found) throw new AlignError("no-edit", `take "${takeId}": no audio edit in this workspace made this audio (no <file>.edit.json names its hash): align it with qwen-local`);
+  if (!found.record.words || found.record.words.length === 0) throw new AlignError("no-edit", `take "${takeId}": the edit ${found.path} carried no words (its clips were not cut from aligned takes): align it with qwen-local`);
+  return { words: found.record.words, model: found.path };
+}
+
 async function alignWithElevenLabs(options: AlignTakeOptions["elevenlabs"], audioPath: string, text: string, minutes: number): Promise<{ words: RawWord[]; model: string }> {
   if (!options?.apiKey) throw new AlignError("no-key", "ElevenLabs needs its API key (ELEVENLABS_API_KEY)");
   const call = async () => {
@@ -159,7 +169,9 @@ export async function alignTake(episodeDir: string, options: AlignTakeOptions): 
     throw new AlignError("audio-changed", `${take.audio.path} is not the audio ${TAKES_PATH} names: record the take again, or update it`);
   }
 
-  const aligned = provider === "elevenlabs"
+  const aligned = provider === "derived"
+    ? derivedWords(episodeDir, take.audio.hash, take.id)
+    : provider === "elevenlabs"
     ? await alignWithElevenLabs(options.elevenlabs, audioPath, take.text, take.audio.durationSeconds / 60)
     : await alignLocally(options.workerUrl, audioPath, take.text, language);
   const { words, unmapped } = mapToText(take.text, aligned.words);
@@ -175,7 +187,7 @@ export async function alignTake(episodeDir: string, options: AlignTakeOptions): 
     text: take.text,
     ...(take.spokenText ? { spokenText: take.spokenText } : {}),
     language,
-    alignment: { provider, model: aligned.model, method: "forced", createdAt: new Date().toISOString() },
+    alignment: { provider: provider === "derived" ? "audio-edit" : provider, model: aligned.model, method: provider === "derived" ? "derived" : "forced", createdAt: new Date().toISOString() },
     words: timed,
     speech: measured.speech,
     energy,

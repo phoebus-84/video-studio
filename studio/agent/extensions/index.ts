@@ -17,6 +17,7 @@ import { registerBlenderTools } from "../src/blender-tools.js";
 import { registerArchiveTools } from "../src/archive-tools.js";
 import { registerMapillaryTools } from "../src/mapillary-tools.js";
 import { registerSourceTools } from "../src/source-tools.js";
+import { registerAudioTools } from "../src/audio-tools.js";
 import { registerSkillTools } from "../src/skill-tools.js";
 import { registerSlashCommands } from "../src/slash-commands.js";
 import { registerTuiComponents } from "../src/tui-status.js";
@@ -298,6 +299,7 @@ export default function (pi: ExtensionAPI): void {
   registerArchiveTools(pi);
   registerMapillaryTools(pi);
   registerSourceTools(pi);
+  registerAudioTools(pi);
 
   // --- Register skill and context tools ---------------------------------
 

@@ -56,7 +56,7 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0046-archive-media-carry-licence-and-evidence) holds 46 accepted
+[`adr/`](./adr/0047-audio-edits-are-recipes) holds 47 accepted
 decisions. The ones that most shape the code:
 
 | ADR | Decision |
@@ -80,6 +80,7 @@ decisions. The ones that most shape the code:
 | [0044](./adr/0044-the-application-ships-no-channel) | The application ships no channel's format |
 | [0045](./adr/0045-a-channel-is-its-own-repository) | A channel is its own repository; its media are named by hash |
 | [0046](./adr/0046-archive-media-carry-licence-and-evidence) | Archive media carry their licence and its evidence |
+| [0047](./adr/0047-audio-edits-are-recipes) | Audio edits are recipes: cut on words, mixed, mastered, reproducible |
 
 ADR-0022 (independent repositories per module) is superseded by 0032.
 ADR-0009 (FFmpeg compiles a typed edit timeline) is superseded by 0034.

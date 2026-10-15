@@ -1466,7 +1466,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       ...WORKSPACE_PARAMS,
       take: Type.String({ description: "The take's id in takes.json" }),
-      provider: Type.Optional(Type.Union([Type.Literal("qwen-local"), Type.Literal("elevenlabs")], { description: "Default qwen-local" })),
+      provider: Type.Optional(Type.Union([Type.Literal("qwen-local"), Type.Literal("elevenlabs"), Type.Literal("derived")], { description: "Default qwen-local; derived: a take made by pva_edit_audio, its words carried from the takes it was cut from (no aligner)" })),
       language: Type.Optional(Type.String({ description: "ISO 639-1 code (it, en…) when the take does not give one" })),
     }),
     async execute(_toolCallId, params) {

@@ -264,6 +264,22 @@ The voice worker can speak with an enrolled clone voice, through the Qwen3-TTS
   model and the seed.
 - **A channel's characters** name their voice in `voices/registry.local.json`.
 
+### Editing audio
+
+`pva_edit_audio` makes one audio file from others, from a recipe saved
+beside it as `<file>.edit.json` (ADR-0047). The recipe can:
+- cut takes on words (at the quietest point of the pause, with short
+  crossfades);
+- reshape pauses with the take's own room tone;
+- layer tracks with gains, fades, gain curves and ducking;
+- master the mix: loudness, true peak, trims, fades.
+
+The file's report names clicks, level jumps and clipping, and the record
+keeps the words carried from the takes. A take made this way registers like
+any other and gets its timing with `pva_align_take` `provider: "derived"`.
+`pva_analyze_audio` measures any file. The skill is `audio-editing`; the
+engine is `@av/audio-edit`.
+
 ### Verifying a take
 
 Before a take is used, ask the agent to verify it (`pva_verify_take`). The

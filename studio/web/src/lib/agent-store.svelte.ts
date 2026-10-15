@@ -137,6 +137,8 @@ export function suggestionsFor(
       return ["Replace this scene's image", "Restyle the storyboard"];
     case "narration":
       return ["Try a slower read", "Resynthesise the drifted segment"];
+    case "audio":
+      return ["Lengthen the pauses to the reference", "Join the best parts of two takes", "Put a bed under the voice"];
     case "render":
       return ["Fix the caption overflow", "Rerender only the changed scene"];
     default:

@@ -129,10 +129,11 @@ describe("extensions/index.ts — tool registration", () => {
   });
 
   it("registers the expected suite of production tools", () => {
-    expect(mockPi.tools.length).toBe(63);
+    expect(mockPi.tools.length).toBe(65);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "pva_align_take",
+      "pva_analyze_audio",
       "pva_blender_create_scene",
       "pva_blender_probe",
       "pva_blender_render",
@@ -155,6 +156,7 @@ describe("extensions/index.ts — tool registration", () => {
       "pva_create_source",
       "pva_derive_media",
       "pva_diagnostics",
+      "pva_edit_audio",
       "pva_episode_detail",
       "pva_episodes",
       "pva_fetch_media",
