@@ -93,14 +93,34 @@ export class VideoCache {
   }
 }
 
+/**
+ * Consecutive cache misses, at most `max` segments each. A run is rendered by
+ * one renderer call: per-second calls paid the browser's and the encoder's
+ * start-up for every 30 frames, and left the tabs idle (avg: render 8 s per
+ * second of video). Bounded so an interrupted render still leaves most of its
+ * work in the cache.
+ */
+export function missRuns(missing: number[], max: number): number[][] {
+  const runs: number[][] = [];
+  for (const index of missing) {
+    const run = runs.at(-1);
+    if (run && run.at(-1) === index - 1 && run.length < max) run.push(index);
+    else runs.push([index]);
+  }
+  return runs;
+}
+
 /** Callbacks keep cache policy testable without Chrome or FFmpeg. */
 export async function cachedVideo(options: {
   plan: VideoPlan;
   cacheDir: string;
   work: string;
-  renderSegment: (segment: VideoSegment, output: string) => Promise<void>;
+  /** Render consecutive segments in one go, writing outputs[i] for segments[i]. */
+  renderRun: (segments: VideoSegment[], outputs: string[]) => Promise<void>;
   concatenate: (files: string[], output: string) => Promise<void>;
   onProgress?: (progress: number) => void;
+  /** Longest run rendered by one call, in segments (default 120: two minutes at one second each). */
+  maxRunSegments?: number;
 }): Promise<{video: string; report: CacheReport}> {
   const {plan, work} = options;
   const report: CacheReport = {wholeVideoReused: false, segmentsReused: 0, segmentsRendered: 0, totalSegments: plan.segments.length, warnings: []};
@@ -112,17 +132,18 @@ export async function cachedVideo(options: {
     options.onProgress?.(1);
     return {video, report};
   }
-  const files: string[] = [];
+  const files = plan.segments.map((_, index) => path.join(work, `segment-${index}.mp4`));
+  const missing: number[] = [];
   for (const [index, segment] of plan.segments.entries()) {
-    const output = path.join(work, `segment-${index}.mp4`);
-    if (await segments.get(segment.key, output)) report.segmentsReused++;
-    else {
-      await options.renderSegment(segment, output);
-      await segments.put(segment.key, output);
-      report.segmentsRendered++;
-    }
-    files.push(output);
-    options.onProgress?.((index + 1) / plan.segments.length);
+    if (await segments.get(segment.key, files[index]!)) report.segmentsReused++;
+    else missing.push(index);
+  }
+  options.onProgress?.(report.segmentsReused / plan.segments.length);
+  for (const run of missRuns(missing, options.maxRunSegments ?? 120)) {
+    await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!));
+    for (const index of run) await segments.put(plan.segments[index]!.key, files[index]!);
+    report.segmentsRendered += run.length;
+    options.onProgress?.((report.segmentsReused + report.segmentsRendered) / plan.segments.length);
   }
   await options.concatenate(files, video);
   await whole.put(plan.key, video);

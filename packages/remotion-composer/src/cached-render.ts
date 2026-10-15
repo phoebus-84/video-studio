@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {readFile, readdir, writeFile} from 'node:fs/promises';
+import {readFile, readdir, rename, rm, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -83,11 +83,31 @@ export async function renderWithCache(options: {
     const {video, report} = await cachedVideo({
       plan, cacheDir: options.cacheDir, work,
       onProgress: (p) => options.onProgress?.(p * 0.8),
-      renderSegment: async (segment, output) => {
+      renderRun: async (segments, outputs) => {
+        // One renderer call for the whole run, every tab busy across it. A
+        // keyframe every second (gopSize) puts one at each segment's first
+        // frame: segments start on multiples of fps and so does the run, so
+        // ffmpeg cuts it into the cached segments without re-encoding.
+        const first = segments[0]!, last = segments.at(-1)!;
+        const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
         await renderMedia({
-          ...common, ...encoding, puppeteerInstance: await getBrowser(), inputProps: silentProps, outputLocation: output,
-          frameRange: [segment.from, segment.to], gopSize: timeline.fps,
+          ...common, ...encoding, puppeteerInstance: await getBrowser(), inputProps: silentProps, outputLocation: whole,
+          frameRange: [first.from, last.to], gopSize: timeline.fps,
         });
+        if (segments.length === 1) return;
+        const cuts = segments.slice(1).map((segment) => segment.from - first.from);
+        const pattern = path.join(work, `run-${first.from}-%05d.mp4`);
+        await run(['-i', whole, '-map', '0:v:0', '-an', '-c:v', 'copy', '-f', 'segment',
+          '-segment_frames', cuts.join(','), '-reset_timestamps', '1', pattern]);
+        for (const [i, output] of outputs.entries()) {
+          const piece = pattern.replace('%05d', String(i).padStart(5, '0'));
+          try {
+            await rename(piece, output);
+          } catch {
+            throw new Error(`splitting frames ${first.from}-${last.to} gave fewer than ${segments.length} segments`);
+          }
+        }
+        await rm(whole, {force: true});
       },
       concatenate: async (files, output) => {
         // Only generated basenames go in the concat script; no caller-controlled
