@@ -95,6 +95,9 @@ describe("workspace file API", () => {
       expect(contentTypeFor("a.md")).toBe("text/markdown");
       expect(contentTypeFor("a.mp4")).toBe("video/mp4");
       expect(contentTypeFor("a.glb")).toBe("model/gltf-binary");
+      // Extensionless configuration is text, so a .uiignore opens in the editor.
+      expect(contentTypeFor(".uiignore")).toBe("text/plain");
+      expect(contentTypeFor("series/s1/.gitignore")).toBe("text/plain");
       expect(contentTypeFor("a.unknown")).toBeNull();
     });
   });
@@ -126,6 +129,74 @@ describe("workspace file API", () => {
     const res = await fetch(`${ch()}/files`, { headers: auth() });
     const body = await res.json();
     expect(body.entries.map((e: any) => e.path)).not.toContain(".workspace");
+  });
+
+  // ── .uiignore ─────────────────────────────────────────────────────────
+
+  describe(".uiignore", () => {
+    const paths = (body: any) => body.entries.map((e: any) => e.path);
+
+    beforeEach(async () => {
+      const acme = join(TMP, "acme");
+      await fs.mkdir(join(acme, "node_modules", "lib"), { recursive: true });
+      await fs.writeFile(join(acme, "node_modules", "lib", "index.js"), "");
+      await fs.writeFile(join(acme, "media.lock.jsonl"), "{}\n");
+      await fs.writeFile(join(acme, "bun.lock"), "{}\n");
+      await fs.mkdir(join(acme, "series", "s1", "drafts"), { recursive: true });
+      await fs.writeFile(join(acme, "series", "s1", "drafts", "old.md"), "");
+      await fs.writeFile(join(acme, "series", "s1", "kits.lock.json"), "{}");
+      await fs.writeFile(join(acme, "series", "s1", "notes.md"), "");
+    });
+
+    it("leaves out lock files and machine-made folders by default, and says how many", async () => {
+      const body = await (await fetch(`${ch()}/files?recursive=true`, { headers: auth() })).json();
+      expect(paths(body)).not.toContain("node_modules");
+      expect(paths(body)).not.toContain("node_modules/lib/index.js");
+      expect(paths(body)).not.toContain("media.lock.jsonl");
+      expect(paths(body)).not.toContain("bun.lock");
+      expect(paths(body)).not.toContain("series/s1/kits.lock.json");
+      expect(paths(body)).toContain("channel.md");
+      // node_modules counts once, not with its contents.
+      expect(body.ignored).toBe(4);
+      expect(body.showIgnored).toBe(false);
+    });
+
+    it("shows everything, marked, when asked", async () => {
+      const body = await (await fetch(`${ch()}/files?recursive=true&showIgnored=true`, { headers: auth() })).json();
+      const byPath = new Map(body.entries.map((e: any) => [e.path, e]));
+      expect((byPath.get("bun.lock") as any).ignored).toBe(true);
+      expect((byPath.get("node_modules/lib/index.js") as any).ignored).toBe(true);
+      expect((byPath.get("channel.md") as any).ignored).toBeUndefined();
+      expect(body.ignored).toBe(4);
+    });
+
+    it("takes a channel's own rules, and lets it bring a default back", async () => {
+      await fs.writeFile(join(TMP, "acme", ".uiignore"), "characters/\n!media.lock.jsonl\n");
+      const body = await (await fetch(`${ch()}/files?recursive=true`, { headers: auth() })).json();
+      expect(paths(body)).not.toContain("characters");
+      expect(paths(body)).toContain("media.lock.jsonl");
+      expect(paths(body)).toContain(".uiignore");
+    });
+
+    it("takes a series' rules for the series, under the channel's", async () => {
+      await fs.writeFile(join(TMP, "acme", ".uiignore"), "drafts/\n");
+      await fs.writeFile(join(TMP, "acme", "series", "s1", ".uiignore"), "!kits.lock.json\nnotes.md\n");
+      const series = await (await fetch(`${baseUrl}/api/channels/acme/series/s1/files?recursive=true`, { headers: auth() })).json();
+      expect(paths(series)).not.toContain("drafts");
+      expect(paths(series)).not.toContain("notes.md");
+      expect(paths(series)).toContain("kits.lock.json");
+
+      // The channel's listing reaches the series too, with the same answer.
+      const channel = await (await fetch(`${ch()}/files?recursive=true`, { headers: auth() })).json();
+      expect(paths(channel)).toContain("series/s1/kits.lock.json");
+      expect(paths(channel)).not.toContain("series/s1/notes.md");
+    });
+
+    it("leaves everything inside a folder that is left out", async () => {
+      const body = await (await fetch(`${ch()}/files?path=node_modules`, { headers: auth() })).json();
+      expect(paths(body)).toEqual([]);
+      expect(body.ignored).toBe(0);
+    });
   });
 
   it("404s for a directory that does not exist", async () => {

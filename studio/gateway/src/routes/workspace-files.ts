@@ -22,6 +22,7 @@ import {
   episodePath,
 } from "@studio/contracts/src/layout.mjs";
 import { resolvePresentation } from "@studio/contracts/src/presentation.mjs";
+import { UiIgnore } from "../workspace/uiignore.js";
 import {
   recordRevision,
   listRevisions,
@@ -49,6 +50,8 @@ export interface FileEntry {
    * of registering a component, not editing the workspace.
    */
   presentation: { viewer: string; actions: readonly string[] } | null;
+  /** Present, and true, when a .uiignore rule leaves this out and the listing was asked to show it anyway. */
+  ignored?: true;
 }
 
 const TEXT_EXT = new Set([
@@ -68,12 +71,16 @@ const CONTENT_TYPES: Record<string, string> = {
   ".pdf": "application/pdf", ".zip": "application/zip",
 };
 
+/** Configuration files with no extension, read and edited as plain text. */
+const TEXT_NAMES = new Set([".uiignore", ".gitignore", ".gitattributes"]);
+
 export function contentTypeFor(filePath: string): string | null {
+  if (TEXT_NAMES.has(path.basename(filePath))) return "text/plain";
   return CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? null;
 }
 
 export function isTextFile(filePath: string): boolean {
-  return TEXT_EXT.has(path.extname(filePath).toLowerCase());
+  return TEXT_NAMES.has(path.basename(filePath)) || TEXT_EXT.has(path.extname(filePath).toLowerCase());
 }
 
 /** Content hash used for optimistic concurrency on writes. */
@@ -121,10 +128,27 @@ const fail = (reply: FastifyReply, status: number, error: string, message: strin
 /** Names that are never content and are hidden from listings. */
 const HIDDEN = new Set([".DS_Store", ".workspace", ".revisions"]);
 
-async function listDirectory(dir: string, levelDir: string, recursive: boolean): Promise<FileEntry[]> {
-  const out: FileEntry[] = [];
+export interface Listing {
+  entries: FileEntry[];
+  /** How many entries the .uiignore rules matched (a folder counts once, not its contents). */
+  ignored: number;
+}
 
-  async function walk(current: string): Promise<void> {
+/**
+ * The entries under `dir`. Those the .uiignore rules match are left out, or,
+ * with `showIgnored`, kept and marked; a folder left out is not opened.
+ */
+export async function listDirectory(
+  dir: string,
+  levelDir: string,
+  recursive: boolean,
+  rules: UiIgnore,
+  showIgnored = false,
+): Promise<Listing> {
+  const out: FileEntry[] = [];
+  let ignoredCount = 0;
+
+  async function walk(current: string, rules: UiIgnore): Promise<void> {
     let entries;
     try {
       entries = await fs.readdir(current, { withFileTypes: true });
@@ -142,6 +166,9 @@ async function listDirectory(dir: string, levelDir: string, recursive: boolean):
         continue;
       }
       const isDir = entry.isDirectory();
+      const ignored = rules.isIgnored(abs, isDir);
+      if (ignored && !rules.inherited) ignoredCount += 1;
+      if (ignored && !showIgnored) continue;
       out.push({
         name: entry.name,
         path: rel,
@@ -150,16 +177,17 @@ async function listDirectory(dir: string, levelDir: string, recursive: boolean):
         updatedAt: stat.mtime.toISOString(),
         contentType: isDir ? null : contentTypeFor(entry.name),
         presentation: isDir ? null : resolvePresentation(contentTypeFor(entry.name)),
+        ...(ignored ? { ignored: true as const } : {}),
       });
-      if (isDir && recursive) await walk(abs);
+      if (isDir && recursive) await walk(abs, await rules.enter(abs, ignored));
     }
   }
 
-  await walk(dir);
+  await walk(dir, rules);
   out.sort((a, b) =>
     a.kind === b.kind ? a.path.localeCompare(b.path) : a.kind === "directory" ? -1 : 1,
   );
-  return out;
+  return { entries: out, ignored: ignoredCount };
 }
 
 // ── Registration ────────────────────────────────────────────────────────────
@@ -187,7 +215,7 @@ export function registerWorkspaceFileRoutes(
       tags: ["workspace"],
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const query = request.query as { path?: string; recursive?: string };
+    const query = request.query as { path?: string; recursive?: string; showIgnored?: string };
     const levelDir = dirFor(request);
     const target = resolveInside(levelDir, query.path ?? "");
     if (!target) return fail(reply, 403, "FORBIDDEN", "Path escapes the workspace");
@@ -198,8 +226,12 @@ export function registerWorkspaceFileRoutes(
       return fail(reply, 404, "NOT_FOUND", `No such directory: ${query.path ?? "/"}`);
     }
 
-    const entries = await listDirectory(target, levelDir, query.recursive === "true");
-    return reply.send({ level, path: query.path ?? "", entries });
+    // The channel's folder is where .uiignore layers start, whatever the level.
+    const channelDir = channelPath(root, (request.params as { channel: string }).channel);
+    const rules = await UiIgnore.forDirectory(channelDir, target);
+    const showIgnored = query.showIgnored === "true";
+    const listing = await listDirectory(target, levelDir, query.recursive === "true", rules, showIgnored);
+    return reply.send({ level, path: query.path ?? "", entries: listing.entries, ignored: listing.ignored, showIgnored });
   });
 
   // ── Create (file or directory) ────────────────────────────────────────

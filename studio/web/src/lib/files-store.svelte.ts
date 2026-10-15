@@ -21,6 +21,19 @@ export interface FileEntry {
   contentType: string | null;
   /** How this artifact asks to be shown; resolved against the viewer registry. */
   presentation: { viewer: string; actions: readonly string[] } | null;
+  /** True when a .uiignore rule leaves this out and the listing shows it anyway. */
+  ignored?: boolean;
+}
+
+/** Where this browser remembers whether to show files the .uiignore rules leave out. */
+export const SHOW_IGNORED_STORAGE = "vs-files-show-ignored";
+
+function readShowIgnored(): boolean {
+  try {
+    return localStorage.getItem(SHOW_IGNORED_STORAGE) === "true";
+  } catch {
+    return false;
+  }
 }
 
 export interface RevisionMeta {
@@ -64,6 +77,13 @@ class FilesStore {
   entries = $state<FileEntry[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
+  /**
+   * Whether the listing includes what the .uiignore rules leave out (lock
+   * files, node_modules/, … and whatever a channel or series adds).
+   */
+  showIgnored = $state(readShowIgnored());
+  /** How many entries the rules left out, or marked when shown. */
+  ignoredCount = $state(0);
 
   /** Path of the file currently open in the editor. */
   selectedPath = $state<string | null>(null);
@@ -92,13 +112,11 @@ class FilesStore {
     this.clearSelection();
 
     try {
-      const data = await getGatewayClient().fetchJSON<{ entries: FileEntry[] }>(
-        `${apiPrefix(ref)}/files?recursive=true`,
-      );
-      this.entries = data.entries ?? [];
+      await this.fetchListing(ref);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
       this.entries = [];
+      this.ignoredCount = 0;
     } finally {
       this.loading = false;
     }
@@ -106,6 +124,36 @@ class FilesStore {
 
   async reload(): Promise<void> {
     if (this.ref) await this.load(this.ref);
+  }
+
+  /** The level's tree, as the .uiignore rules and the show-all choice leave it. */
+  private async fetchListing(ref: LevelRef): Promise<void> {
+    const data = await getGatewayClient().fetchJSON<{ entries: FileEntry[]; ignored?: number }>(
+      `${apiPrefix(ref)}/files?recursive=true${this.showIgnored ? "&showIgnored=true" : ""}`,
+    );
+    this.entries = data.entries ?? [];
+    this.ignoredCount = data.ignored ?? 0;
+  }
+
+  /** Refresh the tree without closing the open file. */
+  async refreshListing(): Promise<void> {
+    if (!this.ref) return;
+    try {
+      await this.fetchListing(this.ref);
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  /** Show or leave out what the .uiignore rules match, and remember the choice. */
+  async setShowIgnored(show: boolean): Promise<void> {
+    this.showIgnored = show;
+    try {
+      localStorage.setItem(SHOW_IGNORED_STORAGE, String(show));
+    } catch {
+      /* A choice not remembered still applies now. */
+    }
+    await this.refreshListing();
   }
 
   clearSelection(): void {
@@ -195,6 +243,8 @@ class FilesStore {
       this.selectedRevision = res.revision;
       this.dirty = false;
       await this.loadRevisions(this.selectedPath);
+      // New rules change what the tree shows.
+      if (this.selectedPath.split("/").pop() === ".uiignore") await this.refreshListing();
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {

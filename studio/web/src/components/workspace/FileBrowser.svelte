@@ -82,6 +82,8 @@
       <div
         class="fb-row"
         class:selected={files.selectedPath === entry.path}
+        class:ignored={entry.ignored}
+        title={entry.ignored ? "Left out by .uiignore" : undefined}
         style="padding-left: {depth * 14 + 8}px"
       >
         {#if entry.kind === "directory"}
@@ -123,6 +125,19 @@
       hidden
       aria-label="Upload files"
     />
+    <label
+      class="fb-show-all"
+      title="Lock files, node_modules/ and the like are left out by default. A .uiignore in the channel's or the series' folder adds rules (gitignore syntax; !pattern brings a file back)."
+    >
+      <input
+        type="checkbox"
+        checked={files.showIgnored}
+        onchange={(e) => files.setShowIgnored((e.currentTarget as HTMLInputElement).checked)}
+      />
+      Show all files{#if files.ignoredCount > 0}<span class="fb-hidden-count"
+          >{files.showIgnored ? `${files.ignoredCount} ignored` : `${files.ignoredCount} hidden`}</span
+        >{/if}
+    </label>
   </div>
 
   {#if creating}
@@ -159,6 +174,8 @@
 
   .fb-toolbar {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 4px;
     padding: 8px;
     position: sticky;
@@ -220,6 +237,26 @@
 
   .fb-row.selected {
     background: var(--vs-bg-selected, #fdf0e6);
+  }
+
+  .fb-row.ignored .fb-item {
+    opacity: 0.55;
+  }
+
+  .fb-show-all {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--vs-text-secondary, #555);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .fb-hidden-count {
+    font-size: 10px;
+    color: var(--vs-text-secondary, #999);
   }
 
   .fb-item {
