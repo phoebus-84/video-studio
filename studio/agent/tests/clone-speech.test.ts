@@ -71,4 +71,27 @@ describe("a clone voice", () => {
     const bad = await run({ channel: "poesia", source: "novembre", sceneId: "x", text: "a", voice: "clone:marcello" });
     expect(bad.content[0].text).toContain("pva_voices");
   });
+
+  it("passes temperature and repetition penalty to the worker, and keeps them in the receipt", async () => {
+    const run = await tool("pva_synthesize_speech");
+    const made = await run({ channel: "poesia", source: "novembre", sceneId: "s1", text: "Gemmea l'aria", voice: `clone:${VOICE}`, language: "italian", seed: 42, temperature: 0.7, repetitionPenalty: 1.1 });
+    expect(made.isError, made.content[0].text).toBeUndefined();
+    expect(calls[0]!.body).toEqual({ text: "Gemmea l'aria", language: "italian", model_size: "1.7B", seed: 42, temperature: 0.7, repetition_penalty: 1.1 });
+    const receipt = JSON.parse(readFileSync(join(root, "poesia", "sources", "novembre", "artifacts", "narration", "s1.synthesis.json"), "utf-8"));
+    expect(receipt.sampling).toEqual({ temperature: 0.7, repetitionPenalty: 1.1 });
+  });
+
+  it("leaves the worker's defaults alone when none is named, and refuses values out of range before synthesizing", async () => {
+    const run = await tool("pva_synthesize_speech");
+    await run({ channel: "poesia", source: "novembre", sceneId: "s2", text: "a", voice: `clone:${VOICE}` });
+    expect(calls[0]!.body).not.toHaveProperty("temperature");
+    expect(calls[0]!.body).not.toHaveProperty("repetition_penalty");
+    const receipt = JSON.parse(readFileSync(join(root, "poesia", "sources", "novembre", "artifacts", "narration", "s2.synthesis.json"), "utf-8"));
+    expect(receipt).not.toHaveProperty("sampling");
+    for (const bad of [{ temperature: 0 }, { temperature: 2.5 }, { repetitionPenalty: 0.9 }, { repetitionPenalty: 3.5 }]) {
+      const out = await run({ channel: "poesia", source: "novembre", sceneId: "x", text: "a", voice: `clone:${VOICE}`, ...bad });
+      expect([out.isError, out.content[0].text]).toEqual([true, expect.stringMatching(/temperature|repetitionPenalty/)]);
+    }
+    expect(calls).toHaveLength(1);
+  });
 });

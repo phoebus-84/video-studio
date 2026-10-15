@@ -215,12 +215,29 @@ interface WorkerSynthesis {
   completed_at?: string | null;
 }
 
+/** How the model samples, when the caller names it; the worker's defaults otherwise. */
+interface Sampling { temperature?: number; repetitionPenalty?: number }
+
+/** Refused here, before a synthesis is paid for in time: the worker's own bounds. */
+function samplingOf(params: Sampling): Sampling {
+  const { temperature, repetitionPenalty } = params;
+  if (temperature !== undefined && !(temperature > 0 && temperature <= 2)) throw new Error(`temperature ${temperature} is outside (0, 2]`);
+  if (repetitionPenalty !== undefined && !(repetitionPenalty >= 1 && repetitionPenalty <= 3)) throw new Error(`repetitionPenalty ${repetitionPenalty} is outside [1, 3]`);
+  return { ...(temperature !== undefined ? { temperature } : {}), ...(repetitionPenalty !== undefined ? { repetitionPenalty } : {}) };
+}
+
+/** The worker's names for them. */
+const samplingBody = (s: Sampling) => ({
+  ...(s.temperature !== undefined ? { temperature: s.temperature } : {}),
+  ...(s.repetitionPenalty !== undefined ? { repetition_penalty: s.repetitionPenalty } : {}),
+});
+
 async function synthesizeSpeech(
-  text: string, voice: string, speed: number, instruct?: string, language?: string,
+  text: string, voice: string, speed: number, instruct?: string, language?: string, sampling: Sampling = {},
 ): Promise<{ audioPath: string; durationSec: number; result: WorkerSynthesis }> {
   const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
 
-  const reqBody: Record<string, unknown> = { text, voice, speed };
+  const reqBody: Record<string, unknown> = { text, voice, speed, ...samplingBody(sampling) };
   if (instruct) reqBody.instruct = instruct;
   if (language) reqBody.language = language;
 
@@ -265,9 +282,9 @@ interface CloneSynthesis {
 const CLONE_LANGUAGES: Record<string, string> = { auto: "auto", italian: "italian", english: "english", german: "german", french: "french", spanish: "spanish", portuguese: "portuguese", russian: "russian", japanese: "japanese", korean: "korean", chinese: "chinese" };
 
 /** A clone voice speaks through the Base model, with the reference the operator enrolled with consent; never a fallback to a preset. */
-async function synthesizeWithClone(voiceId: string, text: string, language: string | undefined, seed: number | undefined): Promise<CloneSynthesis> {
+async function synthesizeWithClone(voiceId: string, text: string, language: string | undefined, seed: number | undefined, sampling: Sampling = {}): Promise<CloneSynthesis> {
   const ttsUrl = process.env.AVG_TTS_WORKER_URL || DEFAULT_TTS_WORKER_URL;
-  const body = { text, language: CLONE_LANGUAGES[language ?? "auto"] ?? "auto", model_size: "1.7B", ...(seed !== undefined ? { seed } : {}) };
+  const body = { text, language: CLONE_LANGUAGES[language ?? "auto"] ?? "auto", model_size: "1.7B", ...(seed !== undefined ? { seed } : {}), ...samplingBody(sampling) };
   const res = await fetch(`${ttsUrl}/voices/${encodeURIComponent(voiceId)}/synthesize`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const out = await res.json().catch(() => ({})) as CloneSynthesis & { error?: string; detail?: unknown };
   if (!res.ok || !out.wav_path) {
@@ -872,6 +889,8 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           "or an enrolled clone voice as clone:<voice id> (see pva_voices; the channel's voices/registry names its characters' voices)",
       })),
       seed: Type.Optional(Type.Integer({ minimum: 0, description: "Clone voices: a seed, to make the same take again" })),
+      temperature: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 2, description: "Sampling temperature (worker default 0.7): higher is more varied, lower more even" })),
+      repetitionPenalty: Type.Optional(Type.Number({ minimum: 1, maximum: 3, description: "Repetition penalty (worker default: 1.5 for a clone, 1.05 for a preset). A recited poem read better at 1.1 with a clone, one stanza per call with its verses on their own lines" })),
       language: Type.Optional(StringEnum([...QWEN_LANGUAGES], {
         description: "Language of the text. 'auto' lets the model guess; name it for anything not English (e.g. 'italian')",
       })),
@@ -890,11 +909,12 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         const destPath = join(narrationDir, `${params.sceneId}.wav`);
         const receiptPath = join(narrationDir, `${params.sceneId}.synthesis.json`);
         const { copyFileSync } = await import("node:fs");
+        const sampling = samplingOf(params);
         const clone = /^clone:([0-9a-f-]{36})$/i.exec(voice);
         if (voice.startsWith("clone:") && !clone) throw new Error(`"${voice}" is not clone:<voice id>; list the enrolled voices with pva_voices`);
         if (clone) {
           if (params.instruct) throw new Error("a clone voice takes no instruct: its manner is the reference's");
-          const c = await synthesizeWithClone(clone[1]!, params.text, params.language, params.seed);
+          const c = await synthesizeWithClone(clone[1]!, params.text, params.language, params.seed, sampling);
           mkdirSync(narrationDir, { recursive: true });
           copyFileSync(c.wav_path, destPath);
           const wavSha256 = createHash("sha256").update(readFileSync(destPath)).digest("hex");
@@ -909,6 +929,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             requestedVoice: voice,
             language: params.language ?? "auto",
             ...(c.seed !== undefined && c.seed !== null ? { seed: c.seed } : {}),
+            ...(Object.keys(sampling).length > 0 ? { sampling } : {}),
             text: params.text,
             wav: `artifacts/narration/${params.sceneId}.wav`,
             wavSha256,
@@ -922,7 +943,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             details: { audioPath: destPath, durationSec: c.duration_seconds, receiptPath, receipt },
           };
         }
-        const result = await synthesizeSpeech(params.text, voice, params.speed ?? 1.0, params.instruct, params.language);
+        const result = await synthesizeSpeech(params.text, voice, params.speed ?? 1.0, params.instruct, params.language, sampling);
 
         // Copy audio to the workspace's artifacts/narration/
         mkdirSync(narrationDir, { recursive: true });
@@ -939,6 +960,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           speaker: r.actual_speaker ?? null,
           language: params.language ?? "auto",
           ...(params.instruct ? { instruct: params.instruct } : {}),
+          ...(Object.keys(sampling).length > 0 ? { sampling } : {}),
           text: params.text,
           textHash: r.text_hash ?? null,
           wav: `artifacts/narration/${params.sceneId}.wav`,
