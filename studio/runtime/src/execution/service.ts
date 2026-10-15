@@ -36,6 +36,7 @@ import { ok, err, type Result } from "../result.js";
 import { StageStateMachine, LeaseError, attemptsSinceLastSuccess } from "../engine/state-machine.js";
 import { DEFAULT_ENGINE_CONFIG, type StageInstance as EngineStageInstance } from "../engine/types.js";
 import { FileLock } from "../ports/file-lock.js";
+import { currentRetryGrant, retryBinding } from "./retry-grant.js";
 import { planRerun } from "../rerun/index.js";
 import type { RerunMode, RerunPlan } from "../rerun/index.js";
 import { propagate } from "../staleness/index.js";
@@ -694,11 +695,13 @@ export class ExecutionService {
     if (instance.status === "running") {
       return blocked(`"${stageId}" cannot start from its current state ("running")`);
     }
-    if (instance.status === "failed" && !sm.canRetry(instance)) {
+    const retryGrant = currentRetryGrant(events.value, episodeSlug(ref), stage, instance, this.options.operatorKey);
+    if (instance.status === "failed" && !sm.canRetry(instance) && !retryGrant) {
       return blocked(
         `"${stageId}" has failed ${attemptsSinceLastSuccess(instance).length} time(s) in a row, ` +
         `reaching its retry limit of ${engineConfig.maxAttempts}; it will not be retried ` +
-        `automatically (only a successful attempt clears the count)`,
+        `automatically. An operator may grant one further attempt with vpr retry; ` +
+        `only a successful attempt clears the failure count`,
       );
     }
     // A completed stage named explicitly is a rerun: reset it before leasing.
@@ -750,6 +753,25 @@ export class ExecutionService {
       return blocked(`"${stageId}" cannot start from its current state ("${instance.status}")`);
     }
 
+    // A grant is single-use even if two callers read it before either acquired
+    // the lock. Re-read under the acquired lease before committing its use.
+    if (retryGrant) {
+      try {
+        const latest = await this.readJournal(episodeDir);
+        if (!latest.ok) { await sm.releaseAll(); return latest; }
+        const fresh = deriveExecutionState(latest.value, stages.map((s) => s.definition.id), this.now());
+        const freshInstance = this.toEngineInstance(fresh.get(stageId)!, stage);
+        const freshGrant = currentRetryGrant(latest.value, episodeSlug(ref), stage, freshInstance, this.options.operatorKey);
+        if (freshGrant?.id !== retryGrant.id || freshInstance.attempts.length + 1 !== instance.attempts.length) {
+          await sm.releaseAll();
+          return blocked(`the retry grant for "${stageId}" is no longer current; nothing was started`);
+        }
+      } catch (e) {
+        await sm.releaseAll();
+        return err({ code: "REPLAY_INVALID", message: `Cannot recheck retry grant: ${e instanceof Error ? e.message : String(e)}` });
+      }
+    }
+
     // A malformed event below throws rather than returning null (see
     // appendJournalEvent's doc comment) — that is a caller bug and must still
     // propagate. But the lease was just taken above and nothing has run yet
@@ -779,6 +801,7 @@ export class ExecutionService {
         type: "stage-leased", actor: "runtime", episode: ref,
         data: {
           stageId, leaseId, attemptNumber, ttlMs, expiresAt, holder,
+          ...(retryGrant ? { retryGrantId: retryGrant.id } : {}),
           // Present only for an operator's own claim: `attended` is a
           // positive assertion that a person is at the controls, so an
           // agent's ordinary lease must not carry it, even as `false`
@@ -827,6 +850,71 @@ export class ExecutionService {
       episodeDir, stage,
       ctx: { ...ctx, attemptNumber },
     });
+  }
+
+  /**
+   * Operator-only recovery from an exhausted retry cap. Append one signed,
+   * attempt-bound permission; never rewrite history or mark a stage complete.
+   */
+  async grantRetry(
+    ref: EpisodeRef, pipeline: string, stageId: string,
+    input: { principal: Principal; afterAttempt: number; note: string; dryRun?: boolean },
+  ): Promise<Result<StageOutcome, ExecutionError>> {
+    const startedAt = Date.now();
+    const blocked = (reason: string): Result<StageOutcome, ExecutionError> =>
+      ok({ stageId, status: "blocked", reason, outputs: [], durationMs: Date.now() - startedAt, dryRun: input.dryRun });
+    if (input.principal !== "operator" || !this.options.operatorKey) {
+      return blocked("only an authenticated operator can grant another attempt; no retry was granted");
+    }
+    if (!input.note?.trim() || !Number.isInteger(input.afterAttempt) || input.afterAttempt < 1) {
+      return blocked("a reason and the positive attempt number just inspected are required");
+    }
+    const resolved = await this.resolve(pipeline);
+    if (!resolved.ok) return resolved;
+    const stage = resolved.value.stages.find((s) => s.definition.id === stageId);
+    if (!stage) return err({ code: "STAGE_UNKNOWN", message: `Pipeline "${pipeline}" declares no stage "${stageId}"` });
+    const episodeDir = this.episodeDir(ref);
+    const lock = this.lock(episodeDir);
+    // Dry runs do not even create a lockfile.
+    const lease = input.dryRun ? undefined : await lock.acquire(`stage:${stageId}`, 30_000);
+    if (lease && !lease.ok) return blocked(`"${stageId}" is held by a run; wait for it to finish`);
+    try {
+      const events = await this.readJournal(episodeDir);
+      if (!events.ok) return events;
+      let derived;
+      try {
+        derived = deriveExecutionState(events.value, resolved.value.stages.map((s) => s.definition.id), this.now());
+      } catch (e) {
+        return err({ code: "REPLAY_INVALID", message: `Journal and pipeline disagree: ${e instanceof Error ? e.message : String(e)}` });
+      }
+      const instance = this.toEngineInstance(derived.get(stageId)!, stage);
+      const last = instance.attempts[instance.attempts.length - 1];
+      if (instance.status !== "failed" || !last) return blocked(`"${stageId}" is not failed`);
+      if (last.number !== input.afterAttempt) return blocked(`"${stageId}" changed: last attempt is ${last.number}, not ${input.afterAttempt}`);
+      const sm = new StageStateMachine(lock, DEFAULT_ENGINE_CONFIG);
+      if (sm.canRetry(instance)) return blocked(`"${stageId}" still has ordinary retries; no grant is needed`);
+      const prior = currentRetryGrant(events.value, episodeSlug(ref), stage, instance, this.options.operatorKey);
+      if (input.dryRun || prior) {
+        return ok({ stageId, status: input.dryRun ? "would-run" : "retry_granted",
+          reason: prior ? "one further attempt is already granted" : "would grant one further attempt",
+          outputs: [], attemptNumber: instance.attempts.length + 1,
+          durationMs: Date.now() - startedAt, dryRun: input.dryRun });
+      }
+      const at = this.now().toISOString();
+      const data = signReceipt({
+        stageId, decision: "retry", origin: "human", episode: episodeSlug(ref),
+        at, note: input.note.trim(), binding: retryBinding(stage, instance),
+      }, this.options.operatorKey);
+      const written = await appendJournalEvent(episodeDir, {
+        type: "stage-retry-granted", actor: "human", episode: ref, at, data,
+      });
+      if (!written) return blocked("the retry grant could not be written; nothing was granted");
+      return ok({ stageId, status: "retry_granted", outputs: [],
+        attemptNumber: instance.attempts.length + 1, durationMs: Date.now() - startedAt,
+        reason: "one further attempt granted; dependencies, attendance, budget and review gates still apply" });
+    } finally {
+      if (lease?.ok) await lock.release(lease.value);
+    }
   }
 
   /**
