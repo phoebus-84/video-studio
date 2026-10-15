@@ -46,9 +46,9 @@ The product. Depends on `packages/`. All studio-specific integration lives here.
 | [episode](./studio/episode) | An episode on disk, produced: timeline built or compiled, checked, rendered |
 | [runtime](./studio/runtime) | Snapshots, leases, staleness, journal, policy |
 | [pipelines](./studio/pipelines) | Built-in pipeline manifests |
-| [agent](./studio/agent) | The Pi executive-producer package |
+| [agent](./studio/agent) | The executive-producer package: a Pi extension, served to Claude Code over MCP |
 | [adapters](./studio/adapters) | Stage adapters: the code that performs a stage, matched by contract |
-| [gateway](./studio/gateway) | Pi RPC ownership and event streaming |
+| [gateway](./studio/gateway) | Agent sessions (Pi RPC or the Claude Agent SDK) and event streaming |
 | [web](./studio/web) | Browser studio |
 
 Each component page links to that component's own README and `docs/`, which are
@@ -56,7 +56,7 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0047-audio-edits-are-recipes) holds 47 accepted
+[`adr/`](./adr/0048-tools-written-once-served-to-any-harness) holds 48 accepted
 decisions. The ones that most shape the code:
 
 | ADR | Decision |
@@ -81,6 +81,7 @@ decisions. The ones that most shape the code:
 | [0045](./adr/0045-a-channel-is-its-own-repository) | A channel is its own repository; its media are named by hash |
 | [0046](./adr/0046-archive-media-carry-licence-and-evidence) | Archive media carry their licence and its evidence |
 | [0047](./adr/0047-audio-edits-are-recipes) | Audio edits are recipes: cut on words, mixed, mastered, reproducible |
+| [0048](./adr/0048-tools-written-once-served-to-any-harness) | The agent's tools are written once, for Pi, and served to other harnesses over MCP |
 
 ADR-0022 (independent repositories per module) is superseded by 0032.
 ADR-0009 (FFmpeg compiles a typed edit timeline) is superseded by 0034.
