@@ -9,7 +9,7 @@
 
 import type { EventBus } from "../events/bus.js";
 import { createEvent } from "../events/bus.js";
-import type { PiProcessManager } from "./process-manager.js";
+import type { AgentSessionManager } from "./agent-sessions.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ export interface UiResponse {
 
 export interface ExtensionBridgeOptions {
   bus: EventBus;
-  processMgr: PiProcessManager;
+  processMgr: AgentSessionManager;
 }
 
 export class ExtensionBridge {

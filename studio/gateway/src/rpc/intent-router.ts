@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import type { PiProcessManager } from "../rpc/process-manager.js";
+import type { AgentSessionManager } from "../rpc/agent-sessions.js";
 import type { EventBus } from "../events/bus.js";
 import { createEvent } from "../events/bus.js";
 
@@ -54,7 +54,7 @@ export interface GuiIntentResult {
  */
 export async function handleIntent(
   ctx: GuiIntentContext,
-  processMgr: PiProcessManager,
+  processMgr: AgentSessionManager,
   bus: EventBus,
 ): Promise<GuiIntentResult> {
   // Get or create a Pi session for this episode
@@ -252,7 +252,7 @@ export async function handleIntent(
  */
 export function registerIntentRoutes(
   app: FastifyInstance,
-  processMgr: PiProcessManager,
+  processMgr: AgentSessionManager,
   bus: EventBus,
 ): void {
   app.post("/api/intent", {
