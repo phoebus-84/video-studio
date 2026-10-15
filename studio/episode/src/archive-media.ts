@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { mediaPath, verifyMediaEvidence } from "./media-integrity.js";
 import { ArchiveError, type Archive, type LicencePolicy, type MediaType, type Quality } from "@av/archive-media";
 import {
   ATTRIBUTIONS_FILE, EVIDENCE_DIR, PROVENANCE_SUFFIX, renderAttributions, validateMediaProvenance, type MediaProvenance,
@@ -28,6 +29,8 @@ export interface FetchIntoWorkspace {
   policy?: LicencePolicy;
   quality?: Quality;
   maxBytes?: number;
+  /** Provider rendition id, as advertised by search. */
+  rendition?: string;
   /** Replace a file of that name already fetched. */
   replace?: boolean;
 }
@@ -46,7 +49,8 @@ function namesakes(dir: string, name: string): string[] {
 export async function fetchIntoWorkspace(workspaceDir: string, options: FetchIntoWorkspace): Promise<{ record: MediaProvenance; path: string; recordPath: string }> {
   if (!NAME.test(options.name)) throw new ArchiveError("bad-response", `"${options.name}" is not an asset id (letters, digits, _ and -; at most 64)`);
   const item = await options.archive.item(options.provider, options.id);
-  const folder = MEDIA_DIRS[item.mediaType];
+  const selectedRendition = options.rendition ? item.renditions?.find((rendition) => rendition.id === options.rendition) : undefined;
+  const folder = MEDIA_DIRS[selectedRendition?.mediaType ?? item.mediaType];
   const dir = join(workspaceDir, folder);
   const taken = namesakes(dir, options.name);
   if (taken.length > 0 && !options.replace) {
@@ -68,6 +72,7 @@ export async function fetchIntoWorkspace(workspaceDir: string, options: FetchInt
     const got = await options.archive.fetch(options.provider, options.id, {
       dir: staging, name: options.name,
       ...(options.policy ? { policy: options.policy } : {}), ...(options.quality ? { quality: options.quality } : {}), ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
+      ...(options.rendition ? { rendition: options.rendition } : {}),
       probe: async (file) => probeMedia(file),
     });
     const fileName = got.file.slice(staging.length + 1);
@@ -142,7 +147,7 @@ export function readProvenance(workspaceDir: string): { records: { path: string;
     for (const name of readdirSync(dir).filter((n) => n.endsWith(PROVENANCE_SUFFIX)).sort()) {
       const path = `${folder}/${name}`;
       try {
-        const doc = JSON.parse(readFileSync(join(dir, name), "utf-8"));
+        const doc = JSON.parse(readFileSync(mediaPath(workspaceDir, path), "utf-8"));
         const shape = validateMediaProvenance(doc);
         if (shape.length > 0) problems.push({ path, message: shape.map((p) => `${p.path} ${p.message}`).join("; ") });
         else records.push({ path, record: doc });
@@ -168,12 +173,18 @@ export function writeAttributions(workspaceDir: string): string {
 export function checkProvenance(workspaceDir: string): { ok: boolean; files: number; problems: { path: string; message: string }[] } {
   const { records, problems } = readProvenance(workspaceDir);
   for (const { path, record } of records) {
-    const file = join(workspaceDir, record.file.path);
-    if (!existsSync(file)) problems.push({ path: record.file.path, message: `named by ${path}, but missing` });
-    else if (sha256(readFileSync(file)) !== record.file.hash) problems.push({ path: record.file.path, message: `not the file fetched (${path} names another hash)` });
-    const evidence = join(workspaceDir, record.evidence.path);
-    if (!existsSync(evidence)) problems.push({ path: record.evidence.path, message: `the evidence ${path} names is missing` });
-    else if (sha256(readFileSync(evidence)) !== record.evidence.hash) problems.push({ path: record.evidence.path, message: "the evidence changed since it was fetched" });
+    try {
+      const file = mediaPath(workspaceDir, record.file.path);
+      if (!existsSync(file)) problems.push({ path: record.file.path, message: `named by ${path}, but missing` });
+      else if (sha256(readFileSync(file)) !== record.file.hash) problems.push({ path: record.file.path, message: `not the file fetched (${path} names another hash)` });
+      const evidence = mediaPath(workspaceDir, record.evidence.path);
+      if (!existsSync(evidence)) problems.push({ path: record.evidence.path, message: `the evidence ${path} names is missing` });
+      else {
+        const text = readFileSync(evidence, "utf-8");
+        if (sha256(text) !== record.evidence.hash) problems.push({ path: record.evidence.path, message: "the evidence changed since it was fetched" });
+        else verifyMediaEvidence(record, text);
+      }
+    } catch (error) { problems.push({ path, message: error instanceof Error ? error.message : String(error) }); }
   }
   const attributions = join(workspaceDir, ATTRIBUTIONS_FILE);
   const expected = renderAttributions(records.map((r) => r.record));

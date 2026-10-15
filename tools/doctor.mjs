@@ -36,7 +36,7 @@ for (const info of Object.values(composed.capabilities)) {
 
 function probe(bin, args = ["--version"]) {
   try {
-    const out = execFileSync(resolveBinary(bin), args, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 10000 });
+    const out = execFileSync(resolveBinary(bin), args, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 10000, shell: process.platform === "win32" });
     return out.split("\n")[0].trim();
   } catch {
     return null;

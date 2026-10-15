@@ -21,7 +21,7 @@ describe("readOperatorKey", () => {
     await writeFile(file, "secret\n", { mode: 0o600 });
     assert.equal(readOperatorKey(file), "secret");
   });
-  it("refuses a key other users can read", async () => {
+  it("refuses a key other users can read", { skip: process.platform === "win32" }, async () => {
     const file = path.join(dir, ".operator-key");
     await writeFile(file, "secret");
     await chmod(file, 0o644);

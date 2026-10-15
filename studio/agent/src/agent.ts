@@ -56,6 +56,13 @@ const CAPABILITIES = {
     "compose-video",
     "add-captions",
     "qa-check",
+    "search-media",
+    "fetch-media",
+    "check-provenance",
+    "search-local-media",
+    "reuse-local-media",
+    "derive-media",
+    "mapillary",
   ],
   pipelines: [
     "blender-animation",

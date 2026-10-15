@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createArchive, licenceFromName, unknownLicence, type ArchiveItem, type Provider } from "@av/archive-media";
+import { createArchive, licenceFromName, PROVIDERS, unknownLicence, type ArchiveItem, type Provider } from "@av/archive-media";
 import { checkProvenance, fetchIntoWorkspace, readProvenance } from "../src/archive-media.js";
 
 /**
@@ -18,6 +18,12 @@ function png(w: number, h: number, salt = 0) {
   const b = Buffer.alloc(64);
   b.writeUInt32BE(0x89504e47, 0); b.writeUInt32BE(0x0d0a1a0a, 4); b.writeUInt32BE(13, 8); b.write("IHDR", 12, "ascii");
   b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); b[40] = salt;
+  return b;
+}
+
+function gif(w: number, h: number) {
+  const b = Buffer.alloc(16);
+  b.write("GIF89a", 0, "ascii"); b.writeUInt16LE(w, 6); b.writeUInt16LE(h, 8);
   return b;
 }
 
@@ -48,6 +54,32 @@ describe("fetchIntoWorkspace", () => {
     expect(readFileSync(join(ws, "ATTRIBUTIONS.md"), "utf-8")).toContain("«The Great Wave» by Hokusai");
     expect(readdirSync(join(ws, "assets/images")).sort()).toEqual(["wave.png", "wave.source.json"]);
     expect(checkProvenance(ws)).toEqual({ ok: true, files: 1, problems: [] });
+  });
+
+  it("uses a rendition's medium to choose its workspace folder", async () => {
+    const animation: ArchiveItem = {
+      ...ITEM, mediaType: "video", fileUrl: "https://files.example/wave.mp4",
+      renditions: [{ id: "gif", fileUrl: "https://files.example/wave.gif", mediaType: "image", width: 2000, height: 2000 }],
+    };
+    const provider: Provider = { id: "museum", label: "A Museum", mediaTypes: ["video"], search: async () => [animation], item: async () => animation };
+    const fake = (async () => new Response(gif(2000, 2000), { headers: { "content-type": "image/gif" } })) as unknown as typeof fetch;
+    const archive = createArchive({ userAgent: "test", registry: [provider], fetch: fake, sleep: async () => undefined });
+    const got = await fetchIntoWorkspace(ws, { archive, provider: "museum", id: "24645", name: "wave", rendition: "gif" });
+    expect(got.path).toBe("assets/images/wave.gif");
+    expect(got.record.file.mime).toBe("image/gif");
+  });
+
+  it("does not advertise an unversioned iNaturalist CC licence as importable; CC0 imports end-to-end", async () => {
+    let code = "cc-by";
+    const fetcher = (async (input: string) => input.startsWith("https://api.inaturalist.org/")
+      ? new Response(JSON.stringify({ results: [{ id: 1, photos: [{ id: 2, license_code: code, url: "https://static.inaturalist.org/photos/2/square.png", attribution: "Ann" }] }] }))
+      : new Response(png(3000, 2000), { headers: { "content-type": "image/png" } })) as typeof fetch;
+    const archive = createArchive({ userAgent: "test", registry: [PROVIDERS.find((p) => p.id === "inaturalist")!], fetch: fetcher, minIntervalMs: 0 });
+    const found = await archive.search("bird"); expect(found.candidates[0]!.allowed).toBe(false);
+    await expect(fetchIntoWorkspace(ws, { archive, provider: "inaturalist", id: "1.2", name: "bird" })).rejects.toMatchObject({ code: "licence-refused" });
+    code = "cc0";
+    const got = await fetchIntoWorkspace(ws, { archive, provider: "inaturalist", id: "1.2", name: "bird" });
+    expect(got.record.licence.id).toBe("CC0-1.0"); expect(checkProvenance(ws).ok).toBe(true);
   });
 
   it("leaves the workspace as it was on a refusal", async () => {
