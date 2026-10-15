@@ -4,7 +4,7 @@
  * validate-pipeline.js — Lint pipeline manifest YAML files against conventions.
  *
  * Usage:
- *   node lint/validate-pipeline.js <file.yaml>...
+ *   node lint/validate-pipeline.js <file-or-directory>...
  *
  * Exit codes:
  *   0 — all files pass
@@ -23,8 +23,8 @@
  *      - Invalid depends_on references
  */
 
-import { readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import yaml from 'js-yaml';
@@ -315,15 +315,38 @@ function lintPipeline(filePath) {
   return [...pass1, ...pass2];
 }
 
+function expandInputs(args) {
+  const files = [];
+  for (const input of args) {
+    const absolute = resolve(input);
+    try {
+      if (statSync(absolute).isDirectory()) {
+        files.push(
+          ...readdirSync(absolute)
+            .filter((name) => name.endsWith('.yaml') || name.endsWith('.yml'))
+            .sort()
+            .map((name) => join(absolute, name)),
+        );
+      } else {
+        files.push(absolute);
+      }
+    } catch {
+      // Keep the original input so validation emits the usual file-read error.
+      files.push(input);
+    }
+  }
+  return files;
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.length === 0) {
-    console.error('Usage: node lint/validate-pipeline.js <file.yaml>...');
+    console.error('Usage: node lint/validate-pipeline.js <file-or-directory>...');
     process.exit(2);
   }
 
   let allDiags = [];
-  for (const filePath of args) {
+  for (const filePath of expandInputs(args)) {
     const diags = lintPipeline(filePath);
     allDiags = allDiags.concat(diags);
   }
