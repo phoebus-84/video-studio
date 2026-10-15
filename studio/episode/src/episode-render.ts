@@ -357,6 +357,8 @@ export interface EpisodeRender {
   result: RenderResult;
   /** What the audit checked; it passed, or the render would have thrown RenderAuditError. */
   audit: AuditResult;
+  /** How many Chrome tabs rendered it, chosen for this machine as it was then. */
+  concurrency: number;
 }
 
 /**
@@ -389,6 +391,8 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   // What the file must be, read before minutes of render: a timeline the audit cannot read is refused here.
   const expectation = auditExpectation(EditTimelineSchema.parse(current.timeline));
 
+  // As many Chrome tabs as this machine's memory and cores allow now: a starved render crashes its browser (avg-dcf.8).
+  const concurrency = defaultRenderConcurrency();
   let result: RenderResult;
   try {
     result = await renderTimeline({
@@ -397,8 +401,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
       sharedRoots: sharedRootsOf(episodeDir),
       kits: libraryKitsOf(episodeDir, options),
       cacheDir: join(episodeDir, ".cache", "remotion"),
-      // As many Chrome tabs as memory allows: a starved render crashes its browser (avg-dcf.8).
-      concurrency: defaultRenderConcurrency(),
+      concurrency,
       outputPath: partialPath,
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     });
@@ -445,5 +448,6 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
     validation: current.validation,
     result,
     audit,
+    concurrency,
   };
 }

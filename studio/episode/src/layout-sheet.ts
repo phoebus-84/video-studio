@@ -54,6 +54,8 @@ export interface LayoutSheet {
   /** Absolute paths. */
   reportPath: string;
   sheetPath: string;
+  /** The sheet on disk already pictured this timeline: kept as it was, with its review. */
+  reused?: boolean;
 }
 
 export type LayoutSheetStatus =
@@ -103,6 +105,13 @@ export async function makeLayoutSheet(episodeDir: string, options: BuildOptions)
     throw new SeriesRulesError(decision.validation!.validator, errors, `: the layout sheet shows only a timeline a render would accept`);
   }
   const inputs = inputsOf(episodeDir, options, decision);
+  // A current sheet is kept, files and review: drawing it again would give the
+  // same pictures under a new date, and send a person back to re-read them.
+  const existing = readReport(episodeDir);
+  if (existing.ok && existing.report.inputsHash === inputs.inputsHash) {
+    const dir = join(episodeDir, LAYOUT_SHEET_DIR);
+    return { report: existing.report, reportPath: join(dir, "sheet.json"), sheetPath: join(dir, existing.report.sheet.path), reused: true };
+  }
   const { picks, warnings } = sheetInstants(decision.timeline as never, { instants: inputs.rules.instants });
 
   const artifacts = join(episodeDir, "artifacts");
