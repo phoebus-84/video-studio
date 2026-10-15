@@ -120,3 +120,39 @@ Canonical text writes use compare-and-swap revisions plus atomic rename. A direc
 ## Git and storage
 
 Textual workspace files are suitable for Git, but large generated media are not automatically committed. Media backup and remote object storage are future policies; manifests retain content hashes and provenance so missing assets are detectable rather than silently ignored.
+
+## What the studio's file browser shows: `.uiignore`
+
+A channel is a repository with code in it, so its tree holds files nobody opens
+in the studio. The file browser leaves them out, and its **Show all files**
+checkbox brings them back, dimmed. The checkbox says how many it left out, and
+the browser remembers the choice.
+
+The rules have `.gitignore`'s syntax and stack, a later layer winning:
+
+1. **The studio's defaults:** `.git/`, `node_modules/`, `.cache/`, `*.tmp`,
+   `*.bak.json`, `*.tsbuildinfo`, `Thumbs.db`, and lock files (`*.lock`,
+   `*.lockb`, `*.lock.json`, `*.lock.jsonl`, `package-lock.json`,
+   `pnpm-lock.yaml`, so `bun.lock`, `kits.lock.json` and `media.lock.jsonl`
+   too). They are `DEFAULT_UIIGNORE` in `studio/gateway/src/workspace/uiignore.ts`.
+2. **`<channel>/.uiignore`:** the channel's own additions, for everything in
+   the channel.
+3. **`<series>/.uiignore`**, and a `.uiignore` in any folder below: for that
+   folder and what is inside it.
+
+A pattern can bring back something an earlier layer left out:
+
+```gitignore
+# library/<channel>/.uiignore
+# Leave out the channel's drafts,
+drafts/
+# but show the media lock.
+!media.lock.jsonl
+```
+
+As in `.gitignore`, a comment takes a line of its own.
+
+A folder that is left out is not opened, so nothing inside it can be brought
+back, as with git. A `.uiignore` is a text file like any other: open it in the
+studio, edit it, save, and the tree follows. Only the listing reads these
+rules; the agent, the runtime and the file routes still reach every file.
