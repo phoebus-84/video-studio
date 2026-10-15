@@ -15,10 +15,8 @@ function natureItem(obs: any, photo: any): ArchiveItem | null {
   const m = /^\/photos\/(\d+)\/(square|thumb|small|medium|large|original)\.(jpg|jpeg|png|gif)$/.exec(u.pathname);
   if (!m || m[1] !== String(photo.id)) return null;
   // iNaturalist's photo license_code has no version: preserve that fact instead of fabricating 4.0.
-  const licence = code === "cc0" ? licensed("https://creativecommons.org/publicdomain/zero/1.0/") : {
-    id: `CC-${code.slice(3).toUpperCase()}`, url: `https://creativecommons.org/licenses/${code.slice(3)}/`,
-    attributionRequired: true, statement: `Photo license_code: ${code}; version not supplied by iNaturalist`,
-  };
+  const licence = code === "cc0" ? licensed("https://creativecommons.org/publicdomain/zero/1.0/")
+    : unknownLicence(`Photo license_code: ${code}; exact CC version not supplied by iNaturalist. Verify a versioned per-photo licence before importing.`);
   return stockItem("inaturalist", `${obs.id}.${photo.id}`, "image", { observation: obs, photo }, {
     title: obs.taxon?.preferred_common_name || obs.taxon?.name || obs.species_guess || "Nature observation",
     creator: photo.attribution || obs.user?.name || obs.user?.login,

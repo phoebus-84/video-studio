@@ -8,11 +8,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { createMapillary, type Mapillary } from "@av/archive-media";
+import { createMapillary, licenceAllowed, MAPILLARY_LICENCE, type Mapillary } from "@av/archive-media";
 import { renderMapillaryHyperlapse, renderMapillaryPan, renderMapillaryPlanet, saveMapillaryStill, sequenceGeoJson } from "@studio/episode";
 import { join } from "node:path";
 import { WORKSPACE_PARAMS, workspaceOf } from "./workspace-target.js";
 import { ARCHIVE_ENV_KEYS, readEnv } from "./config.js";
+import { archiveSettings } from "./archive-tools.js";
 
 const USER_AGENT = "video-studio-archive-media/0.1 (https://github.com/phoebus-84/video-studio)";
 const fail = (error: unknown) => ({
@@ -23,13 +24,10 @@ const fail = (error: unknown) => ({
 
 export function registerMapillaryTools(pi: ExtensionAPI, options: { mapillary?: Mapillary } = {}): void {
   const libraryRoot = () => process.env.AVG_LIBRARY_ROOT || join(process.cwd(), "library");
-  let shared: Mapillary | undefined = options.mapillary;
-  const map = async () => {
-    if (!shared) {
-      const keys = await readEnv();
-      shared = createMapillary({ userAgent: USER_AGENT, env: Object.fromEntries(ARCHIVE_ENV_KEYS.map((key) => [key, keys[key]])) });
-    }
-    return shared;
+  const map = async (signal?: AbortSignal) => {
+    if (options.mapillary) return options.mapillary;
+    const keys = await readEnv();
+    return createMapillary({ userAgent: USER_AGENT, signal, env: Object.fromEntries(ARCHIVE_ENV_KEYS.map((key) => [key, keys[key]])) });
   };
   const need = (value: string | undefined, name: string) => {
     if (!value) throw new Error(`${name} is required for this action`);
@@ -69,9 +67,10 @@ export function registerMapillaryTools(pi: ExtensionAPI, options: { mapillary?: 
       interp: Type.Optional(StringEnum(["mci", "blend", "none"], { description: "hyperlapse frame interpolation" })),
       geojson: Type.Optional(Type.Boolean({ description: "sequence: also write the path as GeoJSON into artifacts/" })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, signal) {
       try {
-        const m = await map();
+        signal?.throwIfAborted();
+        const m = await map(signal);
         const query = params.query;
         switch (params.action) {
           case "coverage": {
@@ -115,9 +114,12 @@ export function registerMapillaryTools(pi: ExtensionAPI, options: { mapillary?: 
           case "planet": {
             const ws = workspaceOf(libraryRoot(), params);
             const name = need(params.name, "name");
-            const common = { ...(params.durationSeconds ? { durationSeconds: params.durationSeconds } : {}), ...(params.fps ? { fps: params.fps } : {}), ...(params.yaw !== undefined ? { yaw: params.yaw } : {}) };
+            const settings = archiveSettings(libraryRoot(), params.channel, params.series);
+            const permission = licenceAllowed(MAPILLARY_LICENCE, settings.policy);
+            if (!permission.ok) throw new Error(`licence-refused: ${permission.reason}`);
+            const common = { ...settings, signal, ...(params.durationSeconds ? { durationSeconds: params.durationSeconds } : {}), ...(params.fps ? { fps: params.fps } : {}), ...(params.yaw !== undefined ? { yaw: params.yaw } : {}) };
             const got = params.action === "still"
-              ? await saveMapillaryStill(m, ws.dir, need(params.id, "id"), name, { ...(params.vertical ? { vertical: true } : {}), ...(params.yaw !== undefined ? { yaw: params.yaw } : {}), ...(params.pitch !== undefined ? { pitch: params.pitch } : {}), ...(params.fov !== undefined ? { fov: params.fov } : {}) })
+              ? await saveMapillaryStill(m, ws.dir, need(params.id, "id"), name, { ...settings, signal, ...(params.vertical ? { vertical: true } : {}), ...(params.yaw !== undefined ? { yaw: params.yaw } : {}), ...(params.pitch !== undefined ? { pitch: params.pitch } : {}), ...(params.fov !== undefined ? { fov: params.fov } : {}) })
               : params.action === "hyperlapse"
                 ? await renderMapillaryHyperlapse(m, ws.dir, need(params.seq, "seq"), name, { ...common, ...(params.start !== undefined ? { start: params.start } : {}), ...(params.end !== undefined ? { end: params.end } : {}), ...(params.reverse ? { reverse: true } : {}), ...(params.pitch !== undefined ? { pitch: params.pitch } : {}), ...(params.fov !== undefined ? { fov: params.fov } : {}), ...(params.interp ? { interp: params.interp as "mci" | "blend" | "none" } : {}) })
                 : params.action === "pan"

@@ -85,8 +85,10 @@ and caches, whose identity includes authentication headers.
 Renditions are explicit: Pixabay large images and Coverr MP4s are not
 represented as original-resolution files. Items that expose several provider
 renditions list them (`renditions`), and `fetch({ rendition })` selects one by
-its stable id; the default remains the quality-first choice. iNaturalist's
-unversioned photo licence code is preserved without inventing a CC version.
+its stable id; the default remains the quality-first choice. iNaturalist CC0
+photos can be imported. Other iNaturalist photo licence codes lack an exact
+CC version: they remain `unknown` and are refused before downloading until
+versioned per-photo evidence is available; a CC version is never invented.
 Jamendo streams without explicit download permission are not offered as
 downloadable assets.
 
@@ -120,10 +122,32 @@ credit; 360° reprojection and frame assembly use ffmpeg's `v360`.
 `findLocalMedia` scans a channel's canonical provenance records so an episode
 can reuse an asset already licensed in the channel; `reuseLocalMedia` copies
 the bytes, the record and the evidence, and returns the existing file when the
-same SHA-256 is already present. `deriveMedia` makes an immutable local
+same SHA-256 and licence/evidence are already verified in the destination.
+Reuse and Mapillary production apply the destination series'
+policy and quality, not the permission a different series once granted.
+`deriveMedia` makes an immutable local
 derivative (trim by start/duration, optional 1080×1920 centre crop) with
 chained provenance: the original file and its record are never altered.
 Poly Haven already has its own tool.
+
+The studio APIs for reuse and derivation are asynchronous. Derivatives embed
+verified parent provenance snapshots, their hashes and original evidence bytes
+in `studio-media-derivation` evidence (version 1). `checkProvenance` validates
+the whole embedded chain, even after reuse into a different episode. Legacy
+local derivation evidence without this chain is refused: regenerate the asset
+from verified sources. ND permission to download does not authorize cropping
+or trimming. Rendering is cancellable, staged on the destination filesystem,
+and published without overwriting existing files; failure/cancellation removes
+partial media so the same name can be retried. Real paths are checked to keep
+source and destination symlinks within their workspace.
+
+Mapillary productions accept the channel/series policy and quality, measure
+their actual outputs and record source-image hashes, provider metadata and
+camera/interpolation settings. Video productions are limited to 120 seconds
+and 1–60 fps. The geospatial HTTP client and FFmpeg work respect cancellation.
+The series loader offers `assets/video/<name>.*` as `video-<name>` and pinned
+clips as `source-<pin>-video-<name>`; a series compiler must explicitly use
+that asset (for example with `clip@1.0.0`). No clip is inserted automatically.
 
 ## Licences
 

@@ -197,10 +197,11 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
       width: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096 })),
       height: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096 })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, signal) {
       try {
         const ws = workspaceOf(libraryRoot(), params);
-        const got = deriveMedia(ws.dir, params.inputPath, params.outputName, { ...(params.startSeconds !== undefined ? { startSeconds: params.startSeconds } : {}), ...(params.durationSeconds !== undefined ? { durationSeconds: params.durationSeconds } : {}), ...(params.vertical ? { vertical: true } : {}), ...(params.width ? { width: params.width } : {}), ...(params.height ? { height: params.height } : {}) });
+        const settings = archiveSettings(libraryRoot(), params.channel, params.series);
+        const got = await deriveMedia(ws.dir, params.inputPath, params.outputName, { ...settings, signal, ...(params.startSeconds !== undefined ? { startSeconds: params.startSeconds } : {}), ...(params.durationSeconds !== undefined ? { durationSeconds: params.durationSeconds } : {}), ...(params.vertical ? { vertical: true } : {}), ...(params.width ? { width: params.width } : {}), ...(params.height ? { height: params.height } : {}) });
         return { content: [{ type: "text" as const, text: `✅ ${got.path}; original preserved, derivative provenance ${got.recordPath}` }], details: got as unknown as Record<string, unknown> };
       } catch (error) { return fail(error); }
     },
@@ -236,7 +237,8 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
     async execute(_id, params) {
       try {
         const ws = workspaceOf(libraryRoot(), params);
-        const got = reuseLocalMedia(channelPath(libraryRoot(), params.channel), params.sourceRecordPath, ws.dir, params.name);
+        const settings = archiveSettings(libraryRoot(), params.channel, params.series);
+        const got = await reuseLocalMedia(channelPath(libraryRoot(), params.channel), params.sourceRecordPath, ws.dir, params.name, settings);
         return { content: [{ type: "text" as const, text: `✅ ${got.deduplicated ? "Already present as" : "Reused as"} ${got.path}; provenance ${got.recordPath}` }], details: got as unknown as Record<string, unknown> };
       } catch (error) { return fail(error); }
     },

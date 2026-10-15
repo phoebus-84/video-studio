@@ -29,6 +29,7 @@ export const NARRATION_TAKES_PATH = "artifacts/narration/takes.json";
 const OFFERED = [
   { dir: "images", prefix: "image", kind: "image", extensions: [".png", ".jpg", ".jpeg", ".webp"] },
   { dir: "sounds", prefix: "sound", kind: "audio", extensions: [".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"] },
+  { dir: "video", prefix: "video", kind: "video", extensions: [".mp4", ".webm", ".mov", ".mkv", ".ogv"] },
 ] as const;
 
 /** Located as `<file relative to the episode>#<JSON path>`, or a bare file. */
@@ -357,9 +358,9 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     timings[take.id] = timing;
   });
 
-  // ── Images and sounds ─────────────────────────────────────────────────────
-  // Every picture in assets/images is offered as image-<name>, every sound in
-  // assets/sounds as sound-<name>; the compiler says which it needs. Two files
+  // ── Images, sounds and video clips ────────────────────────────────────────
+  // Each asset is offered as image-<name>, sound-<name> or video-<name>;
+  // pinned sources use the same prefixes. The compiler chooses what it needs. Two files
   // with one name is a choice nobody made.
   for (const { dir, prefix, kind, extensions } of OFFERED) {
     const folder = join(episodeDir, "assets", dir);

@@ -119,8 +119,9 @@ describe("nature and music rights", () => {
     const h = http({ results: [{ ...obs, photos: [photo, { ...photo, hidden: true }, { ...photo, license_code: null }, { ...photo, url: "https://evil.invalid/photos/2/square.jpg" }] }] });
     const rows = await inaturalist.search("bird", opts, h);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: "1.2", creator: "Photographer", licence: { id: "CC-BY" }, fileUrl: "https://static.inaturalist.org/photos/2/original.jpg" });
-    expect(licenceAllowed(rows[0]!.licence).ok).toBe(true);
+    expect(rows[0]).toMatchObject({ id: "1.2", creator: "Photographer", licence: { id: "unknown" }, fileUrl: "https://static.inaturalist.org/photos/2/original.jpg" });
+    expect(licenceAllowed(rows[0]!.licence).ok).toBe(false); // no invented CC version
+    expect(rows[0]!.licence.statement).toContain("version");
     expect(await inaturalist.item("1.2", http({ results: [obs] }))).toMatchObject({ id: "1.2" });
     await expect(inaturalist.item("1.3", http({ results: [obs] }))).rejects.toThrow();
   });

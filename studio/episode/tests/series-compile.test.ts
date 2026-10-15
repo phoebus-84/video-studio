@@ -194,6 +194,17 @@ describe("loadEpisode", () => {
     expect(Object.keys(loaded.input.assets).sort()).toEqual(["image-cat", "image-morning-room", "image-teacup", "narration-cup", "narration-light"]);
   });
 
+  it("offers video scene assets to series compilers with their hashes", () => {
+    mkdirSync(at("assets/video"), { recursive: true });
+    writeFileSync(at("assets/video/walk.mp4"), "scene clip");
+    writeFileSync(at("assets/video/.partial.mp4"), "unfinished");
+    const loaded = loadEpisode(dir(), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    expect(loaded.input.assets["video-walk"]).toEqual({ path: "assets/video/walk.mp4", hash: sha256("scene clip"), kind: "video" });
+    expect(loaded.input.assets["video-.partial"]).toBeUndefined();
+    expect(loaded.input.inputs["assets/video/walk.mp4"]).toBe(sha256("scene clip"));
+  });
+
   it("offers every sound in assets/sounds as sound-<name>, hashed", () => {
     mkdirSync(at("assets/sounds"), { recursive: true });
     writeFileSync(at("assets/sounds/applause.wav"), "clapping");

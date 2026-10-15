@@ -23,6 +23,15 @@
         "vitest": "^1.2.0",
       },
     },
+    "packages/audio-edit": {
+      "name": "@av/audio-edit",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/node": "^20.11.0",
+        "typescript": "^5.3.3",
+        "vitest": "^1.2.0",
+      },
+    },
     "packages/blender": {
       "name": "@av/blender",
       "version": "0.1.0",
@@ -159,6 +168,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@av/archive-media": "workspace:*",
+        "@av/audio-edit": "workspace:*",
         "@av/blender": "workspace:*",
         "@av/codex-image": "workspace:*",
         "@av/fal-media": "workspace:*",
@@ -202,6 +212,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@av/archive-media": "workspace:*",
+        "@av/audio-edit": "workspace:*",
         "@av/elevenlabs": "workspace:*",
         "@av/remotion-composer": "workspace:*",
         "@studio/contracts": "workspace:*",
@@ -349,6 +360,8 @@
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.91.1", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-LAmu761tSN9r66ixvmciswUj/ZC+1Q4iAfpedTfSVLeswRwnY3n2Nb6Tsk+cLPP28aLOPWeMgIuTuCcMC6W/iw=="],
 
     "@av/archive-media": ["@av/archive-media@workspace:packages/archive-media"],
+
+    "@av/audio-edit": ["@av/audio-edit@workspace:packages/audio-edit"],
 
     "@av/blender": ["@av/blender@workspace:packages/blender"],
 

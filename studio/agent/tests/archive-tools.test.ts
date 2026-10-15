@@ -143,6 +143,17 @@ describe("archive tools", () => {
     expect(again.content[0].text).toContain("Already present");
   });
 
+  it("rechecks the destination series policy when reusing another series media", async () => {
+    const run = tools();
+    await run("pva_fetch_media", { channel: "sample", series: "poetry", episode: "morning", provider: "museum", id: "pd", name: "storm" });
+    const found = await run("pva_search_local_media", { channel: "sample", query: "storm" });
+    const strict = join(root, "sample", "series", "strict"); mkdirSync(join(strict, "episodes", "one"), { recursive: true });
+    writeFileSync(join(strict, "settings.yaml"), "archiveMedia:\n  licences: [CC0]\n");
+    const got = await run("pva_reuse_local_media", { channel: "sample", series: "strict", episode: "one", sourceRecordPath: found.details.hits[0].recordPath, name: "storm" });
+    expect(got.isError).toBe(true); expect(got.content[0].text).toContain("licence-refused");
+    expect(existsSync(join(strict, "episodes", "one", "assets/images/storm.png"))).toBe(false);
+  });
+
   it("reports a derivation it cannot perform as an error, never a silent no-op", async () => {
     const run = tools();
     const bad = await run("pva_derive_media", { channel: "sample", series: "poetry", episode: "morning", inputPath: "assets/video/missing.mp4", outputName: "x" });

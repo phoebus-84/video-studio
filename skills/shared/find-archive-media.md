@@ -1,6 +1,6 @@
 ---
 name: find-archive-media
-version: "0.3.0"
+version: "0.3.1"
 description: Find free archive, stock, icon, emoji, animation and Mapillary street-level media with a licence anyone can verify, fetch the original with its credit and evidence, reuse what the channel already licensed, derive trims and 9:16 versions, and keep ATTRIBUTIONS.md right
 inputs:
   - name: need
@@ -100,9 +100,17 @@ lightning, a recorded thunderstorm.
    - **Before calling a provider**, check `pva_search_local_media`: an asset
      already licensed in the channel can be reused with
      `pva_reuse_local_media`, which leaves the provider alone and copies the
-     bytes, record and evidence (the same SHA-256 is not copied twice).
+     bytes, record and the complete verified evidence chain. The destination's
+     policy and quality are checked again; another series' permission is not
+     inherited. Deduplication verifies bytes, licence and evidence.
    - **Trim and vertical conversion** are `pva_derive_media`: it writes a new
-     recorded asset and never alters the original.
+     recorded asset and never alters the original. Start at `0` is valid.
+     Cropping/trimming ND media is refused even if downloading it was allowed.
+   - iNaturalist: CC0 photos are importable; an unversioned CC code is
+     `unknown`, not permission to guess a version or bypass the policy.
+   - Video assets reach the series compiler as `video-<name>` (pinned sources:
+     `source-<pin>-video-<name>`). The series must place the clip explicitly;
+     fetching a video alone never changes the edit.
 4. **Credit.**
    - `ATTRIBUTIONS.md` is the list of credits for the video description and
      the delivery. Never write it by hand.
@@ -129,6 +137,10 @@ the share-alike obligation:
 
 - Use `coverage` first, then `hyperlapse` with the winning `seq`.
 - `pan` and `planet` need a 360° (`is_pano`) image.
+- Production requires the destination's policy to allow CC BY-SA and its
+  quality floor to be met. Never loosen it yourself to make a job succeed.
+- Video output is bounded to 120 seconds at 1–60 fps. Cancelled/failed jobs
+  leave no partial final asset; retry the same name after correcting the cause.
 - Say the share-alike term to the person when the derived video is published.
 
 ## Separate asset workflows

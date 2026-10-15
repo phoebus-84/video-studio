@@ -112,6 +112,7 @@ export function createMapillary(options: MapillaryOptions) {
     return (d.data ?? []) as MapillaryImage[];
   }
   async function sequence(seq: string): Promise<MapillaryImage[]> {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(seq)) throw new ArchiveError("not-found", "Invalid Mapillary sequence id");
     const d = await api("images", { sequence_ids: seq, fields: IMG_FIELDS, limit: 2000 });
     const imgs = (d.data ?? []) as MapillaryImage[];
     if (imgs.length === 0) throw new ArchiveError("not-found", `sequence not found: ${seq}`);

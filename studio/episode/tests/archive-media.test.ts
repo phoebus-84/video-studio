@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createArchive, licenceFromName, unknownLicence, type ArchiveItem, type Provider } from "@av/archive-media";
+import { createArchive, licenceFromName, PROVIDERS, unknownLicence, type ArchiveItem, type Provider } from "@av/archive-media";
 import { checkProvenance, fetchIntoWorkspace, readProvenance } from "../src/archive-media.js";
 
 /**
@@ -67,6 +67,19 @@ describe("fetchIntoWorkspace", () => {
     const got = await fetchIntoWorkspace(ws, { archive, provider: "museum", id: "24645", name: "wave", rendition: "gif" });
     expect(got.path).toBe("assets/images/wave.gif");
     expect(got.record.file.mime).toBe("image/gif");
+  });
+
+  it("does not advertise an unversioned iNaturalist CC licence as importable; CC0 imports end-to-end", async () => {
+    let code = "cc-by";
+    const fetcher = (async (input: string) => input.startsWith("https://api.inaturalist.org/")
+      ? new Response(JSON.stringify({ results: [{ id: 1, photos: [{ id: 2, license_code: code, url: "https://static.inaturalist.org/photos/2/square.png", attribution: "Ann" }] }] }))
+      : new Response(png(3000, 2000), { headers: { "content-type": "image/png" } })) as typeof fetch;
+    const archive = createArchive({ userAgent: "test", registry: [PROVIDERS.find((p) => p.id === "inaturalist")!], fetch: fetcher, minIntervalMs: 0 });
+    const found = await archive.search("bird"); expect(found.candidates[0]!.allowed).toBe(false);
+    await expect(fetchIntoWorkspace(ws, { archive, provider: "inaturalist", id: "1.2", name: "bird" })).rejects.toMatchObject({ code: "licence-refused" });
+    code = "cc0";
+    const got = await fetchIntoWorkspace(ws, { archive, provider: "inaturalist", id: "1.2", name: "bird" });
+    expect(got.record.licence.id).toBe("CC0-1.0"); expect(checkProvenance(ws).ok).toBe(true);
   });
 
   it("leaves the workspace as it was on a refusal", async () => {

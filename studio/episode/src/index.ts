@@ -22,6 +22,7 @@ export * from "./kit-code.js";
 export * from "./archive-media.js";
 export * from "./local-media.js";
 export * from "./media-derivatives.js";
+export type { MediaRules } from "./media-integrity.js";
 export * from "./mapillary-produce.js";
 export * from "./take-verify.js";
 export * from "./audio-edit.js";

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMapillary, type MapillaryImage } from "@av/archive-media";
@@ -48,6 +48,13 @@ describe("mapillary tool", () => {
     expect(got.content[0].text).toContain("mapillary:seq:s2");
     expect(got.content[0].text).toContain("geojson artifacts/");
   });
+  it("refuses production when the series policy excludes share-alike media", async () => {
+    mkdirSync(join(root, "sample", "series", "strict", "episodes", "one"), { recursive: true });
+    writeFileSync(join(root, "sample", "series", "strict", "settings.yaml"), `archiveMedia:\n  licences: [CC0]\n`);
+    const got = await tools()({ action: "still", channel: "sample", series: "strict", episode: "one", id: "100", name: "street" });
+    expect(got.isError).toBe(true); expect(got.content[0].text).toContain("licence-refused");
+  });
+
   it("requires the fields an action needs, and reports a missing token rather than a crash", async () => {
     const run = tools();
     expect((await run({ action: "detections" })).isError).toBe(true);

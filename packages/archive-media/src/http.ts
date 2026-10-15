@@ -8,6 +8,7 @@ import { createWriteStream, mkdirSync, readFileSync, renameSync, rmSync, writeFi
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import { ArchiveError } from "./errors.js";
 import type { Http } from "./types.js";
@@ -26,6 +27,8 @@ export interface HttpOptions {
   /** Least time between two requests to one host. Default 250 ms. */
   minIntervalMs?: number;
   timeoutMs?: number;
+  /** Cancel requests and streamed downloads for this operation. */
+  signal?: AbortSignal;
 }
 
 const RETRY = new Set([429, 502, 503, 504]);
@@ -51,7 +54,7 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
     method: init?.method, headers: init?.headers as Record<string, string> | undefined,
     body: init?.body as never, signal: init?.signal, redirect: init?.redirect, dispatcher: archiveDispatcher,
   }) as unknown as Promise<Response>);
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = options.sleep ?? ((ms: number) => delay(ms, undefined, { signal: options.signal }));
   const now = options.now ?? Date.now;
   const minInterval = options.minIntervalMs ?? 250;
   const timeoutMs = options.timeoutMs ?? 30_000;
@@ -77,7 +80,9 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
    */
   async function request(url: string, headers: Record<string, string> = {}, allowedHosts?: string[], method: "GET" | "POST" = "GET", body?: string): Promise<{ response: Response; abort: () => void }> {
     for (let attempt = 0; ; attempt++) {
+      options.signal?.throwIfAborted();
       await turn(url);
+      options.signal?.throwIfAborted();
       let response: Response;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(new Error(`no answer from ${new URL(url).host} within ${timeoutMs} ms`)), timeoutMs);
@@ -85,7 +90,7 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
         let target = url;
         for (let redirects = 0; ; redirects++) {
           if (allowedHosts && !safeUrl(target, allowedHosts)) throw new ArchiveError("http", "Download URL outside provider CDN allowlist");
-          response = await doFetch(target, { method, body, headers: { "User-Agent": options.userAgent, ...headers }, signal: controller.signal, redirect: allowedHosts ? "manual" : "follow" });
+          response = await doFetch(target, { method, body, headers: { "User-Agent": options.userAgent, ...headers }, signal: options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal, redirect: allowedHosts ? "manual" : "follow" });
           if (!allowedHosts || ![301, 302, 303, 307, 308].includes(response.status)) break;
           const location = response.headers.get("location");
           await response.body?.cancel().catch(() => undefined);
@@ -94,6 +99,7 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
         }
       } catch (error) {
         clearTimeout(timer);
+        options.signal?.throwIfAborted();
         if (error instanceof ArchiveError) throw error;
         if (attempt < MAX_RETRIES) {
           await sleep(1000 * 2 ** attempt);
@@ -122,6 +128,7 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
   return {
     userAgent: options.userAgent,
     async json(url, { headers, cache = true, method = "GET", body } = {}) {
+      options.signal?.throwIfAborted();
       const file = cache ? cacheFile(url, headers, body) : undefined;
       if (file) {
         try {
@@ -151,8 +158,10 @@ export function createHttp(options: HttpOptions): ArchiveHttp {
       return parsed;
     },
     async notify(url, { method, headers }) {
+      options.signal?.throwIfAborted();
       await turn(url);
-      const response = await doFetch(url, { method, headers: { "User-Agent": options.userAgent, ...headers }, redirect: "error", signal: AbortSignal.timeout(timeoutMs) })
+      options.signal?.throwIfAborted();
+      const response = await doFetch(url, { method, headers: { "User-Agent": options.userAgent, ...headers }, redirect: "error", signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) })
         .catch(() => { throw new ArchiveError("http", `Download accounting failed: ${new URL(url).host}`); });
       await response.body?.cancel().catch(() => undefined);
       if (!response.ok) throw new ArchiveError("http", `Download accounting failed: ${new URL(url).host} answered ${response.status}`);
