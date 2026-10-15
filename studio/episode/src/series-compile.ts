@@ -315,9 +315,11 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   }
 
   // ── Narration takes and their timing ──────────────────────────────────────
-  // An episode whose pinned source brings the takes (avg-dcf.8) may have none of its own.
+  // An episode whose pinned source brings the takes (avg-dcf.8) may have none of its own,
+  // and a wordless series (narration: "none") has none at all.
   let narration: any;
-  if (!existsSync(join(episodeDir, NARRATION_TAKES_PATH)) && pinsBringingTakes(episodeDir).length > 0) {
+  if ((template as { narration?: string }).narration === "none"
+    || (!existsSync(join(episodeDir, NARRATION_TAKES_PATH)) && pinsBringingTakes(episodeDir).length > 0)) {
     narration = { apiVersion: "studio.video/v1alpha1", kind: "NarrationTakes", takes: [], units: [] };
   } else {
     const takesBytes = read(join(episodeDir, NARRATION_TAKES_PATH), episodeDir,

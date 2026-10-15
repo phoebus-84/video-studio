@@ -77,6 +77,8 @@ export interface SeriesTemplate {
     standard: SeriesFileRef;
   };
   sheet?: SheetRules;
+  /** Whether this series' episodes are narrated: takes (the default) needs artifacts/narration/takes.json; none compiles a wordless episode with no takes. */
+  narration?: "takes" | "none";
   metadata?: Record<string, unknown>;
 }
 

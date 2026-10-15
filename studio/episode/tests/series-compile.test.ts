@@ -111,6 +111,15 @@ describe("compileEpisode", () => {
     expect(compileEpisode(dir(), { episodeRef: REF }).ok).toBe(true);
   });
 
+  it("a wordless release (narration: none) needs no takes.json: the compiler gets no takes", () => {
+    const manifest = join(dirname(dirname(dir())), "templates/poetry-short/1.0.0/series-template.json");
+    writeFileSync(manifest, JSON.stringify({ ...JSON.parse(readFileSync(manifest, "utf-8")), narration: "none" }, null, 2));
+    editSpec(dir(), (spec) => { spec.template.hash = sha256(readFileSync(manifest)); });
+    unlinkSync(at("artifacts/narration/takes.json"));
+    // poetry-short is narrated: its compiler, not the loader, reports the missing unit.
+    expect(problemsOf()).toEqual([["missing-unit", "artifacts/narration/takes.json#$.units"]]);
+  });
+
   it("missing-narration: no takes.json yet", () => {
     unlinkSync(at("artifacts/narration/takes.json"));
     expect(problemsOf()).toEqual([["missing-narration", "artifacts/narration/takes.json"]]);

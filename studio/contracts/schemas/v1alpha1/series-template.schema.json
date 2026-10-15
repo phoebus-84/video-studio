@@ -125,6 +125,7 @@
           }
         },
         "sheet": { "$ref": "#/$defs/SheetRules" },
+        "narration": { "enum": ["takes", "none"], "description": "Whether this series' episodes are narrated: takes (the default) needs artifacts/narration/takes.json; none compiles a wordless episode with no takes." },
         "metadata": { "type": "object", "additionalProperties": true }
       }
     },
