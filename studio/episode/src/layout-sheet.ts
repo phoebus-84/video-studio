@@ -12,7 +12,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { drawingCodeHash, renderLayoutSheet, timelineKits, type LockedKit } from "@av/remotion-composer";
 import { canonicalJson } from "@studio/contracts/src/receipt.mjs";
 import { decideEditTimeline, SeriesRulesError, type TimelineDecision } from "./episode-render.js";
@@ -123,8 +123,8 @@ export async function makeLayoutSheet(episodeDir: string, options: BuildOptions)
       kits: inputs.kits,
       renderer: inputs.renderer,
       inputsHash: inputs.inputsHash,
-      frames: result.frames.map((f) => ({ ...f, path: relative(temp, f.path) })),
-      sheet: { ...result.sheet, path: relative(temp, result.sheet.path) },
+      frames: result.frames.map((f) => ({ ...f, path: relative(temp, f.path).split(sep).join("/") })),
+      sheet: { ...result.sheet, path: relative(temp, result.sheet.path).split(sep).join("/") },
       warnings,
     };
     writeFileSync(join(temp, "sheet.json"), `${JSON.stringify(report, null, 2)}\n`, "utf-8");
