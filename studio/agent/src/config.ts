@@ -46,7 +46,19 @@ export interface EnvOverrides {
   AVG_TTS_WORKER_URL?: string;
   /** Freesound's API key for archive media (avg-fe8.7). */
   FREESOUND_API_KEY?: string;
+  FREESOUND_API_TOKEN?: string;
+  PEXELS_API_KEY?: string;
+  PIXABAY_API_KEY?: string;
+  UNSPLASH_ACCESS_KEY?: string;
+  COVERR_KEY?: string;
+  SMITHSONIAN_KEY?: string;
+  JAMENDO_CLIENT_ID?: string;
+  MAPILLARY_TOKEN?: string;
 }
+
+/** Stock keys only; never pass gateway/provider-generation credentials to the archive client. */
+export const ARCHIVE_ENV_KEYS = ["FREESOUND_API_KEY", "FREESOUND_API_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY",
+  "UNSPLASH_ACCESS_KEY", "COVERR_KEY", "SMITHSONIAN_KEY", "JAMENDO_CLIENT_ID", "MAPILLARY_TOKEN"] as const;
 
 // ── Client types ────────────────────────────────────────────────────────────
 
@@ -92,7 +104,7 @@ export async function readEnv(): Promise<EnvOverrides> {
       "AVG_GATEWAY_TOKEN",
       "FAL_KEY",
       "AVG_TTS_WORKER_URL",
-      "FREESOUND_API_KEY",
+      ...ARCHIVE_ENV_KEYS,
     ]);
     for (const line of raw.split(/\r?\n/)) {
       const match = line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
@@ -113,7 +125,8 @@ export async function readEnv(): Promise<EnvOverrides> {
     AVG_GATEWAY_TOKEN: process.env.AVG_GATEWAY_TOKEN ?? fromFile.AVG_GATEWAY_TOKEN,
     FAL_KEY: process.env.FAL_KEY ?? fromFile.FAL_KEY,
     AVG_TTS_WORKER_URL: process.env.AVG_TTS_WORKER_URL ?? fromFile.AVG_TTS_WORKER_URL,
-    FREESOUND_API_KEY: process.env.FREESOUND_API_KEY ?? fromFile.FREESOUND_API_KEY,
+    ...Object.fromEntries(ARCHIVE_ENV_KEYS.map((key) => [key, process.env[key] ?? fromFile[key]])),
+    FREESOUND_API_KEY: process.env.FREESOUND_API_KEY ?? fromFile.FREESOUND_API_KEY ?? process.env.FREESOUND_API_TOKEN ?? fromFile.FREESOUND_API_TOKEN,
   };
 }
 

@@ -21,6 +21,19 @@ export interface Licence {
   statement: string;
 }
 
+export interface ArchiveRendition {
+  /** Stable provider rendition key accepted by fetch({ rendition }). */
+  id: string;
+  fileUrl: string;
+  /** When the rendition is a different medium than the item's default (a Lottie PNG still). */
+  mediaType?: MediaType;
+  mime?: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  label?: string;
+}
+
 export interface ArchiveItem {
   provider: string;
   /** The provider's own id: what `item(provider, id)` takes. */
@@ -38,6 +51,8 @@ export interface ArchiveItem {
   previewUrl?: string;
   /** When the file is not the uploaded original, which rendition it is (Freesound's "preview-hq-ogg" without OAuth). */
   rendition?: string;
+  /** Alternative provider renditions. The default fileUrl remains the quality-first choice. */
+  renditions?: ArchiveRendition[];
   mime?: string;
   width?: number;
   height?: number;
@@ -60,8 +75,10 @@ export interface SearchOptions {
 
 /** The HTTP a provider is given: polite, retried, cached. */
 export interface Http {
-  json(url: string, options?: { headers?: Record<string, string>; cache?: boolean }): Promise<unknown>;
+  json(url: string, options?: { headers?: Record<string, string>; cache?: boolean; method?: "GET" | "POST"; body?: unknown }): Promise<unknown>;
   userAgent: string;
+  /** Provider-required download accounting, never cached or automatically retried. */
+  notify?(url: string, options: { method: "PATCH"; headers?: Record<string, string> }): Promise<void>;
 }
 
 export interface Provider {
@@ -70,6 +87,10 @@ export interface Provider {
   mediaTypes: MediaType[];
   /** The environment variable holding its key; absent for providers with none. */
   keyEnv?: string;
+  /** Optional strict CDN allowlist, checked at every download redirect. */
+  downloadHosts?: string[];
+  /** Called only after policy/quality checks, immediately before download. */
+  beforeDownload?(item: ArchiveItem, http: Http, key?: string): Promise<void>;
   search(query: string, options: Required<SearchOptions>, http: Http, key?: string): Promise<ArchiveItem[]>;
   /** The authoritative record, read again at fetch time. */
   item(id: string, http: Http, key?: string): Promise<ArchiveItem>;

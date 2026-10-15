@@ -87,9 +87,77 @@ describe("archive tools", () => {
     }
   });
 
+  it("passes search filters to the archive and reports missing keyed providers", async () => {
+    const run = tools();
+    const filtered = await run("pva_search_media", { channel: "sample", query: "storm", orientation: "portrait", minWidth: 1080, diverse: true });
+    expect(filtered.details.candidates).toEqual([]);
+    const bad = await run("pva_search_media", { channel: "sample", query: "storm", providers: ["missing"] });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0].text).toContain("provider-unknown");
+  });
+
+  it("fetches native stock into the canonical episode only after explicit platform policy opt-in", async () => {
+    const photo = { id: 1, width: 3000, height: 2000, photographer: "Alice", src: { original: "https://images.pexels.com/1.png" } };
+    const fake = (async (url: string) => url.startsWith("https://api.pexels.com/")
+      ? new Response(JSON.stringify(photo), { headers: { "content-type": "application/json" } })
+      : new Response(png(3000, 2000), { headers: { "content-type": "image/png" } })) as typeof fetch;
+    const archive = createArchive({ userAgent: "test", env: { PEXELS_API_KEY: "offline-test-key" }, fetch: fake, minIntervalMs: 0 });
+    const registered = new Map<string, any>();
+    registerArchiveTools({ registerTool: (t: { name: string }) => registered.set(t.name, t) } as never, { archive });
+    const params = { channel: "sample", series: "poetry", episode: "morning", provider: "pexels", id: "image/1", name: "stock" };
+    const tool = registered.get("pva_fetch_media");
+    expect((await tool.execute("blocked", params)).isError).toBe(true);
+    writeFileSync(join(root, "sample", "settings.yaml"), "archiveMedia:\n  licences: [public-domain, CC0, CC-BY, CC-BY-SA, 'provider:pexels']\n");
+    const result = await tool.execute("allowed", params);
+    expect(result.isError).toBeUndefined();
+    expect(existsSync(join(EP(), "assets/images/stock.png"))).toBe(true);
+    const record = readFileSync(join(EP(), "assets/images/stock.source.json"), "utf-8");
+    expect(record).toContain("provider:pexels");
+    expect(record).not.toContain("offline-test-key");
+    expect(readFileSync(join(EP(), "ATTRIBUTIONS.md"), "utf-8")).toContain("Alice");
+    const checked = await registered.get("pva_check_provenance").execute("verify", { channel: "sample", series: "poetry", episode: "morning" });
+    expect(checked.isError).toBeUndefined();
+    expect(checked.content[0].text).toContain("✅ 1 archive files");
+  });
+
   it("refuses names that are not slugs", async () => {
     const run = tools();
     const bad = await run("pva_fetch_media", { channel: "../x", series: "poetry", episode: "morning", provider: "museum", id: "pd", name: "s" });
     expect(bad.isError).toBe(true);
+  });
+
+  it("finds an asset already licensed in the channel and reuses it without another provider call", async () => {
+    const run = tools();
+    await run("pva_fetch_media", { channel: "sample", series: "poetry", episode: "morning", provider: "museum", id: "pd", name: "storm" });
+    const found = await run("pva_search_local_media", { channel: "sample", query: "museum storm" });
+    expect(found.content[0].text).toContain("storm.source.json");
+    const rec = found.details.hits[0].recordPath as string;
+
+    const second = join(root, "sample", "series", "poetry", "episodes", "evening");
+    mkdirSync(second, { recursive: true });
+    const reused = await run("pva_reuse_local_media", { channel: "sample", series: "poetry", episode: "evening", sourceRecordPath: rec, name: "storm" });
+    expect(reused.isError).toBeUndefined();
+    expect(existsSync(join(second, "assets/images/storm.png"))).toBe(true);
+    expect(readFileSync(join(second, "assets/images/storm.source.json"), "utf-8")).toContain("assets/images/storm.png");
+    const again = await run("pva_reuse_local_media", { channel: "sample", series: "poetry", episode: "evening", sourceRecordPath: rec, name: "storm" });
+    expect(again.content[0].text).toContain("Already present");
+  });
+
+  it("rechecks the destination series policy when reusing another series media", async () => {
+    const run = tools();
+    await run("pva_fetch_media", { channel: "sample", series: "poetry", episode: "morning", provider: "museum", id: "pd", name: "storm" });
+    const found = await run("pva_search_local_media", { channel: "sample", query: "storm" });
+    const strict = join(root, "sample", "series", "strict"); mkdirSync(join(strict, "episodes", "one"), { recursive: true });
+    writeFileSync(join(strict, "settings.yaml"), "archiveMedia:\n  licences: [CC0]\n");
+    const got = await run("pva_reuse_local_media", { channel: "sample", series: "strict", episode: "one", sourceRecordPath: found.details.hits[0].recordPath, name: "storm" });
+    expect(got.isError).toBe(true); expect(got.content[0].text).toContain("licence-refused");
+    expect(existsSync(join(strict, "episodes", "one", "assets/images/storm.png"))).toBe(false);
+  });
+
+  it("reports a derivation it cannot perform as an error, never a silent no-op", async () => {
+    const run = tools();
+    const bad = await run("pva_derive_media", { channel: "sample", series: "poetry", episode: "morning", inputPath: "assets/video/missing.mp4", outputName: "x" });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0].text).toContain("does not exist");
   });
 });

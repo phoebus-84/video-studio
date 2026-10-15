@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFileSync, statSync } from "node:fs";
+import { checkWindowsKeyAcl } from "./windows-key-acl.mjs";
 
 export const OPERATOR_KEY_ENV = "AVG_OPERATOR_KEY_FILE";
 
@@ -28,7 +29,8 @@ export function readOperatorKey(file) {
     if (e?.code === "ENOENT") return null;
     throw e;
   }
-  if ((info.mode & 0o077) !== 0) {
+  if (process.platform === "win32") checkWindowsKeyAcl(file);
+  else if ((info.mode & 0o077) !== 0) {
     throw new Error(
       `Operator key "${file}" is readable by other users (mode ${(info.mode & 0o777).toString(8)}); ` +
       `it must be 0600. Run: chmod 600 "${file}"`,
