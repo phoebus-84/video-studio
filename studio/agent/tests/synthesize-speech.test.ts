@@ -92,6 +92,14 @@ describe("pva_synthesize_speech", () => {
     expect(result.content[0].text).toContain("serena (italian)");
   });
 
+  it("passes temperature and repetition penalty to a preset voice too, and keeps them in the receipt", async () => {
+    const result = await synthesize({ sceneId: "n2", text: "Hello.", voice: "serena", temperature: 0.8, repetitionPenalty: 1.2 });
+    expect(result.isError).toBeFalsy();
+    expect(requests[0]).toMatchObject({ temperature: 0.8, repetition_penalty: 1.2 });
+    const receipt = JSON.parse(readFileSync(join(narration(), "n2.synthesis.json"), "utf-8"));
+    expect(receipt.sampling).toEqual({ temperature: 0.8, repetitionPenalty: 1.2 });
+  });
+
   it("records the speaker an alias resolved to, and 'auto' when no language was named", async () => {
     await synthesize({ sceneId: "n1", text: "Hello." });
     expect(requests[0]).not.toHaveProperty("language");

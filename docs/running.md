@@ -260,8 +260,13 @@ The voice worker can speak with an enrolled clone voice, through the Qwen3-TTS
   the source (`self_recorded`, `licensed` or `synthetic`) and its terms.
 - **Using it:** Pi lists the voices with `pva_voices` and speaks with one by
   passing `voice: "clone:<id>"` to `pva_synthesize_speech`.
+- **Sampling:** `temperature` and `repetitionPenalty` can be set on any
+  voice. Without them the worker's defaults apply: temperature 0.7, and a
+  repetition penalty of 1.5 for a clone or 1.05 for a preset. Values out of
+  range are refused before synthesis. On Novembre the recital read better at
+  1.1, synthesized one stanza at a time with each verse on its own line.
 - **The receipt** names the voice's revision, the reference's hashes, the
-  model and the seed.
+  model, the seed, and the sampling when it was set.
 - **A channel's characters** name their voice in `voices/registry.local.json`.
 
 ### Editing audio
