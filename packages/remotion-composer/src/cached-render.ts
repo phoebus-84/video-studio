@@ -11,6 +11,7 @@ import {shapesSegments} from './identity.js';
 import {cachedVideo, cacheKey, planAudio, planVideo, VideoCache, type CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
 import type {VisualItem} from './schema.js';
+import {mixSounds, type PlacedSound} from './sound-mix.js';
 
 const exec = promisify(execFile);
 const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
@@ -56,6 +57,13 @@ async function rendererKey(serveUrl: string): Promise<string> {
   });
 }
 
+/** The Node code a soundtrack mixed without a browser depends on: where each sound goes, and how loud. */
+async function mixerKey(): Promise<unknown[]> {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const files = (await readdir(dir)).filter((f) => /^(sound-mix|volume)\.(js|ts)$/.test(f)).sort();
+  return Promise.all(files.map(async (f) => [f, await sha256(path.join(dir, f))]));
+}
+
 /** Keyframes only where gopSize puts them: the encoding step gets -sc_threshold 0 after its -g. */
 function keyframesEverySecond({args}: {args: string[]}): string[] {
   const at = args.indexOf('-g');
@@ -72,6 +80,11 @@ export async function renderWithCache(options: {
   hasAudio: boolean;
   /** Visual items of kits that play sound: mounted in the sound pass, beside the audio tracks. */
   soundItems?: readonly VisualItem[];
+  /**
+   * Everything the sound pass would mount, when every kit that plays sound
+   * lists it: the soundtrack is then mixed by FFmpeg, without a browser.
+   */
+  sounds?: readonly PlacedSound[] | null;
   concurrency?: number;
   onProgress?: (progress: number) => void;
 }): Promise<CacheReport> {
@@ -103,11 +116,18 @@ export async function renderWithCache(options: {
     // The mix is cached on its own key: a change to the pictures alone, or a
     // render of the same audio again, skips the pass.
     const cache = new VideoCache(path.join(options.cacheDir, 'audio'), audioWarnings, '.wav');
-    const key = planAudio(timeline, renderer, sampleRate, sounding);
+    // Mixed without a browser, the soundtrack also depends on the Node code that places the sounds.
+    const mixer = options.sounds ? await mixerKey() : null;
+    const key = planAudio(timeline, mixer ? cacheKey({renderer, mixer}) : renderer, sampleRate, sounding);
     if (await cache.get(key, audio)) {
       audioDone = 1;
       report();
       return true;
+    }
+    if (options.sounds) {
+      await mixSounds({sounds: options.sounds, timeline, output: audio, sampleRate, onProgress: (p) => { audioDone = p; report(); }});
+      await cache.put(key, audio);
+      return false;
     }
     // Keep ALL audio tracks: ducking looks up other tracks in the timeline.
     // Only kits that play sound are mounted (told it is the sound pass), and

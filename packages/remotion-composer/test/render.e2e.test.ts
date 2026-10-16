@@ -110,6 +110,43 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
     await rm(root, {recursive: true, force: true});
   });
 
+  it('mixes the sound without a browser exactly as the browser pass does', async () => {
+    const {stageAssets} = await import('../dist/assets.js');
+    const {libraryEntry} = await import('../dist/library-kits.js');
+    const {mixSounds, placeSounds} = await import('../dist/sound-mix.js');
+    const {bundle} = await import('@remotion/bundler');
+    const {renderMedia, selectComposition} = await import('@remotion/renderer');
+    const root = await mkdtemp(path.join(tmpdir(), 'composer-e2e-mix-'));
+    await mkdir(path.join(root, 'assets'), {recursive: true});
+    ffmpeg(['-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-ar', '44100', '-ac', '1', path.join(root, 'assets/voice.wav')]);
+    ffmpeg(['-f', 'lavfi', '-i', 'anoisesrc=d=5:c=pink:a=0.3', '-ar', '48000', '-ac', '2', path.join(root, 'assets/music.wav')]);
+    const asset = async (p: string) => ({path: p, hash: await sha256(path.join(root, p)), kind: 'audio'});
+    const timeline = {
+      apiVersion: 'studio.video/v1alpha2', kind: 'EditTimeline',
+      episodeRef: {channel: 'c', series: 's', episode: 'e'}, revision: 1,
+      fps: 30, durationInFrames: 150, resolution: {width: 640, height: 360},
+      assets: {voice: await asset('assets/voice.wav'), music: await asset('assets/music.wav')},
+      tracks: [
+        {id: 'voice', type: 'audio', items: [{id: 'v1', from: 20, duration: 40, asset: 'voice', trimStart: 15}, {id: 'v2', from: 80, duration: 50, asset: 'voice', gain: 0.7, fadeIn: 5}]},
+        {id: 'music', type: 'audio', duck: {under: ['voice'], gain: 0.3, attack: 6, release: 9}, items: [{id: 'm', from: 0, duration: 150, asset: 'music', gain: 0.6, fadeIn: 10, fadeOut: 20}]},
+      ],
+    };
+    const staging = await stageAssets(timeline as never, root);
+    assert.ok(staging.ok);
+    const {staged} = staging;
+    const inputProps = {timeline, files: staged.files, assetFrames: {}, pass: 'sound'};
+    const serveUrl = await bundle({entryPoint: await libraryEntry({versions: [], sources: []}), publicDir: staged.publicDir, outDir: path.join(root, 'bundle')});
+    const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps});
+    const browser = path.join(root, 'browser.wav'), mixed = path.join(root, 'mixed.wav');
+    await renderMedia({composition, serveUrl, inputProps, codec: 'wav', enforceAudioTrack: true, outputLocation: browser, sampleRate: 48000});
+    const sounds = placeSounds({timeline: timeline as never, soundItems: [], files: staged.files, sources: staged.sources, assetFrames: {}});
+    assert.ok(sounds);
+    await mixSounds({sounds, timeline: timeline as never, output: mixed, sampleRate: 48000});
+    assert.equal(await sha256(mixed), await sha256(browser));
+    await staged.cleanup();
+    await rm(root, {recursive: true, force: true});
+  });
+
   it('renders the 9:16 fixture at 1080x1920 and normalises to its profile, -14 LUFS', async () => {
     const {renderTimeline} = await import('../dist/index.js');
     const root = await mkdtemp(path.join(tmpdir(), 'composer-e2e-vertical-'));

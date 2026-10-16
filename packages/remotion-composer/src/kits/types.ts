@@ -29,6 +29,21 @@ export interface KitContext {
   pass?: 'picture' | 'sound';
 }
 
+/**
+ * One sound a kit plays, as it mounts it: <Sequence from durationInFrames>
+ * <Audio src trimBefore loop volume/></Sequence>, in the frames of its item.
+ */
+export interface KitSound {
+  /** The URL the kit passes to <Audio src>: a staged file's staticFile(). */
+  src: string;
+  from: number;
+  durationInFrames: number;
+  trimBefore?: number;
+  loop?: boolean;
+  /** A gain, or Remotion's volume callback (the frame from the sequence's start). */
+  volume?: number | ((frame: number) => number);
+}
+
 export interface KitExample {
   /** ^[a-z0-9]+(-[a-z0-9]+)*$ */
   id: string;
@@ -65,6 +80,14 @@ export interface KitVersion {
    * normalises their sound with the timeline's audio tracks.
    */
   sound?: boolean;
+  /**
+   * What a kit that plays sound mounts in the sound pass, listed: each entry
+   * one <Audio> as the kit draws it. With the list the render mixes the sound
+   * with FFmpeg, without a browser; it must be exactly what the component
+   * plays. Undefined (or a function returning undefined, for props it cannot
+   * list) keeps the sound pass in the browser.
+   */
+  sounds?: (props: Record<string, unknown>, context: KitContext) => KitSound[] | undefined;
   component: React.FC<{props: Record<string, unknown>; context: KitContext}>;
   examples: KitExample[];
 }

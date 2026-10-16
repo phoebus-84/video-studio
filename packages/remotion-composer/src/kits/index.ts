@@ -34,7 +34,7 @@ import {kit as simile100} from './simile/1.0.0.js';
 import {kit as syllables100} from './syllables/1.0.0.js';
 import {kit as rhymes100} from './rhymes/1.0.0.js';
 
-export type {KitContext, KitExample, KitProfile, KitVersion} from './types.js';
+export type {KitContext, KitExample, KitProfile, KitSound, KitVersion} from './types.js';
 
 /** Every released kit version. Adding a version: import it here, then `npm run kits:lock`. */
 export const KIT_VERSIONS: readonly KitVersion[] = Object.freeze([

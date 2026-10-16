@@ -17,6 +17,7 @@ import {renderWithCache} from './cached-render.js';
 import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
 import {soundLayers} from './layers.js';
 import {resolveKit} from './kits/index.js';
+import {placeSounds} from './sound-mix.js';
 import type {CacheReport} from './render-cache.js';
 
 export interface RenderTimelineOptions {
@@ -92,7 +93,10 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       if (options.cacheDir) {
         cache = await renderWithCache({
           composition, serveUrl, inputProps, cacheDir: path.resolve(options.cacheDir),
-          work, output: rendered, hasAudio, soundItems, concurrency: options.concurrency, onProgress: options.onProgress,
+          work, output: rendered, hasAudio, soundItems,
+          // Listed sounds are mixed by FFmpeg; a kit that lists none keeps the browser pass.
+          sounds: hasAudio ? placeSounds({timeline, soundItems, files: staged.files, sources: staged.sources, assetFrames, kits: library.versions}) : null,
+          concurrency: options.concurrency, onProgress: options.onProgress,
         });
       } else await renderMedia({
         composition, serveUrl, inputProps,

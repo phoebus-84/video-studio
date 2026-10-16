@@ -15,7 +15,8 @@ const CODE = /\.(js|ts|tsx|json)$/;
 
 /**
  * The modules whose code never changes a frame (avg-dcf.6.13): the rendered
- * file's checks, the final file's sound, per-frame audio gain, and the Node
+ * file's checks, the final file's sound, per-frame audio gain, the soundtrack
+ * mixed without a browser (sound-mix), and the Node
  * side that only decides how drawn frames are encoded, cut into cached
  * segments and joined (cached-render, render-cache) or how the command lines
  * call the renderer (cli, sheet-cli). A sheet stays current when only these
@@ -25,7 +26,7 @@ const CODE = /\.(js|ts|tsx|json)$/;
  * clip's frames, which decide when the clip holds or loops. Every other
  * module counts as drawing until it is named here.
  */
-export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'volume', 'cached-render', 'render-cache', 'cli', 'sheet-cli']);
+export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'volume', 'sound-mix', 'cached-render', 'render-cache', 'cli', 'sheet-cli']);
 
 /** The modules that never draw but decide a cached segment's bytes: the render cache keys on them. */
 export const ENCODING: ReadonlySet<string> = new Set(['cached-render', 'render-cache']);
