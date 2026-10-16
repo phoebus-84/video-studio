@@ -326,6 +326,12 @@ repository root, as with Pi: the server resolves `tsx` and the library from the
 directory it starts in. `npm run studio:mcp` runs the server alone, for any
 other MCP client.
 
+`npm run studio:tool -- <pva_tool> '<json>'` (or `@params.json`) runs one tool
+from the shell, the same registration, and exits: for jobs longer than an MCP
+call should wait, such as an hour's render, started in the background with its
+output in a log. Progress (the render bar, one line every 2%) goes to stderr,
+the result to stdout.
+
 | Under Pi | Under Claude Code |
 |---|---|
 | tools `pva_*` | `mcp__pva__pva_*` (same names, descriptions, schemas) |
