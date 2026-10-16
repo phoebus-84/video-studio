@@ -242,6 +242,43 @@ describe('video cache storage and execution', () => {
     assert.deepEqual(calls, [[30]], 'the untouched seconds around it are reused');
   }));
 
+  it('shares the misses among lanes that render at once, each run on its lane', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const calls: {from: number[]; lane: number}[] = [];
+    let busy = 0, most = 0;
+    const result = await cachedVideo({
+      plan, cacheDir: path.join(root, 'cache'), work: await mkdtemp(path.join(root, 'work-')), lanes: 2,
+      renderRun: async (segments, outputs, _onProgress, lane) => {
+        calls.push({from: segments.map((s) => s.from), lane});
+        most = Math.max(most, ++busy);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+        busy--;
+      },
+      concatenate: async (files, output) => { await writeFile(output, (await Promise.all(files.map((f) => readFile(f, 'utf8')))).join('|')); },
+    });
+    assert.deepEqual(calls, [{from: [0, 30], lane: 0}, {from: [60], lane: 1}], 'three misses on two lanes: runs of two');
+    assert.equal(most, 2, 'the lanes render at once');
+    assert.equal(result.report.segmentsRendered, 3);
+    assert.equal(await readFile(result.video, 'utf8'), plan.segments.map((s) => s.key).join('|'), 'joined in order whatever lane drew them');
+  }));
+
+  it('a failed lane fails the render, and the other lane publishes what it finished', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const cacheDir = path.join(root, 'cache');
+    await assert.rejects(cachedVideo({
+      plan, cacheDir, work: await mkdtemp(path.join(root, 'work-')), lanes: 3,
+      renderRun: async (segments, outputs, _onProgress, lane) => {
+        if (lane === 1) throw new Error('Chrome failed');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+      },
+      concatenate: async () => {},
+    }), /Chrome failed/);
+    // settled before it fails: nothing is still writing when the caller cleans up
+    assert.equal((await readdir(path.join(cacheDir, 'segments'))).filter((f) => f.endsWith('.mp4')).length, 2);
+  }));
+
   it('reports progress inside a run, not only when it ends', async () => workspace(async (root) => {
     const plan = planVideo(cacheTimeline(), 'r');
     const seen: number[] = [];

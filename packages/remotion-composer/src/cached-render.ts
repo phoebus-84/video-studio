@@ -92,6 +92,14 @@ export async function renderWithCache(options: {
   /** The library kits drawn, for the segment keys of those that say what a segment reads. */
   kits?: readonly KitVersion[];
   concurrency?: number;
+  /**
+   * Browsers that draw the pictures at once (default 1), with the tabs shared
+   * among them. Chrome rasterizes all of a browser's tabs in its one GPU
+   * process: past a few tabs that process is the limit, and another browser
+   * brings its own (a long, 2026-10-16: 4.0 frames a second with one browser
+   * of 6–10 tabs, 5.3 with two of four).
+   */
+  browsers?: number;
   onProgress?: (progress: number) => void;
 }): Promise<CacheReport> {
   const {inputProps, composition, serveUrl, work, hasAudio} = options;
@@ -108,10 +116,12 @@ export async function renderWithCache(options: {
   // carries its own, or the picture pass would mount every sound and the sound pass draw every picture.
   const withProps = (props: TimelineProps & {pass: 'picture' | 'sound'}) => ({composition: {...composition, props}, inputProps: props});
   const sounding = new Set(options.soundItems ?? []);
-  // Reuse one browser across misses, rather than launching Chrome each second.
-  // A whole-video hit with no audio never opens it.
-  let browser: Awaited<ReturnType<typeof openBrowser>> | undefined;
-  const getBrowser = async () => browser ??= await openBrowser('chrome');
+  // Reuse each browser across misses, rather than launching Chrome each second.
+  // A whole-video hit with no audio never opens one.
+  const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
+  const opened: Promise<Awaited<ReturnType<typeof openBrowser>>>[] = [];
+  const getBrowser = (lane = 0) => opened[lane] ??= openBrowser('chrome');
+  const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
   // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
   // beside the pictures; a browser sound pass waits for them (see below).
   let videoDone = 0, audioDone = hasAudio ? 0 : 1;
@@ -154,9 +164,9 @@ export async function renderWithCache(options: {
   };
   try {
     const pictures = () => cachedVideo({
-      plan, cacheDir: options.cacheDir, work,
+      plan, cacheDir: options.cacheDir, work, lanes: browsers,
       onProgress: (p) => { videoDone = p; report(); },
-      renderRun: async (segments, outputs, onRunProgress) => {
+      renderRun: async (segments, outputs, onRunProgress, lane) => {
         // One renderer call for the whole run, every tab busy across it. A
         // keyframe every second (gopSize) puts one at each segment's first
         // frame: segments start on multiples of fps and so does the run, so
@@ -166,7 +176,8 @@ export async function renderWithCache(options: {
         const first = segments[0]!, last = segments.at(-1)!;
         const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
         await renderMedia({
-          ...common, ...encoding, puppeteerInstance: await getBrowser(), ...withProps(silentProps), outputLocation: whole,
+          ...common, concurrency: browsers > 1 ? tabsEach : common.concurrency, ...encoding, puppeteerInstance: await getBrowser(lane),
+          ...withProps(silentProps), outputLocation: whole,
           frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
           onProgress: ({progress}) => onRunProgress(progress),
         });
@@ -215,6 +226,6 @@ export async function renderWithCache(options: {
     options.onProgress?.(1);
     return cacheReport;
   } finally {
-    await browser?.close({silent: true});
+    await Promise.all(opened.map(async (browser) => (await browser.catch(() => null))?.close({silent: true})));
   }
 }

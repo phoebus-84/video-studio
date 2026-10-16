@@ -11,6 +11,11 @@
 // (avg-dcf.8). Two thirds of the cores leaves room for FFmpeg and the system;
 // eight tabs on twelve threads was the fastest measured.
 // AVG_RENDER_CONCURRENCY forces it.
+// The tabs are shared among a few browsers: Chrome rasterizes all of a
+// browser's tabs in its one GPU process, which past a few tabs is the limit
+// (a long, 2026-10-16: one browser 4.0 frames a second with 6, 8 or 10 tabs;
+// two of four 5.3; four of three 6.0). Each tab of another browser costs no
+// more memory than one of the same. AVG_RENDER_BROWSERS forces their number.
 
 import { spawnSync } from "node:child_process";
 import { cpus, freemem, platform } from "node:os";
@@ -23,6 +28,13 @@ export function renderConcurrency(options: {freeBytes: number; cpus: number; env
   const byMemory = Math.floor(options.freeBytes / PER_TAB);
   const byCores = Math.floor((options.cpus * 2) / 3);
   return Math.max(1, Math.min(byMemory, byCores));
+}
+
+/** How many browsers share the render's tabs: one per two tabs, at most four. */
+export function renderBrowsers(options: {concurrency: number; env: Record<string, string | undefined>}): number {
+  const forced = options.env.AVG_RENDER_BROWSERS;
+  if (forced !== undefined && /^[1-9]\d*$/.test(forced.trim())) return Math.min(Number(forced.trim()), options.concurrency);
+  return Math.max(1, Math.min(4, Math.floor(options.concurrency / 2)));
 }
 
 /**

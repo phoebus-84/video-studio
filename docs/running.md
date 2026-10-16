@@ -120,6 +120,13 @@ and kits: about 2 GB with large paintings.
 - **When memory is short,** for instance with a virtual machine running, it
   renders with one tab: slower, but Chrome does not crash.
 - **Overriding it.** `AVG_RENDER_CONCURRENCY=<n>` forces the number of tabs.
+- **Browsers.** The tabs are shared among up to four browsers, one per two
+  tabs: Chrome draws all of a browser's tabs in a single GPU process, which
+  past a few tabs is what holds a render back. `AVG_RENDER_BROWSERS=<n>`
+  forces their number (`1` is the old single browser).
+- **Large pictures.** An image whose longer side is over twice the frame's is
+  rendered from a copy scaled to that size; the file in the library is never
+  changed.
 
 ### The layout sheet
 

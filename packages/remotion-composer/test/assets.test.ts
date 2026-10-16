@@ -1,5 +1,6 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {mkdtemp, mkdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -25,6 +26,32 @@ async function explainer() {
 }
 
 describe('stageAssets', () => {
+  it('stages an image over twice the frame scaled to twice the frame, and a smaller one as it is', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'composer-assets-'));
+    const draw = (file: string, w: number, h: number) => spawnSync(process.env.FFMPEG_PATH || 'ffmpeg',
+      ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=s=${w}x${h}`, '-frames:v', '1', path.join(root, file)]).status === 0;
+    if (!draw('big.png', 900, 300) || !draw('tall.jpg', 200, 500) || !draw('small.png', 300, 100)) return; // no FFmpeg here
+    const doc = clone(fixture('explainer.json')) as EditTimeline;
+    doc.profile = {...doc.profile, width: 160, height: 90};
+    doc.assets = {
+      big: {path: 'big.png', hash: await sha256(path.join(root, 'big.png')), kind: 'image'},
+      tall: {path: 'tall.jpg', hash: await sha256(path.join(root, 'tall.jpg')), kind: 'image'},
+      small: {path: 'small.png', hash: await sha256(path.join(root, 'small.png')), kind: 'image'},
+    };
+    const out = await stageAssets(doc, root);
+    assert.ok(out.ok);
+    if (!out.ok) return;
+    const size = (id: string) => spawnSync(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height', '-of', 'csv=p=0',
+      path.join(out.staged.publicDir, out.staged.files[id]!)], {encoding: 'utf8'}).stdout.trim();
+    assert.equal(size('big'), '320,106');
+    assert.equal(size('tall'), '128,320');
+    assert.deepEqual(await readFile(path.join(out.staged.publicDir, out.staged.files.small!)), await readFile(path.join(root, 'small.png')));
+    // the render cache keys on the original: its hash and source stay the asset's
+    assert.equal(out.staged.sources.big, path.join(root, 'big.png'));
+    await out.staged.cleanup();
+    await rm(root, {recursive: true, force: true});
+  });
+
   it('stages every verified asset under its id', async () => {
     const {doc, root} = await explainer();
     const out = await stageAssets(doc, root);

@@ -146,13 +146,19 @@ export async function cachedVideo(options: {
   work: string;
   /**
    * Render consecutive segments in one go, writing outputs[i] for segments[i];
-   * it may report how far it is through the run (0–1) as it goes.
+   * it may report how far it is through the run (0–1) as it goes. `lane` says
+   * which of the `lanes` renders it, so each lane can draw in its own browser.
    */
-  renderRun: (segments: VideoSegment[], outputs: string[], onProgress: (progress: number) => void) => Promise<void>;
+  renderRun: (segments: VideoSegment[], outputs: string[], onProgress: (progress: number) => void, lane: number) => Promise<void>;
   concatenate: (files: string[], output: string) => Promise<void>;
   onProgress?: (progress: number) => void;
   /** Longest run rendered by one call, in segments (default 120: two minutes at one second each). */
   maxRunSegments?: number;
+  /**
+   * Runs rendered at once (default 1). The misses are cut so that every lane
+   * has a share, and each lane takes the next run as it finishes one.
+   */
+  lanes?: number;
 }): Promise<{video: string; report: CacheReport}> {
   const {plan, work} = options;
   const report: CacheReport = {wholeVideoReused: false, segmentsReused: 0, segmentsRendered: 0, totalSegments: plan.segments.length, warnings: []};
@@ -172,15 +178,34 @@ export async function cachedVideo(options: {
   }
   const total = plan.segments.length;
   options.onProgress?.(report.segmentsReused / total);
-  for (const run of missRuns(missing, options.maxRunSegments ?? 120)) {
-    // Within a run, progress moves with its frames rather than jumping at its end.
-    const done = report.segmentsReused + report.segmentsRendered;
-    await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!),
-      (p) => options.onProgress?.((done + Math.min(Math.max(p, 0), 1) * run.length) / total));
-    for (const index of run) await segments.put(plan.segments[index]!.key, files[index]!);
-    report.segmentsRendered += run.length;
-    options.onProgress?.((report.segmentsReused + report.segmentsRendered) / total);
-  }
+  const lanes = Math.max(1, Math.floor(options.lanes ?? 1));
+  const runs = missRuns(missing, Math.min(options.maxRunSegments ?? 120, Math.max(1, Math.ceil(missing.length / lanes))));
+  // Within a run, progress moves with its frames rather than jumping at its end.
+  const partial = new Map<number[], number>();
+  const progress = () => options.onProgress?.(
+    (report.segmentsReused + report.segmentsRendered + [...partial.values()].reduce((a, b) => a + b, 0)) / total);
+  let next = 0, failed = false;
+  const lane = async (index: number) => {
+    while (!failed && next < runs.length) {
+      const run = runs[next++]!;
+      partial.set(run, 0);
+      try {
+        await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!),
+          (p) => { partial.set(run, Math.min(Math.max(p, 0), 1) * run.length); progress(); }, index);
+      } catch (e) {
+        // The other lanes take no further run, and finish and keep the one they are on.
+        failed = true;
+        throw e;
+      }
+      for (const i of run) await segments.put(plan.segments[i]!.key, files[i]!);
+      partial.delete(run);
+      report.segmentsRendered += run.length;
+      progress();
+    }
+  };
+  const settled = await Promise.allSettled(Array.from({length: Math.min(lanes, runs.length)}, (_, index) => lane(index)));
+  const failure = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+  if (failure) throw failure.reason;
   await options.concatenate(files, video);
   await whole.put(plan.key, video);
   return {video, report};

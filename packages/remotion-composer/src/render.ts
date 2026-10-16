@@ -29,6 +29,8 @@ export interface RenderTimelineOptions {
   sharedRoots?: string[];
   outputPath: string;
   concurrency?: number;
+  /** With `cacheDir`: browsers drawing the pictures at once, the `concurrency` tabs shared among them (default 1). */
+  browsers?: number;
   /** Opt in to disposable one-second video segments and whole-video reuse. */
   cacheDir?: string;
   onProgress?: (progress: number) => void;
@@ -96,7 +98,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
           work, output: rendered, hasAudio, soundItems,
           // Listed sounds are mixed by FFmpeg; a kit that lists none keeps the browser pass.
           sounds: hasAudio ? placeSounds({timeline, soundItems, files: staged.files, sources: staged.sources, assetFrames, kits: library.versions}) : null,
-          kits: library.versions, concurrency: options.concurrency, onProgress: options.onProgress,
+          kits: library.versions, concurrency: options.concurrency, browsers: options.browsers, onProgress: options.onProgress,
         });
       } else await renderMedia({
         composition, serveUrl, inputProps,
