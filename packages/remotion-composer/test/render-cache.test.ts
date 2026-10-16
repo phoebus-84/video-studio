@@ -236,6 +236,18 @@ describe('audio key', () => {
     assert.notEqual(planAudio(doc, 'r', 48000), key, 'new voice media is a new soundtrack');
     assert.notEqual(planAudio(cacheTimeline(), 'other renderer', 48000), key);
   });
+
+  it('holds the items of kits that play sound, and only those', () => {
+    const doc = cacheTimeline();
+    const plain = planAudio(doc, 'r', 48000);
+    const item = doc.tracks[1]!.items[0] as VisualItem;
+    assert.equal(planAudio(doc, 'r', 48000, new Set()), plain, 'no sounding kit: the key of the audio tracks alone');
+    const sounding = planAudio(doc, 'r', 48000, new Set([item]));
+    assert.notEqual(sounding, plain, 'a kit that plays sound is part of the soundtrack');
+    item.props.text = 'Changed';
+    assert.notEqual(planAudio(doc, 'r', 48000, new Set([item])), sounding, 'its props change its sound');
+    assert.equal(planAudio(doc, 'r', 48000), plain, 'other kits never enter the key');
+  });
 });
 
 describe('miss runs', () => {

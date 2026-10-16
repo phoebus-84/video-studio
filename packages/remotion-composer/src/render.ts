@@ -15,6 +15,8 @@ import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
 import {renderWithCache} from './cached-render.js';
 import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
+import {soundLayers} from './layers.js';
+import {resolveKit} from './kits/index.js';
 import type {CacheReport} from './render-cache.js';
 
 export interface RenderTimelineOptions {
@@ -69,7 +71,10 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     }
     const inputProps = {timeline, files: staged.files, assetFrames};
     const entryPoint = await libraryEntry(library);
-    const hasAudio = timeline.tracks.some((t) => t.type === 'audio' && !t.muted && t.items.some(isAudioItem));
+    // Sound comes from the audio tracks and from kits that play it themselves (a ported runtime).
+    const kitOf = (name: string, version: string) => resolveKit(name, version, library.versions);
+    const soundItems = soundLayers(timeline, kitOf).map(({item}) => item);
+    const hasAudio = timeline.tracks.some((t) => t.type === 'audio' && !t.muted && t.items.some(isAudioItem)) || soundItems.length > 0;
     const output = path.resolve(options.outputPath);
     await mkdir(path.dirname(output), {recursive: true});
     // Without audio there is nothing to normalise: render straight to the output
@@ -87,7 +92,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       if (options.cacheDir) {
         cache = await renderWithCache({
           composition, serveUrl, inputProps, cacheDir: path.resolve(options.cacheDir),
-          work, output: rendered, hasAudio, concurrency: options.concurrency, onProgress: options.onProgress,
+          work, output: rendered, hasAudio, soundItems, concurrency: options.concurrency, onProgress: options.onProgress,
         });
       } else await renderMedia({
         composition, serveUrl, inputProps,

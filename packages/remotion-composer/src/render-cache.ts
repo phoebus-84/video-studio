@@ -66,8 +66,11 @@ export function planVideo(timeline: EditTimeline, renderer: string, assetFrames:
  * The key of the mixed soundtrack: the audio tracks whole (ducking reads the
  * other audio tracks) and the media they play. Nothing drawn changes it.
  */
-export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: number): string {
-  const tracks = timeline.tracks.filter((track) => track.type === 'audio');
+export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: number, soundItems: ReadonlySet<unknown> = new Set()): string {
+  // Items of kits that play sound belong to the soundtrack too (their props, their media).
+  const tracks = timeline.tracks
+    .map((track) => (track.type === 'audio' ? track : {...track, items: track.items.filter((item) => soundItems.has(item))}))
+    .filter((track) => track.type === 'audio' || track.items.length > 0);
   const ids = new Set<string>();
   assetRefs(tracks, ids);
   for (const track of tracks) for (const item of track.items) if ('asset' in item) ids.add(item.asset);

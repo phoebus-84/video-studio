@@ -1,4 +1,5 @@
 import type {EditTimeline, Track, VisualItem} from './schema.js';
+import type {KitVersion} from './kits/types.js';
 import {isAudioItem} from './schema.js';
 
 /**
@@ -19,4 +20,13 @@ export function visualLayers(timeline: EditTimeline): {track: Track; item: Visua
         .sort((a, b) => a.item.from - b.item.from || a.index - b.index)
         .map(({item}) => ({track, item})),
     );
+}
+
+/**
+ * The visual items whose kit plays sound (`sound: true`), in drawing order:
+ * what the sound pass mounts beside the audio tracks. `kitOf` resolves a
+ * name@version (application kits and the library kits of the render).
+ */
+export function soundLayers(timeline: EditTimeline, kitOf: (name: string, version: string) => Pick<KitVersion, 'sound'> | undefined): {track: Track; item: VisualItem}[] {
+  return visualLayers(timeline).filter(({item}) => kitOf(item.kit.name, item.kit.version)?.sound === true);
 }

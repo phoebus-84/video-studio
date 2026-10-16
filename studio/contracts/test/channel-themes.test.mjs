@@ -109,6 +109,21 @@ describe("validateChannelTheme (ADR-0040)", () => {
     assert.deepEqual(codes(doc), [["unlisted-file", '$.files["constructor"]']]);
   });
 
+  it("lists and seals media files, and refuses a media name a room has", () => {
+    const doc = theme();
+    doc.media = { jingle: { path: "media/jingle.mp3", kind: "audio" }, "icon.eye": { path: "media/eye.svg", kind: "image", description: "an icon" } };
+    assert.deepEqual(validateChannelTheme(doc), []);
+    assert.ok(themeFilePaths(doc).includes("media/jingle.mp3") && themeFilePaths(doc).includes("media/eye.svg"));
+    doc.files = Object.fromEntries(themeFilePaths(doc).filter((p) => p !== "media/eye.svg").map((p) => [p, `sha256:${"a".repeat(64)}`]));
+    assert.deepEqual(codes(doc), [["unlisted-file", '$.files["media/eye.svg"]']]);
+    delete doc.files;
+    const [room] = Object.keys(doc.rooms);
+    doc.media[room] = { path: "media/x.png", kind: "image" };
+    assert.deepEqual(codes(doc), [["media-name-taken", `$.media.${room}`]]);
+    doc.media = { "bad-name": { path: "media/x.png", kind: "font" } };
+    assert.ok(codes(doc).length > 0 && codes(doc).every(([c]) => c === "schema"));
+  });
+
   it("refuses a sealed file whose hash is not a sha256", () => {
     const doc = theme();
     doc.files = Object.fromEntries(themeFilePaths(doc).map((p) => [p, "md5:abc"]));

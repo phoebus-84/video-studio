@@ -10,6 +10,7 @@ import {sha256} from './assets.js';
 import {shapesSegments} from './identity.js';
 import {cachedVideo, cacheKey, planAudio, planVideo, VideoCache, type CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
+import type {VisualItem} from './schema.js';
 
 const exec = promisify(execFile);
 const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
@@ -69,6 +70,8 @@ export async function renderWithCache(options: {
   work: string;
   output: string;
   hasAudio: boolean;
+  /** Visual items of kits that play sound: mounted in the sound pass, beside the audio tracks. */
+  soundItems?: readonly VisualItem[];
   concurrency?: number;
   onProgress?: (progress: number) => void;
 }): Promise<CacheReport> {
@@ -81,7 +84,8 @@ export async function renderWithCache(options: {
   const renderer = await rendererKey(serveUrl);
   const plan = planVideo(timeline, renderer, assetFrames);
   const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
-  const silentProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
+  const silentProps = {...inputProps, pass: 'picture' as const, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
+  const sounding = new Set(options.soundItems ?? []);
   // Reuse one browser across misses, rather than launching Chrome each second.
   // A whole-video hit with no audio never opens it.
   let browser: Awaited<ReturnType<typeof openBrowser>> | undefined;
@@ -99,15 +103,19 @@ export async function renderWithCache(options: {
     // The mix is cached on its own key: a change to the pictures alone, or a
     // render of the same audio again, skips the pass.
     const cache = new VideoCache(path.join(options.cacheDir, 'audio'), audioWarnings, '.wav');
-    const key = planAudio(timeline, renderer, sampleRate);
+    const key = planAudio(timeline, renderer, sampleRate, sounding);
     if (await cache.get(key, audio)) {
       audioDone = 1;
       report();
       return true;
     }
     // Keep ALL audio tracks: ducking looks up other tracks in the timeline.
-    // No visual kits are mounted for this pass and no video frames are encoded.
-    const audioProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'audio')}};
+    // Only kits that play sound are mounted (told it is the sound pass), and
+    // no video frames are encoded.
+    const tracks = timeline.tracks
+      .map((t) => (t.type === 'audio' ? t : {...t, items: t.items.filter((i) => sounding.has(i as VisualItem))}))
+      .filter((t) => t.type === 'audio' || t.items.length > 0);
+    const audioProps = {...inputProps, pass: 'sound' as const, timeline: {...timeline, tracks}};
     await renderMedia({
       ...common, puppeteerInstance: await getBrowser(), inputProps: audioProps, codec: 'wav', enforceAudioTrack: true,
       outputLocation: audio, sampleRate,

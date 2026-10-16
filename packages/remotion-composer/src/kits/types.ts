@@ -20,6 +20,13 @@ export interface KitContext {
   /** Asset URL → how many frames that video lasts, for kits that freeze at its end. */
   assetFrames: Record<string, number>;
   profile: KitProfile;
+  /**
+   * Which half of the render is being drawn: a render may draw the picture
+   * (muted) and the sound in separate passes. Only a kit that plays sound
+   * (`sound: true`) is mounted in the sound pass, and it should draw nothing
+   * there; absent, the kit draws both.
+   */
+  pass?: 'picture' | 'sound';
 }
 
 export interface KitExample {
@@ -51,6 +58,13 @@ export interface KitVersion {
   profiles?: string[];
   /** Validates props as a timeline writes them. */
   props: ZodTypeAny;
+  /**
+   * The kit plays sound itself (<Audio> inside the component), as a runtime
+   * ported whole does: its items are mounted in the sound pass too, with
+   * `context.pass` saying which pass it is, and the render mixes and
+   * normalises their sound with the timeline's audio tracks.
+   */
+  sound?: boolean;
   component: React.FC<{props: Record<string, unknown>; context: KitContext}>;
   examples: KitExample[];
 }
