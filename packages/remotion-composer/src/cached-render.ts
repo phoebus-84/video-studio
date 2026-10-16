@@ -104,6 +104,9 @@ export async function renderWithCache(options: {
   const plan = planVideo(timeline, renderer, assetFrames, options.kits);
   const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
   const silentProps = {...inputProps, pass: 'picture' as const, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
+  // The component is handed the props of the composition (inputProps only reach getInputProps()): each pass
+  // carries its own, or the picture pass would mount every sound and the sound pass draw every picture.
+  const withProps = (props: TimelineProps & {pass: 'picture' | 'sound'}) => ({composition: {...composition, props}, inputProps: props});
   const sounding = new Set(options.soundItems ?? []);
   // Reuse one browser across misses, rather than launching Chrome each second.
   // A whole-video hit with no audio never opens it.
@@ -142,7 +145,7 @@ export async function renderWithCache(options: {
       .filter((t) => t.type === 'audio' || t.items.length > 0);
     const audioProps = {...inputProps, pass: 'sound' as const, timeline: {...timeline, tracks}};
     await renderMedia({
-      ...common, concurrency: soundTabs(options.concurrency), puppeteerInstance: await getBrowser(), inputProps: audioProps, codec: 'wav', enforceAudioTrack: true,
+      ...common, concurrency: soundTabs(options.concurrency), puppeteerInstance: await getBrowser(), ...withProps(audioProps), codec: 'wav', enforceAudioTrack: true,
       outputLocation: audio, sampleRate,
       onProgress: ({progress}) => { audioDone = progress; report(); },
     });
@@ -163,7 +166,7 @@ export async function renderWithCache(options: {
         const first = segments[0]!, last = segments.at(-1)!;
         const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
         await renderMedia({
-          ...common, ...encoding, puppeteerInstance: await getBrowser(), inputProps: silentProps, outputLocation: whole,
+          ...common, ...encoding, puppeteerInstance: await getBrowser(), ...withProps(silentProps), outputLocation: whole,
           frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
           onProgress: ({progress}) => onRunProgress(progress),
         });
