@@ -4,6 +4,7 @@ import {mkdtemp, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {cachedVideo, missRuns, planAudio, planVideo, VideoCache, type VideoPlan, type VideoSegment} from '../src/render-cache.js';
+import type {KitVersion} from '../src/kits/types.js';
 import type {EditTimeline, VisualItem} from '../src/schema.js';
 
 import {cacheTimeline} from './cache-fixture.js';
@@ -79,6 +80,37 @@ describe('video cache plan', () => {
     const doc = cacheTimeline();
     assert.deepEqual(changed(keys(doc), keys(doc, 'renderer-v2')), [0, 1, 2]);
     assert.notEqual(planVideo(doc, 'r', {clip: 10}).key, planVideo(doc, 'r', {clip: 11}).key);
+  });
+
+  it('keys a kit item by what its kit says a segment reads, and that alone', () => {
+    // A kit spanning the whole video whose props hold one part per second, each drawn in its own second only.
+    const ranges: {from: number; to: number}[] = [];
+    const kit = {
+      name: 'parts', version: '1.0.0',
+      segmentProps: (props: Record<string, unknown>, range: {from: number; to: number; fps: number}) => {
+        ranges.push({from: range.from, to: range.to});
+        const parts = props.parts as unknown[];
+        return {title: props.title, parts: parts.slice(Math.floor(range.from / range.fps), Math.floor(range.to / range.fps) + 1)};
+      },
+    } as unknown as KitVersion;
+    const doc = cacheTimeline();
+    doc.tracks = [{id: 'main', type: 'visual', z: 0, items: [
+      {id: 'p', from: 15, duration: 60, kit: {name: 'parts', version: '1.0.0'}, props: {title: 'T', parts: ['zero', {$asset: 'a'}, {$asset: 'b'}]}},
+    ]}];
+    const keyed = () => planVideo(doc, 'r', {}, [kit]).segments.map((s) => s.key);
+    const before = keyed();
+    assert.deepEqual(ranges.splice(0), [{from: 0, to: 14}, {from: 15, to: 44}, {from: 45, to: 59}], 'ranges in the item\'s frames');
+    const item = doc.tracks[0]!.items[0] as VisualItem;
+    (item.props.parts as unknown[])[0] = 'changed';
+    assert.deepEqual(changed(before, keyed()), [0, 1], 'a part re-renders only the segments that read it');
+    (item.props.parts as unknown[])[0] = 'zero';
+    doc.assets.b!.hash = `sha256:${'e'.repeat(64)}`;
+    assert.deepEqual(changed(before, keyed()), [], 'an asset no segment reads keys none');
+    doc.assets.a!.hash = `sha256:${'d'.repeat(64)}`;
+    assert.deepEqual(changed(before, keyed()), [1, 2], 'an asset keys the segments that read it');
+    item.props.title = 'U';
+    assert.deepEqual(changed(before, keyed()), [0, 1, 2]);
+    assert.notDeepEqual(planVideo(doc, 'r').segments.map((s) => s.key), keyed(), 'without the kit, the whole props key the item');
   });
 
   it('includes nested asset references and ignores JSON key ordering', () => {

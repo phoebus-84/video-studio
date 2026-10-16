@@ -10,6 +10,7 @@ import {sha256} from './assets.js';
 import {shapesSegments} from './identity.js';
 import {cachedVideo, cacheKey, planAudio, planVideo, VideoCache, type CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
+import type {KitVersion} from './kits/types.js';
 import type {VisualItem} from './schema.js';
 import {mixSounds, type PlacedSound} from './sound-mix.js';
 
@@ -88,6 +89,8 @@ export async function renderWithCache(options: {
    * lists it: the soundtrack is then mixed by FFmpeg, without a browser.
    */
   sounds?: readonly PlacedSound[] | null;
+  /** The library kits drawn, for the segment keys of those that say what a segment reads. */
+  kits?: readonly KitVersion[];
   concurrency?: number;
   onProgress?: (progress: number) => void;
 }): Promise<CacheReport> {
@@ -98,7 +101,7 @@ export async function renderWithCache(options: {
     .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
     .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
   const renderer = await rendererKey(serveUrl);
-  const plan = planVideo(timeline, renderer, assetFrames);
+  const plan = planVideo(timeline, renderer, assetFrames, options.kits);
   const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
   const silentProps = {...inputProps, pass: 'picture' as const, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
   const sounding = new Set(options.soundItems ?? []);

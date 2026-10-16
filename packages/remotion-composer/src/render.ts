@@ -96,7 +96,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
           work, output: rendered, hasAudio, soundItems,
           // Listed sounds are mixed by FFmpeg; a kit that lists none keeps the browser pass.
           sounds: hasAudio ? placeSounds({timeline, soundItems, files: staged.files, sources: staged.sources, assetFrames, kits: library.versions}) : null,
-          concurrency: options.concurrency, onProgress: options.onProgress,
+          kits: library.versions, concurrency: options.concurrency, onProgress: options.onProgress,
         });
       } else await renderMedia({
         composition, serveUrl, inputProps,

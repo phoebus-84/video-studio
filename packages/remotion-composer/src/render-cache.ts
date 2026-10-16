@@ -6,6 +6,8 @@ import {createHash, randomUUID} from 'node:crypto';
 import {copyFile, mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {sha256} from './assets.js';
+import {resolveKit} from './kits/index.js';
+import type {KitVersion} from './kits/types.js';
 import {visualLayers} from './layers.js';
 import type {EditTimeline} from './schema.js';
 
@@ -41,8 +43,12 @@ export interface CacheReport {
   warnings: string[];
 }
 
-/** renderer identifies code, dependencies and encoding settings, NOT the timeline. */
-export function planVideo(timeline: EditTimeline, renderer: string, assetFrames: Record<string, number> = {}): VideoPlan {
+/**
+ * renderer identifies code, dependencies and encoding settings, NOT the
+ * timeline. A kit item is keyed by what its kit says the segment's frames
+ * read (KitVersion.segmentProps), when it says so; otherwise by its props.
+ */
+export function planVideo(timeline: EditTimeline, renderer: string, assetFrames: Record<string, number> = {}, kits?: readonly KitVersion[]): VideoPlan {
   const layers = visualLayers(timeline);
   const global = {
     version: 1, renderer, fps: timeline.fps, duration: timeline.durationInFrames,
@@ -52,11 +58,15 @@ export function planVideo(timeline: EditTimeline, renderer: string, assetFrames:
   for (let from = 0; from < timeline.durationInFrames; from += timeline.fps) {
     const to = Math.min(from + timeline.fps, timeline.durationInFrames) - 1;
     const active = layers.filter(({item}) => item.from <= to && item.from + item.duration > from);
-    const ids = new Set<string>();
-    active.forEach(({item}) => assetRefs(item.props, ids));
-    const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
     // Drawing order is already resolved; source pointers/track names are editorial only.
-    const items = active.map(({item: {source: _source, ...item}}) => item);
+    const items = active.map(({item: {source: _source, ...item}}) => {
+      const read = item.kit ? resolveKit(item.kit.name, item.kit.version, kits)?.segmentProps?.(item.props as Record<string, unknown>,
+        {from: Math.max(from, item.from) - item.from, to: Math.min(to, item.from + item.duration - 1) - item.from, fps: timeline.fps}) : undefined;
+      return read === undefined ? item : {...item, props: {segmentProps: read}};
+    });
+    const ids = new Set<string>();
+    items.forEach((item) => assetRefs(item.props, ids));
+    const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
     segments.push({from, to, key: cacheKey({global, from, to, items, assets})});
   }
   return {key: cacheKey(segments), segments};

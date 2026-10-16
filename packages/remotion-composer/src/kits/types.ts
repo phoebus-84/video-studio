@@ -88,6 +88,17 @@ export interface KitVersion {
    * list) keeps the sound pass in the browser.
    */
   sounds?: (props: Record<string, unknown>, context: KitContext) => KitSound[] | undefined;
+  /**
+   * What of the props the frames from..to (inclusive, in the item's frames)
+   * are drawn from, for the render cache's segment keys: the props as the
+   * timeline writes them ($asset references kept), less what those frames
+   * never read. Only hashed, never drawn. A kit whose item spans the whole
+   * video (a ported runtime) keeps an edit to one part from re-rendering
+   * every other. Absent, or undefined for some props, the whole props key
+   * every segment; leaving out something a frame reads would reuse a stale
+   * segment, so it must err the other way.
+   */
+  segmentProps?: (props: Record<string, unknown>, range: {from: number; to: number; fps: number}) => unknown;
   component: React.FC<{props: Record<string, unknown>; context: KitContext}>;
   examples: KitExample[];
 }
