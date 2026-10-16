@@ -46,12 +46,21 @@ what it would render.
    instant the series declares that fell outside its section usually means a
    section was shortened by hand.
 5. **Hand it over** at the stage's review gate. A sheet with no problem
-   found still needs a person's look.
+   found still needs a person's look — unless the operator set
+   `sheet.approval: auto` in the series' (or channel's) `settings.yaml`
+   (`pva_layout_sheet` says which). Then your reading stands for theirs:
+   record it with `pva_record_sheet_reading`, every problem from step 4 in
+   `problems` (`[]` only when you read every tile and found none). With
+   problems the render refuses the sheet: stop there and tell the operator
+   what you found and what you propose to change.
 
 ## Never
 
 - Never approve the sheet yourself, or say the layout is fine without
-  having opened the grid.
+  having opened the grid. `pva_record_sheet_reading` is not an approval of
+  yours: it records your reading where the operator's setting asks for it,
+  and only then.
+- Never write `sheet.approval` into a settings.yaml: it is the operator's.
 - Never edit `sheet.json`, the stills or the grid: an image that is not the
   one rendered makes the render refuse the sheet.
 - Never render to "see it moving" instead: the sheet is the cheap look.

@@ -59,6 +59,8 @@ import {
   initEpisodeSpec,
   upgradeEpisodeSpec,
   makeLayoutSheet,
+  recordSheetReading,
+  sheetApprovalPolicy,
   proposeReference,
   renderEpisode,
   writeEditTimeline,
@@ -1418,6 +1420,9 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           `✅ layout sheet: ${report.frames.length} frames, ${report.sheet.columns}×${report.sheet.rows}, rules ${report.rules.source}`,
           ...(sheet.reused ? ["it already pictured this timeline: kept as it was, with its review"] : []),
           `open it: ${sheet.sheetPath}`,
+          sheetApprovalPolicy(dir).approval === "auto"
+            ? "the series sets sheet.approval: auto — read every tile, then record what you found with pva_record_sheet_reading"
+            : "the operator approves it (vpr sheet approve) after reading it",
           `stills: ${join(dir, "artifacts", "layout-sheet", "frames")}`,
           `inputs ${report.inputsHash}`,
           ...(report.rebuilt ? [`it shows the timeline a render would recompile first: ${report.rebuilt}`] : []),
@@ -1430,6 +1435,37 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: [`❌ ${e.code ? `${e.code}: ` : ""}${e.message ?? String(err)}`, ...problems].join("\n") }],
           details: { code: e.code ?? null, problems: e.problems ?? [] } as Record<string, unknown>,
+          isError: true as unknown as boolean,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "pva_record_sheet_reading",
+    label: "Record Sheet Reading",
+    description: "Only where the operator set `sheet.approval: auto` in the series' (or channel's) settings.yaml: record your reading of the CURRENT layout sheet as its review (artifacts/layout-sheet/review.json, origin: policy). Call it after opening the grid and reading every tile with the review-layout-sheet skill. `problems`: every problem found, one per entry (`#07 · 00:03.07 — the caption covers the cup`); empty only when you read every tile and found none. With problems the sheet is rejected and the render refuses it: stop and tell the operator. Refused where the series keeps the operator's review, or when the sheet is missing or stale.",
+    parameters: Type.Object({
+      channel: Type.String({ description: "Channel slug" }),
+      series: Type.String({ description: "Series slug" }),
+      episode: Type.String({ description: "Episode slug" }),
+      problems: Type.Array(Type.String(), { description: "Every problem found on the sheet, tile by tile; [] when every tile was read and none was found" }),
+    }),
+    async execute(_toolCallId, params) {
+      const dir = episodeDir(params.channel, params.series, params.episode);
+      const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
+      try {
+        const read = await withFileMutationQueue(join(dir, "output", "current.json"), async () =>
+          recordSheetReading(dir, { episodeRef }, { problems: params.problems }));
+        const text = read.decision === "approved"
+          ? `✅ sheet approved by policy (${read.policy.from}): the render may use it\nreview: ${read.path}`
+          : `⛔ sheet rejected: ${params.problems.length} problem(s) recorded; the render refuses it. Stop and tell the operator what you found, and what you propose to change.\nreview: ${read.path}`;
+        return { content: [{ type: "text" as const, text }], details: read as unknown as Record<string, unknown> };
+      } catch (err) {
+        const e = err as { message?: string; problems?: Array<{ code: string; message: string }> };
+        return {
+          content: [{ type: "text" as const, text: `❌ ${e.problems?.[0]?.code ? `${e.problems[0].code}: ` : ""}${e.message ?? String(err)}` }],
+          details: { problems: e.problems ?? [] } as Record<string, unknown>,
           isError: true as unknown as boolean,
         };
       }

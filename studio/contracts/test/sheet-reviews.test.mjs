@@ -45,10 +45,23 @@ describe("verifySheetReview", () => {
     assert.deepEqual(verifySheetReview({ review: tampered, key: null, ...NOW }), { state: "approved", verified: null });
   });
 
+  it("counts the agent's reading, unsigned, only where the series sets sheet.approval: auto", () => {
+    const read = buildSheetReview({ ...SHEET, decision: "approved", origin: "policy" });
+    assert.equal(read.origin, "policy");
+    assert.equal(read.actor, "pi");
+    assert.deepEqual(verifySheetReview({ review: read, key: KEY, ...NOW, policy: "auto" }), { state: "approved", verified: null });
+    assert.equal(verifySheetReview({ review: read, key: KEY, ...NOW }).problem?.code, "not-allowed");
+    const found = buildSheetReview({ ...SHEET, decision: "rejected", note: "the title covers a face", origin: "policy" });
+    assert.equal(verifySheetReview({ review: found, key: null, ...NOW, policy: "auto" }).state, "rejected");
+    assert.equal(verifySheetReview({ review: read, key: null, ...NOW, inputsHash: H("d"), policy: "auto" }).state, "stale");
+    assert.throws(() => buildSheetReview({ ...SHEET, decision: "approved", origin: "agent" }), /origin/);
+  });
+
   it("refuses another episode's review, another stage's, and a policy decision", () => {
     assert.equal(verifySheetReview({ review: approved(), key: KEY, ...NOW, episode: "x/y/z" }).problem?.code, "wrong-episode");
     assert.equal(verifySheetReview({ review: { ...approved(), stageId: "render" }, key: null, ...NOW }).problem?.code, "wrong-stage");
-    assert.equal(verifySheetReview({ review: { ...approved(), origin: "policy" }, key: null, ...NOW }).problem?.code, "not-human");
+    assert.equal(verifySheetReview({ review: { ...approved(), origin: "policy" }, key: null, ...NOW }).problem?.code, "not-allowed");
+    assert.equal(verifySheetReview({ review: { ...approved(), origin: "agent" }, key: null, ...NOW, policy: "auto" }).problem?.code, "not-human");
     assert.equal(verifySheetReview({ review: null, key: null, ...NOW }).problem?.code, "malformed");
   });
 });
