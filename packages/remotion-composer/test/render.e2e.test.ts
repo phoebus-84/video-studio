@@ -125,9 +125,12 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
       apiVersion: 'studio.video/v1alpha2', kind: 'EditTimeline',
       episodeRef: {channel: 'c', series: 's', episode: 'e'}, revision: 1,
       fps: 30, durationInFrames: 150, resolution: {width: 640, height: 360},
-      assets: {voice: await asset('assets/voice.wav'), music: await asset('assets/music.wav')},
+      assets: {voice: await asset('assets/voice.wav'), voiceAlias: await asset('assets/voice.wav'), music: await asset('assets/music.wav')},
       tracks: [
         {id: 'voice', type: 'audio', items: [{id: 'v1', from: 20, duration: 40, asset: 'voice', trimStart: 15}, {id: 'v2', from: 80, duration: 50, asset: 'voice', gain: 0.7, fadeIn: 5}]},
+        // Different staged URLs for the same file must both sound; only
+        // identical browser source identities may be deduplicated.
+        {id: 'alias', type: 'audio', items: [{id: 'a', from: 20, duration: 40, asset: 'voiceAlias', trimStart: 15, gain: 0.3}]},
         {id: 'music', type: 'audio', duck: {under: ['voice'], gain: 0.3, attack: 6, release: 9}, items: [{id: 'm', from: 0, duration: 150, asset: 'music', gain: 0.6, fadeIn: 10, fadeOut: 20}]},
       ],
     };

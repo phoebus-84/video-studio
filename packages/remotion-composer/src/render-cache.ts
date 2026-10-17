@@ -76,7 +76,7 @@ export function planVideo(timeline: EditTimeline, renderer: string, assetFrames:
  * The key of the mixed soundtrack: the audio tracks whole (ducking reads the
  * other audio tracks) and the media they play. Nothing drawn changes it.
  */
-export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: number, soundItems: ReadonlySet<unknown> = new Set()): string {
+export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: number, soundItems: ReadonlySet<unknown> = new Set(), assetFrames: Record<string, number> = {}): string {
   // Items of kits that play sound belong to the soundtrack too (their props, their media).
   const tracks = timeline.tracks
     .map((track) => (track.type === 'audio' ? track : {...track, items: track.items.filter((item) => soundItems.has(item))}))
@@ -85,7 +85,10 @@ export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: 
   assetRefs(tracks, ids);
   for (const track of tracks) for (const item of track.items) if ('asset' in item) ids.add(item.asset);
   const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
-  return cacheKey({version: 1, kind: 'audio', renderer, fps: timeline.fps, duration: timeline.durationInFrames, sampleRate, tracks, assets});
+  // Sounding kits can read the whole KitContext, unlike plain audio tracks.
+  // Counts are keyed by asset id, not transient staged URLs (as in planVideo).
+  const context = soundItems.size > 0 ? {profile: timeline.profile, assetFrames} : null;
+  return cacheKey({version: 1, kind: 'audio', renderer, fps: timeline.fps, duration: timeline.durationInFrames, sampleRate, tracks, assets, context});
 }
 
 /** Atomic publication + a digest prevent interrupted writes or corruption from being hits. */

@@ -70,3 +70,67 @@ engines. A 1-minute calibration gave the same ratio (Remotion 41 fps, FFmpeg
 - Optional: expose `chromiumOptions.gl` (default `angle` on macOS) in
   `renderTimeline` — a memory saving, not a speed-up.
 - Re-run this benchmark when the "Dentro i versi" kits exist (`avg-dcf.4`).
+
+## PR #73: Apple Silicon recheck (2026-10-18)
+
+The sound/multi-browser optimizations were measured again **on Apple M1**,
+not inferred from a PC result:
+
+- macOS 26.6.1, arm64 Node 24.19.0, 8 cores, 16 GB;
+- FFmpeg 9.0.1, Remotion 4.0.505, native mac-arm64 Chrome Headless Shell;
+- 20 seconds, 600 frames, 1920×1080, **four tabs total** in both picture
+  configurations; one browser of four versus two browsers of two;
+- the first 20 seconds of the `museo-autore-stage@1.0.0` timeline, with
+  **synthetic media substituted in a temporary copy**: a 3840×2160 test
+  picture and a 30-second 48 kHz tone. The episode's original media are not
+  present on this machine, so this is a real kit with surrogate media,
+  **not** a timing of the delivered production;
+- two repetitions, alternating configuration order. Every picture pass uses
+  a separate cold render cache. Original image bytes are preserved (no
+  automatic downscaling). Assets/bundling are prepared once, outside the
+  timed passes; browser startup, segment encoding/cutting and muxing are
+  included in picture times. Final loudness normalization is not included.
+
+| Pass | Repetition 1 | Repetition 2 | Mean |
+|---|---:|---:|---:|
+| Pictures, one browser × four tabs | 44.94 s | 48.82 s | 46.88 s |
+| Pictures, two browsers × two tabs | 34.66 s | 36.59 s | 35.62 s |
+| Sound, browser (two tabs, browser already open) | 5.44 s | 5.41 s | 5.42 s |
+| Sound, Node/FFmpeg | 0.259 s | 0.250 s | 0.255 s |
+
+On this sample the multi-browser picture pass takes **24% less time**
+(about 1.32× throughput). The Node sound pass is **about 21× faster**.
+Its WAV is byte-identical to the browser's in both repetitions:
+`sha256:6f55bc165259b7682242b66b170aaae0051584d0689e5d55b3197481d8e322d7`.
+
+The picture passes have the same frame count; PSNR versus the single-browser
+reference is **56.56 dB**, rather than byte identity, because splitting the
+encoding runs changes x264 lookahead. Repeating the single-browser pass
+gives PSNR infinity. The end-to-end cache tests separately compare all frames
+against a fresh single-browser and an uncached render.
+
+### Repeating the comparison
+
+`packages/remotion-composer/scripts/benchmark-passes.ts` takes a JSON file
+with `timeline` (a timeline file), `assetRoot`, optional `sharedRoots` and
+`kits` (the same sealed bundle descriptors as `renderTimeline`), plus
+`seconds`, `concurrency`, `browsers` and `repetitions`. Paths are relative
+to that JSON. For this comparison the last four were `20`, `4`,
+`[1, 2]`, `2`. Run from the composer package after building it:
+
+```bash
+npm run build
+node --import tsx scripts/benchmark-passes.ts /path/to/benchmark.json
+```
+
+It reports native platform/architecture, pass times, picture PSNR and WAV
+hashes, rejects a picture comparison below 40 dB or nonidentical sound, and
+removes its temporary output/cache directories. It never writes the episode.
+
+This is evidence that these optimizations **also work on Apple Silicon**,
+not a guarantee of the same gain on every M-series chip, kit, or memory
+budget. In particular, peak memory was not measured here and a short sample
+does not establish sustained whole-episode throughput. Keep
+`AVG_RENDER_BROWSERS=1` as the comparison/override on a workload that
+doesn't benefit. The unsafe image-downscaling optimization was removed,
+not credited with these gains.

@@ -15,7 +15,7 @@ export interface SheetApprovalPolicy {
   from: string | null;
 }
 
-/** The series' (else the channel's) `sheet.approval`; never the episode's own. */
+/** The series' (else the channel's) `sheet.approval`; never the episode's own. Unreadable or invalid settings require human review. */
 export declare function sheetApprovalPolicy(episodeDir: string, parse: (text: string) => unknown): SheetApprovalPolicy;
 
 export interface SheetReviewFile {

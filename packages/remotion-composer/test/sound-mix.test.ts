@@ -1,11 +1,12 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {soundFrames, type PlacedSound} from '../src/sound-mix.js';
+import {placeSounds, soundFrames, type PlacedSound} from '../src/sound-mix.js';
+import {cacheTimeline} from './cache-fixture.js';
 
 const at = (frames: ReturnType<typeof soundFrames>, frame: number) => frames[frame]!.map(({mediaFrame, volume, audioStartFrame}) => ({mediaFrame, volume, audioStartFrame}));
 const ids = (frames: ReturnType<typeof soundFrames>) => new Set(frames.flat().map((a) => a.id));
 const one = (sound: Partial<PlacedSound>, total = 100, seconds = 1) =>
-  soundFrames([{file: 'a.wav', sequences: [{from: 10, durationInFrames: 50}], ...sound}], total, 30, () => seconds);
+  soundFrames([{src: 'assets/a.wav', file: 'a.wav', sequences: [{from: 10, durationInFrames: 50}], ...sound}], total, 30, () => seconds);
 
 describe('soundFrames', () => {
   it('sounds inside its sequences only, from the media start', () => {
@@ -39,8 +40,23 @@ describe('soundFrames', () => {
     assert.equal(ids(frames).size, 4);
   });
 
+  it('keeps distinct staged assets that point to the same physical file', () => {
+    const timeline = cacheTimeline();
+    timeline.tracks = ['first', 'second'].map((id) => ({
+      id, type: 'audio' as const, items: [{id, from: 0, duration: 10, asset: id, gain: 0.5}],
+    }));
+    const sounds = placeSounds({
+      timeline, soundItems: [], files: {first: 'assets/0-first.wav', second: 'assets/1-second.wav'},
+      sources: {first: '/same.wav', second: '/same.wav'}, assetFrames: {},
+    });
+    assert.ok(sounds);
+    const frames = soundFrames(sounds, 20, 30, () => 1);
+    assert.equal(frames[3]!.length, 2, 'two browser URLs are two sounds, even when the source file is shared');
+    assert.equal(ids(frames).size, 2);
+  });
+
   it('keeps one of two identical sounds in a frame, as Remotion deduplicates by id', () => {
-    const sound: PlacedSound = {file: 'a.wav', sequences: [{from: 0, durationInFrames: 10}], volume: 0.5};
+    const sound: PlacedSound = {src: 'assets/a.wav', file: 'a.wav', sequences: [{from: 0, durationInFrames: 10}], volume: 0.5};
     const frames = soundFrames([sound, {...sound, volume: 0.9}], 20, 30, () => 1);
     assert.deepEqual(at(frames, 3), [{mediaFrame: 3, volume: 0.5, audioStartFrame: 0}]);
   });

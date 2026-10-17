@@ -14,8 +14,11 @@
 // The tabs are shared among a few browsers: Chrome rasterizes all of a
 // browser's tabs in its one GPU process, which past a few tabs is the limit
 // (a long, 2026-10-16: one browser 4.0 frames a second with 6, 8 or 10 tabs;
-// two of four 5.3; four of three 6.0). Each tab of another browser costs no
-// more memory than one of the same. AVG_RENDER_BROWSERS forces their number.
+// two of four 5.3; four of three 6.0). Also measured on Apple M1: two browsers
+// of two tabs took 24% less time than one of four on a 20 s sample (see
+// docs/notes/remotion-render-benchmark.md). Each browser has its own overhead;
+// the count is bounded and shares the existing tab budget, not extra tabs.
+// AVG_RENDER_BROWSERS forces their number.
 
 import { spawnSync } from "node:child_process";
 import { cpus, freemem, platform } from "node:os";

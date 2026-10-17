@@ -23,6 +23,9 @@ type Volume = number | ((frame: number) => number);
 
 /** One <Audio> as the render would mount it: the file, the <Sequence>s around it, outermost first, and its own props. */
 export interface PlacedSound {
+  /** Staged source identity: distinct asset URLs may point to the same file. */
+  src: string;
+  /** Physical file read by FFmpeg, not the browser's deduplication identity. */
   file: string;
   sequences: {from: number; durationInFrames: number}[];
   trimBefore?: number;
@@ -107,7 +110,7 @@ export function soundFrames(sounds: readonly PlacedSound[], total: number, fps: 
       if (!Number.isFinite(volume)) throw new Error(`the sound ${sound.file} has volume ${volume} at frame ${frame}`);
       // A silent frame registers nothing (AudioForRendering).
       if (volume <= 0) continue;
-      const id = `audio-${sound.file}-${inner.relativeFrom}-${inner.cumulatedFrom}-${inner.duration}`;
+      const id = `audio-${sound.src}-${inner.relativeFrom}-${inner.cumulatedFrom}-${inner.duration}`;
       // Assets are deduplicated by id within a frame: the first one mounted wins.
       if (seen[frame]!.has(id)) continue;
       seen[frame]!.add(id);
@@ -152,7 +155,7 @@ export function placeSounds(options: {
     if (!listed) return null;
     for (const sound of listed) {
       placed.push({
-        file: fileOf(stagedName(sound.src)),
+        src: stagedName(sound.src), file: fileOf(stagedName(sound.src)),
         sequences: [{from: item.from, durationInFrames: item.duration}, {from: sound.from, durationInFrames: sound.durationInFrames}],
         trimBefore: sound.trimBefore, loop: sound.loop, volume: sound.volume,
       });
@@ -162,7 +165,7 @@ export function placeSounds(options: {
     if (track.type !== 'audio' || track.muted) continue;
     for (const item of track.items.filter(isAudioItem) as AudioItem[]) {
       placed.push({
-        file: fileOf(files[item.asset] ?? item.asset),
+        src: files[item.asset] ?? item.asset, file: fileOf(files[item.asset] ?? item.asset),
         sequences: [{from: item.from, durationInFrames: item.duration}],
         // startFrom (always passed by Timeline) is trimBefore.
         trimBefore: item.trimStart ?? 0, volume: itemVolume(item, track, timeline),

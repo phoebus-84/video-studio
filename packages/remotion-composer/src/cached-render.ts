@@ -136,7 +136,7 @@ export async function renderWithCache(options: {
     const cache = new VideoCache(path.join(options.cacheDir, 'audio'), audioWarnings, '.wav');
     // Mixed without a browser, the soundtrack also depends on the Node code that places the sounds.
     const mixer = options.sounds ? await mixerKey() : null;
-    const key = planAudio(timeline, mixer ? cacheKey({renderer, mixer}) : renderer, sampleRate, sounding);
+    const key = planAudio(timeline, mixer ? cacheKey({renderer, mixer}) : renderer, sampleRate, sounding, assetFrames);
     if (await cache.get(key, audio)) {
       audioDone = 1;
       report();

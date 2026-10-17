@@ -124,9 +124,10 @@ and kits: about 2 GB with large paintings.
   tabs: Chrome draws all of a browser's tabs in a single GPU process, which
   past a few tabs is what holds a render back. `AVG_RENDER_BROWSERS=<n>`
   forces their number (`1` is the old single browser).
-- **Large pictures.** An image whose longer side is over twice the frame's is
-  rendered from a copy scaled to that size; the file in the library is never
-  changed.
+- **Large pictures.** Original image bytes are preserved: a kit may crop or
+  zoom beyond 2×, and even an unzoomed panoramic image may need its full
+  resolution to cover the frame. Prepare smaller assets explicitly when the
+  intended use allows it.
 
 ### The layout sheet
 
@@ -152,6 +153,13 @@ command of its own:
 ```bash
 node packages/remotion-composer/dist/sheet-cli.js timeline.json out/ --assets episode/ --times 0,2.5,10
 ```
+
+A series (or, by inheritance, its channel) may set
+`sheet: {approval: auto}` in `settings.yaml` to let the agent's recorded
+reading stand for the operator's review. The episode's own settings cannot
+enable it. Missing declarations inherit; unreadable or malformed settings
+and invalid sheet policies require human review, even if the channel allows
+`auto`. Missing or stale sheets are refused either way.
 
 ### Comparing two versions
 

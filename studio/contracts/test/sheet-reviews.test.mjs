@@ -1,13 +1,56 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { signReceipt } from "../src/receipt.mjs";
-import { buildSheetReview, SHEET_REVIEW_STAGE, verifySheetReview } from "../src/sheet-reviews.mjs";
+import { buildSheetReview, sheetApprovalPolicy, SHEET_REVIEW_STAGE, verifySheetReview } from "../src/sheet-reviews.mjs";
 
 const KEY = "test-operator-key";
 const H = (c) => `sha256:${c.repeat(64)}`;
 const SHEET = { episode: "dentro-i-versi/short/san-martino", inputsHash: H("a"), sheet: { path: "sheet.jpg", hash: H("b") }, report: { path: "sheet.json", hash: H("c") } };
 const NOW = { episode: SHEET.episode, inputsHash: H("a"), sheetHash: H("b"), reportHash: H("c") };
 const approved = (extra = {}) => signReceipt(buildSheetReview({ ...SHEET, decision: "approved", at: "2026-10-09T10:00:00.000Z", ...extra }), KEY);
+
+describe("sheetApprovalPolicy", () => {
+  function withSettings(run) {
+    const root = mkdtempSync(path.join(tmpdir(), "sheet-policy-"));
+    const series = path.join(root, "series", "s");
+    const episode = path.join(series, "episodes", "e");
+    mkdirSync(episode, { recursive: true });
+    const channelFile = path.join(root, "settings.yaml"), seriesFile = path.join(series, "settings.yaml");
+    writeFileSync(channelFile, JSON.stringify({ sheet: { approval: "auto" } }));
+    try { run({ episode, seriesFile, channelFile }); }
+    finally { rmSync(root, { recursive: true, force: true }); }
+  }
+
+  it("inherits only absent declarations, never the episode's own policy", () => withSettings(({ episode, seriesFile, channelFile }) => {
+    writeFileSync(path.join(episode, "settings.yaml"), JSON.stringify({ sheet: { approval: "review" } }));
+    for (const doc of [{}, { sheet: {} }]) {
+      writeFileSync(seriesFile, JSON.stringify(doc));
+      assert.deepEqual(sheetApprovalPolicy(episode, JSON.parse), { approval: "auto", from: channelFile });
+    }
+  }));
+
+  it("requires human review on malformed settings or invalid policy values", () => withSettings(({ episode, seriesFile }) => {
+    const invalid = ["{", "[]", "false", "null", JSON.stringify({ sheet: null }), JSON.stringify({ sheet: [] }),
+      JSON.stringify({ sheet: { approval: null } }), JSON.stringify({ sheet: { approval: "typo" } })];
+    for (const text of invalid) {
+      writeFileSync(seriesFile, text);
+      assert.deepEqual(sheetApprovalPolicy(episode, JSON.parse), { approval: "review", from: seriesFile }, text);
+    }
+  }));
+
+  it("does not inherit auto when settings cannot be read", () => withSettings(({ episode, seriesFile }) => {
+    mkdirSync(seriesFile);
+    assert.deepEqual(sheetApprovalPolicy(episode, JSON.parse), { approval: "review", from: seriesFile });
+  }));
+
+  it("requires human review for a malformed channel policy too", () => withSettings(({ episode, channelFile }) => {
+    writeFileSync(channelFile, "{");
+    assert.deepEqual(sheetApprovalPolicy(episode, JSON.parse), { approval: "review", from: channelFile });
+  }));
+});
 
 describe("buildSheetReview", () => {
   it("binds the sheet's inputs as its plan and the sheet and its report as its outputs", () => {

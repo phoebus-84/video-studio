@@ -160,8 +160,24 @@ describe("renderEpisode needs an approval of the current layout sheet", () => {
     expect(sheetApprovalPolicy(dir())).toEqual({ approval: "auto", from: join(channel, "settings.yaml") });
     writeFileSync(join(series, "settings.yaml"), "sheet:\n  approval: review\n");
     expect(sheetApprovalPolicy(dir()).approval).toBe("review");
-    writeFileSync(join(series, "settings.yaml"), "sheet: [unclosed\n");
+    // An absent declaration inherits; a broken or invalid one must not
+    // accidentally waive the operator's review through the channel.
+    writeFileSync(join(series, "settings.yaml"), "{}\n");
     expect(sheetApprovalPolicy(dir()).approval).toBe("auto");
+    for (const settings of ["sheet: [unclosed\n", "sheet:\n  approval: typo\n", "sheet: null\n", "sheet:\n  approval: null\n"]) {
+      writeFileSync(join(series, "settings.yaml"), settings);
+      expect(sheetApprovalPolicy(dir())).toEqual({ approval: "review", from: join(series, "settings.yaml") });
+    }
+  });
+
+  it("stops accepting an agent review when series settings become invalid, even under channel auto", async () => {
+    const series = dirname(dirname(dir())), channel = dirname(dirname(series));
+    writeFileSync(join(channel, "settings.yaml"), "sheet:\n  approval: auto\n");
+    await makeLayoutSheet(dir(), { episodeRef: REF });
+    recordSheetReading(dir(), { episodeRef: REF }, { problems: [] });
+    writeFileSync(join(series, "settings.yaml"), "sheet: [unclosed\n");
+    expect(await refused()).toBe("review-invalid");
+    expect(() => recordSheetReading(dir(), { episodeRef: REF }, { problems: [] })).toThrow(/operator's review/);
   });
 
   it("refuses a review that is not JSON, and, with the key, one with no signature or a changed note", async () => {

@@ -319,6 +319,25 @@ describe('audio key', () => {
   });
 });
 
+describe('sound kit context in audio keys', () => {
+  it('invalidates on profile changes only when a kit can play sound', () => {
+    const doc = cacheTimeline();
+    const sounding = new Set([doc.tracks[1]!.items[0]]);
+    const plain = planAudio(doc, 'r', 48000);
+    const before = planAudio(doc, 'r', 48000, sounding);
+    doc.profile.safeZone.bottom++;
+    assert.notEqual(planAudio(doc, 'r', 48000, sounding), before, 'kits receive the whole context.profile');
+    assert.equal(planAudio(doc, 'r', 48000), plain, 'audio tracks do not read the picture profile');
+  });
+
+  it('invalidates on asset frame counts only when a kit can play sound', () => {
+    const doc = cacheTimeline();
+    const sounding = new Set([doc.tracks[1]!.items[0]]);
+    assert.notEqual(planAudio(doc, 'r', 48000, sounding, {clip: 10}), planAudio(doc, 'r', 48000, sounding, {clip: 11}));
+    assert.equal(planAudio(doc, 'r', 48000, new Set(), {clip: 10}), planAudio(doc, 'r', 48000, new Set(), {clip: 11}));
+  });
+});
+
 describe('miss runs', () => {
   it('groups consecutive indexes, splits gaps and caps length', () => {
     assert.deepEqual(missRuns([], 4), []);

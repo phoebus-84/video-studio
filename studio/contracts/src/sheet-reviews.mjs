@@ -14,7 +14,7 @@
 // the settings that say whose reading counts.
 // ---------------------------------------------------------------------------
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { buildGateReview } from "./gate-review.mjs";
 import { verifyReceipt } from "./receipt.mjs";
@@ -33,23 +33,35 @@ const bare = (hash) => String(hash).replace(/^sha256:/, "");
  * The operator's `sheet.approval` for an episode (library/<channel>/series/
  * <series>/episodes/<episode>): the series' settings.yaml, else the channel's;
  * "review" when neither sets it. Never the episode's own settings, which the
- * agent writes. A file that does not parse, or a value that is neither, is
- * passed over: only a setting that says "auto" waives a signature. `parse`
- * turns YAML into an object (contracts carries no parser). Reads only.
+ * agent writes. Only an absent declaration inherits: an unreadable or
+ * malformed file, or an invalid sheet policy, requires human review rather
+ * than inheriting a possibly more permissive channel policy. `parse` turns
+ * YAML into an object (contracts carries no parser). Reads only.
  */
 export function sheetApprovalPolicy(episodeDir, parse) {
   const seriesDir = path.dirname(path.dirname(episodeDir));
   for (const dir of [seriesDir, path.dirname(path.dirname(seriesDir))]) {
     const file = path.join(dir, "settings.yaml");
-    if (!existsSync(file)) continue;
+    const review = { approval: "review", from: file };
+    let text;
+    try {
+      text = readFileSync(file, "utf-8");
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      return review;
+    }
     let doc;
     try {
-      doc = parse(readFileSync(file, "utf-8"));
+      doc = parse(text);
     } catch {
-      continue;
+      return review;
     }
-    const approval = doc?.sheet?.approval;
-    if (approval === "auto" || approval === "review") return { approval, from: file };
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return review;
+    if (!Object.hasOwn(doc, "sheet")) continue;
+    const sheet = doc.sheet;
+    if (!sheet || typeof sheet !== "object" || Array.isArray(sheet)) return review;
+    if (!Object.hasOwn(sheet, "approval")) continue;
+    return sheet.approval === "auto" ? { approval: "auto", from: file } : review;
   }
   return { approval: "review", from: null };
 }

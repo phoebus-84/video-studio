@@ -1,13 +1,11 @@
 // Verify every declared asset and stage it for Remotion: files are checked
 // against their hash (a different file is an error, never a silent
 // re-render), then hard-linked (copied when linking fails) into a temporary
-// public directory, named by asset id, that the bundle serves. An image whose
-// longer side is over twice the frame's is staged as a copy scaled to that:
-// twice the frame keeps a 2x zoom as sharp as the original, and Chrome
-// decodes and scales far fewer pixels for every frame that shows it.
+// public directory, named by asset id, that the bundle serves. Keep original
+// image bytes: a kit may crop or zoom arbitrarily, so the frame dimensions
+// cannot tell staging how much source detail it may safely discard.
 
 import {createHash} from 'node:crypto';
-import {spawnSync} from 'node:child_process';
 import {createReadStream, existsSync, realpathSync} from 'node:fs';
 import {copyFile, link, mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -19,27 +17,6 @@ export async function sha256(file: string): Promise<string> {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
   return `sha256:${hash.digest('hex')}`;
-}
-
-/** The longer side an image is staged at, at most: twice the frame's. */
-export const imageLimit = (timeline: Pick<EditTimeline, 'profile'>) =>
-  2 * Math.max(timeline.profile?.width ?? 0, timeline.profile?.height ?? 0);
-
-/**
- * Writes `abs` scaled so its longer side is `limit` (Lanczos; JPEG at the
- * encoder's best quality, PNG and WebP lossless) and returns true; false,
- * writing nothing, when it is no larger or cannot be read as an image.
- */
-export function scaleImage(abs: string, target: string, limit: number): boolean {
-  if (!(limit > 0) || !/\.(jpe?g|png|webp)$/i.test(abs)) return false;
-  const probe = spawnSync(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', abs], {encoding: 'utf8'});
-  const [w, h] = (probe.stdout ?? '').trim().split(',').map(Number);
-  if (probe.status !== 0 || !w || !h || Math.max(w, h) <= limit) return false;
-  const scale = w >= h ? `${limit}:-2` : `-2:${limit}`;
-  const quality = /\.jpe?g$/i.test(abs) ? ['-q:v', '1'] : /\.webp$/i.test(abs) ? ['-lossless', '1'] : [];
-  const out = spawnSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', abs, '-vf', `scale=${scale}:flags=lanczos`, ...quality, '-frames:v', '1', '-update', '1', target], {encoding: 'utf8'});
-  if (out.status !== 0) throw new Error(`could not scale ${abs} to ${limit} px: ${out.stderr?.slice(-300)}`);
-  return true;
 }
 
 export interface StagedAssets {
@@ -88,16 +65,11 @@ export async function stageAssets(
   const publicDir = await mkdtemp(path.join(tmpdir(), 'remotion-composer-'));
   await mkdir(path.join(publicDir, 'assets'));
   const files: Record<string, string> = {};
-  const limit = imageLimit(timeline);
   // The index makes every name unique, even ids that differ only by case on a
   // case-insensitive filesystem, or `x` with a.mp3 beside `x.mp3` without one.
   for (const [index, [id, abs]] of Object.entries(sources).entries()) {
     const name = `assets/${index}-${id}${path.extname(abs)}`;
     const target = path.join(publicDir, name);
-    if (timeline.assets[id]!.kind === 'image' && scaleImage(abs, target, limit)) {
-      files[id] = name;
-      continue;
-    }
     try {
       await link(abs, target);
     } catch {
