@@ -660,7 +660,9 @@ it up: its text in git, its heavy media out, each named by hash and size in
 --check` lists the media this machine lacks or holds in another version
 (`--verify` rehashes every byte); after new media, `vpr channel media` updates
 the list, to commit with the work. The list never forgets a file only because
-this machine lacks it: `--prune` forgets the files deleted on purpose.
+this machine lacks it: `--prune` forgets the files deleted on purpose. An
+optional [media remote](#channel-media-backup-and-restore) backs up and restores
+the named bytes with `channel media push` and `channel media pull`.
 
 ```bash
 node studio/runtime/dist/src/cli.js channel init my-channel --commit --library "$PWD/library"
@@ -755,6 +757,110 @@ node studio/runtime/dist/src/cli.js select my-channel/my-series/ep001 illustrati
   also records a new review request, because nobody has approved those bytes.
 - **Candidates are never pruned.** An episode that runs a stage many times
   keeps every result.
+
+### Channel media backup and restore
+
+Version a `media.remote.json` in the channel repository, following the
+[workspace contract](workspace.md#media-remote). It selects an S3-compatible
+bucket/prefix and tiers; credentials stay in the environment or your AWS
+profile. The runtime never creates buckets, deletes objects, changes the lock
+while transferring, or grants an approval.
+
+```bash
+# After making media, update and commit the lock with the editorial changes.
+vpr channel media my-channel --library "$PWD/library"
+
+# Inspect selection and remote availability before paying for uploads.
+vpr channel media push my-channel --dry-run --library "$PWD/library"
+vpr channel media push my-channel --library "$PWD/library"
+
+# On a collaborator's clone, fetch just one episode (and its locked link targets).
+vpr channel media pull my-channel --episode my-series/ep001 --dry-run --library "$PWD/library"
+vpr channel media pull my-channel --episode my-series/ep001 --library "$PWD/library"
+vpr channel media my-channel --check --episode my-series/ep001 --verify --library "$PWD/library"
+```
+
+Use `node studio/runtime/dist/src/cli.js` instead of `vpr` if the CLI is not
+on your PATH. Set `AWS_PROFILE` or the standard AWS credential environment
+variables in the shell that runs it; do not commit them. Region comes from
+`media.remote.json`. Only run transfers against a remote you trust: its endpoint
+is a versioned configuration choice, not a server discovered by the application.
+
+**Selection.** `--tier paid,approved` (or repeated `--tier`) overrides the
+remote's `keep`; `--tier all` includes everything, including derived files and
+long deliveries. `--episode` works on push, pull and check. It scopes paths to
+that episode and, for remote operations, includes transitive locked symlink
+targets. It does not discover references embedded in arbitrary specs, pins or
+templates: pull broader scope when those name shared assets outside the episode.
+
+Default `keep` excludes deliveries and explicitly classified derived media;
+unknown files are `other` and included. Configure `rules` for your actual
+receipt-backed loop/atlas/soundtrack directories to avoid uploading thousands
+of rebuildable PNGs. These explicit labels do not confer approval or a licence.
+Every report includes excluded counts and bytes by tier. Push deduplicates
+object bytes; pull counts bytes restored to each local path.
+
+**Safety and resuming.** Local changed files are never overwritten. A merged
+lock naming multiple versions of one path is reported `ambiguous`, never
+resolved automatically. Choose the intended bytes and deliberately refresh the
+lock before retrying. Downloads are hash/size-checked before exclusive atomic
+publication. The destination filesystem must support hard links. Symlinked
+parent directories, escaping/cyclic links and targets absent from the lock are
+refused. Fix the layout or lock rather than disabling these checks.
+
+Workers are bounded (`--concurrency 4` by default, 1–16 allowed). Large uploads
+use multipart. Interrupt with Ctrl-C and rerun: completed objects/files are
+skipped, but an incomplete object starts again. SIGINT/SIGTERM trigger best-effort
+cleanup; a hard kill may leave a private upload snapshot in the system temp
+directory or a `.media-pull-*.tmp` beside its destination. These leftovers are
+not locked media and may be removed once no transfer is running. Upload
+snapshots need free temporary disk space up to the combined size of active
+uploads, in addition to the originals. `--dry-run` reads local media and remote
+HEAD metadata but creates no files and issues no GETs or PUTs.
+
+**Checking.** With a remote configured, `--check` distinguishes `remote`
+(restorable, but missing locally) from `missing` (not available remotely either).
+A link is restorable from git when its target is available. Remote availability
+still exits 2: it is not local readiness. Authentication/service failures are
+reported as errors, not as missing objects. `--check --offline` makes no network
+requests; without a configured remote, checks remain local automatically.
+`--verify` bypasses the local size/mtime hash cache. Checks write nothing.
+
+**Provider requirements.** The S3 endpoint must support conditional
+`If-None-Match: *` writes on PUT and multipart completion; unsupported conditions
+fail rather than silently allowing overwrites. Optional request checksums can
+be disabled with `checksum: false` for compatible servers that lack them, but
+local verification cannot. Test the chosen provider before relying on it as a
+backup; the automated tests use a fake HTTP S3 server, not a certification of
+R2, B2, Garage, SeaweedFS or MinIO.
+
+Read-only users need object-read permission; writers additionally need object
+write and multipart-abort permission. S3 may return 403 instead of 404 for
+absent objects without bucket-list permission, so allow the required bucket
+metadata access if you want missing objects distinguished from access failures.
+No remote objects are listed or deleted by these commands. Configure bucket
+lifecycle to abort abandoned multipart uploads; do not automatically expire
+completed hash objects. Local lock `--prune` never deletes a remote object.
+
+**Full fresh-clone acceptance.** The issue's stronger goal is *every locked
+file matching*, not merely a successful selective backup. For that test:
+
+```bash
+# Source machine: include all media needed by the test, not only default tiers.
+vpr channel media push my-channel --tier all --library "$PWD/library"
+
+# After cloning the channel text into another library:
+vpr channel media pull my-channel --episode my-series/ep001 --tier all --library "$PWD/library"
+vpr channel media my-channel --check --episode my-series/ep001 --verify --library "$PWD/library"
+```
+
+Alternatively rebuild excluded derivatives/deliveries, then verify their hashes.
+The test on `ambient-through-time` and acceptance of its existing signed layout
+sheet by `pva_compose_video` remain an operator-run production check. No transfer
+creates an approval, and approval verification still requires the existing
+shared operator HMAC key (ADR-0045). A render on another machine need not be
+byte-identical. Do not claim a backup exists for a locked file missing both
+locally and remotely: hashes cannot recreate lost paid generations.
 
 ### Budget
 
