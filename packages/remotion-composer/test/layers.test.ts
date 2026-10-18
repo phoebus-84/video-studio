@@ -1,6 +1,6 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {visualLayers} from '../src/layers.js';
+import {soundLayers, visualLayers} from '../src/layers.js';
 import {clone, fixture} from './helpers.js';
 
 describe('visualLayers', () => {
@@ -17,5 +17,18 @@ describe('visualLayers', () => {
     doc.tracks[2].hidden = true;
     assert.ok(!visualLayers(doc).some((l) => l.track.id === 'guide'));
     assert.ok(!visualLayers(doc).some((l) => l.track.type === 'audio'));
+  });
+});
+
+describe('soundLayers', () => {
+  it('keeps the visual items whose kit plays sound, in drawing order', () => {
+    const doc = clone(fixture('lesson-excerpt.json'));
+    const layers = visualLayers(doc);
+    const loud = layers[1]!.item.kit;
+    const sound = soundLayers(doc, (name, version) => (name === loud.name && version === loud.version ? {sound: true} : {}));
+    assert.ok(sound.length > 0);
+    assert.ok(sound.every(({item}) => item.kit.name === loud.name && item.kit.version === loud.version));
+    assert.deepEqual(sound.map((l) => l.item.id), layers.filter((l) => l.item.kit.name === loud.name && l.item.kit.version === loud.version).map((l) => l.item.id));
+    assert.deepEqual(soundLayers(doc, () => undefined), []);
   });
 });

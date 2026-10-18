@@ -120,6 +120,14 @@ and kits: about 2 GB with large paintings.
 - **When memory is short,** for instance with a virtual machine running, it
   renders with one tab: slower, but Chrome does not crash.
 - **Overriding it.** `AVG_RENDER_CONCURRENCY=<n>` forces the number of tabs.
+- **Browsers.** The tabs are shared among up to four browsers, one per two
+  tabs: Chrome draws all of a browser's tabs in a single GPU process, which
+  past a few tabs is what holds a render back. `AVG_RENDER_BROWSERS=<n>`
+  forces their number (`1` is the old single browser).
+- **Large pictures.** Original image bytes are preserved: a kit may crop or
+  zoom beyond 2×, and even an unzoomed panoramic image may need its full
+  resolution to cover the frame. Prepare smaller assets explicitly when the
+  intended use allows it.
 
 ### The layout sheet
 
@@ -145,6 +153,14 @@ command of its own:
 ```bash
 node packages/remotion-composer/dist/sheet-cli.js timeline.json out/ --assets episode/ --times 0,2.5,10
 ```
+
+A series (or, by inheritance, its channel) may set
+`sheet: {approval: auto}` in `settings.yaml` to let the agent's recorded
+reading stand for the operator's review. The episode's own settings cannot
+enable it. Missing declarations inherit, a series `settings.yaml` of only
+comments (the one `pva_create_series` writes) among them; unreadable or malformed settings
+and invalid sheet policies require human review, even if the channel allows
+`auto`. Missing or stale sheets are refused either way.
 
 ### Comparing two versions
 
@@ -318,6 +334,12 @@ trust it), and `.claude/settings.json` adds the hooks below. Start it from the
 repository root, as with Pi: the server resolves `tsx` and the library from the
 directory it starts in. `npm run studio:mcp` runs the server alone, for any
 other MCP client.
+
+`npm run studio:tool -- <pva_tool> '<json>'` (or `@params.json`) runs one tool
+from the shell, the same registration, and exits: for jobs longer than an MCP
+call should wait, such as an hour's render, started in the background with its
+output in a log. Progress (the render bar, one line every 2%) goes to stderr,
+the result to stdout.
 
 | Under Pi | Under Claude Code |
 |---|---|

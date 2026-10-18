@@ -135,11 +135,18 @@ export interface ChannelTheme {
   };
   characters: Record<string, Character>;
   rooms: Record<string, Room>;
+  media?: Record<string, Media>;
   brand: {
     text: string;
     icon: "bolt" | "none";
   };
-  /** The release's files, sealed: each file the theme names (room images, monitor videos), relative to the release, with its sha256. A sealed release is held to them (vpr theme seal). */
+  /** The release's files, sealed: each file the theme names (room images, monitor videos, media), relative to the release, with its sha256. A sealed release is held to them (vpr theme seal). */
   files?: Record<string, string>;
   metadata?: Record<string, unknown>;
+}
+
+export interface Media {
+  path: PortableRelativePath;
+  kind: "image" | "audio" | "video";
+  description?: string;
 }

@@ -498,6 +498,16 @@
             "$ref": "#/$defs/Room"
           }
         },
+        "media": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._]*$",
+            "description": "Offered as the asset theme-<name>, like a room: letters, digits, dots, underscores; never a room's name."
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Media"
+          }
+        },
         "brand": {
           "type": "object",
           "additionalProperties": false,
@@ -521,7 +531,7 @@
         },
         "files": {
           "type": "object",
-          "description": "The release's files, sealed: each file the theme names (room images, monitor videos), relative to the release, with its sha256. A sealed release is held to them (vpr theme seal).",
+          "description": "The release's files, sealed: each file the theme names (room images, monitor videos, media), relative to the release, with its sha256. A sealed release is held to them (vpr theme seal).",
           "propertyNames": {
             "$ref": "identity.schema.json#/$defs/PortableRelativePath"
           },
@@ -535,6 +545,31 @@
           "additionalProperties": true
         }
       }
+    },
+    "Media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "identity.schema.json#/$defs/PortableRelativePath"
+        },
+        "kind": {
+          "enum": [
+            "image",
+            "audio",
+            "video"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "description": "A file the channel's series share besides its rooms (a sound, a jingle, an icon, a texture, a clip), offered as the asset theme-<name>."
     }
   }
 }

@@ -20,6 +20,28 @@ export interface KitContext {
   /** Asset URL → how many frames that video lasts, for kits that freeze at its end. */
   assetFrames: Record<string, number>;
   profile: KitProfile;
+  /**
+   * Which half of the render is being drawn: a render may draw the picture
+   * (muted) and the sound in separate passes. Only a kit that plays sound
+   * (`sound: true`) is mounted in the sound pass, and it should draw nothing
+   * there; absent, the kit draws both.
+   */
+  pass?: 'picture' | 'sound';
+}
+
+/**
+ * One sound a kit plays, as it mounts it: <Sequence from durationInFrames>
+ * <Audio src trimBefore loop volume/></Sequence>, in the frames of its item.
+ */
+export interface KitSound {
+  /** The URL the kit passes to <Audio src>: a staged file's staticFile(). */
+  src: string;
+  from: number;
+  durationInFrames: number;
+  trimBefore?: number;
+  loop?: boolean;
+  /** A gain, or Remotion's volume callback (the frame from the sequence's start). */
+  volume?: number | ((frame: number) => number);
 }
 
 export interface KitExample {
@@ -51,6 +73,32 @@ export interface KitVersion {
   profiles?: string[];
   /** Validates props as a timeline writes them. */
   props: ZodTypeAny;
+  /**
+   * The kit plays sound itself (<Audio> inside the component), as a runtime
+   * ported whole does: its items are mounted in the sound pass too, with
+   * `context.pass` saying which pass it is, and the render mixes and
+   * normalises their sound with the timeline's audio tracks.
+   */
+  sound?: boolean;
+  /**
+   * What a kit that plays sound mounts in the sound pass, listed: each entry
+   * one <Audio> as the kit draws it. With the list the render mixes the sound
+   * with FFmpeg, without a browser; it must be exactly what the component
+   * plays. Undefined (or a function returning undefined, for props it cannot
+   * list) keeps the sound pass in the browser.
+   */
+  sounds?: (props: Record<string, unknown>, context: KitContext) => KitSound[] | undefined;
+  /**
+   * What of the props the frames from..to (inclusive, in the item's frames)
+   * are drawn from, for the render cache's segment keys: the props as the
+   * timeline writes them ($asset references kept), less what those frames
+   * never read. Only hashed, never drawn. A kit whose item spans the whole
+   * video (a ported runtime) keeps an edit to one part from re-rendering
+   * every other. Absent, or undefined for some props, the whole props key
+   * every segment; leaving out something a frame reads would reuse a stale
+   * segment, so it must err the other way.
+   */
+  segmentProps?: (props: Record<string, unknown>, range: {from: number; to: number; fps: number}) => unknown;
   component: React.FC<{props: Record<string, unknown>; context: KitContext}>;
   examples: KitExample[];
 }

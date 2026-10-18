@@ -21,6 +21,12 @@ export interface ThemeRoom {
   doors?: Box[];
   monitor?: { box: Box; video: string };
 }
+/** A file the series share besides the rooms, offered as the asset theme-<name>. */
+export interface ThemeMedia {
+  path: string;
+  kind: "image" | "audio" | "video";
+  description?: string;
+}
 export interface ChannelTheme {
   apiVersion: "studio.video/v1alpha1";
   kind: "ChannelTheme";
@@ -30,6 +36,7 @@ export interface ChannelTheme {
   layout?: { safe?: { top: number; bottom: number }; floorY?: number; panel?: Box };
   characters: Record<string, ThemeCharacter>;
   rooms: Record<string, ThemeRoom>;
+  media?: Record<string, ThemeMedia>;
   brand: { text: string; icon: "bolt" | "none" };
   /** Sealed: each named file, relative to the release, with its sha256. */
   files?: Record<string, string>;
@@ -39,6 +46,6 @@ export declare const themeReleasePath: (id: string, version: string) => string;
 export declare const THEME_FILE: "theme.json";
 export declare const BUNDLED_FONTS: Readonly<Record<"Anton" | "Fraunces" | "Inter", readonly string[]>>;
 export declare const ROLE_FACES: Readonly<{ display: readonly string[]; serif: readonly string[]; sans: readonly string[] }>;
-/** The files a theme names, relative to its release: each room's image and each monitor's video. */
+/** The files a theme names, relative to its release: each room's image, each monitor's video and each media file. */
 export declare function themeFilePaths(doc: ChannelTheme): string[];
 export declare function validateChannelTheme(doc: unknown): { code: string; path: string; message: string }[];

@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { load as parseYaml } from "js-yaml";
 import { episodePath } from "@studio/contracts/src/layout.mjs";
 import type { GateReview } from "@studio/contracts/src/gate-review.mjs";
 import { signReceipt } from "@studio/contracts/src/receipt.mjs";
@@ -20,6 +21,7 @@ import {
   LAYOUT_SHEET_DIR,
   LAYOUT_SHEET_REPORT,
   SHEET_REVIEW_PATH,
+  sheetApprovalPolicy,
   verifySheetReview,
   type SheetReviewVerdict,
 } from "@studio/contracts/src/sheet-reviews.mjs";
@@ -140,10 +142,11 @@ export function sheetReviewStatus(input: { libraryRoot: string; ref: EpisodeRef;
     inputsHash: sheet.value.inputsHash,
     sheetHash: sheet.value.sheet.hash,
     reportHash: sheet.value.report.hash,
+    policy: sheetApprovalPolicy(episodeDir, parseYaml).approval,
   });
   const by = (review as { at?: string } | null)?.at;
   const message = verdict.state === "approved" || verdict.state === "rejected"
-    ? `${verdict.state}${by ? ` at ${by}` : ""}${verdict.verified === null ? " (signature not checked: no operator key)" : ""}; the render checks that the sheet still pictures the timeline`
+    ? `${verdict.state}${by ? ` at ${by}` : ""}${(review as { origin?: string }).origin === "policy" ? " by the agent's reading (sheet.approval: auto)" : verdict.verified === null ? " (signature not checked: no operator key)" : ""}; the render checks that the sheet still pictures the timeline`
     : `${verdict.state}: ${verdict.problem?.message ?? ""}`;
   return { ...verdict, message };
 }

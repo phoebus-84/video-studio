@@ -42,7 +42,7 @@ export function archiveSettings(libraryRoot: string, channel: string, series?: s
     if (!existsSync(file)) return {};
     // A file of only comments is no settings.
     const text = readFileSync(file, "utf-8");
-    if (text.split("\n").every((line) => /^\s*(#.*)?$/.test(line))) return {};
+    if (text.split(/\r?\n/).every((line) => /^\s*(#.*)?$/.test(line))) return {};
     const doc = parseYaml(text, { filename: file }) as { archiveMedia?: unknown } | null | undefined;
     const section = doc?.archiveMedia;
     if (section === undefined || section === null) return {};

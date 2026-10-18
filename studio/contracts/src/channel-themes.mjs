@@ -41,12 +41,15 @@ function jsonPath(pointer, base = "$") {
   return pointer.split("/").slice(1).reduce((p, key) => member(p, key.replace(/~1/g, "/").replace(/~0/g, "~")), base);
 }
 
-/** The files a theme names, relative to its release: each room's image and each monitor's video. */
+/** The files a theme names, relative to its release: each room's image, each monitor's video and each media file. */
 export function themeFilePaths(doc) {
   const paths = new Set();
   for (const room of Object.values(doc.rooms ?? {})) {
     if (room.image) paths.add(room.image);
     if (room.monitor?.video) paths.add(room.monitor.video);
+  }
+  for (const media of Object.values(doc.media ?? {})) {
+    if (media?.path) paths.add(media.path);
   }
   return [...paths].sort();
 }
@@ -77,6 +80,10 @@ export function validateChannelTheme(doc) {
     if (room.monitor && !boxOnFrame(room.monitor.box)) offFrame(`${at}.monitor.box`);
   }
   if (doc.layout?.panel && !boxOnFrame(doc.layout.panel)) offFrame("$.layout.panel");
+  // Media are offered as theme-<name>, as rooms are: one id, one file.
+  for (const name of Object.keys(doc.media ?? {})) {
+    if (Object.hasOwn(doc.rooms, name)) problems.push(issue("media-name-taken", `$.media.${name}`, `${name} is a room already: theme-${name} would name two files`));
+  }
   // A sealed release lists exactly the files it names.
   if (doc.files) {
     const named = themeFilePaths(doc);

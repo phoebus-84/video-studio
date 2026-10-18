@@ -1,7 +1,9 @@
 // Verify every declared asset and stage it for Remotion: files are checked
 // against their hash (a different file is an error, never a silent
 // re-render), then hard-linked (copied when linking fails) into a temporary
-// public directory, named by asset id, that the bundle serves.
+// public directory, named by asset id, that the bundle serves. Keep original
+// image bytes: a kit may crop or zoom arbitrarily, so the frame dimensions
+// cannot tell staging how much source detail it may safely discard.
 
 import {createHash} from 'node:crypto';
 import {createReadStream, existsSync, realpathSync} from 'node:fs';

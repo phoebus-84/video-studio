@@ -36,7 +36,7 @@ describe('kit sources and their lock hash', () => {
 
   it('covers every library module a kit reaches, transitively', () => {
     const file = path.join(kits, 'shaped/1.0.0.tsx');
-    assert.deepEqual(sourceFiles(file, kits).map((f) => path.relative(kits, f)), ['lib/math/1.0.0.ts', 'lib/shapes/1.0.0.tsx', 'shaped/1.0.0.tsx']);
+    assert.deepEqual(sourceFiles(file, kits).map((f) => path.relative(kits, f).split(path.sep).join('/')), ['lib/math/1.0.0.ts', 'lib/shapes/1.0.0.tsx', 'shaped/1.0.0.tsx']);
     const before = kitSourceHash(file, kits);
     write('lib/math/1.0.0.ts', "export const one = 2;\n");
     assert.notEqual(kitSourceHash(file, kits), before, 'an edit to a module two imports away changes the kit');

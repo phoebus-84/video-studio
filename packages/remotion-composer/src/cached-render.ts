@@ -10,6 +10,9 @@ import {sha256} from './assets.js';
 import {shapesSegments} from './identity.js';
 import {cachedVideo, cacheKey, planAudio, planVideo, VideoCache, type CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
+import type {KitVersion} from './kits/types.js';
+import type {VisualItem} from './schema.js';
+import {mixSounds, type PlacedSound} from './sound-mix.js';
 
 const exec = promisify(execFile);
 const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
@@ -55,6 +58,16 @@ async function rendererKey(serveUrl: string): Promise<string> {
   });
 }
 
+/** The Node code a soundtrack mixed without a browser depends on: where each sound goes, and how loud. */
+async function mixerKey(): Promise<unknown[]> {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const files = (await readdir(dir)).filter((f) => /^(sound-mix|volume)\.(js|ts)$/.test(f)).sort();
+  return Promise.all(files.map(async (f) => [f, await sha256(path.join(dir, f))]));
+}
+
+/** The tabs of a browser sound pass: it draws nothing, so a few do (half the render's, at most 4). */
+export const soundTabs = (concurrency: number | undefined) => Math.max(1, Math.min(4, Math.floor((concurrency ?? 2) / 2)));
+
 /** Keyframes only where gopSize puts them: the encoding step gets -sc_threshold 0 after its -g. */
 function keyframesEverySecond({args}: {args: string[]}): string[] {
   const at = args.indexOf('-g');
@@ -69,7 +82,24 @@ export async function renderWithCache(options: {
   work: string;
   output: string;
   hasAudio: boolean;
+  /** Visual items of kits that play sound: mounted in the sound pass, beside the audio tracks. */
+  soundItems?: readonly VisualItem[];
+  /**
+   * Everything the sound pass would mount, when every kit that plays sound
+   * lists it: the soundtrack is then mixed by FFmpeg, without a browser.
+   */
+  sounds?: readonly PlacedSound[] | null;
+  /** The library kits drawn, for the segment keys of those that say what a segment reads. */
+  kits?: readonly KitVersion[];
   concurrency?: number;
+  /**
+   * Browsers that draw the pictures at once (default 1), with the tabs shared
+   * among them. Chrome rasterizes all of a browser's tabs in its one GPU
+   * process: past a few tabs that process is the limit, and another browser
+   * brings its own (a long, 2026-10-16: 4.0 frames a second with one browser
+   * of 6–10 tabs, 5.3 with two of four).
+   */
+  browsers?: number;
   onProgress?: (progress: number) => void;
 }): Promise<CacheReport> {
   const {inputProps, composition, serveUrl, work, hasAudio} = options;
@@ -79,16 +109,21 @@ export async function renderWithCache(options: {
     .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
     .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
   const renderer = await rendererKey(serveUrl);
-  const plan = planVideo(timeline, renderer, assetFrames);
+  const plan = planVideo(timeline, renderer, assetFrames, options.kits);
   const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
-  const silentProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
-  // Reuse one browser across misses, rather than launching Chrome each second.
-  // A whole-video hit with no audio never opens it.
-  let browser: Awaited<ReturnType<typeof openBrowser>> | undefined;
-  const getBrowser = async () => browser ??= await openBrowser('chrome');
-  // The pictures and the soundtrack are rendered side by side, each reported
-  // by how far it is: the audio pass draws nothing, so it no longer waits for
-  // the last frame before it starts.
+  const silentProps = {...inputProps, pass: 'picture' as const, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
+  // The component is handed the props of the composition (inputProps only reach getInputProps()): each pass
+  // carries its own, or the picture pass would mount every sound and the sound pass draw every picture.
+  const withProps = (props: TimelineProps & {pass: 'picture' | 'sound'}) => ({composition: {...composition, props}, inputProps: props});
+  const sounding = new Set(options.soundItems ?? []);
+  // Reuse each browser across misses, rather than launching Chrome each second.
+  // A whole-video hit with no audio never opens one.
+  const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
+  const opened: Promise<Awaited<ReturnType<typeof openBrowser>>>[] = [];
+  const getBrowser = (lane = 0) => opened[lane] ??= openBrowser('chrome');
+  const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
+  // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
+  // beside the pictures; a browser sound pass waits for them (see below).
   let videoDone = 0, audioDone = hasAudio ? 0 : 1;
   const report = () => options.onProgress?.(videoDone * 0.8 + audioDone * 0.2);
   const audio = path.join(work, 'audio.wav');
@@ -99,17 +134,28 @@ export async function renderWithCache(options: {
     // The mix is cached on its own key: a change to the pictures alone, or a
     // render of the same audio again, skips the pass.
     const cache = new VideoCache(path.join(options.cacheDir, 'audio'), audioWarnings, '.wav');
-    const key = planAudio(timeline, renderer, sampleRate);
+    // Mixed without a browser, the soundtrack also depends on the Node code that places the sounds.
+    const mixer = options.sounds ? await mixerKey() : null;
+    const key = planAudio(timeline, mixer ? cacheKey({renderer, mixer}) : renderer, sampleRate, sounding, assetFrames);
     if (await cache.get(key, audio)) {
       audioDone = 1;
       report();
       return true;
     }
+    if (options.sounds) {
+      await mixSounds({sounds: options.sounds, timeline, output: audio, sampleRate, onProgress: (p) => { audioDone = p; report(); }});
+      await cache.put(key, audio);
+      return false;
+    }
     // Keep ALL audio tracks: ducking looks up other tracks in the timeline.
-    // No visual kits are mounted for this pass and no video frames are encoded.
-    const audioProps = {...inputProps, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'audio')}};
+    // Only kits that play sound are mounted (told it is the sound pass), and
+    // no video frames are encoded.
+    const tracks = timeline.tracks
+      .map((t) => (t.type === 'audio' ? t : {...t, items: t.items.filter((i) => sounding.has(i as VisualItem))}))
+      .filter((t) => t.type === 'audio' || t.items.length > 0);
+    const audioProps = {...inputProps, pass: 'sound' as const, timeline: {...timeline, tracks}};
     await renderMedia({
-      ...common, puppeteerInstance: await getBrowser(), inputProps: audioProps, codec: 'wav', enforceAudioTrack: true,
+      ...common, concurrency: soundTabs(options.concurrency), puppeteerInstance: await getBrowser(), ...withProps(audioProps), codec: 'wav', enforceAudioTrack: true,
       outputLocation: audio, sampleRate,
       onProgress: ({progress}) => { audioDone = progress; report(); },
     });
@@ -117,10 +163,10 @@ export async function renderWithCache(options: {
     return false;
   };
   try {
-    const [{video, report: cacheReport}, audioReused] = await Promise.all([cachedVideo({
-      plan, cacheDir: options.cacheDir, work,
+    const pictures = () => cachedVideo({
+      plan, cacheDir: options.cacheDir, work, lanes: browsers,
       onProgress: (p) => { videoDone = p; report(); },
-      renderRun: async (segments, outputs, onRunProgress) => {
+      renderRun: async (segments, outputs, onRunProgress, lane) => {
         // One renderer call for the whole run, every tab busy across it. A
         // keyframe every second (gopSize) puts one at each segment's first
         // frame: segments start on multiples of fps and so does the run, so
@@ -130,7 +176,8 @@ export async function renderWithCache(options: {
         const first = segments[0]!, last = segments.at(-1)!;
         const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
         await renderMedia({
-          ...common, ...encoding, puppeteerInstance: await getBrowser(), inputProps: silentProps, outputLocation: whole,
+          ...common, concurrency: browsers > 1 ? tabsEach : common.concurrency, ...encoding, puppeteerInstance: await getBrowser(lane),
+          ...withProps(silentProps), outputLocation: whole,
           frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
           onProgress: ({progress}) => onRunProgress(progress),
         });
@@ -156,7 +203,13 @@ export async function renderWithCache(options: {
         await writeFile(list, files.map((file) => `file '${path.basename(file)}'`).join('\n'));
         await run(['-f', 'concat', '-safe', '1', '-i', list, '-map', '0:v:0', '-c:v', 'copy', '-an', output]);
       },
-    }), soundtrack()]);
+    });
+    // The browser's sound pass mounts every sounding kit on every frame: beside
+    // the pictures, on the same browser, it slowed them about 4× (a long,
+    // 2026-10-16). It runs after them, with few tabs; FFmpeg's mix runs beside.
+    const [{video, report: cacheReport}, audioReused] = options.sounds || !hasAudio
+      ? await Promise.all([pictures(), soundtrack()])
+      : [await pictures(), await soundtrack()];
     cacheReport.warnings.push(...audioWarnings);
     if (hasAudio) {
       cacheReport.audioReused = audioReused;
@@ -173,6 +226,6 @@ export async function renderWithCache(options: {
     options.onProgress?.(1);
     return cacheReport;
   } finally {
-    await browser?.close({silent: true});
+    await Promise.all(opened.map(async (browser) => (await browser.catch(() => null))?.close({silent: true})));
   }
 }

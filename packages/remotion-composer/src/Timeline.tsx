@@ -8,7 +8,7 @@ import {resolveKit, type KitProfile} from './kits/index.js';
 import type {AudioItem, EditTimeline, VisualItem} from './schema.js';
 import {isAudioItem} from './schema.js';
 import {itemVolume} from './volume.js';
-import {visualLayers} from './layers.js';
+import {soundLayers, visualLayers} from './layers.js';
 
 export interface TimelineProps {
   timeline: EditTimeline;
@@ -16,6 +16,12 @@ export interface TimelineProps {
   files: Record<string, string>;
   /** Staged file name → how many frames that video lasts (for kits that freeze at its end). */
   assetFrames: Record<string, number>;
+  /**
+   * Which half to draw when a render splits them: 'picture' (every visual
+   * item, sound muted by the encoder) or 'sound' (the audio tracks and only
+   * the items of kits that play sound). Absent: everything.
+   */
+  pass?: 'picture' | 'sound';
   /** Index signature Remotion's Composition requires of its props. */
   [key: string]: unknown;
 }
@@ -31,7 +37,7 @@ export function resolveAssets(value: unknown, files: Record<string, string>): un
   return value;
 }
 
-const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; assetFrames: Record<string, number>; profile: KitProfile}> = ({item, files, assetFrames, profile}) => {
+const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; assetFrames: Record<string, number>; profile: KitProfile; pass?: 'picture' | 'sound'}> = ({item, files, assetFrames, profile, pass}) => {
   const frame = useCurrentFrame();
   let opacity = 1;
   if (item.transitionIn) opacity = Math.min(opacity, Math.min(1, frame / item.transitionIn.duration));
@@ -42,16 +48,16 @@ const ItemLayer: React.FC<{item: VisualItem; files: Record<string, string>; asse
   const byUrl = Object.fromEntries(Object.entries(assetFrames).map(([file, frames]) => [staticFile(file), frames]));
   return (
     <AbsoluteFill style={{opacity}}>
-      <Kit props={resolveAssets(item.props, files) as Record<string, unknown>} context={{assetFrames: byUrl, profile}} />
+      <Kit props={resolveAssets(item.props, files) as Record<string, unknown>} context={{assetFrames: byUrl, profile, ...(pass ? {pass} : {})}} />
     </AbsoluteFill>
   );
 };
 
-export const Timeline: React.FC<TimelineProps> = ({timeline, files, assetFrames}) => (
+export const Timeline: React.FC<TimelineProps> = ({timeline, files, assetFrames, pass}) => (
   <AbsoluteFill style={{backgroundColor: '#000000'}}>
-    {visualLayers(timeline).map(({track, item}) => (
+    {(pass === 'sound' ? soundLayers(timeline, resolveKit) : visualLayers(timeline)).map(({track, item}) => (
       <Sequence key={`${track.id}/${item.id}`} from={item.from} durationInFrames={item.duration}>
-        <ItemLayer item={item} files={files} assetFrames={assetFrames} profile={timeline.profile} />
+        <ItemLayer item={item} files={files} assetFrames={assetFrames} profile={timeline.profile} pass={pass} />
       </Sequence>
     ))}
     {timeline.tracks

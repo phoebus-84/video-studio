@@ -71,6 +71,20 @@ describe("loadEpisode with a pinned theme", () => {
     expect(loaded.input.assets["theme-hall-monitor"]).toEqual({ path: "../../../../themes/sample/1.0.0/rooms/monitor.mp4", hash: sha256("a clip"), kind: "video" });
   });
 
+  it("offers each media file as theme-<name>, with its kind", () => {
+    const theme = JSON.parse(readFileSync(join(themeDir(), "theme.json"), "utf-8"));
+    theme.media = { jingle: { path: "media/jingle.mp3", kind: "audio" }, smoke: { path: "media/smoke.mp4", kind: "video" } };
+    writeFileSync(join(themeDir(), "theme.json"), JSON.stringify(theme));
+    mkdirSync(join(themeDir(), "media"), { recursive: true });
+    writeFileSync(join(themeDir(), "media", "jingle.mp3"), "a jingle");
+    writeFileSync(join(themeDir(), "media", "smoke.mp4"), "smoke");
+    pinTheme();
+    const loaded = loadEpisode(dir(), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    expect(loaded.input.assets["theme-jingle"]).toEqual({ path: "../../../../themes/sample/1.0.0/media/jingle.mp3", hash: sha256("a jingle"), kind: "audio" });
+    expect(loaded.input.assets["theme-smoke"]).toEqual({ path: "../../../../themes/sample/1.0.0/media/smoke.mp4", hash: sha256("smoke"), kind: "video" });
+  });
+
   it("leaves an episode whose release pins no theme as it was", () => {
     const loaded = loadEpisode(dir(), { episodeRef: REF });
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));

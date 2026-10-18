@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import Module from 'node:module';
-import {mkdir, readFile, rename, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {ComposerError} from './errors.js';
@@ -87,10 +87,27 @@ export async function libraryEntry(checked: CheckedKits): Promise<string> {
     `registerRoot(RemotionRoot);`,
   ];
   // Written whole, then renamed: a render beside this one reads a complete file or none.
+  // The folder is named by what it holds, so a render beside this one writes the same
+  // bytes; Windows refuses a rename onto a file another process is replacing or reading
+  // (EPERM, EBUSY): that file, once it is the same, is kept.
   const put = async (name: string, content: string | Buffer) => {
     const temp = path.join(dir, `.${name}.${process.pid}.tmp`);
+    const target = path.join(dir, name);
     await writeFile(temp, content);
-    await rename(temp, path.join(dir, name));
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(temp, target);
+        return;
+      } catch (e) {
+        const there = await readFile(target).catch(() => null);
+        if (there && there.equals(Buffer.from(content))) {
+          await rm(temp, {force: true});
+          return;
+        }
+        if (attempt >= 20 || !['EPERM', 'EBUSY', 'EACCES'].includes((e as NodeJS.ErrnoException).code ?? '')) throw e;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
   };
   for (const [i, source] of checked.sources.entries()) await put(`kit-${i}.cjs`, source.bytes);
   await put('library-entry.js', `${lines.join('\n')}\n`);

@@ -6,6 +6,8 @@ import {createHash, randomUUID} from 'node:crypto';
 import {copyFile, mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {sha256} from './assets.js';
+import {resolveKit} from './kits/index.js';
+import type {KitVersion} from './kits/types.js';
 import {visualLayers} from './layers.js';
 import type {EditTimeline} from './schema.js';
 
@@ -41,8 +43,12 @@ export interface CacheReport {
   warnings: string[];
 }
 
-/** renderer identifies code, dependencies and encoding settings, NOT the timeline. */
-export function planVideo(timeline: EditTimeline, renderer: string, assetFrames: Record<string, number> = {}): VideoPlan {
+/**
+ * renderer identifies code, dependencies and encoding settings, NOT the
+ * timeline. A kit item is keyed by what its kit says the segment's frames
+ * read (KitVersion.segmentProps), when it says so; otherwise by its props.
+ */
+export function planVideo(timeline: EditTimeline, renderer: string, assetFrames: Record<string, number> = {}, kits?: readonly KitVersion[]): VideoPlan {
   const layers = visualLayers(timeline);
   const global = {
     version: 1, renderer, fps: timeline.fps, duration: timeline.durationInFrames,
@@ -52,11 +58,15 @@ export function planVideo(timeline: EditTimeline, renderer: string, assetFrames:
   for (let from = 0; from < timeline.durationInFrames; from += timeline.fps) {
     const to = Math.min(from + timeline.fps, timeline.durationInFrames) - 1;
     const active = layers.filter(({item}) => item.from <= to && item.from + item.duration > from);
-    const ids = new Set<string>();
-    active.forEach(({item}) => assetRefs(item.props, ids));
-    const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
     // Drawing order is already resolved; source pointers/track names are editorial only.
-    const items = active.map(({item: {source: _source, ...item}}) => item);
+    const items = active.map(({item: {source: _source, ...item}}) => {
+      const read = item.kit ? resolveKit(item.kit.name, item.kit.version, kits)?.segmentProps?.(item.props as Record<string, unknown>,
+        {from: Math.max(from, item.from) - item.from, to: Math.min(to, item.from + item.duration - 1) - item.from, fps: timeline.fps}) : undefined;
+      return read === undefined ? item : {...item, props: {segmentProps: read}};
+    });
+    const ids = new Set<string>();
+    items.forEach((item) => assetRefs(item.props, ids));
+    const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
     segments.push({from, to, key: cacheKey({global, from, to, items, assets})});
   }
   return {key: cacheKey(segments), segments};
@@ -66,13 +76,19 @@ export function planVideo(timeline: EditTimeline, renderer: string, assetFrames:
  * The key of the mixed soundtrack: the audio tracks whole (ducking reads the
  * other audio tracks) and the media they play. Nothing drawn changes it.
  */
-export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: number): string {
-  const tracks = timeline.tracks.filter((track) => track.type === 'audio');
+export function planAudio(timeline: EditTimeline, renderer: string, sampleRate: number, soundItems: ReadonlySet<unknown> = new Set(), assetFrames: Record<string, number> = {}): string {
+  // Items of kits that play sound belong to the soundtrack too (their props, their media).
+  const tracks = timeline.tracks
+    .map((track) => (track.type === 'audio' ? track : {...track, items: track.items.filter((item) => soundItems.has(item))}))
+    .filter((track) => track.type === 'audio' || track.items.length > 0);
   const ids = new Set<string>();
   assetRefs(tracks, ids);
   for (const track of tracks) for (const item of track.items) if ('asset' in item) ids.add(item.asset);
   const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
-  return cacheKey({version: 1, kind: 'audio', renderer, fps: timeline.fps, duration: timeline.durationInFrames, sampleRate, tracks, assets});
+  // Sounding kits can read the whole KitContext, unlike plain audio tracks.
+  // Counts are keyed by asset id, not transient staged URLs (as in planVideo).
+  const context = soundItems.size > 0 ? {profile: timeline.profile, assetFrames} : null;
+  return cacheKey({version: 1, kind: 'audio', renderer, fps: timeline.fps, duration: timeline.durationInFrames, sampleRate, tracks, assets, context});
 }
 
 /** Atomic publication + a digest prevent interrupted writes or corruption from being hits. */
@@ -133,13 +149,19 @@ export async function cachedVideo(options: {
   work: string;
   /**
    * Render consecutive segments in one go, writing outputs[i] for segments[i];
-   * it may report how far it is through the run (0–1) as it goes.
+   * it may report how far it is through the run (0–1) as it goes. `lane` says
+   * which of the `lanes` renders it, so each lane can draw in its own browser.
    */
-  renderRun: (segments: VideoSegment[], outputs: string[], onProgress: (progress: number) => void) => Promise<void>;
+  renderRun: (segments: VideoSegment[], outputs: string[], onProgress: (progress: number) => void, lane: number) => Promise<void>;
   concatenate: (files: string[], output: string) => Promise<void>;
   onProgress?: (progress: number) => void;
   /** Longest run rendered by one call, in segments (default 120: two minutes at one second each). */
   maxRunSegments?: number;
+  /**
+   * Runs rendered at once (default 1). The misses are cut so that every lane
+   * has a share, and each lane takes the next run as it finishes one.
+   */
+  lanes?: number;
 }): Promise<{video: string; report: CacheReport}> {
   const {plan, work} = options;
   const report: CacheReport = {wholeVideoReused: false, segmentsReused: 0, segmentsRendered: 0, totalSegments: plan.segments.length, warnings: []};
@@ -159,15 +181,34 @@ export async function cachedVideo(options: {
   }
   const total = plan.segments.length;
   options.onProgress?.(report.segmentsReused / total);
-  for (const run of missRuns(missing, options.maxRunSegments ?? 120)) {
-    // Within a run, progress moves with its frames rather than jumping at its end.
-    const done = report.segmentsReused + report.segmentsRendered;
-    await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!),
-      (p) => options.onProgress?.((done + Math.min(Math.max(p, 0), 1) * run.length) / total));
-    for (const index of run) await segments.put(plan.segments[index]!.key, files[index]!);
-    report.segmentsRendered += run.length;
-    options.onProgress?.((report.segmentsReused + report.segmentsRendered) / total);
-  }
+  const lanes = Math.max(1, Math.floor(options.lanes ?? 1));
+  const runs = missRuns(missing, Math.min(options.maxRunSegments ?? 120, Math.max(1, Math.ceil(missing.length / lanes))));
+  // Within a run, progress moves with its frames rather than jumping at its end.
+  const partial = new Map<number[], number>();
+  const progress = () => options.onProgress?.(
+    (report.segmentsReused + report.segmentsRendered + [...partial.values()].reduce((a, b) => a + b, 0)) / total);
+  let next = 0, failed = false;
+  const lane = async (index: number) => {
+    while (!failed && next < runs.length) {
+      const run = runs[next++]!;
+      partial.set(run, 0);
+      try {
+        await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!),
+          (p) => { partial.set(run, Math.min(Math.max(p, 0), 1) * run.length); progress(); }, index);
+      } catch (e) {
+        // The other lanes take no further run, and finish and keep the one they are on.
+        failed = true;
+        throw e;
+      }
+      for (const i of run) await segments.put(plan.segments[i]!.key, files[i]!);
+      partial.delete(run);
+      report.segmentsRendered += run.length;
+      progress();
+    }
+  };
+  const settled = await Promise.allSettled(Array.from({length: Math.min(lanes, runs.length)}, (_, index) => lane(index)));
+  const failure = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+  if (failure) throw failure.reason;
   await options.concatenate(files, video);
   await whole.put(plan.key, video);
   return {video, report};

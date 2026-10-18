@@ -4,6 +4,7 @@ import {mkdtemp, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {cachedVideo, missRuns, planAudio, planVideo, VideoCache, type VideoPlan, type VideoSegment} from '../src/render-cache.js';
+import type {KitVersion} from '../src/kits/types.js';
 import type {EditTimeline, VisualItem} from '../src/schema.js';
 
 import {cacheTimeline} from './cache-fixture.js';
@@ -79,6 +80,37 @@ describe('video cache plan', () => {
     const doc = cacheTimeline();
     assert.deepEqual(changed(keys(doc), keys(doc, 'renderer-v2')), [0, 1, 2]);
     assert.notEqual(planVideo(doc, 'r', {clip: 10}).key, planVideo(doc, 'r', {clip: 11}).key);
+  });
+
+  it('keys a kit item by what its kit says a segment reads, and that alone', () => {
+    // A kit spanning the whole video whose props hold one part per second, each drawn in its own second only.
+    const ranges: {from: number; to: number}[] = [];
+    const kit = {
+      name: 'parts', version: '1.0.0',
+      segmentProps: (props: Record<string, unknown>, range: {from: number; to: number; fps: number}) => {
+        ranges.push({from: range.from, to: range.to});
+        const parts = props.parts as unknown[];
+        return {title: props.title, parts: parts.slice(Math.floor(range.from / range.fps), Math.floor(range.to / range.fps) + 1)};
+      },
+    } as unknown as KitVersion;
+    const doc = cacheTimeline();
+    doc.tracks = [{id: 'main', type: 'visual', z: 0, items: [
+      {id: 'p', from: 15, duration: 60, kit: {name: 'parts', version: '1.0.0'}, props: {title: 'T', parts: ['zero', {$asset: 'a'}, {$asset: 'b'}]}},
+    ]}];
+    const keyed = () => planVideo(doc, 'r', {}, [kit]).segments.map((s) => s.key);
+    const before = keyed();
+    assert.deepEqual(ranges.splice(0), [{from: 0, to: 14}, {from: 15, to: 44}, {from: 45, to: 59}], 'ranges in the item\'s frames');
+    const item = doc.tracks[0]!.items[0] as VisualItem;
+    (item.props.parts as unknown[])[0] = 'changed';
+    assert.deepEqual(changed(before, keyed()), [0, 1], 'a part re-renders only the segments that read it');
+    (item.props.parts as unknown[])[0] = 'zero';
+    doc.assets.b!.hash = `sha256:${'e'.repeat(64)}`;
+    assert.deepEqual(changed(before, keyed()), [], 'an asset no segment reads keys none');
+    doc.assets.a!.hash = `sha256:${'d'.repeat(64)}`;
+    assert.deepEqual(changed(before, keyed()), [1, 2], 'an asset keys the segments that read it');
+    item.props.title = 'U';
+    assert.deepEqual(changed(before, keyed()), [0, 1, 2]);
+    assert.notDeepEqual(planVideo(doc, 'r').segments.map((s) => s.key), keyed(), 'without the kit, the whole props key the item');
   });
 
   it('includes nested asset references and ignores JSON key ordering', () => {
@@ -210,6 +242,43 @@ describe('video cache storage and execution', () => {
     assert.deepEqual(calls, [[30]], 'the untouched seconds around it are reused');
   }));
 
+  it('shares the misses among lanes that render at once, each run on its lane', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const calls: {from: number[]; lane: number}[] = [];
+    let busy = 0, most = 0;
+    const result = await cachedVideo({
+      plan, cacheDir: path.join(root, 'cache'), work: await mkdtemp(path.join(root, 'work-')), lanes: 2,
+      renderRun: async (segments, outputs, _onProgress, lane) => {
+        calls.push({from: segments.map((s) => s.from), lane});
+        most = Math.max(most, ++busy);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+        busy--;
+      },
+      concatenate: async (files, output) => { await writeFile(output, (await Promise.all(files.map((f) => readFile(f, 'utf8')))).join('|')); },
+    });
+    assert.deepEqual(calls, [{from: [0, 30], lane: 0}, {from: [60], lane: 1}], 'three misses on two lanes: runs of two');
+    assert.equal(most, 2, 'the lanes render at once');
+    assert.equal(result.report.segmentsRendered, 3);
+    assert.equal(await readFile(result.video, 'utf8'), plan.segments.map((s) => s.key).join('|'), 'joined in order whatever lane drew them');
+  }));
+
+  it('a failed lane fails the render, and the other lane publishes what it finished', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const cacheDir = path.join(root, 'cache');
+    await assert.rejects(cachedVideo({
+      plan, cacheDir, work: await mkdtemp(path.join(root, 'work-')), lanes: 3,
+      renderRun: async (segments, outputs, _onProgress, lane) => {
+        if (lane === 1) throw new Error('Chrome failed');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+      },
+      concatenate: async () => {},
+    }), /Chrome failed/);
+    // settled before it fails: nothing is still writing when the caller cleans up
+    assert.equal((await readdir(path.join(cacheDir, 'segments'))).filter((f) => f.endsWith('.mp4')).length, 2);
+  }));
+
   it('reports progress inside a run, not only when it ends', async () => workspace(async (root) => {
     const plan = planVideo(cacheTimeline(), 'r');
     const seen: number[] = [];
@@ -235,6 +304,37 @@ describe('audio key', () => {
     doc.assets.voice = {...doc.assets.voice!, hash: `sha256:${'d'.repeat(64)}`};
     assert.notEqual(planAudio(doc, 'r', 48000), key, 'new voice media is a new soundtrack');
     assert.notEqual(planAudio(cacheTimeline(), 'other renderer', 48000), key);
+  });
+
+  it('holds the items of kits that play sound, and only those', () => {
+    const doc = cacheTimeline();
+    const plain = planAudio(doc, 'r', 48000);
+    const item = doc.tracks[1]!.items[0] as VisualItem;
+    assert.equal(planAudio(doc, 'r', 48000, new Set()), plain, 'no sounding kit: the key of the audio tracks alone');
+    const sounding = planAudio(doc, 'r', 48000, new Set([item]));
+    assert.notEqual(sounding, plain, 'a kit that plays sound is part of the soundtrack');
+    item.props.text = 'Changed';
+    assert.notEqual(planAudio(doc, 'r', 48000, new Set([item])), sounding, 'its props change its sound');
+    assert.equal(planAudio(doc, 'r', 48000), plain, 'other kits never enter the key');
+  });
+});
+
+describe('sound kit context in audio keys', () => {
+  it('invalidates on profile changes only when a kit can play sound', () => {
+    const doc = cacheTimeline();
+    const sounding = new Set([doc.tracks[1]!.items[0]]);
+    const plain = planAudio(doc, 'r', 48000);
+    const before = planAudio(doc, 'r', 48000, sounding);
+    doc.profile.safeZone.bottom++;
+    assert.notEqual(planAudio(doc, 'r', 48000, sounding), before, 'kits receive the whole context.profile');
+    assert.equal(planAudio(doc, 'r', 48000), plain, 'audio tracks do not read the picture profile');
+  });
+
+  it('invalidates on asset frame counts only when a kit can play sound', () => {
+    const doc = cacheTimeline();
+    const sounding = new Set([doc.tracks[1]!.items[0]]);
+    assert.notEqual(planAudio(doc, 'r', 48000, sounding, {clip: 10}), planAudio(doc, 'r', 48000, sounding, {clip: 11}));
+    assert.equal(planAudio(doc, 'r', 48000, new Set(), {clip: 10}), planAudio(doc, 'r', 48000, new Set(), {clip: 11}));
   });
 });
 

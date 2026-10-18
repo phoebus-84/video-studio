@@ -1,5 +1,6 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {mkdtemp, mkdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -25,6 +26,37 @@ async function explainer() {
 }
 
 describe('stageAssets', () => {
+  it('preserves original image bytes, including panoramas and portraits larger than twice the frame', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'composer-assets-'));
+    try {
+      for (const [file, width, height] of [['wide.png', 900, 100], ['tall.jpg', 100, 900], ['small.png', 160, 90]] as const) {
+        const draw = spawnSync(process.env.FFMPEG_PATH || 'ffmpeg',
+          ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=s=${width}x${height}`, '-frames:v', '1', path.join(root, file)], {encoding: 'utf8'});
+        assert.equal(draw.status, 0, draw.stderr);
+      }
+      const doc = clone(fixture('explainer.json')) as EditTimeline;
+      doc.profile = {...doc.profile, width: 160, height: 90};
+      doc.assets = {};
+      for (const name of ['wide.png', 'tall.jpg', 'small.png']) {
+        doc.assets[name] = {path: name, hash: await sha256(path.join(root, name)), kind: 'image'};
+      }
+      const out = await stageAssets(doc, root);
+      assert.ok(out.ok);
+      try {
+        // A kit may cover, crop, or zoom arbitrarily: the frame size alone
+        // cannot bound the source pixels it needs, or justify a re-encode.
+        for (const [id, asset] of Object.entries(doc.assets)) {
+          assert.equal(await sha256(path.join(out.staged.publicDir, out.staged.files[id]!)), asset.hash, id);
+          assert.equal(out.staged.sources[id], path.join(root, asset.path));
+        }
+      } finally {
+        await out.staged.cleanup();
+      }
+    } finally {
+      await rm(root, {recursive: true, force: true});
+    }
+  });
+
   it('stages every verified asset under its id', async () => {
     const {doc, root} = await explainer();
     const out = await stageAssets(doc, root);

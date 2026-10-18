@@ -214,6 +214,14 @@ describe("loadEpisode", () => {
     expect(loaded.input.inputs["assets/video/walk.mp4"]).toBe(sha256("scene clip"));
   });
 
+  it("offers an SVG drawing in assets/images as image-<name>", () => {
+    mkdirSync(at("assets/images"), { recursive: true });
+    writeFileSync(at("assets/images/ic-eye.svg"), "<svg/>");
+    const loaded = loadEpisode(dir(), { episodeRef: REF });
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems));
+    expect(loaded.input.assets["image-ic-eye"]).toEqual({ path: "assets/images/ic-eye.svg", hash: sha256("<svg/>"), kind: "image" });
+  });
+
   it("offers every sound in assets/sounds as sound-<name>, hashed", () => {
     mkdirSync(at("assets/sounds"), { recursive: true });
     writeFileSync(at("assets/sounds/applause.wav"), "clapping");

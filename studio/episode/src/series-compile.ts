@@ -27,7 +27,7 @@ import { KIT_BUNDLE, KIT_RELEASE_FILE } from "@studio/contracts/src/kit-releases
 export const NARRATION_TAKES_PATH = "artifacts/narration/takes.json";
 /** What the loader offers from assets/: every file in each folder, as <prefix>-<name>. */
 const OFFERED = [
-  { dir: "images", prefix: "image", kind: "image", extensions: [".png", ".jpg", ".jpeg", ".webp"] },
+  { dir: "images", prefix: "image", kind: "image", extensions: [".png", ".jpg", ".jpeg", ".webp", ".svg"] },
   { dir: "sounds", prefix: "sound", kind: "audio", extensions: [".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"] },
   { dir: "video", prefix: "video", kind: "video", extensions: [".mp4", ".webm", ".mov", ".mkv", ".ogv"] },
 ] as const;
@@ -384,7 +384,8 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   // ── The channel theme the release pins (ADR-0040) ─────────────────────────
   // Read from library/<channel>/themes/<id>/<version>/, held to the pin's hash
   // and to the contract; its room images (and monitor clips) are offered as
-  // theme-<room> (theme-<room>-monitor), with paths relative to the episode.
+  // theme-<room> (theme-<room>-monitor), its media as theme-<name>, with paths
+  // relative to the episode.
   let theme: ChannelTheme | undefined;
   if (template.theme) {
     const themesDir = join(dirname(dirname(seriesDir)), "themes");
@@ -431,6 +432,9 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     for (const [name, room] of Object.entries(theme!.rooms).sort(([a], [b]) => (a < b ? -1 : 1))) {
       offer(`theme-${name}`, room.image, "image");
       if (room.monitor) offer(`theme-${name}-monitor`, room.monitor.video, "video");
+    }
+    for (const [name, media] of Object.entries(theme!.media ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))) {
+      offer(`theme-${name}`, media.path, media.kind);
     }
   }
 
