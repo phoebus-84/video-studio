@@ -81,6 +81,8 @@ describe("archive tools", () => {
     mkdirSync(join(root, "sample", "series", "poetry"), { recursive: true });
     writeFileSync(join(root, "sample", "settings.yaml"), "# nothing yet\n");
     expect(archiveSettings(root, "sample", "poetry").policy.allow).toEqual(["public-domain", "CC0", "CC-BY", "CC-BY-SA"]);
+    writeFileSync(join(root, "sample", "series", "poetry", "settings.yaml"), "# Series settings, saved on Windows\r\n");
+    expect(archiveSettings(root, "sample", "poetry").policy.allow).toEqual(["public-domain", "CC0", "CC-BY", "CC-BY-SA"]);
     for (const bad of ["archiveMedia:\n  licences: CC0\n", "archiveMedia:\n  licences: [CC0, 3]\n", "archiveMedia:\n  minImageLongSide: 0\n", "archiveMedia:\n  licences: [CC0, CC-BY-WHATEVER]\n"]) {
       writeFileSync(join(root, "sample", "settings.yaml"), bad);
       expect(() => archiveSettings(root, "sample")).toThrow(/archiveMedia/);
