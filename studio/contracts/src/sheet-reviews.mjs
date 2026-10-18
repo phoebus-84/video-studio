@@ -28,6 +28,8 @@ export const SHEET_REVIEW_FILE = "review.json";
 export const SHEET_REVIEW_PATH = `${LAYOUT_SHEET_DIR}/${SHEET_REVIEW_FILE}`;
 
 const bare = (hash) => String(hash).replace(/^sha256:/, "");
+/** Only blank lines and `#` comments (a BOM and CRLF allowed): a settings.yaml that declares nothing. */
+const declaresNothing = (text) => text.replace(/^﻿/, "").split(/\r?\n/).every((line) => /^\s*(#.*)?$/.test(line));
 
 /**
  * The operator's `sheet.approval` for an episode (library/<channel>/series/
@@ -50,6 +52,8 @@ export function sheetApprovalPolicy(episodeDir, parse) {
       if (error?.code === "ENOENT") continue;
       return review;
     }
+    // A file of blank lines and comments declares nothing — the one `vpr`/pva_create_series writes — so it inherits too.
+    if (declaresNothing(text)) continue;
     let doc;
     try {
       doc = parse(text);

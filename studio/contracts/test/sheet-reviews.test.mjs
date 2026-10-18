@@ -32,6 +32,13 @@ describe("sheetApprovalPolicy", () => {
     }
   }));
 
+  it("inherits through a series settings.yaml that declares nothing: empty, blank or only comments", () => withSettings(({ episode, seriesFile, channelFile }) => {
+    for (const text of ["", "  \n\n", "# Series settings for s\n", "﻿# only comments\r\n\r\n  # indented\r\n"]) {
+      writeFileSync(seriesFile, text);
+      assert.deepEqual(sheetApprovalPolicy(episode, JSON.parse), { approval: "auto", from: channelFile }, JSON.stringify(text));
+    }
+  }));
+
   it("requires human review on malformed settings or invalid policy values", () => withSettings(({ episode, seriesFile }) => {
     const invalid = ["{", "[]", "false", "null", JSON.stringify({ sheet: null }), JSON.stringify({ sheet: [] }),
       JSON.stringify({ sheet: { approval: null } }), JSON.stringify({ sheet: { approval: "typo" } })];

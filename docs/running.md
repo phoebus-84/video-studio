@@ -157,7 +157,8 @@ node packages/remotion-composer/dist/sheet-cli.js timeline.json out/ --assets ep
 A series (or, by inheritance, its channel) may set
 `sheet: {approval: auto}` in `settings.yaml` to let the agent's recorded
 reading stand for the operator's review. The episode's own settings cannot
-enable it. Missing declarations inherit; unreadable or malformed settings
+enable it. Missing declarations inherit, a series `settings.yaml` of only
+comments (the one `pva_create_series` writes) among them; unreadable or malformed settings
 and invalid sheet policies require human review, even if the channel allows
 `auto`. Missing or stale sheets are refused either way.
 
