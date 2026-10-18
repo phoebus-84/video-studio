@@ -119,7 +119,68 @@ Canonical text writes use compare-and-swap revisions plus atomic rename. A direc
 
 ## Git and storage
 
-Textual workspace files are suitable for Git, but large generated media are not automatically committed. Media backup and remote object storage are future policies; manifests retain content hashes and provenance so missing assets are detectable rather than silently ignored.
+A channel's text is versioned in its own git repository; heavy media stay out.
+`media.lock.jsonl` names their channel-relative paths, SHA-256 hashes and sizes
+(or relative symlink targets). Updating the lock keeps entries missing on this
+machine; only explicit `--prune` forgets them (ADR-0045).
+
+### Media remote
+
+An optional, versioned `media.remote.json` gives those hashes an S3-compatible
+remote ([ADR-0049](adr/0049-channel-media-use-a-content-addressed-s3-remote.md)).
+No secrets belong here:
+
+```json
+{
+  "apiVersion": "studio.video/v1alpha1",
+  "kind": "MediaRemote",
+  "url": "s3://channel-media/shared/",
+  "endpoint": "https://storage.example.org",
+  "region": "auto",
+  "keep": ["paid", "approved", "archive", "masters", "other"],
+  "rules": [
+    {"prefix": "series/my-series/episodes/ep001/assets/loops", "tier": "derived"},
+    {"prefix": "series/my-series/episodes/ep001/assets/video/wan", "tier": "paid"}
+  ],
+  "forcePathStyle": true,
+  "checksum": true
+}
+```
+
+- `url`: bucket plus optional object prefix, without credentials, queries or
+  escapes. Objects are `<prefix>/sha256/<first-two-hex>/<full-hex>`. Cross-channel
+  deduplication requires the **same bucket and prefix**.
+- `region`: required; use the provider's region (`auto` for R2). `endpoint`
+  is optional for AWS; otherwise an HTTPS origin. HTTP is permitted only on
+  loopback for local testing. Do not put credentials in an endpoint URL.
+- Credentials use the standard AWS chain: `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, or `AWS_PROFILE`
+  and the user's AWS config files. Unknown config fields are rejected.
+- `keep` defaults to the five tiers shown. Explicit `keep` replaces that
+  default, so retain `other` unless you deliberately want to exclude
+  unclassified assets. An empty array selects nothing until `--tier` is given.
+- `rules` defaults to empty. The first matching `prefix` wins, matching a
+  complete file or directory boundary; no globs or trailing slash. Rules are
+  channel policy, not a licence check or a signature verifier.
+- Without a rule, `output/final-*` and `output/long-*` are `deliveries`;
+  all other media are `other` and are kept by default. Assign known,
+  receipt-backed loop frames, atlases, chains and soundtracks to `derived`
+  explicitly; the runtime does not guess whether an unknown asset is
+  reproducible. `paid`, `approved`, `archive` and `masters` can also
+  be assigned with rules, without changing the lock format.
+- `forcePathStyle` defaults to true. `checksum` defaults to true; set it
+  false only for a provider without optional S3 SHA-256 request checksums.
+  Mandatory local snapshot and download hashing is unaffected.
+
+Push and pull support `--tier all` or a comma-separated/repeated `--tier`.
+Their reports include transferred/planned paths and bytes, existing files,
+missing files, local changes, ambiguous merged entries, per-path errors and
+excluded counts/bytes by tier. Nonzero exit means the selected operation did
+not fully succeed. A successful selective transfer is **not** a claim that
+every locked file exists locally.
+
+See [running the studio](running.md#channel-media-backup-and-restore) for
+commands, provider requirements and a fresh-clone verification procedure.
 
 ## What the studio's file browser shows: `.uiignore`
 

@@ -210,14 +210,16 @@ export interface MediaCheck {
 }
 
 /** The channel's heavy media against its lock. Reads only; `verify` ignores the hash cache. */
-export function checkMedia(channelDir: string, options: { verify?: boolean } = {}): MediaCheck {
+export function checkMedia(channelDir: string, options: { verify?: boolean; pathPrefix?: string; paths?: ReadonlySet<string> } = {}): MediaCheck {
   if (!existsSync(join(channelDir, MEDIA_LOCK))) throw new Error(`${MEDIA_LOCK} is missing: make it with vpr channel media`);
   const lock = readMediaLock(channelDir);
   const hash = hasher(channelDir, options);
-  const onDisk = mediaFiles(channelDir);
+  const inScope = (key: string) => !options.pathPrefix || key === options.pathPrefix || key.startsWith(`${options.pathPrefix}/`) || options.paths?.has(key);
+  const onDisk = new Map([...mediaFiles(channelDir)].filter(([key]) => inScope(key)));
   const missing: string[] = [];
   const changed: string[] = [];
   for (const [key, entries] of [...lock].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (!inScope(key)) continue;
     const file = onDisk.get(key);
     if (!file) missing.push(key);
     else {

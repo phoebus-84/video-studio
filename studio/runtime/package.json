@@ -62,9 +62,10 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@studio/contracts": "workspace:*",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
-    "js-yaml": "^5.2.2",
-    "@studio/contracts": "workspace:*"
+    "js-yaml": "^5.2.2"
   }
 }

@@ -996,11 +996,25 @@ async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
  * `vpr channel init|media <channel>` (avg-d1x phase 5): the channel as its own
  * git repository, its heavy media named by hash in media.lock.jsonl.
  */
+const CHANNEL_USAGE = "vpr channel init <channel> [--commit] | vpr channel media <channel> [--check [--offline] [--episode <series>/<episode>]] [--prune] [--verify] | vpr channel media push|pull <channel> [--episode <series>/<episode>] [--tier <tier,...>|all] [--concurrency <1..16>] [--dry-run] [--library <path>]";
+
 async function cmdChannel(ctx: CliContext, args: string[]): Promise<number> {
-  const usage = "Usage: vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--prune] [--verify] [--library <path>]";
+  const usage = `Usage: ${CHANNEL_USAGE}`;
   const libraryRoot = libraryFrom(args);
-  const [sub, channel] = positionalArgs(args);
-  if (!libraryRoot || (sub !== "init" && sub !== "media") || !channel || !isNamePart(channel)) {
+  const positional = positionalArgs(args);
+  const [sub, second, third] = positional;
+  const transfer = sub === "media" && (second === "push" || second === "pull") ? second : undefined;
+  const channel = transfer ? third : second;
+  const allowed = new Set(["--library", "--check", "--offline", "--episode", "--tier", "--concurrency", "--prune", "--verify", "--commit"]);
+  const badFlags = args.some((arg, i) => arg.startsWith("--") && (!allowed.has(arg) || (VALUE_FLAGS.has(arg) && (!args[i + 1] || args[i + 1]!.startsWith("--")))));
+  const incompatible = transfer
+    ? args.some((a) => ["--check", "--offline", "--prune", "--verify", "--commit"].includes(a))
+    : args.some((a) => ["--tier", "--concurrency"].includes(a)) ||
+      (sub === "init" && args.some((a) => ["--check", "--prune", "--verify"].includes(a))) ||
+      ((args.includes("--episode") || args.includes("--offline")) && (sub !== "media" || !args.includes("--check"))) ||
+      (args.includes("--check") && (args.includes("--prune") || sub !== "media")) ||
+      (args.includes("--commit") && sub !== "init") || ctx.dryRun;
+  if (badFlags || incompatible || positional.length !== (transfer ? 3 : 2) || !libraryRoot || (sub !== "init" && sub !== "media") || !channel || !isNamePart(channel)) {
     emit(ctx, { error: libraryRoot ? usage : "--library <path> is required (or set AVG_LIBRARY_ROOT)" });
     return EX_USAGE;
   }
@@ -1011,6 +1025,26 @@ async function cmdChannel(ctx: CliContext, args: string[]): Promise<number> {
   }
   const mb = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
   try {
+    const { checkRemoteMedia, transferMedia, mediaEpisodePrefix, MEDIA_REMOTE } = await import("./media-remote.js");
+    const episode = flagValue(args, "--episode");
+    if (transfer) {
+      const controller = new AbortController();
+      const cancel = () => controller.abort(new Error("Media transfer interrupted; rerun to resume"));
+      process.once("SIGINT", cancel);
+      process.once("SIGTERM", cancel);
+      try {
+        const report = await transferMedia(dir, transfer, {
+          episode, tiers: args.includes("--tier") ? flagValues(args, "--tier").flatMap((v) => v.split(",")) : undefined,
+          concurrency: args.includes("--concurrency") ? Number(flagValue(args, "--concurrency")) : undefined,
+          dryRun: ctx.dryRun, signal: controller.signal,
+        });
+        emit(ctx, { message: `${channel}: ${transfer}${ctx.dryRun ? " dry run" : ""}: ${report.transferred.length} files transferred (${mb(report.bytes)}), ${report.planned.length} planned (${mb(report.plannedBytes)})`, ...report });
+        return report.ok ? EX_OK : EX_RUNTIME;
+      } finally {
+        process.removeListener("SIGINT", cancel);
+        process.removeListener("SIGTERM", cancel);
+      }
+    }
     if (sub === "init") {
       const commit = args.includes("--commit");
       const made = initChannelRepo(dir, { commit });
@@ -1028,10 +1062,16 @@ async function cmdChannel(ctx: CliContext, args: string[]): Promise<number> {
       return EX_OK;
     }
     if (args.includes("--check")) {
-      const checked = checkMedia(dir, { verify: args.includes("--verify") });
+      const remotely = existsSync(join(dir, MEDIA_REMOTE)) && !args.includes("--offline")
+        ? await checkRemoteMedia(dir, { episode, verify: args.includes("--verify") }) : undefined;
+      const checked = remotely ?? checkMedia(dir, { verify: args.includes("--verify"), pathPrefix: episode ? mediaEpisodePrefix(dir, episode) : undefined });
+      const availability = remotely
+        ? `, ${remotely.remote.length} available remotely, ${remotely.ambiguous.length} ambiguous, ${remotely.errors.length} errors`
+        : "";
+      const scopeLabel = episode ? `${channel}/${episode}` : channel;
       const said = checked.ok
-        ? `${channel}: every media file is here and is the one ${MEDIA_LOCK} names`
-        : `${channel}: ${checked.missing.length} missing, ${checked.changed.length} changed, ${checked.unlisted.length} not yet in ${MEDIA_LOCK}`;
+        ? `${scopeLabel}: every media file in scope is here and is the one ${MEDIA_LOCK} names`
+        : `${scopeLabel}: ${checked.missing.length} missing${availability}, ${checked.changed.length} changed, ${checked.unlisted.length} not yet in ${MEDIA_LOCK}`;
       emit(ctx, { ...(checked.ok ? { message: said } : { error: said }), ...checked });
       return checked.ok ? EX_OK : EX_RUNTIME;
     }
@@ -1573,6 +1613,8 @@ const VALUE_FLAGS = new Set([
   "--from", "--theme", "--compiler", "--validator",
   // `template fixture`'s (avg-d1x, phase 5).
   "--to",
+  // Channel media transfer and scoped checks.
+  "--episode", "--tier", "--concurrency",
 ]);
 
 /**
@@ -1917,7 +1959,7 @@ const COMMANDS: Record<string, CliCommand> = {
   sheet: { name: "sheet", description: "Review an episode's layout sheet: approve it, reject it with a note, or see its review; a spec-driven episode renders only with an approval of its current sheet", usage: "vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode>", examples: ["vpr sheet approve my-channel/my-series/ep001", "vpr sheet reject my-channel/my-series/ep001 --note 'the verse bar covers the hand at 0:12'", "vpr sheet status my-channel/my-series/ep001"], run: cmdSheet },
   reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve my-channel/my-series/ep001 ep001-v1 --dry-run", "vpr reference verify my-channel/my-series my-template ep001-v1", "vpr reference withdraw my-channel/my-series my-template ep001-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
   theme: { name: "theme", description: "Seal a theme release: its files and their hashes in theme.json, so a changed room never passes for the released one", usage: "vpr theme seal <channel>/<theme>/<version> [--library <path>]", examples: ["vpr theme seal my-channel/my-theme/1.1.0"], run: cmdTheme },
-  channel: { name: "channel", description: "Make a channel its own git repository (its heavy media named by hash in media.lock.jsonl), update that list, or check this machine's media against it", usage: "vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--prune] [--verify] [--library <path>]", examples: ["vpr channel init my-channel --commit", "vpr channel media my-channel", "vpr channel media my-channel --check", "vpr channel media my-channel --prune"], run: cmdChannel },
+  channel: { name: "channel", description: "Version a channel, check its media lock, or push/pull hash-addressed media through its S3 remote", usage: CHANNEL_USAGE, examples: ["vpr channel init my-channel --commit", "vpr channel media my-channel --check", "vpr channel media push my-channel --dry-run", "vpr channel media pull my-channel --episode my-series/ep001 --tier all"], run: cmdChannel },
   kit: { name: "kit", description: "Seal a kit the channel or a series carries in the library (kit/index.tsx → kit.cjs, kit.json), or verify it", usage: "vpr kit seal <channel>[/<series>] <name> <version> [--dry-run] | vpr kit verify <channel>[/<series>] <name> <version> [--library <path>]", examples: ["vpr kit seal sample sample-card 1.0.0", "vpr kit verify sample/poetry hall 1.0.0"], run: cmdKit },
   template: { name: "template", description: "Release a series template (a copy of an earlier release, optionally pinned to a sealed theme), seal its own compiler and validator, verify them against its fixtures, or keep an episode as a fixture", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] | vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] | vpr template fixture <channel>/<series>/<episode> <fixture-name> [--to <version>] [--library <path>]", examples: ["vpr template fixture my-channel/my-series/ep001 ep001","vpr template seal sample/poetry poetry-short 1.1.0", "vpr template verify sample/poetry poetry-short 1.1.0", "vpr template release my-channel/my-series my-template 1.1.0 --from 1.0.0 --theme my-theme@1.1.0", "vpr template release my-channel/my-series my-template 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
