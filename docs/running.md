@@ -31,6 +31,32 @@ ln -sfn /path/to/your/library library
 `library/` is gitignored: it is production data, and ADR-0021 keeps generated
 media out of git. To keep it elsewhere permanently, set `AVG_LIBRARY_ROOT`.
 
+### Sharing media between machines
+
+A channel's text travels in its own git repository; its heavy media travel
+through a **media store**, any S3-compatible bucket (a Garage at home, MinIO,
+S3), by the sha256 `media.lock.jsonl` names them with (ADR-0045):
+
+```bash
+vpr channel media <channel>          # name this machine's media in the lock; commit it
+vpr channel media <channel> --push   # name them, then send the store what it lacks, once a hash
+vpr channel media <channel> --pull   # after a git pull: fetch what this machine lacks
+```
+
+A pull keeps a file only when its hash and size are the ones the lock names,
+and never overwrites one already here. The store is set in the environment
+only, like every secret (ADR-0030):
+
+| Variable | |
+|---|---|
+| `AVG_MEDIA_STORE` | endpoints, comma-separated, tried in order: e.g. the LAN one, then the VPN one for when you are away |
+| `AVG_MEDIA_STORE_BUCKET` | the bucket |
+| `AVG_MEDIA_STORE_PREFIX` | where in it; default `video-studio/media/` |
+| `AVG_MEDIA_STORE_REGION` | the signing region; default `us-east-1` (Garage's is usually `garage`) |
+| `AVG_MEDIA_STORE_ACCESS_KEY_ID`, `AVG_MEDIA_STORE_SECRET_ACCESS_KEY` | the key |
+
+Requests are path-style and signed with SigV4.
+
 Check the runtime agrees the library is well-formed:
 
 ```bash
@@ -98,6 +124,8 @@ Production: `pva_generate_image`, `pva_synthesize_speech`, `pva_register_take`,
 `pva_upgrade_spec`, `pva_propose_reference`,
 `pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, `pva_compose_multitrack_video`,
 `pva_probe_media`
+
+Media between machines: `pva_channel_media` (check, name, pull, push), the agent's `vpr channel media`.
 
 `pva_synthesize_sound` makes a series' sounds at $0, locally: wind, sea, rain,
 fire, steam, birds, thunder, applause, a whoosh, a shimmer, and a music bed (a

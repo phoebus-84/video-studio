@@ -18,7 +18,15 @@
       "import": "./dist/test/fixtures/index.js",
       "types": "./dist/test/fixtures/index.d.ts"
     },
-    "./cli": "./dist/src/cli.js"
+    "./cli": "./dist/src/cli.js",
+    "./channel-repo": {
+      "import": "./dist/src/channel-repo.js",
+      "types": "./dist/src/channel-repo.d.ts"
+    },
+    "./media-store": {
+      "import": "./dist/src/media-store.js",
+      "types": "./dist/src/media-store.d.ts"
+    }
   },
   "bin": {
     "vpr": "./dist/src/cli.js"

@@ -24,6 +24,7 @@ import { registerSkillTools } from "../src/skill-tools.js";
 import { registerSlashCommands } from "../src/slash-commands.js";
 import { registerTuiComponents } from "../src/tui-status.js";
 import { registerRpcHardening } from "../src/rpc-hardening.js";
+import { registerMediaStoreTools } from "../src/media-store-tools.js";
 
 // ---------------------------------------------------------------------------
 // Module metadata
@@ -304,6 +305,7 @@ export default function (pi: ExtensionAPI): void {
   registerSourceTools(pi);
   registerAudioTools(pi);
   registerLongExtendTools(pi);
+  registerMediaStoreTools(pi);
 
   // --- Register skill and context tools ---------------------------------
 

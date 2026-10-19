@@ -7,7 +7,7 @@
 // Its heavy media are not: pictures, audio and video stay out of git, and
 // media.lock.jsonl names each one by its path, sha256 and size, one line a
 // file, so a collaborator who pulls knows exactly which files they lack and
-// can fetch them by hash (the storage that serves them is a later issue).
+// can fetch them by hash from the media store (media-store.ts).
 //
 // The lock is shared work, so it never forgets: a file the lock names stays
 // named on a machine that has not fetched it, until someone prunes it on
@@ -132,6 +132,15 @@ function hasher(channelDir: string, options: { verify?: boolean } = {}) {
       renameSync(`${cacheFile}.tmp`, cacheFile);
     },
   };
+}
+
+/**
+ * This machine's heavy media by key, and their entries through the hash
+ * cache: what the media store sends and must not fetch over. `save` keeps
+ * the hashes it made for the next call.
+ */
+export function channelMedia(channelDir: string) {
+  return { files: mediaFiles(channelDir), ...hasher(channelDir) };
 }
 
 /**

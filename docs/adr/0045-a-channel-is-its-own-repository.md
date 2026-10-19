@@ -4,7 +4,8 @@
 
 Accepted (`avg-d1x`, phase 5). Implemented:
 - `vpr channel init` and `vpr channel media`;
-- `media.lock.jsonl`.
+- `media.lock.jsonl`;
+- the media store: `vpr channel media --push|--pull` to an S3-compatible bucket, by hash (`studio/runtime/src/media-store.ts`).
 
 ## Context
 
@@ -32,6 +33,6 @@ The operator also wants several people to work on the same channel. A channel we
 
 ## Consequences
 
-- **Pulling.** A collaborator who pulls has every release, spec and record. `channel media --check` lists the media to fetch. A content-addressed store keyed by these hashes is the storage issue.
+- **Pulling.** A collaborator who pulls has every release, spec and record. `channel media --check` lists the media to fetch, `--pull` fetches them from the media store, where `--push` put them under their hash.
 - **Approvals.** They are signed with one shared operator key (an HMAC). Two people verify each other's approvals only by sharing that key, and an approval does not say whose it is. Per-person signatures are a separate issue: each operator with a key pair, the channel listing whose approvals it trusts.
 - **Working the repository.** `git` is used as it is: commit, push, pull, branch. The studio doesn't wrap it.

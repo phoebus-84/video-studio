@@ -178,6 +178,7 @@
         "@modelcontextprotocol/sdk": "^1.32.1",
         "@studio/contracts": "workspace:*",
         "@studio/episode": "workspace:*",
+        "@studio/runtime": "workspace:*",
         "js-yaml": "^5.2.2",
         "ws": "^8.21.1",
       },

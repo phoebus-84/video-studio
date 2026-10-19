@@ -33,6 +33,7 @@ import { approveReference, listReferences, withdrawReference } from "./reference
 import { reviewSheet, sheetReviewStatus } from "./sheet-review.js";
 import { releaseTemplate, sealTheme, ThemeReleaseError } from "./theme-release.js";
 import { checkMedia, initChannelRepo, MEDIA_LOCK, writeMediaLock } from "./channel-repo.js";
+import { connect, pullMedia, pushMedia, storeFromEnv } from "./media-store.js";
 import { verifySeriesReference } from "@studio/contracts/src/series-references.mjs";
 import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
 import { createRequire } from "node:module";
@@ -997,7 +998,7 @@ async function cmdTheme(ctx: CliContext, args: string[]): Promise<number> {
  * git repository, its heavy media named by hash in media.lock.jsonl.
  */
 async function cmdChannel(ctx: CliContext, args: string[]): Promise<number> {
-  const usage = "Usage: vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--prune] [--verify] [--library <path>]";
+  const usage = "Usage: vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--prune] [--verify] [--push|--pull] [--library <path>]";
   const libraryRoot = libraryFrom(args);
   const [sub, channel] = positionalArgs(args);
   if (!libraryRoot || (sub !== "init" && sub !== "media") || !channel || !isNamePart(channel)) {
@@ -1026,6 +1027,26 @@ async function cmdChannel(ctx: CliContext, args: string[]): Promise<number> {
         ...made,
       });
       return EX_OK;
+    }
+    const direction = args.includes("--push") ? "push" : args.includes("--pull") ? "pull" : null;
+    if (direction) {
+      // A push names this machine's media first: the store holds what the lock names.
+      if (direction === "push") writeMediaLock(dir);
+      const store = await connect(storeFromEnv());
+      let shown = -1;
+      const onProgress = (done: number, total: number) => {
+        const pct = Math.floor((done / total) * 100);
+        if (ctx.jsonMode || (pct < shown + 5 && done < total)) return;
+        shown = pct;
+        process.stderr.write(`${direction} ${done}/${total} (${pct}%)\n`);
+      };
+      const synced = await (direction === "push" ? pushMedia : pullMedia)(dir, store, { onProgress });
+      const moved = synced.moved.reduce((n, m) => n + m.size, 0);
+      const said = `${channel}: ${synced.moved.length} files (${mb(moved)}) ${direction === "push" ? "sent to" : "fetched from"} ${store.endpoint}, ${synced.present} already there` +
+        (synced.skipped.length ? `; ${synced.skipped.length} skipped` : "") +
+        [...synced.skipped.map((s) => `\nskipped ${s.path}: ${s.reason}`), ...synced.failed.map((f) => `\nfailed ${f.path}: ${f.error}`)].join("");
+      emit(ctx, { ...(synced.failed.length ? { error: `${synced.failed.length} failed. ${said}` } : { message: said }), ...synced });
+      return synced.failed.length ? EX_RUNTIME : EX_OK;
     }
     if (args.includes("--check")) {
       const checked = checkMedia(dir, { verify: args.includes("--verify") });
@@ -1917,7 +1938,7 @@ const COMMANDS: Record<string, CliCommand> = {
   sheet: { name: "sheet", description: "Review an episode's layout sheet: approve it, reject it with a note, or see its review; a spec-driven episode renders only with an approval of its current sheet", usage: "vpr sheet approve <channel>/<series>/<episode> [--note <text>] [--dry-run] | vpr sheet reject <channel>/<series>/<episode> --note <text> | vpr sheet status <channel>/<series>/<episode>", examples: ["vpr sheet approve my-channel/my-series/ep001", "vpr sheet reject my-channel/my-series/ep001 --note 'the verse bar covers the hand at 0:12'", "vpr sheet status my-channel/my-series/ep001"], run: cmdSheet },
   reference: { name: "reference", description: "Golden references of a series: approve a proposed one, withdraw, verify, list", usage: "vpr reference approve <channel>/<series>/<episode> <ref-id> [--note <text>] [--dry-run] | vpr reference withdraw <channel>/<series> <template-id> <ref-id> --reason <text> | vpr reference verify <channel>/<series> <template-id> <ref-id> | vpr reference list <channel>/<series> [--json]", examples: ["vpr reference approve my-channel/my-series/ep001 ep001-v1 --dry-run", "vpr reference verify my-channel/my-series my-template ep001-v1", "vpr reference withdraw my-channel/my-series my-template ep001-v1 --reason 'the recital was re-recorded'"], run: cmdReference },
   theme: { name: "theme", description: "Seal a theme release: its files and their hashes in theme.json, so a changed room never passes for the released one", usage: "vpr theme seal <channel>/<theme>/<version> [--library <path>]", examples: ["vpr theme seal my-channel/my-theme/1.1.0"], run: cmdTheme },
-  channel: { name: "channel", description: "Make a channel its own git repository (its heavy media named by hash in media.lock.jsonl), update that list, or check this machine's media against it", usage: "vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--prune] [--verify] [--library <path>]", examples: ["vpr channel init my-channel --commit", "vpr channel media my-channel", "vpr channel media my-channel --check", "vpr channel media my-channel --prune"], run: cmdChannel },
+  channel: { name: "channel", description: "Make a channel its own git repository (its heavy media named by hash in media.lock.jsonl), update that list, check this machine's media against it, or send them to and fetch them from the media store (AVG_MEDIA_STORE)", usage: "vpr channel init <channel> [--commit] | vpr channel media <channel> [--check] [--prune] [--verify] [--push|--pull] [--library <path>]", examples: ["vpr channel init my-channel --commit", "vpr channel media my-channel", "vpr channel media my-channel --check", "vpr channel media my-channel --prune", "vpr channel media my-channel --push", "vpr channel media my-channel --pull"], run: cmdChannel },
   kit: { name: "kit", description: "Seal a kit the channel or a series carries in the library (kit/index.tsx → kit.cjs, kit.json), or verify it", usage: "vpr kit seal <channel>[/<series>] <name> <version> [--dry-run] | vpr kit verify <channel>[/<series>] <name> <version> [--library <path>]", examples: ["vpr kit seal sample sample-card 1.0.0", "vpr kit verify sample/poetry hall 1.0.0"], run: cmdKit },
   template: { name: "template", description: "Release a series template (a copy of an earlier release, optionally pinned to a sealed theme), seal its own compiler and validator, verify them against its fixtures, or keep an episode as a fixture", usage: "vpr template release <channel>/<series> <template-id> <version> --from <version> [--theme <id>@<version>] [--compiler <version>] [--validator <version>] | vpr template seal <channel>/<series> <template-id> <version> [--dry-run] | vpr template verify <channel>/<series> <template-id> <version> [--update] | vpr template fixture <channel>/<series>/<episode> <fixture-name> [--to <version>] [--library <path>]", examples: ["vpr template fixture my-channel/my-series/ep001 ep001","vpr template seal sample/poetry poetry-short 1.1.0", "vpr template verify sample/poetry poetry-short 1.1.0", "vpr template release my-channel/my-series my-template 1.1.0 --from 1.0.0 --theme my-theme@1.1.0", "vpr template release my-channel/my-series my-template 1.2.0 --from 1.1.0 --compiler 1.1.0"], run: cmdTemplate },
   takes: { name: "takes", description: "List each stage's kept candidates and its selected take", usage: "vpr takes <channel>/<series>/<episode> [<stage-id>] [--pipeline <name>] [--json]", examples: ["vpr takes my-channel/my-series/ep001 illustrations"], run: cmdTakes },
