@@ -30,26 +30,28 @@ function devGatewayToken(): string {
 // production bundle: the signing key was one `curl` away. The person enters
 // it once in the studio instead (Header → operator key).
 
-export default defineConfig(({ command }) => ({
-  define: {
-    __GATEWAY_TOKEN__: JSON.stringify(
-      command === "serve" ? devGatewayToken() : (process.env.VITE_GATEWAY_TOKEN ?? ""),
-    ),
-  },
-  plugins: [svelte()],
-  resolve: {
-    alias: {
-      $lib: path.resolve("./src/lib"),
-      $components: path.resolve("./src/components"),
-      $contracts: path.resolve("./src/contracts"),
-      $tokens: path.resolve("./src/tokens"),
+export default defineConfig(({ command }) => {
+  const token = command === "serve" ? devGatewayToken() : (process.env.VITE_GATEWAY_TOKEN ?? "");
+  return {
+    define: {
+      __GATEWAY_TOKEN__: JSON.stringify(token),
+      "import.meta.env.VITE_GATEWAY_TOKEN": JSON.stringify(token),
     },
-  },
-  build: {
-    target: "es2022",
-  },
-  server: {
-    port: 5173,
-    strictPort: true,
-  },
-}));
+    plugins: [svelte()],
+    resolve: {
+      alias: {
+        $lib: path.resolve("./src/lib"),
+        $components: path.resolve("./src/components"),
+        $contracts: path.resolve("./src/contracts"),
+        $tokens: path.resolve("./src/tokens"),
+      },
+    },
+    build: {
+      target: "es2022",
+    },
+    server: {
+      port: 5173,
+      strictPort: true,
+    },
+  };
+});

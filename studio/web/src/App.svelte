@@ -55,7 +55,7 @@
   /* Always try gateway first, fall back to fixtures only on failure. */
   $effect(() => {
     const gwUrl = localStorage.getItem("vs-gateway-url") ?? "http://127.0.0.1:5198";
-    const gwToken = localStorage.getItem("vs-gateway-token") ?? __GATEWAY_TOKEN__;
+    const gwToken = localStorage.getItem("vs-gateway-token") ?? import.meta.env.VITE_GATEWAY_TOKEN ?? "";
 
     const client = new GatewayClient({
       baseUrl: gwUrl,
