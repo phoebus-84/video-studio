@@ -152,7 +152,10 @@ No secrets belong here:
   deduplication requires the **same bucket and prefix**.
 - `region`: required; use the provider's region (`auto` for R2). `endpoint`
   is optional for AWS; otherwise an HTTPS origin. HTTP is permitted only on
-  loopback for local testing. Do not put credentials in an endpoint URL.
+  loopback and on a private IP address (`10.x`, `172.16–31.x`, `192.168.x`,
+  `100.64–127.x`, IPv6 `fc00::/7`), such as a server reached through
+  WireGuard or Tailscale; never on a hostname. Do not put credentials in an
+  endpoint URL.
 - Credentials use the standard AWS chain: `AWS_ACCESS_KEY_ID`,
   `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, or `AWS_PROFILE`
   and the user's AWS config files. Unknown config fields are rejected.

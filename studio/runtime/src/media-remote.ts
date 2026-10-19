@@ -42,6 +42,21 @@ function safeKey(key: string, media = true): void {
   if (media && !MEDIA_EXTENSIONS.includes(extname(key).toLowerCase())) throw new Error(`Not a media path: ${key}`);
 }
 
+/**
+ * HTTP is allowed on loopback and on private IP literals (RFC 1918, CGNAT 100.64/10, IPv6 ULA): a server
+ * reached through a VPN such as WireGuard or Tailscale. SigV4 never sends the secret and every download is
+ * hash-checked; what HTTP leaves exposed on that network is the media itself. Hostnames are never trusted
+ * this way: what they resolve to can change.
+ */
+function plainHttpHost(host: string): boolean {
+  if (["localhost", "127.0.0.1", "[::1]"].includes(host)) return true;
+  if (/^\[f[cd][0-9a-f]{2}:[0-9a-f:]*\]$/i.test(host)) return true;
+  const ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)?.slice(1).map(Number);
+  if (!ip || ip.some((n) => n > 255)) return false;
+  const [a = 0, b = 0] = ip;
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+}
+
 export function readMediaRemote(channelDir: string): MediaRemote {
   const raw: unknown = JSON.parse(readFileSync(join(channelDir, MEDIA_REMOTE), "utf8"));
   const fields = ["apiVersion", "kind", "url", "endpoint", "region", "keep", "rules", "forcePathStyle", "checksum"];
@@ -59,8 +74,8 @@ export function readMediaRemote(channelDir: string): MediaRemote {
     if (typeof raw.endpoint !== "string") throw new Error("Invalid media endpoint");
     const url = new URL(raw.endpoint);
     if (url.username || url.password || url.search || url.hash || url.pathname !== "/" ||
-      !(url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) {
-      throw new Error("Media endpoint must be an HTTPS origin (HTTP allowed only on loopback), without credentials");
+      !(url.protocol === "https:" || (url.protocol === "http:" && plainHttpHost(url.hostname)))) {
+      throw new Error("Media endpoint must be an HTTPS origin (HTTP allowed only on loopback or a private IP address), without credentials");
     }
   }
   const keep = raw.keep ?? DEFAULT_KEEP;

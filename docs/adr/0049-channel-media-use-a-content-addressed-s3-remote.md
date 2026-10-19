@@ -37,7 +37,10 @@ service or a source of filesystem writes outside a channel.
   HEAD avoids redundant uploads. Conditional `If-None-Match: *` on PUT **and
   multipart completion** prevents a competing writer being overwritten.
   A provider without those conditions is unsupported; there is no unconditional
-  write fallback. Remote HEAD length must match the lock, but HEAD is not a
+  write fallback. A provider that ignores them instead of refusing them is not
+  detected: Garage answers 200 to both writers (it has no consensus to decide
+  between them). There a duplicate upload rewrites the same verified bytes,
+  and pull still rejects any object whose bytes do not match the lock. Remote HEAD length must match the lock, but HEAD is not a
   full remote-content audit.
 - Pull streams into an exclusive temporary file beside the destination,
   verifies both SHA-256 and size, then publishes with an exclusive hard link
