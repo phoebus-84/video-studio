@@ -10,7 +10,7 @@ import type { ArchiveItem, Http, MediaType, Provider } from "../types.js";
 const API = "https://api.openverse.org/v1";
 const ENDPOINT: Partial<Record<MediaType, string>> = { image: "images", audio: "audio" };
 
-function toItem(result: any, mediaType: MediaType): ArchiveItem | null {
+export function openverseItem(result: any, mediaType: MediaType): ArchiveItem | null {
   if (!result?.id || !result.url) return null;
   const statement = [result.license, result.license_version, result.license_url].filter(Boolean).join(" ");
   const named = result.license === "pdm" || result.license === "cc0" ? result.license : result.license && result.license_version ? `${result.license}-${result.license_version}` : undefined;
@@ -51,13 +51,13 @@ export const openverse: Provider = {
     const endpoint = ENDPOINT[mediaType];
     if (!endpoint) return [];
     const body: any = await http.json(`${API}/${endpoint}/?${new URLSearchParams({ q: query, page_size: String(limit) })}`);
-    return (body?.results ?? []).map((r: any) => toItem(r, mediaType)).filter((i: ArchiveItem | null): i is ArchiveItem => i !== null);
+    return (body?.results ?? []).map((r: any) => openverseItem(r, mediaType)).filter((i: ArchiveItem | null): i is ArchiveItem => i !== null);
   },
   async item(id, http) {
     const match = /^(images|audio)\/([0-9a-f-]{36})$/.exec(id);
     if (!match) throw new ArchiveError("not-found", `"${id}" is not an Openverse id (images/<uuid> or audio/<uuid>)`);
     const body = await http.json(`${API}/${match[1]}/${match[2]}/`, { cache: false });
-    const item = toItem(body, match[1] === "images" ? "image" : "audio");
+    const item = openverseItem(body, match[1] === "images" ? "image" : "audio");
     if (!item) throw new ArchiveError("no-file", `Openverse's ${id} has no file`);
     if (!item.fileUrl) throw new ArchiveError("no-file", `Openverse's ${id}: ${PREVIEW_ONLY_NOTE}`);
     return item;

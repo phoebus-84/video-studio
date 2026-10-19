@@ -1,7 +1,8 @@
 // What every provider's item becomes: one shape, its licence normalized, the
 // provider's own response kept beside it as the evidence anyone can check.
 
-export type MediaType = "image" | "video" | "audio";
+/** `animation`: an inert Lottie JSON; `font`: a WOFF2, WOFF, TTF or OTF file. */
+export type MediaType = "image" | "video" | "audio" | "animation" | "font";
 
 /**
  * A licence in one vocabulary:
@@ -32,6 +33,8 @@ export interface ArchiveRendition {
   height?: number;
   bytes?: number;
   label?: string;
+  /** When fileUrl is a ZIP: the pattern naming the one file inside it that is the medium. */
+  zipEntry?: string;
 }
 
 export interface ArchiveItem {
@@ -61,6 +64,8 @@ export interface ArchiveItem {
   licence: Licence;
   /** A credit line ready to print: title, creator, institution, licence. */
   attribution: string;
+  /** When fileUrl is a ZIP (ambientCG): the pattern naming the one file inside it that is the medium. */
+  zipEntry?: string;
   /** Headers the file's host requires (AIC's IIIF wants AIC-User-Agent). */
   fileHeaders?: Record<string, string>;
   /** The provider's response for this item, kept as evidence. */

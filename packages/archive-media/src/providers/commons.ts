@@ -8,9 +8,9 @@ import type { ArchiveItem, Http, MediaType, Provider } from "../types.js";
 
 const API = "https://commons.wikimedia.org/w/api.php";
 const FIELDS = "LicenseShortName|License|LicenseUrl|Artist|Credit|AttributionRequired|Copyrighted|ObjectName|DateTimeOriginal|UsageTerms";
-const FILETYPE: Record<MediaType, string> = { image: "bitmap", audio: "audio", video: "video" };
+const FILETYPE: Partial<Record<MediaType, string>> = { image: "bitmap", audio: "audio", video: "video" };
 
-const base = (extra: Record<string, string>) =>
+export const commonsQuery = (extra: Record<string, string>) =>
   `${API}?${new URLSearchParams({ action: "query", format: "json", formatversion: "2", prop: "imageinfo", iiprop: "url|size|mime|extmetadata|mediatype", iiurlwidth: "640", iiextmetadatafilter: FIELDS, ...extra })}`;
 
 function mediaTypeOf(mime: string | undefined): MediaType | null {
@@ -24,7 +24,7 @@ function mediaTypeOf(mime: string | undefined): MediaType | null {
 /** The original file's URL, without the tracking query Commons appends. */
 const clean = (url: string) => url.replace(/\?utm_[^#]*$/, "");
 
-function toItem(page: any): ArchiveItem | null {
+export function commonsItem(page: any): ArchiveItem | null {
   const info = page?.imageinfo?.[0];
   if (!info?.url) return null;
   const mediaType = mediaTypeOf(info.mime);
@@ -68,16 +68,16 @@ export const commons: Provider = {
   label: "Wikimedia Commons",
   mediaTypes: ["image", "audio", "video"],
   async search(query, { mediaType, limit }, http: Http) {
-    const body: any = await http.json(base({ generator: "search", gsrsearch: `${query} filetype:${FILETYPE[mediaType]}`, gsrnamespace: "6", gsrlimit: String(limit) }));
+    const body: any = await http.json(commonsQuery({ generator: "search", gsrsearch: `${query} filetype:${FILETYPE[mediaType]!}`, gsrnamespace: "6", gsrlimit: String(limit) }));
     const pages: any[] = body?.query?.pages ?? [];
-    return pages.sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).map(toItem).filter((i): i is ArchiveItem => i !== null && i.mediaType === mediaType);
+    return pages.sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).map(commonsItem).filter((i): i is ArchiveItem => i !== null && i.mediaType === mediaType);
   },
   async item(id, http) {
     const title = id.startsWith("File:") ? id : `File:${id}`;
-    const body: any = await http.json(base({ titles: title }), { cache: false });
+    const body: any = await http.json(commonsQuery({ titles: title }), { cache: false });
     const page = body?.query?.pages?.[0];
     if (!page || page.missing) throw new ArchiveError("not-found", `Commons has no ${title}`);
-    const item = toItem(page);
+    const item = commonsItem(page);
     if (!item) throw new ArchiveError("bad-response", `Commons' ${title} is not a picture, sound or video`);
     return item;
   },

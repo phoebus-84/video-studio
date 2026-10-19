@@ -1,0 +1,3 @@
+# Text files are committed with LF, whatever the OS that edits them:
+# a Windows checkout no longer turns every line of a file it touches into a change.
+* text=auto eol=lf

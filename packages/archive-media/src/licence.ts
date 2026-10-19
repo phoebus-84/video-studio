@@ -53,8 +53,13 @@ export interface LicencePolicy {
   allow: string[];
 }
 
-/** Public domain, CC0, CC BY and CC BY-SA: free to use in anything, commercial included, with credit where asked. */
-export const DEFAULT_POLICY: LicencePolicy = { allow: ["public-domain", "CC0", "CC-BY", "CC-BY-SA"] };
+/**
+ * Public domain, CC0, CC BY and CC BY-SA: free to use in anything, commercial
+ * included, with credit where asked. The SIL Open Font Licence and Apache 2.0,
+ * under which nearly every open font (and some icon sets) is released, allow
+ * the same, the notice kept.
+ */
+export const DEFAULT_POLICY: LicencePolicy = { allow: ["public-domain", "CC0", "CC-BY", "CC-BY-SA", "provider:ofl-1.1", "provider:apache-2.0"] };
 
 /** Whether the policy allows the licence, and if not, why. `unknown` is never allowed. */
 export function licenceAllowed(licence: Licence, policy: LicencePolicy = DEFAULT_POLICY): { ok: true } | { ok: false; reason: string } {

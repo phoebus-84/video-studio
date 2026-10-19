@@ -7,9 +7,9 @@ import { licenceFromUrl, unknownLicence } from "../licence.js";
 import { creditLine } from "../text.js";
 import type { ArchiveItem, Http, MediaType, Provider } from "../types.js";
 
-const MEDIATYPE: Record<MediaType, string> = { image: "image", audio: "audio", video: "movies" };
+const MEDIATYPE: Partial<Record<MediaType, string>> = { image: "image", audio: "audio", video: "movies" };
 const FROM_MEDIATYPE: Record<string, MediaType> = { image: "image", audio: "audio", movies: "video" };
-const EXTENSIONS: Record<MediaType, RegExp> = {
+const EXTENSIONS: Partial<Record<MediaType, RegExp>> = {
   image: /\.(jpe?g|png|tiff?|webp)$/i,
   audio: /\.(flac|wav|mp3|ogg|m4a)$/i,
   video: /\.(mp4|mov|mkv|webm|mpe?g|avi|ogv)$/i,
@@ -20,7 +20,7 @@ const first = (v: unknown) => (Array.isArray(v) ? v[0] : v);
 /** The item's best original file of its kind: the largest. */
 export function originalFile(files: any[], mediaType: MediaType): any | undefined {
   return files
-    .filter((f) => f?.source === "original" && EXTENSIONS[mediaType].test(String(f.name)))
+    .filter((f) => f?.source === "original" && EXTENSIONS[mediaType]!.test(String(f.name)))
     .sort((a, b) => Number(b.size ?? 0) - Number(a.size ?? 0))[0];
 }
 
@@ -52,7 +52,7 @@ export const internetArchive: Provider = {
   label: "Internet Archive",
   mediaTypes: ["video", "audio", "image"],
   async search(query, { mediaType, limit }, http: Http) {
-    const params = new URLSearchParams({ q: `(${query}) AND mediatype:${MEDIATYPE[mediaType]} AND licenseurl:*`, rows: String(limit), output: "json" });
+    const params = new URLSearchParams({ q: `(${query}) AND mediatype:${MEDIATYPE[mediaType]!} AND licenseurl:*`, rows: String(limit), output: "json" });
     for (const f of ["identifier", "title", "creator", "date", "licenseurl"]) params.append("fl[]", f);
     const body: any = await http.json(`https://archive.org/advancedsearch.php?${params}`);
     return (body?.response?.docs ?? []).filter((d: any) => d?.identifier).map((d: any) => ({ ...base(d, mediaType), fileUrl: "", raw: d }));

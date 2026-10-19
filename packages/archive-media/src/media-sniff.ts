@@ -1,4 +1,4 @@
-// What a video or a sound file is, read from its first bytes: a host that
+// What a video, a sound or a font file is, read from its first bytes: a host that
 // answers 200 with a login page or an error is never saved as media.
 
 import { closeSync, openSync, readSync } from "node:fs";
@@ -33,5 +33,9 @@ export function sniff(b: Buffer): { mediaType: MediaType; mime: string } | null 
   if (ascii(0, 3) === "ID3" || (b.length >= 2 && b[0] === 0xff && (b[1]! & 0xe0) === 0xe0 && (b[1]! & 0x06) !== 0)) return { mediaType: "audio", mime: "audio/mpeg" };
   if (b.length >= 4 && b[0] === 0 && b[1] === 0 && b[2] === 1 && (b[3] === 0xba || b[3] === 0xb3)) return { mediaType: "video", mime: "video/mpeg" };
   if (b.length >= 2 && b[0] === 0xff && (b[1] === 0xf1 || b[1] === 0xf9)) return { mediaType: "audio", mime: "audio/aac" };
+  if (ascii(0, 4) === "wOF2") return { mediaType: "font", mime: "font/woff2" };
+  if (ascii(0, 4) === "wOFF") return { mediaType: "font", mime: "font/woff" };
+  if (ascii(0, 4) === "OTTO") return { mediaType: "font", mime: "font/otf" };
+  if ((b.length >= 4 && b.readUInt32BE(0) === 0x00010000) || ascii(0, 4) === "true") return { mediaType: "font", mime: "font/ttf" };
   return null;
 }
