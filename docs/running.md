@@ -40,6 +40,7 @@ S3), by the sha256 `media.lock.jsonl` names them with (ADR-0045):
 ```bash
 vpr channel media <channel>          # name this machine's media in the lock; commit it
 vpr channel media <channel> --push   # name them, then send the store what it lacks, once a hash
+vpr channel media <channel> --push --max-mb 500   # but leave the hour-long finals: made again from their master
 vpr channel media <channel> --pull   # after a git pull: fetch what this machine lacks
 ```
 

@@ -42,6 +42,7 @@ export function registerMediaStoreTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug" }),
       action: Type.Union([Type.Literal("check"), Type.Literal("name"), Type.Literal("pull"), Type.Literal("push")]),
+      maxMb: Type.Optional(Type.Number({ description: "push only: leave files bigger than this many MB here (an hour's final render is made again from its master)" })),
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const dir = channelPath(LIBRARY_ROOT, params.channel);
@@ -74,7 +75,7 @@ export function registerMediaStoreTools(pi: ExtensionAPI): void {
       };
       const synced = params.action === "pull"
         ? await pullMedia(dir, store, { onProgress })
-        : await pushMedia(dir, store, { onProgress });
+        : await pushMedia(dir, store, { onProgress, ...(params.maxMb ? { maxBytes: params.maxMb * 1e6 } : {}) });
       const text = summary(params.channel, params.action === "pull" ? "fetched from" : "sent to", synced);
       if (synced.failed.length) throw new Error(text);
       return { content: [{ type: "text" as const, text }], details: synced as unknown as Record<string, unknown> };

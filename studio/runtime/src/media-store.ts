@@ -226,8 +226,13 @@ async function pool<T>(items: T[], limit: number, work: (item: T) => Promise<voi
  * Send the store every file of this machine that the lock names with these
  * very bytes, once a hash. A file not yet named, or changed since, is left:
  * `vpr channel media` names it first, so the lock and the store agree.
+ * `maxBytes` leaves bigger files here: a pull then says they are not stored.
  */
-export async function pushMedia(channelDir: string, store: MediaStore, options: { concurrency?: number; onProgress?: (done: number, total: number) => void } = {}): Promise<MediaSync> {
+export async function pushMedia(
+  channelDir: string,
+  store: MediaStore,
+  options: { concurrency?: number; maxBytes?: number; onProgress?: (done: number, total: number) => void } = {},
+): Promise<MediaSync> {
   const lock = readMediaLock(channelDir);
   const out: MediaSync = { endpoint: store.endpoint, moved: [], present: 0, skipped: [], failed: [] };
   const todo = new Map<string, { path: string; file: string; size: number }>();
@@ -238,6 +243,8 @@ export async function pushMedia(channelDir: string, store: MediaStore, options: 
     if (!("hash" in entry)) continue;
     if (!named) out.skipped.push({ path, reason: `not named in ${MEDIA_LOCK}: run vpr channel media first` });
     else if (!named.some((e) => "hash" in e && e.hash === entry.hash)) out.skipped.push({ path, reason: `not the bytes ${MEDIA_LOCK} names: run vpr channel media first` });
+    // A render of an hour is made again from its master; the store keeps what it is made from.
+    else if (options.maxBytes !== undefined && entry.size > options.maxBytes) out.skipped.push({ path, reason: `${(entry.size / 1e6).toFixed(0)} MB, over the ${(options.maxBytes / 1e6).toFixed(0)} MB asked` });
     else if (!todo.has(entry.hash)) todo.set(entry.hash, { path, file, size: entry.size });
   }
   media.save();

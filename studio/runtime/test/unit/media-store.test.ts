@@ -124,6 +124,15 @@ describe("pushMedia and pullMedia", () => {
     expect(pushed.skipped.map((s) => s.path)).toEqual([`${EP}/assets/images/sea.png`, `${EP}/assets/images/sky.png`]);
   });
 
+  it("leaves files over maxBytes here: the hour-long finals, made again from their master", async () => {
+    put("here", `${EP}/assets/video/master.mp4`, "a loop");
+    put("here", `${EP}/output/final-1h.mp4`, "an hour of the loop");
+    writeMediaLock(join(root, "here"));
+    const pushed = await pushMedia(join(root, "here"), await connect(config), { maxBytes: 10 });
+    expect(pushed.moved.map((m) => m.path)).toEqual([`${EP}/assets/video/master.mp4`]);
+    expect(pushed.skipped).toEqual([{ path: `${EP}/output/final-1h.mp4`, reason: "0 MB, over the 0 MB asked" }]);
+  });
+
   it("keeps no download that is not the bytes the lock names", async () => {
     put("here", `${EP}/assets/images/sea.png`, "a sea");
     writeMediaLock(join(root, "here"));
