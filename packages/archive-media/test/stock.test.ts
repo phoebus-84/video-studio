@@ -21,8 +21,8 @@ afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, f
 const pexelsPhoto = { id: 1, width: 2400, height: 1600, photographer: "Alice", url: "https://www.pexels.com/photo/1/", src: { original: "https://images.pexels.com/1.jpg" } };
 
 describe("native provider registration", () => {
-  it("registers 22 distinct providers without changing the default licence policy", () => {
-    expect(new Set(PROVIDERS.map((p) => p.id)).size).toBe(22);
+  it("registers 26 distinct providers without changing the default licence policy", () => {
+    expect(new Set(PROVIDERS.map((p) => p.id)).size).toBe(26);
     const archive = createArchive({ userAgent: "test", env: {} });
     expect(archive.providers().find((p) => p.id === "pexels")).toMatchObject({ enabled: false, reason: "needs PEXELS_API_KEY" });
     expect(archive.providers().find((p) => p.id === "inaturalist")).toMatchObject({ enabled: true });

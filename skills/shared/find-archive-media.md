@@ -38,7 +38,10 @@ lightning, a recorded thunderstorm.
 | Music | `ccmixter`, `jamendo` (client ID required), then `openverse` with mediaType audio; NC/ND remain refused by default |
 | An icon, a pictogram, a UI symbol | `iconify` (an icon set's own software licence) |
 | An emoji, including an animated one | `emoji` (Fluent, Noto, OpenMoji) |
-| A vector animation, a logo sting, a loader | `lottie` (LottieFiles, fetched as its reviewed MP4 rendition) |
+| A vector animation, a logo sting, a loader | `lottie`: mediaType `video` for its MP4 rendition, mediaType `animation` for the Lottie JSON itself (made inert; transparent, any size). Both are the LottieFiles platform licence: `provider:lottie` must be allowed by the channel |
+| A surface, a background, a material (wood, stone, brick, paper, fabric) | `polyhaven`, `ambientcg` (CC0; the colour map by default, normal/roughness/displacement maps as renditions; Poly Haven HDRIs as their tone-mapped panorama) |
+| An illustration, a drawing, a clipart, a diagram | `illustrations` (Openverse's illustration category and Commons drawings, mostly SVG rasterized to PNG) |
+| A typeface | `fontsource` with mediaType `font` (search a family's name, or a category: graziato, bastoni, corsivo, titoli, monospaziato); the regular face as WOFF2, every weight and style, and TTF, as renditions |
 | Street-level imagery of a real place | `mapillary` (`MAPILLARY_TOKEN`; place name or `lat,lng`; CC BY-SA) |
 
 - Search museums in **English**: "storm painting", "lightning landscape",
@@ -95,8 +98,9 @@ lightning, a recorded thunderstorm.
        that did not come from the archive.
    - **Vectors, emoji and animation:** provider SVG is rasterized to an inert
      PNG, never saved as active XML; an icon keeps its software licence and
-     any trademark note; LottieFiles is fetched as its MP4 rendition, never
-     the JSON.
+     any trademark note; a Lottie JSON (`json/<id>`) is saved only with its
+     expressions removed and only pictures embedded in it: one that loads
+     files from outside itself is refused.
    - **Before calling a provider**, check `pva_search_local_media`: an asset
      already licensed in the channel can be reused with
      `pva_reuse_local_media`, which leaves the provider alone and copies the
@@ -146,9 +150,11 @@ the share-alike obligation:
 ## Separate asset workflows
 
 Poly Haven remains `pva_poly_haven` (three-dimensional assets and HDRIs).
-Iconify, emoji, Lottie and Mapillary are native here, subject to the same
-licence and provenance rules. SVG and Lottie JSON are never saved as assets:
-SVG becomes PNG, Lottie becomes its MP4 rendition. Never trim or crop the
+Iconify, emoji, Lottie, textures, illustrations, fonts and Mapillary are
+native here, subject to the same licence and provenance rules: `polyhaven`
+here is the picture of a texture or an HDRI for a video. SVG is never saved
+as an asset (it becomes PNG); Lottie JSON is saved inert, in
+assets/animations; fonts in assets/fonts. Never trim or crop the
 fetched original in place: derive a separately recorded asset with
 `pva_derive_media` (or `pva_mapillary`) so provenance checks continue to
 validate the source.

@@ -12,12 +12,15 @@ import { smithsonian, rijksmuseum, wellcome } from "./collections.js";
 import { inaturalist, jamendo, ccmixter } from "./nature-music.js";
 import { iconify, emoji, lottie } from "./graphics.js";
 import { mapillary } from "./mapillary.js";
+import { polyhaven, ambientcg } from "./textures.js";
+import { fontsource } from "./fonts.js";
+import { illustrations } from "./illustrations.js";
 
 /** Every provider, in the order their results are listed: museums first, then the open collections. */
 export const PROVIDERS: Provider[] = [aic, met, cleveland, commons, nasa, internetArchive, openverse, freesound,
   pexels, pixabay, unsplash, coverr, smithsonian, rijksmuseum, wellcome, inaturalist, jamendo, ccmixter,
-  iconify, emoji, lottie, mapillary];
+  iconify, emoji, lottie, mapillary, polyhaven, ambientcg, fontsource, illustrations];
 
 export { aic, cleveland, commons, freesound, internetArchive, met, nasa, openverse,
   pexels, pixabay, unsplash, coverr, smithsonian, rijksmuseum, wellcome, inaturalist, jamendo, ccmixter,
-  iconify, emoji, lottie, mapillary };
+  iconify, emoji, lottie, mapillary, polyhaven, ambientcg, fontsource, illustrations };

@@ -1,23 +1,13 @@
 import { licenceFromUrl } from "../licence.js";
 import type { ArchiveItem, Licence, Provider } from "../types.js";
-import { platform, requiredItem, safeUrl, stockItem } from "./stock-common.js";
+import { platform, requiredItem, safeUrl, softwareLicence, stockItem } from "./stock-common.js";
 
 const ICONIFY = "https://api.iconify.design";
 const ICON_HOSTS = ["api.iconify.design"];
-const SPDX: Record<string, { id: string; url?: string }> = {
-  MIT: { id: "provider:mit", url: "https://opensource.org/license/mit" },
-  "Apache-2.0": { id: "provider:apache-2.0", url: "https://www.apache.org/licenses/LICENSE-2.0" },
-  ISC: { id: "provider:isc", url: "https://opensource.org/license/isc-license-txt" },
-  "BSD-3-Clause": { id: "provider:bsd-3-clause", url: "https://opensource.org/license/bsd-3-clause" },
-  "OFL-1.1": { id: "provider:ofl-1.1", url: "https://openfontlicense.org" },
-};
 function iconLicence(info: any): Licence {
   const spdx = String(info?.license?.spdx || info?.license?.title || "");
   const cc = licenceFromUrl(info?.license?.url) ?? licenceFromUrl(`https://creativecommons.org/licenses/${spdx.toLowerCase().replace(/^cc-/, "")}/`);
-  if (cc) return cc;
-  const known = SPDX[spdx];
-  return known ? { ...known, attributionRequired: true, statement: `${spdx}: retain the copyright and licence notice` }
-    : { id: "unknown", attributionRequired: true, statement: `Icon set licence: ${spdx || "not supplied"}` };
+  return cc ?? softwareLicence(spdx) ?? { id: "unknown", attributionRequired: true, statement: `Icon set licence: ${spdx || "not supplied"}` };
 }
 function iconItem(provider: "iconify" | "emoji", prefix: string, name: string, info: any): ArchiveItem | null {
   if (!/^[a-z0-9-]+$/.test(prefix) || !/^[A-Za-z0-9-]+$/.test(name) || !info) return null;
@@ -126,21 +116,32 @@ function lottieItem(x: any): ArchiveItem | null {
     durationSeconds: Number(x.metadata?.duration) || undefined, licence: platform("lottie", "https://lottiefiles.com/page/license"),
   });
 }
+// The animation itself: its JSON, saved only after sanitizeLottie made it inert (archive.fetch).
+// Its id is json/<id>, so fetch reads this record, never the MP4 one.
+function lottieJsonItem(x: any): ArchiveItem | null {
+  const json = safeUrl(x?.jsonUrl, LOTTIE_HOSTS);
+  const video = x?.id ? lottieItem(x) : null;
+  if (!json || !video) return null;
+  return { ...video, id: `json/${x.id}`, mediaType: "animation", fileUrl: json, mime: "application/json",
+    rendition: "Lottie JSON, expressions removed, embedded pictures only", renditions: undefined };
+}
 async function gql(http: Parameters<Provider["item"]>[1], query: string, variables: object, cache = true) {
   const d: any = await http.json(LOTTIE, { method: "POST", body: { query, variables }, cache });
   if (d?.errors?.length) throw new Error(`LottieFiles: ${d.errors[0]?.message ?? "GraphQL error"}`);
   return d?.data ?? {};
 }
 export const lottie: Provider = {
-  id: "lottie", label: "LottieFiles", mediaTypes: ["video"], downloadHosts: LOTTIE_HOSTS,
-  async search(q, { limit }, http) {
+  id: "lottie", label: "LottieFiles", mediaTypes: ["video", "animation"], downloadHosts: LOTTIE_HOSTS,
+  async search(q, { limit, mediaType }, http) {
     const d = await gql(http, `query($q:String!,$n:Int){searchPublicAnimations(query:$q,first:$n){edges{node{${fields}}}}}`, { q, n: Math.min(60, limit * 3) });
-    return (d.searchPublicAnimations?.edges ?? []).map((e: any) => lottieItem(e.node)).filter(Boolean)
+    const make = mediaType === "animation" ? lottieJsonItem : lottieItem;
+    return (d.searchPublicAnimations?.edges ?? []).map((e: any) => make(e.node)).filter(Boolean)
       .sort((a: ArchiveItem, b: ArchiveItem) => (((b.raw as any).downloads ?? 0) + 20 * ((b.raw as any).likesCount ?? 0)) - (((a.raw as any).downloads ?? 0) + 20 * ((a.raw as any).likesCount ?? 0))).slice(0, limit);
   },
   async item(id, http) {
-    if (!/^\d+$/.test(id)) return requiredItem(null, "lottie");
-    const d = await gql(http, `query($id:Int!){publicAnimation(id:$id){${fields}}}`, { id: Number(id) }, false);
-    return requiredItem(lottieItem(d.publicAnimation), "lottie");
+    const m = /^(json\/)?(\d+)$/.exec(id);
+    if (!m) return requiredItem(null, "lottie");
+    const d = await gql(http, `query($id:Int!){publicAnimation(id:$id){${fields}}}`, { id: Number(m[2]) }, false);
+    return requiredItem((m[1] ? lottieJsonItem : lottieItem)(d.publicAnimation), "lottie");
   },
 };

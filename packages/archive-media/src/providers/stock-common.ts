@@ -15,6 +15,20 @@ export function requiredItem(item: ArchiveItem | null, provider: string): Archiv
 export function licensed(url: string | undefined): Licence {
   return licenceFromUrl(url) ?? unknownLicence(url ?? "No licence supplied");
 }
+/** Software licences by SPDX id, as icon sets and font families state them; case is ignored. */
+const SOFTWARE: Record<string, { id: string; url: string }> = {
+  "mit": { id: "provider:mit", url: "https://opensource.org/license/mit" },
+  "apache-2.0": { id: "provider:apache-2.0", url: "https://www.apache.org/licenses/LICENSE-2.0" },
+  "isc": { id: "provider:isc", url: "https://opensource.org/license/isc-license-txt" },
+  "bsd-3-clause": { id: "provider:bsd-3-clause", url: "https://opensource.org/license/bsd-3-clause" },
+  "ofl-1.1": { id: "provider:ofl-1.1", url: "https://openfontlicense.org" },
+  "ufl-1.0": { id: "provider:ufl-1.0", url: "https://ubuntu.com/legal/font-licence" },
+};
+/** A software licence from its SPDX id, or null when it is not one we know. */
+export function softwareLicence(spdx: string | undefined): Licence | null {
+  const known = spdx ? SOFTWARE[spdx.trim().toLowerCase()] : undefined;
+  return known ? { ...known, attributionRequired: true, statement: `${spdx}: retain the copyright and licence notice` } : null;
+}
 export function platform(name: string, url: string): Licence {
   return { id: `provider:${name}`, url, attributionRequired: true,
     statement: `${name} platform licence, not Creative Commons. No standalone redistribution or implied endorsement; people, brands and artwork may need additional permissions.` };

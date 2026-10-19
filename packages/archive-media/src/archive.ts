@@ -10,6 +10,8 @@ import { ArchiveError } from "./errors.js";
 import { createHttp, type ArchiveHttp, type HttpOptions } from "./http.js";
 import { imageSize } from "./image-size.js";
 import { sniffMedia } from "./media-sniff.js";
+import { sanitizeLottie } from "./lottie.js";
+import { extractZipEntry } from "./zip.js";
 import { DEFAULT_POLICY, licenceAllowed, type LicencePolicy } from "./licence.js";
 import { PROVIDERS } from "./providers/index.js";
 import type { ArchiveItem, MediaType, Provider } from "./types.js";
@@ -77,6 +79,7 @@ const EXTENSION: Record<string, string> = {
   "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov", "video/ogg": ".ogv", "video/x-matroska": ".mkv",
   "audio/mpeg": ".mp3", "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/wave": ".wav", "audio/flac": ".flac", "audio/x-flac": ".flac",
   "audio/ogg": ".ogg", "application/ogg": ".ogg", "audio/mp4": ".m4a", "audio/aac": ".aac",
+  "application/json": ".json", "font/woff2": ".woff2", "font/woff": ".woff", "font/ttf": ".ttf", "font/otf": ".otf",
 };
 
 /** The extension a downloaded file gets, from its mime type, else from its URL. */
@@ -87,7 +90,8 @@ export function extensionOf(mime: string, url: string): string {
 }
 
 const kindOfMime = (mime: string): MediaType | null =>
-  mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : mime.startsWith("audio/") || mime === "application/ogg" ? "audio" : null;
+  mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : mime.startsWith("audio/") || mime === "application/ogg" ? "audio"
+    : mime.startsWith("font/") ? "font" : null;
 
 /** Whether the item's announced size meets the quality; unknown sizes pass here and are checked after download. */
 export function tooSmall(item: Pick<ArchiveItem, "mediaType" | "width" | "height">, quality: Required<Quality>): string | null {
@@ -202,6 +206,17 @@ export function createArchive(options: ArchiveOptions) {
       const retrievedAt = new Date().toISOString();
       const staging = join(opts.dir, `.${opts.name}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.download`);
       let got = await http.download(item.fileUrl, staging, { ...(item.fileHeaders ? { headers: item.fileHeaders } : {}), ...(opts.maxBytes ? { maxBytes: opts.maxBytes } : {}), ...(s.provider.downloadHosts ? { allowedHosts: s.provider.downloadHosts } : {}) });
+      if (item.zipEntry) {
+        // Only the one file named is kept; the rest of the archive is never written.
+        try {
+          const { name, bytes } = extractZipEntry(readFileSync(staging), new RegExp(item.zipEntry, "i"));
+          writeFileSync(staging, bytes);
+          got = { ...hashFile(staging), mime: /\.png$/i.test(name) ? "image/png" : /\.jpe?g$/i.test(name) ? "image/jpeg" : "" };
+        } catch (error) {
+          rmSync(staging, { force: true });
+          throw error instanceof ArchiveError ? new ArchiveError(error.code, `${s.provider.label} ${id}: ${error.message}`) : error;
+        }
+      }
       // SVG is active XML in browsers. Never persist provider SVG: resvg parses it without scripts/network and emits inert PNG.
       if (item.mediaType === "image" && (got.mime === "image/svg+xml" || /\.svg(?:$|[?#])/i.test(item.fileUrl))) {
         try {
@@ -223,7 +238,18 @@ export function createArchive(options: ArchiveOptions) {
       let width: number | undefined;
       let height: number | undefined;
       let durationSeconds = item.durationSeconds;
-      if (item.mediaType === "image") {
+      if (item.mediaType === "animation") {
+        // Lottie JSON is saved only inert: no expression, nothing loaded from outside the file.
+        try {
+          const clean = sanitizeLottie(readFileSync(staging, "utf-8"));
+          writeFileSync(staging, clean.json);
+          got = { ...hashFile(staging), mime: "application/json" };
+          ({ width, height, durationSeconds } = clean.facts);
+          mime = got.mime;
+        } catch (error) {
+          refuse("wrong-type", (error as Error).message);
+        }
+      } else if (item.mediaType === "image") {
         const size = imageSize(staging);
         if (!size) refuse("wrong-type", `the file is not a picture this package can read (sent as ${got.mime || "nothing"})`);
         ({ width, height, mime } = size!);
@@ -237,7 +263,7 @@ export function createArchive(options: ArchiveOptions) {
         mime = kindOfMime(got.mime) === item.mediaType ? got.mime : sniffed!.mime;
         width = item.width;
         height = item.height;
-        const probed = opts.probe ? await opts.probe(staging).catch(() => null) : null;
+        const probed = opts.probe && item.mediaType !== "font" ? await opts.probe(staging).catch(() => null) : null;
         if (probed) {
           width = probed.width ?? width;
           height = probed.height ?? height;

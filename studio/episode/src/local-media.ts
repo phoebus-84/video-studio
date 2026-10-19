@@ -19,7 +19,7 @@ export function findLocalMedia(channelDir: string, query = "", limit = 50): Loca
       const path = join(dir, ent.name);
       if (ent.isSymbolicLink()) continue;
       if (ent.isDirectory()) { if (!ent.name.startsWith(".") && !["node_modules", "output", "attempts"].includes(ent.name)) walk(path, depth + 1); continue; }
-      if (!ent.name.endsWith(PROVENANCE_SUFFIX) || !/[/\\]assets[/\\](images|video|sounds)[/\\]/.test(path)) continue;
+      if (!ent.name.endsWith(PROVENANCE_SUFFIX) || !/[/\\]assets[/\\](images|video|sounds|animations|fonts)[/\\]/.test(path)) continue;
       try {
         const workspace = dirname(dirname(dirname(path)));
         const { record } = verifiedMedia(workspace, relative(workspace, path).replaceAll("\\", "/"));
@@ -35,7 +35,7 @@ export function findLocalMedia(channelDir: string, query = "", limit = 50): Loca
 export async function reuseLocalMedia(channelDir: string, sourceRecordPath: string, targetWorkspace: string, name: string, rules: MediaRules = {}): Promise<{ path: string; recordPath: string; deduplicated: boolean }> {
   newMediaName(name);
   const root = realpathSync(channelDir), sourceRecord = mediaPath(root, sourceRecordPath), target = mediaPath(root, targetWorkspace);
-  if (!/[/\\]assets[/\\](images|video|sounds)[/\\][^/\\]+\.source\.json$/.test(sourceRecord)) throw new Error("source must be a canonical media record");
+  if (!/[/\\]assets[/\\](images|video|sounds|animations|fonts)[/\\][^/\\]+\.source\.json$/.test(sourceRecord)) throw new Error("source must be a canonical media record");
   const sourceWorkspace = dirname(dirname(dirname(sourceRecord)));
   const parent = verifiedMedia(sourceWorkspace, relative(sourceWorkspace, sourceRecord).replaceAll("\\", "/"));
   const record = parent.record;

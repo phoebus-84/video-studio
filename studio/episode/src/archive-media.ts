@@ -1,6 +1,6 @@
 // Archive and stock media in a workspace (avg-fe8.2): an episode or, later, a
-// channel source. A fetched file lands in assets/images, assets/video or
-// assets/sounds as <name>.<ext>, with <name>.source.json beside it naming its
+// channel source. A fetched file lands in assets/images, assets/video,
+// assets/sounds, assets/animations (inert Lottie JSON) or assets/fonts as <name>.<ext>, with <name>.source.json beside it naming its
 // provider, item, licence and credit; the provider's response is kept in
 // artifacts/provenance/<sha256>.json as evidence; ATTRIBUTIONS.md is made
 // again from every record. checkProvenance says when any of it no longer holds.
@@ -15,7 +15,9 @@ import {
   ATTRIBUTIONS_FILE, EVIDENCE_DIR, PROVENANCE_SUFFIX, renderAttributions, validateMediaProvenance, type MediaProvenance,
 } from "@studio/contracts/src/media-provenance.mjs";
 
-export const MEDIA_DIRS: Record<MediaType, string> = { image: "assets/images", video: "assets/video", audio: "assets/sounds" };
+export const MEDIA_DIRS: Record<MediaType, string> = {
+  image: "assets/images", video: "assets/video", audio: "assets/sounds", animation: "assets/animations", font: "assets/fonts",
+};
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;

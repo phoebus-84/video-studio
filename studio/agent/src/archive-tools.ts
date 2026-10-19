@@ -4,7 +4,8 @@
 // ---------------------------------------------------------------------------
 // What may be fetched is the channel's call: `archiveMedia` in its
 // settings.yaml (a series' settings.yaml overrides it) names the licence kinds
-// allowed and the least size; by default public domain, CC0, CC BY and CC BY-SA,
+// allowed and the least size; by default public domain, CC0, CC BY, CC BY-SA and
+// the open font licences (OFL 1.1, Apache 2.0),
 // 1600 px on an image's long side, 720p for a video.
 // ---------------------------------------------------------------------------
 
@@ -15,7 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
-import { ArchiveError, createArchive, DEFAULT_POLICY, type Archive, type LicencePolicy, type Quality } from "@av/archive-media";
+import { ArchiveError, createArchive, DEFAULT_POLICY, type Archive, type LicencePolicy, type MediaType, type Quality } from "@av/archive-media";
 import { checkProvenance, deriveMedia, fetchIntoWorkspace, findLocalMedia, reuseLocalMedia } from "@studio/episode";
 import { channelPath, seriesPath } from "@studio/contracts/src/layout.mjs";
 import { WORKSPACE_PARAMS, workspaceOf } from "./workspace-target.js";
@@ -29,7 +30,7 @@ export interface ArchiveSettings {
   quality: Quality;
 }
 
-const KINDS = /^(public-domain|CC0|CC-BY(-NC)?(-SA|-ND)?|provider:[a-z0-9-]+)$/;
+const KINDS = /^(public-domain|CC0|CC-BY(-NC)?(-SA|-ND)?|provider:[a-z0-9.-]+)$/;
 
 /**
  * The channel's `archiveMedia`, the series' over it; the defaults where
@@ -95,15 +96,15 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
     name: "pva_search_media",
     label: "Search Archive Media",
     description:
-      "Search free archive and stock collections for pictures, videos or sounds with verifiable licences: the Art Institute of Chicago, the Met, " +
-      "the Cleveland Museum of Art, Wikimedia Commons, NASA, Internet Archive, Openverse, Rijksmuseum, Wellcome, iNaturalist, ccMixter, Iconify, Fluent/Noto/OpenMoji emoji and LottieFiles; with configured keys also Pexels, Pixabay, Unsplash, Coverr, Smithsonian, Jamendo, Mapillary and Freesound (HQ preview). Platform/software licences require explicit channel opt-in. Each candidate gives its licence, size, " +
+      "Search free archive and stock collections for pictures, videos, sounds, animations or fonts with verifiable licences: the Art Institute of Chicago, the Met, " +
+      "the Cleveland Museum of Art, Wikimedia Commons, NASA, Internet Archive, Openverse, Rijksmuseum, Wellcome, iNaturalist, ccMixter, Iconify, Fluent/Noto/OpenMoji emoji, LottieFiles (MP4, or the Lottie JSON made inert with mediaType animation), Poly Haven and ambientCG textures, illustrations (Openverse, Commons drawings) and Fontsource fonts (mediaType font); with configured keys also Pexels, Pixabay, Unsplash, Coverr, Smithsonian, Jamendo, Mapillary and Freesound (HQ preview). Platform/software licences require explicit channel opt-in. Each candidate gives its licence, size, " +
       "credit, preview and landing page, and whether the channel's policy allows fetching it (and why not). Fetch one with pva_fetch_media.",
     parameters: Type.Object({
       channel: Type.String({ description: "Channel slug: its settings decide which licences are allowed" }),
       series: Type.Optional(Type.String({ description: "Series slug, when its settings override the channel's" })),
       query: Type.String({ description: "What to look for, in English for the museums (e.g. 'storm painting', 'lightning')" }),
-      mediaType: Type.Optional(StringEnum(["image", "video", "audio"], { description: "Default image" })),
-      providers: Type.Optional(Type.Array(Type.String(), { description: "Provider IDs: aic, met, cleveland, commons, nasa, internet-archive, openverse, freesound, pexels, pixabay, unsplash, coverr, smithsonian, rijksmuseum, wellcome, inaturalist, jamendo, ccmixter, iconify, emoji, lottie, mapillary" })),
+      mediaType: Type.Optional(StringEnum(["image", "video", "audio", "animation", "font"], { description: "Default image. animation: Lottie JSON (made inert); font: WOFF2/TTF files" })),
+      providers: Type.Optional(Type.Array(Type.String(), { description: "Provider IDs: aic, met, cleveland, commons, nasa, internet-archive, openverse, freesound, pexels, pixabay, unsplash, coverr, smithsonian, rijksmuseum, wellcome, inaturalist, jamendo, ccmixter, iconify, emoji, lottie, mapillary, polyhaven, ambientcg, illustrations, fontsource" })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 30, description: "Per provider, default 8" })),
       onlyAllowed: Type.Optional(Type.Boolean({ description: "Leave out what the policy would refuse (default true)" })),
       orientation: Type.Optional(StringEnum(["portrait", "landscape", "square"], { description: "Requires known dimensions" })),
@@ -116,7 +117,7 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
         checkNames(params.channel, params.series);
         const settings = archiveSettings(libraryRoot(), params.channel, params.series);
         const result = await (await archive()).search(params.query, {
-          mediaType: (params.mediaType ?? "image") as "image" | "video" | "audio", limit: params.limit ?? 8,
+          mediaType: (params.mediaType ?? "image") as MediaType, limit: params.limit ?? 8,
           ...(params.providers ? { providers: params.providers } : {}), policy: settings.policy, quality: settings.quality,
           ...(params.orientation ? { orientation: params.orientation as "portrait" | "landscape" | "square" } : {}),
           ...(params.minWidth ? { minWidth: params.minWidth } : {}),
@@ -150,7 +151,7 @@ export function registerArchiveTools(pi: ExtensionAPI, options: { archive?: Arch
     name: "pva_fetch_media",
     label: "Fetch Archive Media",
     description:
-      "Download one archive item's original into an episode or a channel source: assets/images|video|sounds/<name>.<ext>, with <name>.source.json beside it " +
+      "Download one archive item's original into an episode or a channel source: assets/images|video|sounds|animations|fonts/<name>.<ext>, with <name>.source.json beside it " +
       "(provider, item, licence, credit), the provider's response kept in artifacts/provenance/ as evidence, and ATTRIBUTIONS.md made again. " +
       "Refuses a licence the channel does not allow, an unknown licence, a file below the least size, a name already used (unless replace).",
     parameters: Type.Object({

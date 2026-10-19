@@ -39,7 +39,7 @@ With a free key in the environment:
 
 The CreativeStudio stock integration is ported to native TypeScript providers;
 there is no subprocess bridge or dependency on a CreativeStudio checkout.
-The registry now has **22 providers** (Poly Haven remains in the separate Blender integration).
+The registry now has **26 providers** (Poly Haven remains in the separate Blender integration).
 
 | id | Media | Key environment variable |
 |---|---|---|
@@ -99,9 +99,23 @@ with `@resvg/resvg-js` (scripts and remote references are not executed) and
 emitted as an inert PNG at least as large as the quality floor. A vector that
 cannot be rasterized is refused, never saved raw. Icons carry their icon set's
 software licence (`provider:mit`, `provider:ofl-1.1`, CC BY…); brand/logo sets
-add a trademark note. LottieFiles is fetched as its reviewed MP4 rendition —
-the Lottie JSON itself is executable-bearing and is never downloaded as an
-asset. Mapillary reads the Graph API behind `MAPILLARY_TOKEN`, geocodes via
+add a trademark note. LottieFiles is fetched as its MP4 rendition, or, with
+mediaType `animation` (ids `json/<id>`), as the Lottie JSON itself, made inert
+by `sanitizeLottie` before it is saved: every expression (`x`, JavaScript a
+player evaluates) is removed, font paths dropped, and an animation whose
+assets are not pictures embedded as `data:` is refused.
+
+### Textures, illustrations and fonts
+
+| id | Media | What |
+|---|---|---|
+| `polyhaven` | image | Poly Haven textures (colour map 4k by default; normal, roughness, displacement, AO maps as renditions) and HDRIs (tone-mapped panorama). CC0, no key. |
+| `ambientcg` | image | ambientCG materials, decals, atlases and plain images. Each resolution is a ZIP: `zipEntry` names the one file kept (the colour map by default), the rest is never written. CC0, no key. |
+| `illustrations` | image | Openverse's `illustration` category and Commons drawings, interleaved; ids `openverse:<id>` or `commons:<title>`. |
+| `fontsource` | font | Every Fontsource family (Google Fonts and others). The regular face as WOFF2; each weight, style and TTF a rendition. The bytes must be a font. |
+
+Fonts carry their family's licence: `provider:ofl-1.1` and `provider:apache-2.0`
+are allowed by default, `provider:ufl-1.0` (Ubuntu) needs a channel's opt-in. Mapillary reads the Graph API behind `MAPILLARY_TOKEN`, geocodes via
 Nominatim when given a place, keeps only `.fbcdn.net`/`.mapillary.com` file
 CDNs, and records the CC BY-SA 4.0 credit and share-alike terms.
 
@@ -158,7 +172,7 @@ that asset (for example with `clip@1.0.0`). No clip is inserted automatically.
   - `provider:<name>`;
   - `unknown`.
 - **`fetch` refuses what the policy doesn't allow.** The default allows public
-  domain, CC0, CC BY and CC BY-SA. NC and ND are refused unless allowed, and
+  domain, CC0, CC BY, CC BY-SA and the open font licences (OFL 1.1, Apache 2.0). NC and ND are refused unless allowed, and
   `unknown` always is.
 - **Verifying it.** Each item keeps its landing page, its licence URL and the
   provider's own response (`raw`), so the licence can be checked by anyone.

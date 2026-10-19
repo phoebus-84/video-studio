@@ -34,7 +34,8 @@ export function assertMediaAllowed(licence: MediaProvenance["licence"], rules: M
   if (adaptation && /^CC-BY(?:-NC)?-ND(?:-|$)/.test(licence.id)) throw new Error("licence-refused: ND media cannot be adapted for production");
 }
 export function assertMediaQuality(record: MediaProvenance, rules: MediaRules = {}): void {
-  const mediaType = record.file.mime.startsWith("image/") ? "image" : record.file.mime.startsWith("video/") ? "video" : "audio";
+  const mime = record.file.mime;
+  const mediaType = mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : mime.startsWith("font/") ? "font" : mime === "application/json" ? "animation" : "audio";
   const small = tooSmall({ mediaType, width: record.file.width, height: record.file.height }, { ...DEFAULT_QUALITY, ...rules.quality });
   if (small) throw new Error(`too-small: ${small}`);
 }

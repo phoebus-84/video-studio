@@ -36,7 +36,7 @@
           "properties": {
             "path": {
               "type": "string",
-              "pattern": "^assets/(images|video|sounds)/[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "pattern": "^assets/(images|video|sounds|animations|fonts)/[A-Za-z0-9][A-Za-z0-9._-]*$",
               "description": "Relative to the workspace."
             },
             "hash": {
