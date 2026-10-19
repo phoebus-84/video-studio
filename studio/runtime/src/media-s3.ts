@@ -104,9 +104,9 @@ export function s3MediaStore(options: S3MediaOptions): MediaObjectStore {
             parts.push({ PartNumber, ETag: part.ETag, ...(checksums ? { ChecksumSHA256 } : {}) });
           }
         } finally { await handle.close(); }
+        // No ChecksumType here: CreateMultipartUpload declared it, and Garage refuses it on completion.
         await client.send(new CompleteMultipartUploadCommand({
           Bucket, Key, UploadId, MultipartUpload: { Parts: parts }, IfNoneMatch: "*",
-          ...(checksums ? { ChecksumType: "COMPOSITE" } : {}),
         }), sendOptions);
         return true;
       } catch (error) {

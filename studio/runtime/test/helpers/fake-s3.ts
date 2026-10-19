@@ -58,6 +58,8 @@ export async function fakeS3() {
           res.end(); return;
         }
         if (method === "POST") {
+          // As Garage does: the checksum type belongs to CreateMultipartUpload, not to completion.
+          if (req.headers["x-amz-checksum-type"]) { error(400, "InvalidRequest"); return; }
           if (objects.has(key) && req.headers["if-none-match"] === "*") { error(412, "PreconditionFailed"); return; }
           objects.set(key, Buffer.concat([...upload.parts].sort(([a], [b]) => a - b).map(([, data]) => data)));
           uploads.delete(id);
