@@ -831,7 +831,9 @@ parent directories, escaping/cyclic links and targets absent from the lock are
 refused. Fix the layout or lock rather than disabling these checks.
 
 Workers are bounded (`--concurrency 4` by default, 1–16 allowed). Large uploads
-use multipart. Interrupt with Ctrl-C and rerun: completed objects/files are
+use multipart. A remote that does not answer at all (refused, no route, no
+connection within 10 s after three attempts) fails the whole run at once with
+`is unreachable`: check the tunnel or the endpoint, then rerun. Interrupt with Ctrl-C and rerun: completed objects/files are
 skipped, but an incomplete object starts again. SIGINT/SIGTERM trigger best-effort
 cleanup; a hard kill may leave a private upload snapshot in the system temp
 directory or a `.media-pull-*.tmp` beside its destination. These leftovers are
