@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { s3MediaStore } from "../../src/media-s3.js";
 import type { MediaTransferReport } from "../../src/media-remote.js";
@@ -147,6 +149,26 @@ describe("S3 conditional and multipart writes", { timeout: 30_000 }, () => {
       expect(remote.uploads.size).toBe(0);
       expect(remote.objects.has("failed")).toBe(false);
     } finally { store.close?.(); }
+  });
+
+  it("fails every later request at once after the remote proved unreachable", async () => {
+    const probe = createServer();
+    await new Promise<void>((done) => probe.listen(0, "127.0.0.1", done));
+    const port = (probe.address() as AddressInfo).port;
+    await new Promise<void>((done) => probe.close(() => done()));
+    const store = s3MediaStore({ bucket: "media", endpoint: `http://127.0.0.1:${port}`, region: "auto" });
+    let requests = 0;
+    const late = createServer((_req, res) => { requests++; res.writeHead(404).end(); });
+    try {
+      await expect(store.head("a")).rejects.toThrow(/is unreachable/);
+      await new Promise<void>((done) => late.listen(port, "127.0.0.1", done));
+      await expect(store.head("b")).rejects.toThrow(/is unreachable/);
+      await expect(store.put("c", join(root, "sample", IMAGE), { hash: sha(Buffer.from("plate")), size: 5 })).rejects.toThrow(/is unreachable/);
+      expect(requests).toBe(0);
+    } finally {
+      store.close?.();
+      await new Promise<void>((done) => late.close(() => done()));
+    }
   });
 
   it("allows disabling optional checksum headers without weakening local verification", async () => {

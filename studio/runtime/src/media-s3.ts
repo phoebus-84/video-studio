@@ -27,6 +27,12 @@ export interface S3MediaOptions {
 }
 
 const status = (error: unknown) => (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+/** No HTTP answer at all: refused, no route, no name, or no connection within connectionTimeout. */
+const unreachable = (error: unknown) => {
+  const e = error as { name?: string; code?: string; message?: string } | undefined;
+  return status(error) === undefined && (["ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "ENOTFOUND", "EAI_AGAIN"].includes(e?.code ?? "") ||
+    (e?.name === "TimeoutError" && /establish a connection/.test(e.message ?? "")));
+};
 const checksum = (data: Buffer) => createHash("sha256").update(data).digest("base64");
 const PART_SIZE = 8 * 1024 * 1024;
 
@@ -43,12 +49,22 @@ export function s3MediaStore(options: S3MediaOptions): MediaObjectStore {
     responseChecksumValidation: "WHEN_REQUIRED",
   });
   const sendOptions = { abortSignal: options.signal };
+  // The first unreachable answer fails every later request at once: otherwise each file of the run
+  // waits its own retries (3 × connectionTimeout), minutes for a few dozen files with the tunnel down.
+  let down: Error | undefined;
+  const guarded = async <T>(call: () => Promise<T>): Promise<T> => {
+    if (down) throw down;
+    try { return await call(); } catch (error) {
+      if (unreachable(error)) down ??= new Error(`Media remote ${options.endpoint ?? "S3"} is unreachable: ${error instanceof Error ? error.message : String(error)}`);
+      throw down ?? error;
+    }
+  };
   const Bucket = options.bucket;
   const checksums = options.checksum !== false;
   return {
     async head(Key) {
       try {
-        const result = await client.send(new HeadObjectCommand({ Bucket, Key }), sendOptions);
+        const result = await guarded(() => client.send(new HeadObjectCommand({ Bucket, Key }), sendOptions));
         if (result.ContentLength === undefined) throw new Error("S3 HEAD returned no content length");
         return { size: result.ContentLength };
       } catch (error) {
@@ -57,7 +73,7 @@ export function s3MediaStore(options: S3MediaOptions): MediaObjectStore {
       }
     },
     async get(Key) {
-      const result = await client.send(new GetObjectCommand({ Bucket, Key }), sendOptions);
+      const result = await guarded(() => client.send(new GetObjectCommand({ Bucket, Key }), sendOptions));
       if (!result.Body) throw new Error("S3 GET returned no body");
       return result.Body as Readable;
     },
@@ -65,10 +81,10 @@ export function s3MediaStore(options: S3MediaOptions): MediaObjectStore {
       if (entry.size <= PART_SIZE) {
         const body = createReadStream(file);
         try {
-          await client.send(new PutObjectCommand({
+          await guarded(() => client.send(new PutObjectCommand({
             Bucket, Key, Body: body, ContentLength: entry.size, IfNoneMatch: "*",
             ...(checksums ? { ChecksumSHA256: Buffer.from(entry.hash.slice(7), "hex").toString("base64") } : {}),
-          }), sendOptions);
+          }), sendOptions));
           return true;
         } catch (error) {
           if (status(error) === 412) return false;
@@ -78,9 +94,9 @@ export function s3MediaStore(options: S3MediaOptions): MediaObjectStore {
 
       // Sequential parts per object; the outer file pool bounds aggregate memory/connections.
       // Size grows only to respect S3's 10,000-part ceiling. A rerun resumes at object granularity.
-      const created = await client.send(new CreateMultipartUploadCommand({
+      const created = await guarded(() => client.send(new CreateMultipartUploadCommand({
         Bucket, Key, ...(checksums ? { ChecksumAlgorithm: "SHA256", ChecksumType: "COMPOSITE" } : {}),
-      }), sendOptions);
+      }), sendOptions));
       const UploadId = created.UploadId;
       if (!UploadId) throw new Error("S3 did not return a multipart upload ID");
       try {
@@ -97,17 +113,17 @@ export function s3MediaStore(options: S3MediaOptions): MediaObjectStore {
               filled += bytesRead;
             }
             const ChecksumSHA256 = checksums ? checksum(body) : undefined;
-            const part = await client.send(new UploadPartCommand({
+            const part = await guarded(() => client.send(new UploadPartCommand({
               Bucket, Key, UploadId, PartNumber, Body: body, ContentLength: body.length, ChecksumSHA256,
-            }), sendOptions);
+            }), sendOptions));
             if (!part.ETag) throw new Error("S3 upload part returned no ETag");
             parts.push({ PartNumber, ETag: part.ETag, ...(checksums ? { ChecksumSHA256 } : {}) });
           }
         } finally { await handle.close(); }
-        await client.send(new CompleteMultipartUploadCommand({
+        // No ChecksumType here: CreateMultipartUpload declared it, and Garage refuses it on completion.
+        await guarded(() => client.send(new CompleteMultipartUploadCommand({
           Bucket, Key, UploadId, MultipartUpload: { Parts: parts }, IfNoneMatch: "*",
-          ...(checksums ? { ChecksumType: "COMPOSITE" } : {}),
-        }), sendOptions);
+        }), sendOptions));
         return true;
       } catch (error) {
         // Use an un-aborted request for cleanup, even when the transfer was cancelled.

@@ -64,13 +64,21 @@ describe("remote configuration and policy", () => {
 
   it.each([
     { accessKeyId: "not-a-real-secret" }, { endpoint: "https://user:secret@example.invalid" },
-    { endpoint: "http://example.invalid" }, { url: "s3://media/a/../b" },
+    { endpoint: "http://example.invalid" }, { endpoint: "http://10.0.0.1.example.invalid" },
+    { endpoint: "http://172.32.0.1:3900" }, { endpoint: "http://8.8.8.8" }, { endpoint: "http://[2001:db8::1]" },
+    { url: "s3://media/a/../b" },
     { url: "s3://media/x?secret=no" }, { keep: ["typo"] }, { checksum: "false" },
     { rules: [{ prefix: "../escape", tier: "paid" }] },
   ])("rejects invalid/secret-bearing config %j", (extra) => {
     config(extra);
     expect(() => readMediaRemote(channel)).toThrow();
   });
+
+  it.each(["http://127.0.0.1:3900", "http://10.89.89.1:3900", "http://172.16.0.2", "http://192.168.1.10:9000", "http://100.100.1.1", "http://[fd12:3456::1]:3900"])(
+    "allows plain HTTP on loopback and private IP addresses (%s)", (endpoint) => {
+      config({ endpoint });
+      expect(readMediaRemote(channel).endpoint).toBe(endpoint);
+    });
 });
 
 describe("media transfers", () => {
