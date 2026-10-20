@@ -130,7 +130,7 @@ export class VideoCache {
  * one renderer call: per-second calls paid the browser's and the encoder's
  * start-up for every 30 frames, and left the tabs idle (avg: render 8 s per
  * second of video). Bounded so an interrupted render still leaves most of its
- * work in the cache.
+ * work in the cache: a run is published only when it ends.
  */
 export function missRuns(missing: number[], max: number): number[][] {
   const runs: number[][] = [];
@@ -155,8 +155,20 @@ export async function cachedVideo(options: {
   renderRun: (segments: VideoSegment[], outputs: string[], onProgress: (progress: number) => void, lane: number) => Promise<void>;
   concatenate: (files: string[], output: string) => Promise<void>;
   onProgress?: (progress: number) => void;
-  /** Longest run rendered by one call, in segments (default 120: two minutes at one second each). */
+  /**
+   * Longest run rendered by one call, in segments (default 30: half a minute at
+   * one second each). With 120, the four lanes of a 3:28 biography each drew one
+   * run of 52 s and all four ended together: when FFmpeg could not start at that
+   * moment (Windows 0xC0000142, the machine short of memory) the whole render was
+   * lost at 100% with nothing in the cache (2026-10-20). Shorter runs publish as
+   * they go, for a start-up of a few seconds each.
+   */
   maxRunSegments?: number;
+  /**
+   * Times a lane draws a failed run again before the render fails (default 1).
+   * A browser or an FFmpeg that could not start is often a passing shortage.
+   */
+  retries?: number;
   /**
    * Runs rendered at once (default 1). The misses are cut so that every lane
    * has a share, and each lane takes the next run as it finishes one.
@@ -182,7 +194,8 @@ export async function cachedVideo(options: {
   const total = plan.segments.length;
   options.onProgress?.(report.segmentsReused / total);
   const lanes = Math.max(1, Math.floor(options.lanes ?? 1));
-  const runs = missRuns(missing, Math.min(options.maxRunSegments ?? 120, Math.max(1, Math.ceil(missing.length / lanes))));
+  const runs = missRuns(missing, Math.min(options.maxRunSegments ?? 30, Math.max(1, Math.ceil(missing.length / lanes))));
+  const retries = Math.max(0, Math.floor(options.retries ?? 1));
   // Within a run, progress moves with its frames rather than jumping at its end.
   const partial = new Map<number[], number>();
   const progress = () => options.onProgress?.(
@@ -191,14 +204,21 @@ export async function cachedVideo(options: {
   const lane = async (index: number) => {
     while (!failed && next < runs.length) {
       const run = runs[next++]!;
-      partial.set(run, 0);
-      try {
-        await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!),
-          (p) => { partial.set(run, Math.min(Math.max(p, 0), 1) * run.length); progress(); }, index);
-      } catch (e) {
-        // The other lanes take no further run, and finish and keep the one they are on.
-        failed = true;
-        throw e;
+      for (let attempt = 0; ; attempt++) {
+        partial.set(run, 0);
+        try {
+          await options.renderRun(run.map((i) => plan.segments[i]!), run.map((i) => files[i]!),
+            (p) => { partial.set(run, Math.min(Math.max(p, 0), 1) * run.length); progress(); }, index);
+          break;
+        } catch (e) {
+          if (attempt < retries && !failed) {
+            report.warnings.push(`Frames ${plan.segments[run[0]!]!.from}-${plan.segments[run.at(-1)!]!.to} drawn again after: ${(e as Error).message}`);
+            continue;
+          }
+          // The other lanes take no further run, and finish and keep the one they are on.
+          failed = true;
+          throw e;
+        }
       }
       for (const i of run) await segments.put(plan.segments[i]!.key, files[i]!);
       partial.delete(run);

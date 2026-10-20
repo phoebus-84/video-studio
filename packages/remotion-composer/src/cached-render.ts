@@ -16,7 +16,25 @@ import {mixSounds, type PlacedSound} from './sound-mix.js';
 
 const exec = promisify(execFile);
 const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
-const run = (args: string[]) => exec(ffmpeg(), ['-hide_banner', '-loglevel', 'error', '-y', ...args], {maxBuffer: 8 * 1024 * 1024});
+/**
+ * FFmpeg that could not start (Windows 0xC0000142, or no memory or process for
+ * it) is retried: the split, the joins and the final mux of a render that took
+ * an hour would otherwise lose it at its last step (2026-10-20).
+ */
+export const startFailed = (error: unknown): boolean => {
+  const code = (error as {code?: unknown}).code;
+  return code === 3221225794 || code === -1073741502 || (typeof code === 'string' && /^(EAGAIN|ENOMEM|EMFILE|ENFILE)$/.test(code));
+};
+async function run(args: string[], tries = 3): Promise<{stdout: string; stderr: string}> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await exec(ffmpeg(), ['-hide_banner', '-loglevel', 'error', '-y', ...args], {maxBuffer: 8 * 1024 * 1024});
+    } catch (error) {
+      if (attempt >= tries || !startFailed(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
+}
 
 // Explicit settings shared by every independently decodable, silent H.264 segment.
 const encoding = {
