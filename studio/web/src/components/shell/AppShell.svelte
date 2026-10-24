@@ -19,7 +19,7 @@
     theme: "light" | "dark";
   }
 
-  let { connected = false, theme = "light" }: Props = $props();
+  let { connected = false, theme = $bindable("light") }: Props = $props();
 
   const currentEpisode = $derived(
     episode.state.phase === "ready" ? episode.state.episode : null,
@@ -194,7 +194,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="app-shell" data-theme={theme}>
-  <Header {connected} episode={currentEpisode} />
+  <Header {connected} episode={currentEpisode} bind:theme />
 
   <StatusStrip {connected} episode={currentEpisode} {rollup} onaction={runAction} />
 
