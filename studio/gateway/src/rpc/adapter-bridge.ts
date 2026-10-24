@@ -104,10 +104,17 @@ export class AdapterBridge {
   /** Check FFmpeg availability. */
   private async checkFfmpeg(): Promise<AdapterStatus> {
     try {
-      const { execSync } = await import("node:child_process");
-      const ver = execSync("ffmpeg -version 2>&1 | head -1", { encoding: "utf-8", timeout: 3000, windowsHide: true }).trim();
-      const hasSubtitles = execSync("ffmpeg -filters 2>&1 | grep -c subtitles", { encoding: "utf-8", timeout: 3000, windowsHide: true }).trim();
-      const hasLoudnorm = execSync("ffmpeg -filters 2>&1 | grep -c loudnorm", { encoding: "utf-8", timeout: 3000, windowsHide: true }).trim();
+      // ffmpeg directly, not through a shell pipeline: `head` and `grep` exist
+      // on Windows only when Git's tools are on PATH, and without them a
+      // working ffmpeg was reported as not found.
+      const { execFileSync } = await import("node:child_process");
+      const run = (args: string[]) =>
+        execFileSync("ffmpeg", ["-hide_banner", ...args], { encoding: "utf-8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      const ver = run(["-version"]).split(/\r?\n/)[0]!.trim();
+      const filters = run(["-filters"]);
+      const count = (name: string) => filters.split(/\r?\n/).filter((line) => line.includes(name)).length;
+      const hasSubtitles = count("subtitles");
+      const hasLoudnorm = count("loudnorm");
       return {
         name: "ffmpeg",
         status: "ready",
