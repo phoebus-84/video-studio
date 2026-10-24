@@ -54,6 +54,10 @@ export class AdapterBridge {
       return { name: "fal", status: "unknown", detail: "FAL_KEY not set" };
     }
 
+    // An empty input: fal checks the key and the account before the input,
+    // so a locked account answers 403 and a bad key 401, while a usable one
+    // gets a 422 for the missing prompt and nothing is generated. The probe
+    // used to generate a real image, billed on every health check.
     try {
       const res = await fetch("https://fal.run/fal-ai/flux/dev", {
         method: "POST",
@@ -61,22 +65,20 @@ export class AdapterBridge {
           Authorization: `Key ${key}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          prompt: "health check",
-          image_size: "square_hd",
-          num_inference_steps: 1,
-          num_images: 1,
-        }),
+        body: "{}",
         signal: AbortSignal.timeout(10000),
       });
 
-      if (res.ok) {
-        const data = await res.json() as Record<string, unknown>;
-        const hasImages = "images" in data;
-        return { name: "fal", status: "ready", detail: hasImages ? "connected" : "response without images" };
+      if (res.ok || res.status === 422) {
+        return { name: "fal", status: "ready", detail: "key accepted" };
+      }
+      if (res.status === 401) {
+        return { name: "fal", status: "down", detail: "invalid FAL_KEY" };
       }
       if (res.status === 402 || res.status === 403) {
-        return { name: "fal", status: "degraded", detail: "balance exhausted or locked" };
+        const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+        const why = typeof body.detail === "string" ? body.detail : "balance exhausted or locked";
+        return { name: "fal", status: "degraded", detail: why };
       }
       return { name: "fal", status: "down", detail: `HTTP ${res.status}` };
     } catch (err) {
