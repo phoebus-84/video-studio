@@ -105,4 +105,4 @@
   });
 </script>
 
-<AppShell {connected} {theme} />
+<AppShell {connected} bind:theme />

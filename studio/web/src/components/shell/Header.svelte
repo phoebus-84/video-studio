@@ -6,15 +6,17 @@
   import Breadcrumbs from "./Breadcrumbs.svelte";
   import SpendMeter from "./SpendMeter.svelte";
   import OperatorKeyControl from "./OperatorKeyControl.svelte";
+  import ThemeToggle from "./ThemeToggle.svelte";
   import { studio } from "$lib/studio-store.svelte.ts";
   import type { EpisodeWorkspace } from "$lib/episode-types";
 
   interface Props {
     connected: boolean;
     episode?: EpisodeWorkspace | null;
+    theme: "light" | "dark";
   }
 
-  let { connected, episode = null }: Props = $props();
+  let { connected, episode = null, theme = $bindable() }: Props = $props();
 
   const connectionLabel = $derived(connected ? "connected" : "offline");
   const ariaLabel = $derived(
@@ -48,6 +50,8 @@
     <SpendMeter spent={episode?.budgetSpent ?? null} limit={episode?.budgetLimit ?? null} />
 
     <OperatorKeyControl />
+
+    <ThemeToggle bind:theme />
 
     <span
       class="connection-indicator"
