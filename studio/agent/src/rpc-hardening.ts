@@ -117,6 +117,12 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   let reconnectAttempts = 0;
   /** Set when retrying is pointless, so the loop stops instead of spinning. */
   let gatewayGaveUp = false;
+  /** The session's UI, captured at session_start; null outside a session. */
+  let ui: { notify(message: string, level?: "info" | "warning" | "error"): void; setStatus(key: string, text: string): void } | null = null;
+
+  function setLinkStatus(text: string): void {
+    ui?.setStatus("pva-rpc", text);
+  }
 
   /** Reconnect with exponential backoff, giving up rather than looping forever. */
   function scheduleReconnect(): void {
@@ -179,10 +185,28 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   const gatewayUrl = process.env.AVG_GATEWAY_URL ?? "ws://127.0.0.1:5198/ws";
   const gatewayToken = resolveToken();
 
-  /** Emit an update that can notify Pi of gateway events. */
+  /**
+   * Act on a gateway update. Nothing goes to stderr: Pi draws its TUI on the
+   * same terminal, so every event (a file-change for each file the agent
+   * itself wrote, a disconnect for each retry) landed in the conversation as
+   * a raw `[pva-gateway]` line. The link state goes to the status bar, a
+   * dead end is said once, and only reviews and stage outcomes reach the
+   * agent; the rest is already known to it.
+   */
   function notify(update: { type: string; message: string; author?: string }): void {
-    // Use stderr for logging (Pi shows this in agent output)
-    process.stderr.write(`[pva-gateway] ${update.type}: ${update.message}\n`);
+    if (update.type === "gateway:connected") {
+      setLinkStatus("gateway: connected");
+      return;
+    }
+    if (update.type === "gateway:disconnected") {
+      setLinkStatus("gateway: reconnecting");
+      return;
+    }
+    if (update.type.startsWith("gateway:")) {
+      setLinkStatus("gateway: offline");
+      ui?.notify(update.message, "warning");
+      return;
+    }
     // For review events, trigger Pi to read the journal and respond.
     // Only trigger on thread creation and on operator comments; pi's own
     // comments are echoed back through the bus and must not re-trigger a turn.
@@ -317,10 +341,11 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
         scheduleReconnect();
       });
 
-      ws.on("error", (err: Error) => {
+      ws.on("error", () => {
         monitor.markError();
-        // ws.on('close') will fire after this, triggering reconnect
-        process.stderr.write(`[pva-gateway] WS error: ${err.message}\n`);
+        // ws.on('close') fires after this and handles the reconnect; the
+        // error itself (usually ECONNREFUSED while the gateway is down) would
+        // only repeat on every attempt.
       });
     } catch (err) {
       monitor.markError();
@@ -349,7 +374,8 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     monitor.markConnected();
-    ctx.ui.setStatus("pva-rpc", "rpc: connected");
+    ui = ctx.ui;
+    setLinkStatus("gateway: connecting");
     // ── Connect to gateway WebSocket ─────────────────────────────────
     connectWs();
   });
@@ -357,6 +383,7 @@ export function registerRpcHardening(pi: ExtensionAPI): void {
   pi.on("session_shutdown", (_event, ctx) => {
     monitor.markDisconnected();
     ctx.ui.setStatus("pva-rpc", "");
+    ui = null;
     // ── Disconnect gateway WebSocket ─────────────────────────────────
     disconnectWs();
   });

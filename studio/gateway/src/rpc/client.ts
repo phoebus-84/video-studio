@@ -180,6 +180,7 @@ export class PiRpcClient extends EventEmitter {
         stdio: ["pipe", "pipe", "pipe"],
         // Not a bare `{ ...process.env }` (avg-qr4.3): see `piSpawnEnv`.
         env: piSpawnEnv(),
+        windowsHide: true,
       });
 
       p.on("error", (err) => {

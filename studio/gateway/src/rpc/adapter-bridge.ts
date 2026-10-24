@@ -105,9 +105,9 @@ export class AdapterBridge {
   private async checkFfmpeg(): Promise<AdapterStatus> {
     try {
       const { execSync } = await import("node:child_process");
-      const ver = execSync("ffmpeg -version 2>&1 | head -1", { encoding: "utf-8", timeout: 3000 }).trim();
-      const hasSubtitles = execSync("ffmpeg -filters 2>&1 | grep -c subtitles", { encoding: "utf-8", timeout: 3000 }).trim();
-      const hasLoudnorm = execSync("ffmpeg -filters 2>&1 | grep -c loudnorm", { encoding: "utf-8", timeout: 3000 }).trim();
+      const ver = execSync("ffmpeg -version 2>&1 | head -1", { encoding: "utf-8", timeout: 3000, windowsHide: true }).trim();
+      const hasSubtitles = execSync("ffmpeg -filters 2>&1 | grep -c subtitles", { encoding: "utf-8", timeout: 3000, windowsHide: true }).trim();
+      const hasLoudnorm = execSync("ffmpeg -filters 2>&1 | grep -c loudnorm", { encoding: "utf-8", timeout: 3000, windowsHide: true }).trim();
       return {
         name: "ffmpeg",
         status: "ready",
