@@ -16,6 +16,13 @@ import {mixSounds, type PlacedSound} from './sound-mix.js';
 
 const exec = promisify(execFile);
 const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
+// The OpenGL backend Chrome draws with (Remotion's `gl`). Unset keeps Chrome's
+// own choice; a machine whose default is software can pick its GPU path.
+const glBackends = ['swangle', 'angle', 'egl', 'swiftshader', 'vulkan', 'angle-egl'] as const;
+const chromiumGl = (): (typeof glBackends)[number] | null => {
+  const gl = process.env.AVG_CHROMIUM_GL?.trim();
+  return (glBackends as readonly string[]).includes(gl ?? '') ? gl as (typeof glBackends)[number] : null;
+};
 const run = (args: string[]) => exec(ffmpeg(), ['-hide_banner', '-loglevel', 'error', '-y', ...args], {maxBuffer: 8 * 1024 * 1024});
 
 // Explicit settings shared by every independently decodable, silent H.264 segment.
@@ -120,7 +127,7 @@ export async function renderWithCache(options: {
   // A whole-video hit with no audio never opens one.
   const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
   const opened: Promise<Awaited<ReturnType<typeof openBrowser>>>[] = [];
-  const getBrowser = (lane = 0) => opened[lane] ??= openBrowser('chrome');
+  const getBrowser = (lane = 0) => opened[lane] ??= openBrowser('chrome', {chromiumOptions: {gl: chromiumGl()}});
   const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
   // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
   // beside the pictures; a browser sound pass waits for them (see below).
