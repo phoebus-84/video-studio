@@ -619,6 +619,57 @@ const nanoBananaPro: EndpointProfile = defineProfile({
 });
 
 
+// ─── FLUX 3 Max ─────────────────────────────────────────────────────────
+
+const FLUX3_MAX_COMMON: ParameterField[] = [
+  { name: "prompt", type: "string", required: true, description: "The video scene, action, camera and audio to generate." },
+  { name: "duration", type: "integer", required: false, defaultValue: 5, min: 5, max: 20, description: "Whole seconds of output video." },
+  { name: "resolution", type: "enum", required: false, defaultValue: "720p", enumValues: ["720p", "1080p"], description: "Output resolution." },
+  { name: "reasoning_level", type: "enum", required: false, defaultValue: "high", enumValues: ["low", "high"], description: "Prompt reasoning effort." },
+  { name: "aspect_ratio", type: "enum", required: false, defaultValue: "auto", enumValues: ["auto", "21:9", "2:1", "16:9", "4:3", "1:1", "3:4", "9:16"], description: "Frame shape; auto is 16:9 for text prompts." },
+  { name: "generate_audio", type: "boolean", required: false, defaultValue: true, description: "Generate synchronized native audio." },
+  { name: "seed", type: "integer", required: false, min: 0, description: "Random seed; omitted means provider-selected." },
+];
+
+const FLUX3_MAX_CAPABILITIES: EndpointCapabilities = {
+  supportedAspectRatios: ["21:9", "2:1", "16:9", "4:3", "1:1", "3:4", "9:16"],
+  supportsSeed: true,
+  supportsReferenceImages: false,
+  maxReferenceImages: 0,
+  supportsNegativePrompt: false,
+  defaultImageSize: "16:9",
+};
+
+const FLUX3_MAX_PRICING = { unit: "inference" as const, estimatedUnitCost: 0.2125, currency: "USD" };
+
+/** FLUX 3 Max — text to video with optional native audio. */
+export const flux3MaxTextToVideo: EndpointProfile = defineProfile({
+  profileId: "blackforestlabs/flux-3-max/text-to-video@v1",
+  endpointId: "blackforestlabs/flux-3-max/text-to-video",
+  operation: "text-to-video",
+  contractVersion: "v1",
+  parameterSchema: FLUX3_MAX_COMMON,
+  capabilities: FLUX3_MAX_CAPABILITIES,
+  // Public 720p price at profile authoring time: $0.0425/second; the studio
+  // fetches the authenticated account's live unit price before reserving spend.
+  pricing: FLUX3_MAX_PRICING,
+});
+
+/** FLUX 3 Max — image to video, optionally constrained by a closing frame. */
+export const flux3MaxImageToVideo: EndpointProfile = defineProfile({
+  profileId: "blackforestlabs/flux-3-max/image-to-video@v1",
+  endpointId: "blackforestlabs/flux-3-max/image-to-video",
+  operation: "image-to-video",
+  contractVersion: "v1",
+  parameterSchema: [
+    { name: "image_url", type: "string", required: true, description: "Opening image (PNG, JPEG or WebP)." },
+    { name: "end_image_url", type: "string", required: false, description: "Optional closing image (PNG, JPEG or WebP)." },
+    ...FLUX3_MAX_COMMON,
+  ],
+  capabilities: { ...FLUX3_MAX_CAPABILITIES, supportsReferenceImages: true, maxReferenceImages: 2 },
+  pricing: FLUX3_MAX_PRICING,
+});
+
 // ─── MiniMax H3 ──────────────────────────────────────────────────────────
 //
 // Three endpoints, one model. Parameters and enums are taken from the live
@@ -872,6 +923,8 @@ const PROFILES: readonly EndpointProfile[] = Object.freeze([
   fluxDevV1,
   fluxFillV1,
   nanoBananaPro,
+  flux3MaxTextToVideo,
+  flux3MaxImageToVideo,
   minimaxH3TextToVideo,
   minimaxH3ImageToVideo,
   minimaxH3ReferenceToVideo,

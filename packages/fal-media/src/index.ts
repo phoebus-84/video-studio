@@ -75,6 +75,8 @@ export {
   deprecationDiagnostic,
   fluxDevV1,
   fluxFillV1,
+  flux3MaxTextToVideo,
+  flux3MaxImageToVideo,
   wan22TurboImageToVideo,
   WAN_22_TURBO_PRICES_USD,
 } from "./profiles.js";

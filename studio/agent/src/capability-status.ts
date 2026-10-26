@@ -133,12 +133,16 @@ export async function imageGenerationStatus(options: {
  */
 export function videoGenerationStatus(falConfigured: boolean): {
   "video-generation": CapabilityReport;
+  "video-generation-flux3-max": CapabilityReport;
   "video-generation-wan": CapabilityReport;
 } {
   const missing = "FAL_KEY not set";
   return {
     "video-generation": falConfigured
       ? { available: true, detail: "fal.ai MiniMax H3 configured (pva_generate_minimax_h3_video, ~$0.48/clip)" }
+      : { available: false, detail: missing },
+    "video-generation-flux3-max": falConfigured
+      ? { available: true, detail: "fal.ai FLUX 3 Max configured (pva_generate_flux3_max_video, live account pricing, text or image to video)" }
       : { available: false, detail: missing },
     "video-generation-wan": falConfigured
       ? { available: true, detail: "fal.ai Wan 2.2 A14B turbo configured (pva_generate_wan_video, $0.05–0.10/clip, end frame for loops)" }
