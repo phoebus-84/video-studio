@@ -8,7 +8,7 @@ vi.mock("$lib/gateway.svelte.ts", () => ({
   getGatewayClient: () => ({ fetchJSON }),
 }));
 
-const { actionsFor, production } = await import("$lib/production-store.svelte.ts");
+const { actionsFor, canClaimForAgent, production } = await import("$lib/production-store.svelte.ts");
 
 const REF = { channel: "childrens", series: "fairy-tales", episode: "ep-01" };
 
@@ -75,6 +75,41 @@ describe("what the studio offers for each state", () => {
     expect(actionsFor("awaiting_approval")).toEqual([]);
     expect(actionsFor("skipped")).toEqual([]);
     expect(actionsFor("")).toEqual([]);
+  });
+});
+
+describe("operator handoff", () => {
+  const stage = { stageId: "script", state: "blocked" as const, dependsOn: [], produces: [],
+    stateReason: '"script" declares autopilot: false and may not run unattended' };
+  it("offers only authenticated journal claims for runnable or attendance-blocked stages", () => {
+    expect(canClaimForAgent(stage, "journal", true)).toBe(true);
+    expect(canClaimForAgent(stage, "journal", false)).toBe(false);
+    expect(canClaimForAgent(stage, "files", true)).toBe(false);
+    expect(canClaimForAgent({...stage, stateReason: "dependency not completed"}, "journal", true)).toBe(false);
+    for (const state of ["pending", "running", "awaiting_review", "completed", "stale", "failed"] as const)
+      expect(canClaimForAgent({...stage, state}, "journal", true)).toBe(false);
+    expect(canClaimForAgent({...stage, state: "runnable"}, "journal", true)).toBe(true);
+  });
+  it("posts a claim without forging a principal and displays the exact lease", async () => {
+    production.ref = REF;
+    fetchJSON.mockResolvedValueOnce({ok: true, outcome: {stageId: "script", status: "claimed",
+      leaseId: "lease-123", expiresAt: "2026-10-23T23:00:00Z"}})
+      .mockResolvedValueOnce(statusOf("running"));
+    await production.claimStage("script");
+    expect(fetchJSON.mock.calls[0]![0]).toBe("/api/channels/childrens/series/fairy-tales/episodes/ep-01/stages/script/claim");
+    expect(JSON.parse(fetchJSON.mock.calls[0]![1].body)).toEqual({});
+    expect(production.lastMessage).toContain("lease-123");
+    expect(production.lastMessage).toContain("2026-10-23T23:00:00Z");
+    expect(production.lastMessage).toContain("no work has run yet");
+    expect(production.error).toBeNull();
+  });
+  it("does not turn a refused claim into a handoff", async () => {
+    production.ref = REF;
+    fetchJSON.mockResolvedValueOnce({ok: true, outcome: {status: "blocked", reason: "sign in as operator"}})
+      .mockResolvedValueOnce(statusOf("blocked"));
+    await production.claimStage("script");
+    expect(production.error).toBe("sign in as operator");
+    expect(production.lastMessage).toBeNull();
   });
 });
 
@@ -228,7 +263,8 @@ describe("what an action reports back", () => {
 
     await production.runStage("script");
     expect(production.error).toBeNull();
-    expect(production.lastMessage).toBe("script is claimed — perform it, then complete it");
+    expect(production.lastMessage).toContain("script is claimed — no work has run yet");
+    expect(production.lastMessage).toContain("missing (do not complete)");
   });
 
   it("surfaces a failed resolve, which arrives as a throw and leaves needsSnapshot set", async () => {

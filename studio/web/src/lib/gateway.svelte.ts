@@ -26,9 +26,20 @@ export const OPERATOR_KEY_STORAGE = "vs-operator-key";
  * a build-time key was inlined into modules the dev server serves without
  * authentication, and into production bundles.
  */
+export function validOperatorKey(key: string): boolean {
+  // The gateway generates 32 random bytes as unpadded base64url (43 ASCII characters).
+  // Refuse pasted paths, formatted shell output, Unicode and whitespace before
+  // they can become an Authorization header. Never include the value in errors.
+  return /^[A-Za-z0-9_-]{43}$/.test(key);
+}
+
 export function credentialFor(storage: Pick<Storage, "getItem">, gatewayToken: string): string {
-  return storage.getItem(OPERATOR_KEY_STORAGE)
-    || storage.getItem("vs-gateway-token") || gatewayToken;
+  const operatorKey = storage.getItem(OPERATOR_KEY_STORAGE);
+  if (operatorKey) {
+    if (!validOperatorKey(operatorKey)) throw new Error("Stored operator key has an invalid format. Sign in again using only the file's contents (43 characters, no path or quotes).");
+    return operatorKey;
+  }
+  return storage.getItem("vs-gateway-token") || gatewayToken;
 }
 
 /**
@@ -38,13 +49,15 @@ export function credentialFor(storage: Pick<Storage, "getItem">, gatewayToken: s
  */
 export function saveOperatorKey(storage: Pick<Storage, "setItem" | "removeItem">, key: string): void {
   const trimmed = key.trim();
-  if (trimmed) storage.setItem(OPERATOR_KEY_STORAGE, trimmed);
-  else storage.removeItem(OPERATOR_KEY_STORAGE);
+  if (trimmed) {
+    if (!validOperatorKey(trimmed)) throw new Error("Invalid operator key format. Copy only the file's contents: 43 letters, digits, '-' or '_' characters, without a path or quotes.");
+    storage.setItem(OPERATOR_KEY_STORAGE, trimmed);
+  } else storage.removeItem(OPERATOR_KEY_STORAGE);
 }
 
 /** Whether this browser holds an operator key. Never returns the key itself. */
 export function hasOperatorKey(storage: Pick<Storage, "getItem"> = localStorage): boolean {
-  return Boolean(storage.getItem(OPERATOR_KEY_STORAGE));
+  return validOperatorKey(storage.getItem(OPERATOR_KEY_STORAGE) ?? "");
 }
 
 export function getGatewayClient(): GatewayClient {
