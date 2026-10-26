@@ -44,3 +44,25 @@ test('the encoded file stays under the true-peak ceiling the audit allows, at th
     rmSync(dir, {recursive: true, force: true});
   }
 });
+
+test('a mix too peaky for linear gain still reaches the target, through the limiter', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'loudness-'));
+  try {
+    // Quiet noise under full-scale clicks: linear gain hits the ceiling far
+    // below −14 LUFS (the 20 s collage that came out at −15.03).
+    const input = join(dir, 'mix.wav');
+    const made = spawnSync(ffmpeg, ['-hide_banner', '-y',
+      '-f', 'lavfi', '-i', 'anoisesrc=color=pink:amplitude=0.08:duration=20:seed=7',
+      '-f', 'lavfi', '-i', 'aevalsrc=exprs=if(lt(mod(t\\,0.5)\\,0.002)\\,0.99\\,0):d=20:s=48000',
+      '-filter_complex', '[0][1]amix=inputs=2:normalize=0', '-ar', '48000', '-c:a', 'pcm_s16le', input]);
+    assert.equal(made.status, 0, made.stderr?.toString());
+    const output = join(dir, 'out.mp4');
+    const target = {...TARGET, integrated: -14};
+    const result = await normalizeLoudness(input, output, target, ffmpeg);
+    assert.ok(result.inputI < -20, `the mix starts quiet (${result.inputI} LUFS)`);
+    assert.ok(result.truePeak <= target.truePeak, `true peak ${result.truePeak} dBTP`);
+    assert.ok(Math.abs(result.outputI - target.integrated) <= 0.5, `integrated ${result.outputI} LUFS`);
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
