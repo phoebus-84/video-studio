@@ -181,11 +181,13 @@ export class RuntimeClient {
           proc = spawn("npx", ["tsx", this.cliPath, ...fullArgs], {
             env,
             stdio: ["ignore", "pipe", "pipe"],
+            windowsHide: true,
           });
         } else {
           proc = spawn(process.execPath, [this.cliPath, ...fullArgs], {
             env,
             stdio: ["ignore", "pipe", "pipe"],
+            windowsHide: true,
           });
         }
       } catch (err) {
