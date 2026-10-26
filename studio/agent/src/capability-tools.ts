@@ -1321,7 +1321,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       const hosts = params.hosts?.map((h) => h.trim()).filter(Boolean);
       const remote = {
         key: `${params.channel}/${params.series}/${params.episode}`,
-        configFile: process.env.AVG_RENDER_HOSTS || join(LIBRARY_ROOT, "render-hosts.json"),
+        configFile: process.env.AVG_RENDER_HOSTS || join(LIBRARY_ROOT, ".render", "render-hosts.json"),
         onLog(line: string) {
           onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { engine: line } });
         },
@@ -1339,7 +1339,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             ...(params.profile ? { profile: params.profile } : {}),
             ...(params.label ? { label: params.label } : {}),
             ...(hosts?.length
-              ? { render: sharedRenderer({ ...remote, hosts, speedsFile: join(LIBRARY_ROOT, "render-speeds.json"), ...(params.assembleOn ? { assembleOn: params.assembleOn.trim() } : {}) }) }
+              ? { render: sharedRenderer({ ...remote, hosts, speedsFile: process.env.AVG_RENDER_SPEEDS || join(LIBRARY_ROOT, ".render", "render-speeds.json"), ...(params.assembleOn ? { assembleOn: params.assembleOn.trim() } : {}) }) }
               : host
                 ? { render: remoteRenderer({ ...remote, host }) }
                 : {}),
