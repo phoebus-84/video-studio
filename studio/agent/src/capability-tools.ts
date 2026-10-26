@@ -1312,7 +1312,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       profile: profileParam,
       label: Type.Optional(Type.String({ default: "render", description: "Lowercase kebab-case render label" })),
       host: Type.Optional(Type.String({ description: "Render on another machine over SSH (packages/render-worker): a tailnet peer name or a render-hosts.json host, or \"auto\" for the first engine that answers; omitted, renders here. Needs the render code committed." })),
-      hosts: Type.Optional(Type.Array(Type.String(), { description: "A shared render, only when the operator asks for one: the video's one-second segments split among these machines in order, the faster ones (as measured by earlier shared renders) drawing more (\"local\" is this one, the others as for host), then joined on one machine. Segments from Windows and from Linux cannot be joined. Instead of host." })),
+      hosts: Type.Optional(Type.Array(Type.String(), { description: "A shared render, only when the operator asks for one: the video's one-second segments split among these machines in order, the faster ones (as measured by earlier shared renders) drawing more (\"local\" is this one, the others as for host), then joined on one machine. Instead of host." })),
       assembleOn: Type.Optional(Type.String({ description: "With hosts: the machine that joins the segments, adds the audio and writes the mp4; \"local\" by default, and it need not draw a share." })),
     }),
     async execute(_toolCallId, params, signal, onUpdate) {

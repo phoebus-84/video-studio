@@ -102,6 +102,8 @@ async function describeSegment(file: string): Promise<Record<string, unknown>> {
 /**
  * Segments another machine drew join this machine's only when their streams
  * agree: the same parameters and SPS/PPS, and each segment its own frames.
+ * Windows and Linux agree (same x264 settings, identical SPS/PPS), so their
+ * segments join; the check catches an engine whose encoder drifted.
  */
 export async function checkJoinable(files: string[], provided: number[], frames: (index: number) => number): Promise<void> {
   const others = new Set(provided);
@@ -112,7 +114,7 @@ export async function checkJoinable(files: string[], provided: number[], frames:
       const stream = await describeSegment(files[index]!);
       const differ = joinFields.filter((field) => String(stream[field]) !== String(base[field]));
       if (differ.length > 0) {
-        throw new Error(`segment ${index}, drawn on another machine, is not encoded like this machine's (${differ.map((f) => `${f} ${String(stream[f])} ≠ ${String(base[f])}`).join(', ')}): share a render only among machines with the same encoder (e.g. all Linux)`);
+        throw new Error(`segment ${index}, drawn on another machine, is not encoded like this machine's (${differ.map((f) => `${f} ${String(stream[f])} ≠ ${String(base[f])}`).join(', ')}): its encoder's settings differ from this machine's`);
       }
       if (Number(stream.nb_read_packets) !== frames(index)) {
         throw new Error(`segment ${index}, drawn on another machine, has ${String(stream.nb_read_packets)} frames, not ${frames(index)}`);
