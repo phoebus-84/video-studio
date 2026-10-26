@@ -1,5 +1,6 @@
 // A renderer with renderTimeline's shape that shares a video among machines:
-// its one-second segments are split into contiguous runs, each machine draws
+// its one-second segments are split into contiguous runs sized by how fast
+// each machine drew before (speeds.ts), each machine draws
 // its run (into its own cache, so a later render reuses them), and one of
 // them, local or remote, assembles the video from everyone's segments with
 // the soundtrack and loudness. Segments travel through this machine: an
@@ -11,7 +12,9 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
 import { prepareJob, type PreparedJob } from "./files.js";
+import { readHostsConfig } from "./hosts.js";
 import { decodeBundle, drawnPath, encodeBundle, RenderWorkerError, type DrawAnswer } from "./protocol.js";
+import { readSpeeds, recordSpeeds, speedKey, splitByWeight, weightsFor } from "./speeds.js";
 import { call, engineFacts, fetchVideo, openEngine, renderOn, sendFiles, type EngineAnswer, type EngineSession, type RemoteRendererOptions } from "./remote.js";
 
 /** The machine this runs on, in `hosts` and `assembleOn`. */
@@ -25,9 +28,12 @@ export interface SharedRendererOptions extends Omit<RemoteRendererOptions, "host
   /** This machine's drawSegments and renderTimeline (the composer's, by default). */
   draw?: (options: DrawSegmentsOptions) => Promise<DrawSegmentsResult>;
   renderLocal?: (options: RenderTimelineOptions) => Promise<RenderResult>;
+  /** Where the machines' measured speeds are kept; without it the split is even unless render-hosts.json sets `speed`. */
+  speedsFile?: string;
 }
 
-export interface SharedShare { host: string; segments: number; from: number; to: number; seconds: number }
+/** One machine's share: its segments, how long it drew them, and the weight that sized it. */
+export interface SharedShare { host: string; segments: number; from: number; to: number; seconds: number; weight: number }
 
 export interface SharedRenderResult extends RenderResult {
   engine: {
@@ -56,11 +62,18 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     const timeline = render.timeline as { durationInFrames?: number; fps?: number };
     if (!timeline.durationInFrames || !timeline.fps) throw new RenderWorkerError("bad-request", "the timeline has no durationInFrames or fps");
     const total = Math.ceil(timeline.durationInFrames / timeline.fps);
-    const drawers = hosts.slice(0, total);
+    const config = options.config ?? readHostsConfig(options.configFile);
+    const keys = hosts.map((h) => speedKey(h, LOCAL));
+    const weights = weightsFor(hosts, keys, readSpeeds(options.speedsFile), config);
+    // More machines than seconds: the slowest ones sit out.
+    const order = hosts.map((_, i) => i).sort((a, b) => weights[b]! - weights[a]!).slice(0, total).sort((a, b) => a - b);
+    const drawers = order.map((i) => hosts[i]!);
+    const counts = splitByWeight(total, order.map((i) => weights[i]!));
+    let next = 0;
     const runs = drawers.map((host, k) => {
-      const from = Math.floor((k * total) / drawers.length);
-      const to = Math.floor(((k + 1) * total) / drawers.length) - 1;
-      return { host, segments: Array.from({ length: to - from + 1 }, (_, i) => from + i) };
+      const from = next;
+      next += counts[k]!;
+      return { host, key: keys[order[k]!]!, weight: weights[order[k]!]!, segments: Array.from({ length: counts[k]! }, (_, i) => from + i) };
     });
     const local = [...drawers, assembler].includes(LOCAL);
     if (local && !render.cacheDir) throw new RenderWorkerError("bad-request", "a shared render that draws or assembles here needs the render's cacheDir");
@@ -132,7 +145,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     };
 
     const drawShare = async ({ host, segments }: { host: string; segments: number[] }) => {
-      const started = Date.now();
+      let started = Date.now();
       const onProgress = shareProgress(host);
       if (host === LOCAL) {
         const { outputPath: _out, onProgress: _p, drawn: _d, loudness: _l, ...rest } = render;
@@ -146,6 +159,8 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       }
       const engine = await engineOf(host);
       const job = (await prepared()).job;
+      // Its speed is its drawing, not the code and files it was sent first.
+      started = Date.now();
       const answer = await renderOn<DrawAnswer>(engine, { ...job, drawOnly: { segments, audio: host === assembler } }, onProgress);
       answers.set(host, answer.engine);
       seconds.set(host, (Date.now() - started) / 1000);
@@ -206,7 +221,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     };
 
     try {
-      log(`shared render: ${runs.map((r) => `${r.host} ${r.segments[0]}–${r.segments.at(-1)}`).join(", ")} of ${total} s; ${assembler} assembles`);
+      log(`shared render: ${runs.map((r) => `${r.host} ${r.segments[0]}–${r.segments.at(-1)}`).join(", ")} of ${total} s, by speed ${runs.map((r) => r.weight.toFixed(3)).join(" : ")}; ${assembler} assembles`);
       const work = runs.map(drawShare);
       // A remote assembler that draws nothing still needs the files.
       if (assembler !== LOCAL && !drawers.includes(assembler)) work.push(engineOf(assembler).then(() => undefined));
@@ -216,13 +231,20 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       })));
       const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
       if (failed) throw failed.reason;
+      if (options.speedsFile) {
+        try {
+          recordSpeeds(options.speedsFile, runs.map((r) => ({ key: r.key, segments: r.segments.length, seconds: seconds.get(r.host) ?? 0 })));
+        } catch (error) {
+          log(`warning: the machines' speeds were not saved: ${(error as Error).message}`);
+        }
+      }
 
       log(`${assembler} assembles the video`);
       const onAssembly = (p: number) => {
         assembly = p;
         report();
       };
-      const shares: SharedShare[] = runs.map((r) => ({ host: r.host, segments: r.segments.length, from: r.segments[0]!, to: r.segments.at(-1)!, seconds: seconds.get(r.host) ?? 0 }));
+      const shares: SharedShare[] = runs.map((r) => ({ host: r.host, segments: r.segments.length, from: r.segments[0]!, to: r.segments.at(-1)!, seconds: seconds.get(r.host) ?? 0, weight: r.weight }));
       const sent = [...sentTo.values()].reduce((n, s) => ({ sentFiles: n.sentFiles + s.sentFiles, sentBytes: n.sentBytes + s.sentBytes }), { sentFiles: 0, sentBytes: 0 });
 
       if (assembler === LOCAL) {

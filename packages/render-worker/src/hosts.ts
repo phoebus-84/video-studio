@@ -9,7 +9,7 @@
 //     "user": "…",                 SSH user for every engine
 //     "repo": "~/video-studio",     the engine's clone
 //     "cache": "~/.cache/…",        the engine's render cache root
-//     "hosts": { "<peer name>": { "address", "user", "repo", "cache" } }
+//     "hosts": { "<peer name>": { "address", "user", "repo", "cache", "speed" } }
 //   }
 // Environment, over the file: AVG_RENDER_SSH_USER, AVG_RENDER_ENGINE_REPO,
 // AVG_RENDER_ENGINE_CACHE. AVG_TAILSCALE names the tailscale program; else
@@ -26,6 +26,8 @@ export interface HostSettings {
   user?: string;
   repo?: string;
   cache?: string;
+  /** Segments drawn per second, fixed by hand: it sizes this machine's share of a shared render instead of the measured speed. */
+  speed?: number;
 }
 
 export interface HostsConfig extends Omit<HostSettings, "address"> {

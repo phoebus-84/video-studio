@@ -11,6 +11,7 @@ import type { Git } from "../src/code-sync.js";
 import { runEngine } from "../src/engine.js";
 import { drawnPath } from "../src/protocol.js";
 import { sharedRenderer, type SharedRendererOptions } from "../src/shared.js";
+import { readSpeeds, recordSpeeds, splitByWeight, weightsFor } from "../src/speeds.js";
 import type { Exec } from "../src/ssh.js";
 import { fakeDraw, fakeEngine, fakeRender, sha256, tempDir, type FakeEngine } from "./helpers.js";
 
@@ -108,6 +109,43 @@ test("more machines than seconds: the extra ones draw nothing", async () => {
   const result = await renderer(exec, { hosts: ["box-a", "box-b", "box-c"] })(short);
   assert.deepEqual(result.engine.shares.map((s) => s.host), ["box-a", "box-b"]);
   assert.equal(engines.get("box-c")!.calls.length, 0);
+});
+
+test("a faster machine draws more, and every share's speed is kept", async () => {
+  const { options } = episode();
+  const { exec } = machines();
+  const speedsFile = path.join(tempDir("rw-speeds-"), "render-speeds.json");
+  writeFileSync(speedsFile, JSON.stringify({ speeds: { "box-a": { segmentsPerSecond: 3, samples: 1, updatedAt: "x" }, "box-b": { segmentsPerSecond: 1, samples: 1, updatedAt: "x" } } }));
+  const result = await renderer(exec, { hosts: ["box-a", "box-b"], speedsFile })(options);
+  assert.deepEqual(result.engine.shares.map((s) => [s.host, s.from, s.to]), [["box-a", 0, 3], ["box-b", 4, 4]]);
+  const kept = readSpeeds(speedsFile);
+  assert.equal(kept["box-a"]!.samples, 2);
+  assert.equal(kept["box-b"]!.samples, 2);
+});
+
+test("a speed in render-hosts.json fixes the weight", async () => {
+  const { options } = episode();
+  const { exec } = machines();
+  const result = await renderer(exec, { hosts: ["box-a", "box-b"], config: { hosts: { "Box-A": { address: "100.64.0.10", speed: 1 }, "box-b": { address: "100.64.0.11", speed: 4 } } } })(options);
+  assert.deepEqual(result.engine.shares.map((s) => s.segments), [1, 4]);
+});
+
+test("splitByWeight: contiguous counts by weight, at least one each", () => {
+  assert.deepEqual(splitByWeight(20, [1, 1]), [10, 10]);
+  assert.deepEqual(splitByWeight(20, [10 / 56, 10 / 67]), [11, 9]);
+  assert.deepEqual(splitByWeight(10, [100, 1, 1]), [8, 1, 1]);
+  assert.deepEqual(splitByWeight(2, [1, 1, 1]), [1, 1]);
+  assert.deepEqual(splitByWeight(7, [2, 1, 1]).reduce((a, b) => a + b, 0), 7);
+});
+
+test("weightsFor and recordSpeeds: configured, then measured, then the average", () => {
+  const speeds = { a: { segmentsPerSecond: 2, samples: 1, updatedAt: "x" } };
+  assert.deepEqual(weightsFor(["a", "b", "c"], ["a", "b", "c"], speeds, { hosts: { c: { address: "x", speed: 6 } } }), [2, 4, 6]);
+  assert.deepEqual(weightsFor(["a", "b"], ["a", "b"], {}, {}), [1, 1]);
+  const file = path.join(tempDir("rw-speeds-"), "s.json");
+  recordSpeeds(file, [{ key: "a", segments: 10, seconds: 5 }, { key: "b", segments: 0, seconds: 3 }], new Date(0));
+  recordSpeeds(file, [{ key: "a", segments: 10, seconds: 2.5 }], new Date(0));
+  assert.deepEqual(readSpeeds(file), { a: { segmentsPerSecond: 3, samples: 2, updatedAt: new Date(0).toISOString() } });
 });
 
 test("a failed share fails the render and leaves nothing behind", async () => {
