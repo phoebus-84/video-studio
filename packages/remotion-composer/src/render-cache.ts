@@ -161,12 +161,14 @@ export async function cachedVideo(options: {
    * run of 52 s and all four ended together: when FFmpeg could not start at that
    * moment (Windows 0xC0000142, the machine short of memory) the whole render was
    * lost at 100% with nothing in the cache (2026-10-20). Shorter runs publish as
-   * they go, for a start-up of a few seconds each.
+   * they go, for a start-up of a few seconds each: a 3:28 video pays seven
+   * starts per lane instead of one, and a failure loses half a minute at most.
    */
   maxRunSegments?: number;
   /**
    * Times a lane draws a failed run again before the render fails (default 1).
    * A browser or an FFmpeg that could not start is often a passing shortage.
+   * Internal: `renderTimeline` keeps the default; tests set 0 to fail at once.
    */
   retries?: number;
   /**
