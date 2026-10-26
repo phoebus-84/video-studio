@@ -8,6 +8,13 @@
 //   receive <key>      ← bundle of the missing files   → {"received":n,"bytes":n}
 //   render <key>       ← job                           → RenderResult (last stdout line); stderr "progress 0.42"
 //   fetch <key>        → the rendered mp4's bytes
+//   send-drawn <key>   ← [index…]                      → bundle of drawn/segment-<i>.mp4
+//   receive-drawn <key> ← bundle of drawn/segment-<i>.mp4 → {"received":n,"bytes":n}
+//
+// A shared render (shared.ts) splits a video's one-second segments among
+// engines: a job with `drawOnly` draws its share into the job's drawn/ and
+// answers with their hashes; the assembling engine's job lists in `drawn` every
+// segment in its drawn/: its own share and those receive-drawn put there.
 //
 // Files are named by where they are on the controlling machine: an absolute
 // path mirrored under the job's files/ (F:\a\b → files/F/a/b, /a/b →
@@ -58,7 +65,20 @@ export interface RenderJob {
   sharedRoots: string[];
   kits: LibraryKit[];
   loudness?: LoudnessTarget;
+  /** A shared render's share: draw only these segments into drawn/, no video. */
+  drawOnly?: { segments: number[]; audio?: boolean };
+  /** A shared render's assembly: every segment in drawn/, by index → hash. */
+  drawn?: Record<string, string>;
 }
+
+/** What a `drawOnly` render answers. */
+export interface DrawAnswer {
+  segments: { index: number; hash: string; bytes: number }[];
+  totalSegments: number;
+  engine?: { concurrency?: number; browsers?: number; commit?: string | null };
+}
+
+export const drawnPath = (index: number): string => `drawn/segment-${index}.mp4`;
 
 /** What `version` answers. `mismatches` lists binaries that differ from engine.env's pins. */
 export interface EngineVersion {
@@ -101,11 +121,11 @@ export function mirrorPath(absolute: string): string {
   return ["files", ...out].join("/");
 }
 
-/** A manifest path the engine may write: under files/, no "..", no absolute part. */
-export function checkJobPath(path: string): string {
+/** A manifest path the engine may write: under files/ (or `root`), no "..", no absolute part. */
+export function checkJobPath(path: string, root = "files"): string {
   const parts = path.split("/");
-  if (parts[0] !== "files" || parts.length < 2 || parts.some((p) => p === "" || p === "." || p === ".." || p.includes("\\") || p.includes("\0"))) {
-    throw new RenderWorkerError("bad-path", `"${path}" is not a path under files/`);
+  if (parts[0] !== root || parts.length < 2 || parts.some((p) => p === "" || p === "." || p === ".." || p.includes("\\") || p.includes("\0"))) {
+    throw new RenderWorkerError("bad-path", `"${path}" is not a path under ${root}/`);
   }
   return path;
 }
@@ -136,7 +156,7 @@ export interface BundleSink {
   end(entry: ManifestEntry): Promise<void> | void;
 }
 
-export async function decodeBundle(input: AsyncIterable<Buffer | string>, sink: BundleSink): Promise<number> {
+export async function decodeBundle(input: AsyncIterable<Buffer | string>, sink: BundleSink, root = "files"): Promise<number> {
   let pending = Buffer.alloc(0);
   let current: ManifestEntry | null = null;
   let left = 0;
@@ -166,7 +186,7 @@ export async function decodeBundle(input: AsyncIterable<Buffer | string>, sink: 
       const header = Buffer.concat([pending, chunk.subarray(0, nl)]).toString("utf-8");
       pending = Buffer.alloc(0);
       chunk = chunk.subarray(nl + 1);
-      current = parseEntry(header);
+      current = parseEntry(header, root);
       left = current.size;
       await sink.start(current);
       if (left === 0) await finish();
@@ -176,7 +196,7 @@ export async function decodeBundle(input: AsyncIterable<Buffer | string>, sink: 
   return count;
 }
 
-export function parseEntry(text: string): ManifestEntry {
+export function parseEntry(text: string, root = "files"): ManifestEntry {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -188,7 +208,7 @@ export function parseEntry(text: string): ManifestEntry {
     || typeof e.size !== "number" || !Number.isSafeInteger(e.size) || e.size < 0) {
     throw new RenderWorkerError("bad-request", `not a manifest entry: ${text.slice(0, 200)}`);
   }
-  return { path: checkJobPath(e.path), size: e.size, hash: e.hash };
+  return { path: checkJobPath(e.path, root), size: e.size, hash: e.hash };
 }
 
 /** The last non-empty line of an engine's stdout, as JSON. */

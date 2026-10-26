@@ -6,6 +6,7 @@
 //   cache/         the composer's render cache (renderTimeline's cacheDir)
 //   render.lock    held by the running render (its pid)
 //   out.mp4        the last render, for `fetch`
+//   drawn/         a shared render's segments: drawn here, or received from other engines
 //
 // Nothing is shared between episodes and nothing is removed.
 
@@ -19,12 +20,12 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { finished } from "node:stream/promises";
 import type { Writable } from "node:stream";
-import type { RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
+import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
 import { defaultRenderConcurrency, renderBrowsers } from "./concurrency.js";
 import { sha256File } from "./files.js";
 import {
-  checkJobPath, checkKey, decodeBundle, PROTOCOL_VERSION, RenderWorkerError,
-  type EngineVersion, type ManifestEntry, type RenderJob,
+  checkJobPath, checkKey, decodeBundle, drawnPath, encodeBundle, PROTOCOL_VERSION, RenderWorkerError,
+  type DrawAnswer, type EngineVersion, type ManifestEntry, type RenderJob,
 } from "./protocol.js";
 
 export interface EngineIO {
@@ -41,6 +42,8 @@ export interface EngineContext {
   version?: () => Promise<EngineVersion>;
   sync?: (sha: string, log: (line: string) => void) => Promise<void>;
   render?: (options: RenderTimelineOptions) => Promise<RenderResult>;
+  /** A shared render's share (the composer's drawSegments). */
+  draw?: (options: DrawSegmentsOptions) => Promise<DrawSegmentsResult>;
   concurrency?: () => { concurrency: number; browsers: number };
 }
 
@@ -73,8 +76,13 @@ export async function runEngine(argv: readonly string[], io: EngineIO, ctx: Engi
         await pipeline(createReadStream(out), io.stdout, { end: false });
         return 0;
       }
+      case "send-drawn":
+        await sendDrawn(jobDir(ctx, args[0]), io);
+        return 0;
+      case "receive-drawn":
+        return answer(io, await receive(jobDir(ctx, args[0]), io.stdin, "drawn"));
       default:
-        throw new RenderWorkerError("bad-request", `unknown command "${command ?? ""}"; commands: version, sync, diff, receive, render, fetch`);
+        throw new RenderWorkerError("bad-request", `unknown command "${command ?? ""}"; commands: version, sync, diff, receive, render, fetch, send-drawn, receive-drawn`);
     }
   } catch (e) {
     const error = e as { code?: unknown; message?: unknown; problems?: unknown };
@@ -161,8 +169,10 @@ async function diff(dir: string, stdin: EngineIO["stdin"]): Promise<{ missing: s
   return { missing };
 }
 
-async function receive(dir: string, stdin: EngineIO["stdin"]): Promise<{ received: number; bytes: number }> {
-  const index = readIndex(dir);
+/** Files under `root`: the job's files/ (recorded in index.json), or a shared render's drawn/. */
+async function receive(dir: string, stdin: EngineIO["stdin"], root = "files"): Promise<{ received: number; bytes: number }> {
+  const indexed = root === "files";
+  const index = indexed ? readIndex(dir) : {};
   let bytes = 0;
   let sink: { out: Writable; hash: ReturnType<typeof createHash>; part: string; file: string } | null = null;
   try {
@@ -191,7 +201,7 @@ async function receive(dir: string, stdin: EngineIO["stdin"]): Promise<{ receive
         renameSync(s.part, s.file);
         index[entry.path] = { size: entry.size, mtimeMs: statSync(s.file).mtimeMs, hash };
       },
-    });
+    }, root);
     return { received, bytes };
   } finally {
     const open = sink as { out: Writable; part: string } | null;
@@ -199,8 +209,21 @@ async function receive(dir: string, stdin: EngineIO["stdin"]): Promise<{ receive
       open.out.destroy();
       rmSync(open.part, { force: true });
     }
-    writeIndex(dir, index);
+    if (indexed) writeIndex(dir, index);
   }
+}
+
+/** The drawn segments stdin lists, as a bundle, for the engine that assembles. */
+async function sendDrawn(dir: string, io: EngineIO): Promise<void> {
+  const indices = parseJson<number[]>(await readAll(io.stdin), "the segment list");
+  if (!Array.isArray(indices) || !indices.every((i) => Number.isInteger(i) && i >= 0)) throw new RenderWorkerError("bad-request", "send-drawn takes a list of segment indices");
+  const files = await Promise.all(indices.map(async (index) => {
+    const rel = drawnPath(index);
+    const file = path.join(dir, ...rel.split("/"));
+    if (!existsSync(file)) throw new RenderWorkerError("missing-file", `segment ${index} has not been drawn here`);
+    return { entry: { path: rel, size: statSync(file).size, hash: await sha256File(file) }, read: () => createReadStream(file) };
+  }));
+  await pipeline(encodeBundle(files), io.stdout, { end: false });
 }
 
 // ── render ─────────────────────────────────────────────────────────────────
@@ -240,23 +263,18 @@ async function render(dir: string, io: EngineIO, ctx: EngineContext): Promise<un
   const local = (rel: string) => path.join(dir, ...checkJobPath(rel).split("/"));
   const release = await lock(dir);
   try {
-    const partial = path.join(dir, "out.partial.mp4");
-    const out = path.join(dir, "out.mp4");
-    rmSync(partial, { force: true });
     const { concurrency, browsers } = (ctx.concurrency ?? defaultConcurrency)();
     let last = -1;
     let lastAt = 0;
-    const result = await (ctx.render ?? composerRender(ctx.repo))({
+    const common = {
       timeline: job.timeline,
       assetRoot: local(job.assetRoot),
       sharedRoots: job.sharedRoots.map(local),
       kits: job.kits.map((k) => ({ ...k, file: local(k.file) })),
       cacheDir: path.join(dir, "cache"),
-      outputPath: partial,
       concurrency,
       browsers,
-      ...(job.loudness ? { loudness: job.loudness } : {}),
-      onProgress: (p) => {
+      onProgress: (p: number) => {
         const now = Date.now();
         if (p >= 1 || p - last >= 0.01 || now - lastAt >= 2000) {
           last = p;
@@ -264,9 +282,38 @@ async function render(dir: string, io: EngineIO, ctx: EngineContext): Promise<un
           io.stderrLine(`progress ${p.toFixed(3)}`);
         }
       },
+    };
+    const engine = { concurrency, browsers, commit: gitHead(ctx.repo) };
+    if (job.drawOnly) {
+      // Segments received from other engines stay: this engine may assemble next.
+      const drawn = await (ctx.draw ?? composerDraw(ctx.repo))({
+        ...common, segments: job.drawOnly.segments, dir: path.join(dir, "drawn"), audio: job.drawOnly.audio ?? false,
+      });
+      const reply: DrawAnswer = { segments: drawn.segments.map(({ index, hash, bytes }) => ({ index, hash, bytes })), totalSegments: drawn.totalSegments, engine };
+      return reply;
+    }
+    let drawn: Record<number, string> | undefined;
+    if (job.drawn) {
+      drawn = {};
+      for (const [index, hash] of Object.entries(job.drawn)) {
+        const file = path.join(dir, ...drawnPath(Number(index)).split("/"));
+        if (!/^\d+$/.test(index) || !existsSync(file)) throw new RenderWorkerError("missing-file", `segment ${index} is not in drawn/`);
+        const found = await sha256File(file);
+        if (found !== hash) throw new RenderWorkerError("hash-mismatch", `drawn segment ${index} is ${found}, not ${hash}`);
+        drawn[Number(index)] = file;
+      }
+    }
+    const partial = path.join(dir, "out.partial.mp4");
+    const out = path.join(dir, "out.mp4");
+    rmSync(partial, { force: true });
+    const result = await (ctx.render ?? composerRender(ctx.repo))({
+      ...common,
+      outputPath: partial,
+      ...(job.loudness ? { loudness: job.loudness } : {}),
+      ...(drawn ? { drawn } : {}),
     });
     renameSync(partial, out);
-    return { ...result, path: "out.mp4", engine: { concurrency, browsers, commit: gitHead(ctx.repo) } };
+    return { ...result, path: "out.mp4", engine };
   } finally {
     release();
   }
@@ -283,6 +330,14 @@ function composerRender(repo: string): (options: RenderTimelineOptions) => Promi
     process.chdir(path.join(repo, "packages", "remotion-composer"));
     const { renderTimeline } = await import("@av/remotion-composer");
     return renderTimeline(options);
+  };
+}
+
+function composerDraw(repo: string): (options: DrawSegmentsOptions) => Promise<DrawSegmentsResult> {
+  return async (options) => {
+    process.chdir(path.join(repo, "packages", "remotion-composer"));
+    const { drawSegments } = await import("@av/remotion-composer");
+    return drawSegments(options);
   };
 }
 

@@ -36,6 +36,8 @@ export interface CacheReport {
   wholeVideoReused: boolean;
   segmentsReused: number;
   segmentsRendered: number;
+  /** Segments another machine drew for this render (a shared render): used, never cached here. */
+  segmentsProvided?: number;
   totalSegments: number;
   /** The mixed soundtrack came from the cache: no audio pass ran. */
   audioReused?: boolean;
@@ -162,31 +164,55 @@ export async function cachedVideo(options: {
    * has a share, and each lane takes the next run as it finishes one.
    */
   lanes?: number;
-}): Promise<{video: string; report: CacheReport}> {
+  /**
+   * A shared render's share: only these segments, and no whole video — the
+   * result's `video` is then empty and `files[i]` holds segment i.
+   */
+  only?: readonly number[];
+  /**
+   * Segments other machines drew, by index: a segment the cache lacks is
+   * taken from here rather than drawn. They are not cached (their encoder is
+   * another machine's), nor is a whole video made with them.
+   */
+  provided?: ReadonlyMap<number, string>;
+  /** Called before the concat with the indices taken from `provided`: it may refuse them. */
+  checkProvided?: (files: string[], provided: number[]) => Promise<void>;
+}): Promise<{video: string; report: CacheReport; files: string[]}> {
   const {plan, work} = options;
+  const wanted = options.only ? [...new Set(options.only)].sort((a, b) => a - b) : plan.segments.map((_, index) => index);
+  for (const index of wanted) {
+    if (!Number.isInteger(index) || index < 0 || index >= plan.segments.length) throw new Error(`there is no segment ${index}: the video has ${plan.segments.length}`);
+  }
   const report: CacheReport = {wholeVideoReused: false, segmentsReused: 0, segmentsRendered: 0, totalSegments: plan.segments.length, warnings: []};
   const whole = new VideoCache(path.join(options.cacheDir, 'video'), report.warnings);
   const segments = new VideoCache(path.join(options.cacheDir, 'segments'), report.warnings);
   const video = path.join(work, 'video.mp4');
-  if (await whole.get(plan.key, video)) {
+  const files = plan.segments.map((_, index) => path.join(work, `segment-${index}.mp4`));
+  if (!options.only && await whole.get(plan.key, video)) {
     report.wholeVideoReused = true;
     options.onProgress?.(1);
-    return {video, report};
+    return {video, report, files: []};
   }
-  const files = plan.segments.map((_, index) => path.join(work, `segment-${index}.mp4`));
   const missing: number[] = [];
-  for (const [index, segment] of plan.segments.entries()) {
-    if (await segments.get(segment.key, files[index]!)) report.segmentsReused++;
-    else missing.push(index);
+  const provided: number[] = [];
+  for (const index of wanted) {
+    const from = options.provided?.get(index);
+    if (await segments.get(plan.segments[index]!.key, files[index]!)) report.segmentsReused++;
+    else if (from !== undefined) {
+      await copyFile(from, files[index]!);
+      provided.push(index);
+    } else missing.push(index);
   }
-  const total = plan.segments.length;
-  options.onProgress?.(report.segmentsReused / total);
+  if (provided.length > 0) report.segmentsProvided = provided.length;
+  const done = () => report.segmentsReused + provided.length;
+  const total = wanted.length;
+  options.onProgress?.(done() / total);
   const lanes = Math.max(1, Math.floor(options.lanes ?? 1));
   const runs = missRuns(missing, Math.min(options.maxRunSegments ?? 120, Math.max(1, Math.ceil(missing.length / lanes))));
   // Within a run, progress moves with its frames rather than jumping at its end.
   const partial = new Map<number[], number>();
   const progress = () => options.onProgress?.(
-    (report.segmentsReused + report.segmentsRendered + [...partial.values()].reduce((a, b) => a + b, 0)) / total);
+    (done() + report.segmentsRendered + [...partial.values()].reduce((a, b) => a + b, 0)) / total);
   let next = 0, failed = false;
   const lane = async (index: number) => {
     while (!failed && next < runs.length) {
@@ -209,7 +235,9 @@ export async function cachedVideo(options: {
   const settled = await Promise.allSettled(Array.from({length: Math.min(lanes, runs.length)}, (_, index) => lane(index)));
   const failure = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
   if (failure) throw failure.reason;
+  if (options.only) return {video: '', report, files};
+  if (provided.length > 0) await options.checkProvided?.(files, provided);
   await options.concatenate(files, video);
-  await whole.put(plan.key, video);
-  return {video, report};
+  if (provided.length === 0) await whole.put(plan.key, video);
+  return {video, report, files};
 }

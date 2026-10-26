@@ -3,11 +3,11 @@
 // without SSH. Machine names here are made up.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
-import type { RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
+import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
 import { runEngine, type EngineContext } from "../src/engine.js";
 import type { EngineVersion } from "../src/protocol.js";
 import type { Exec, ExecInput } from "../src/ssh.js";
@@ -45,18 +45,20 @@ export interface FakeEngine {
   cache: string;
   calls: { destination: string; command: string }[];
   renders: RenderTimelineOptions[];
+  draws: DrawSegmentsOptions[];
   /** Destinations that refuse SSH (exit 255) and those reachable without an engine (exit 127). */
   unreachable: Set<string>;
   noEngine: Set<string>;
   state: { commit: string | null; synced: string | null };
 }
 
-export function fakeEngine(options: { render?: EngineContext["render"] } = {}): FakeEngine {
+export function fakeEngine(options: { render?: EngineContext["render"]; name?: string } = {}): FakeEngine {
   const cache = tempDir("rw-engine-");
   const engine: FakeEngine = {
     cache,
     calls: [],
     renders: [],
+    draws: [],
     unreachable: new Set(),
     noEngine: new Set(),
     state: { commit: null, synced: null },
@@ -92,6 +94,10 @@ export function fakeEngine(options: { render?: EngineContext["render"] } = {}): 
           engine.renders.push(o);
           return (options.render ?? fakeRender)(o);
         },
+        draw: async (o) => {
+          engine.draws.push(o);
+          return fakeDraw(options.name ?? "engine")(o);
+        },
       });
       await new Promise<void>((done) => {
         stdout.end(() => done());
@@ -118,7 +124,25 @@ export async function fakeRender(o: RenderTimelineOptions): Promise<RenderResult
   }
   o.onProgress?.(0.5);
   o.onProgress?.(1);
-  const video = Buffer.concat([Buffer.from("MP4:"), ...parts]);
+  const drawn = Object.entries(o.drawn ?? {}).sort(([a], [b]) => Number(a) - Number(b)).map(([, file]) => readFileSync(file));
+  const video = Buffer.concat([Buffer.from("MP4:"), ...parts, ...drawn]);
   writeFileSync(o.outputPath, video);
   return { path: o.outputPath, durationSeconds: 2, sizeBytes: video.length, hash: sha256(video), kits: [], profile: "test", loudness: null };
+}
+
+/** Draws "segment <i> by <name>" files, one per segment asked for. */
+export function fakeDraw(name: string) {
+  return async (o: DrawSegmentsOptions): Promise<DrawSegmentsResult> => {
+    const timeline = o.timeline as { durationInFrames: number; fps: number };
+    const totalSegments = Math.ceil(timeline.durationInFrames / timeline.fps);
+    mkdirSync(o.dir, { recursive: true });
+    const segments = o.segments.map((index) => {
+      const bytes = Buffer.from(`[segment ${index} by ${name}${o.audio ? " +audio" : ""}]`);
+      const file = path.join(o.dir, `segment-${index}.mp4`);
+      writeFileSync(file, bytes);
+      return { index, file, hash: sha256(bytes), bytes: bytes.length };
+    });
+    o.onProgress?.(1);
+    return { segments, totalSegments, cache: {} } as unknown as DrawSegmentsResult;
+  };
 }

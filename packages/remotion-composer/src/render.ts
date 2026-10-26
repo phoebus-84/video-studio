@@ -7,10 +7,10 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {bundle} from '@remotion/bundler';
 import {renderMedia, selectComposition} from '@remotion/renderer';
-import {stageAssets, sha256} from './assets.js';
+import {stageAssets, sha256, type StagedAssets} from './assets.js';
 import {ComposerError} from './errors.js';
 import {normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './loudness.js';
-import {isAudioItem} from './schema.js';
+import {isAudioItem, type EditTimeline, type VisualItem} from './schema.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
 import {renderWithCache} from './cached-render.js';
@@ -19,6 +19,7 @@ import {soundLayers} from './layers.js';
 import {resolveKit} from './kits/index.js';
 import {placeSounds} from './sound-mix.js';
 import type {CacheReport} from './render-cache.js';
+import type {TimelineProps} from './Timeline.js';
 import {timed} from './timings.js';
 
 export interface RenderTimelineOptions {
@@ -39,6 +40,12 @@ export interface RenderTimelineOptions {
   loudness?: LoudnessTarget;
   /** Kits the channel or the series carries (avg-d1x), beside the application's. */
   kits?: readonly LibraryKit[];
+  /**
+   * With `cacheDir`, a shared render's assembly: segment files other machines
+   * drew (drawSegments), by index. Segments the cache lacks come from here;
+   * the rest are drawn.
+   */
+  drawn?: Record<number, string>;
 }
 
 export interface RenderResult {
@@ -54,7 +61,20 @@ export interface RenderResult {
   cache?: CacheReport;
 }
 
-export async function renderTimeline(options: RenderTimelineOptions): Promise<RenderResult> {
+interface Prepared {
+  timeline: EditTimeline;
+  staged: StagedAssets;
+  library: Awaited<ReturnType<typeof readLibraryKits>>;
+  work: string;
+  inputProps: TimelineProps;
+  soundItems: VisualItem[];
+  hasAudio: boolean;
+  serveUrl: string;
+  composition: Awaited<ReturnType<typeof selectComposition>>;
+}
+
+/** Validates, stages and bundles; `body` runs with the composition, and the work directory and staging go after it. */
+async function withComposition<T>(options: Omit<RenderTimelineOptions, 'outputPath'>, body: (prepared: Prepared) => Promise<T>): Promise<T> {
   const library = await readLibraryKits(options.kits ?? []);
   const checked = validateTimeline(options.timeline, {kits: library.versions});
   if (!checked.ok) {
@@ -79,6 +99,38 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     const kitOf = (name: string, version: string) => resolveKit(name, version, library.versions);
     const soundItems = soundLayers(timeline, kitOf).map(({item}) => item);
     const hasAudio = timeline.tracks.some((t) => t.type === 'audio' && !t.muted && t.items.some(isAudioItem)) || soundItems.length > 0;
+    let serveUrl: string, composition: Prepared['composition'];
+    try {
+      // The bundle — which copies the staged public directory — lives in the work
+      // directory, so it is removed with it, on success and on failure.
+      serveUrl = await timed('bundle', () => bundle({
+        entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle'),
+        ...(options.kits?.length ? {webpackOverride: resolveFromApplication} : {}),
+      }));
+      composition = await timed('select composition', () => selectComposition({serveUrl, id: 'Timeline', inputProps}));
+    } catch (e) {
+      throw new ComposerError('render-failed', `Remotion could not render the timeline: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return await body({timeline, staged, library, work, inputProps, soundItems, hasAudio, serveUrl, composition});
+  } finally {
+    await staged.cleanup();
+    await rm(work, {recursive: true, force: true});
+  }
+}
+
+const cacheOptions = (options: Omit<RenderTimelineOptions, 'outputPath'>, cacheDir: string, prepared: Prepared) => ({
+  composition: prepared.composition, serveUrl: prepared.serveUrl, inputProps: prepared.inputProps, cacheDir: path.resolve(cacheDir),
+  work: prepared.work, hasAudio: prepared.hasAudio, soundItems: prepared.soundItems,
+  // Listed sounds are mixed by FFmpeg; a kit that lists none keeps the browser pass.
+  sounds: prepared.hasAudio ? placeSounds({timeline: prepared.timeline, soundItems: prepared.soundItems, files: prepared.staged.files,
+    sources: prepared.staged.sources, assetFrames: prepared.inputProps.assetFrames, kits: prepared.library.versions}) : null,
+  kits: prepared.library.versions, concurrency: options.concurrency, browsers: options.browsers, onProgress: options.onProgress,
+});
+
+export async function renderTimeline(options: RenderTimelineOptions): Promise<RenderResult> {
+  if (options.drawn && !options.cacheDir) throw new ComposerError('render-failed', 'segments drawn elsewhere join a render only with a cacheDir');
+  return withComposition(options, async (prepared) => {
+    const {timeline, work, hasAudio} = prepared;
     const output = path.resolve(options.outputPath);
     await mkdir(path.dirname(output), {recursive: true});
     // Without audio there is nothing to normalise: render straight to the output
@@ -86,23 +138,13 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     const rendered = hasAudio ? path.join(work, options.cacheDir ? 'render.mkv' : 'render.mp4') : output;
     let cache: CacheReport | undefined;
     try {
-      // The bundle — which copies the staged public directory — lives in the work
-      // directory, so it is removed with it, on success and on failure.
-      const serveUrl = await timed('bundle', () => bundle({
-        entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle'),
-        ...(options.kits?.length ? {webpackOverride: resolveFromApplication} : {}),
-      }));
-      const composition = await timed('select composition', () => selectComposition({serveUrl, id: 'Timeline', inputProps}));
       if (options.cacheDir) {
         cache = await renderWithCache({
-          composition, serveUrl, inputProps, cacheDir: path.resolve(options.cacheDir),
-          work, output: rendered, hasAudio, soundItems,
-          // Listed sounds are mixed by FFmpeg; a kit that lists none keeps the browser pass.
-          sounds: hasAudio ? placeSounds({timeline, soundItems, files: staged.files, sources: staged.sources, assetFrames, kits: library.versions}) : null,
-          kits: library.versions, concurrency: options.concurrency, browsers: options.browsers, onProgress: options.onProgress,
+          ...cacheOptions(options, options.cacheDir, prepared), output: rendered,
+          ...(options.drawn ? {provided: new Map(Object.entries(options.drawn).map(([index, file]) => [Number(index), file]))} : {}),
         });
       } else await renderMedia({
-        composition, serveUrl, inputProps,
+        composition: prepared.composition, serveUrl: prepared.serveUrl, inputProps: prepared.inputProps,
         codec: 'h264', audioCodec: 'aac', enforceAudioTrack: true,
         outputLocation: rendered,
         concurrency: options.concurrency ?? null,
@@ -135,8 +177,44 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
       loudness,
       ...(cache ? {cache} : {}),
     };
-  } finally {
-    await staged.cleanup();
-    await rm(work, {recursive: true, force: true});
-  }
+  });
+}
+
+export interface DrawSegmentsOptions extends Omit<RenderTimelineOptions, 'outputPath' | 'loudness' | 'drawn' | 'cacheDir'> {
+  cacheDir: string;
+  /** The one-second segments to draw, by index (segment i starts at frame i × fps). */
+  segments: number[];
+  /** Where segment-<index>.mp4 are written. */
+  dir: string;
+  /** Also ready the cached soundtrack: this machine will assemble the video. */
+  audio?: boolean;
+}
+
+export interface DrawnSegment { index: number; file: string; hash: string; bytes: number }
+export interface DrawSegmentsResult { segments: DrawnSegment[]; totalSegments: number; cache: CacheReport }
+
+/**
+ * A shared render's share: some of a timeline's segments, drawn (or taken
+ * from the cache) and left as files, for renderTimeline's `drawn` on the
+ * machine that assembles the video.
+ */
+export async function drawSegments(options: DrawSegmentsOptions): Promise<DrawSegmentsResult> {
+  const dir = path.resolve(options.dir);
+  await mkdir(dir, {recursive: true});
+  return withComposition(options, async (prepared) => {
+    let cache: CacheReport;
+    try {
+      cache = await renderWithCache({
+        ...cacheOptions(options, options.cacheDir, prepared), output: path.join(prepared.work, 'unused.mkv'),
+        segments: {indices: options.segments, dir, audio: options.audio ?? false},
+      });
+    } catch (e) {
+      throw new ComposerError('render-failed', `Remotion could not draw the segments: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const segments = await Promise.all([...new Set(options.segments)].sort((a, b) => a - b).map(async (index) => {
+      const file = path.join(dir, `segment-${index}.mp4`);
+      return {index, file, hash: await sha256(file), bytes: (await stat(file)).size};
+    }));
+    return {segments, totalSegments: cache.totalSegments, cache};
+  });
 }

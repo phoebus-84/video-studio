@@ -11,7 +11,7 @@ import { Type } from "typebox";
 import { createHash } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { remoteRenderer, type RemoteRenderResult } from "@av/render-worker";
+import { remoteRenderer, sharedRenderer, type RemoteRenderResult, type SharedRenderResult } from "@av/render-worker";
 import { extname, join } from "node:path";
 import { resolveConfig, DEFAULT_TTS_WORKER_URL } from "./config.js";
 import { guardEpisodePath } from "./trust-guards.js";
@@ -1312,12 +1312,25 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       profile: profileParam,
       label: Type.Optional(Type.String({ default: "render", description: "Lowercase kebab-case render label" })),
       host: Type.Optional(Type.String({ description: "Render on another machine over SSH (packages/render-worker): a tailnet peer name or a render-hosts.json host, or \"auto\" for the first engine that answers; omitted, renders here. Needs the render code committed." })),
+      hosts: Type.Optional(Type.Array(Type.String(), { description: "A shared render, only when the operator asks for one: the video's one-second segments split among these machines in order (\"local\" is this one, the others as for host), then joined on one machine. Segments from Windows and from Linux cannot be joined. Instead of host." })),
+      assembleOn: Type.Optional(Type.String({ description: "With hosts: the machine that joins the segments, adds the audio and writes the mp4; \"local\" by default, and it need not draw a share." })),
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const dir = episodeDir(params.channel, params.series, params.episode);
       const host = params.host?.trim();
+      const hosts = params.hosts?.map((h) => h.trim()).filter(Boolean);
+      const remote = {
+        key: `${params.channel}/${params.series}/${params.episode}`,
+        configFile: process.env.AVG_RENDER_HOSTS || join(LIBRARY_ROOT, "render-hosts.json"),
+        onLog(line: string) {
+          onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { engine: line } });
+        },
+        ...(signal ? { signal } : {}),
+      };
       const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
       try {
+        if (host && hosts?.length) throw new Error("host or hosts, not both");
+        if (params.assembleOn && !hosts?.length) throw new Error("assembleOn goes with hosts");
         return await withFileMutationQueue(join(dir, "output", "current.json"), async () => {
           if (signal?.aborted) throw new Error("cancelled");
           const bar = renderProgressBar(Date.now());
@@ -1325,29 +1338,23 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             episodeRef,
             ...(params.profile ? { profile: params.profile } : {}),
             ...(params.label ? { label: params.label } : {}),
-            ...(host
-              ? {
-                  render: remoteRenderer({
-                    host,
-                    key: `${params.channel}/${params.series}/${params.episode}`,
-                    configFile: process.env.AVG_RENDER_HOSTS || join(LIBRARY_ROOT, "render-hosts.json"),
-                    onLog(line) {
-                      onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { engine: line } });
-                    },
-                    ...(signal ? { signal } : {}),
-                  }),
-                }
-              : {}),
+            ...(hosts?.length
+              ? { render: sharedRenderer({ ...remote, hosts, ...(params.assembleOn ? { assembleOn: params.assembleOn.trim() } : {}) }) }
+              : host
+                ? { render: remoteRenderer({ ...remote, host }) }
+                : {}),
             onProgress(progress) {
               const line = bar(progress, Date.now());
               if (line) onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { progress } });
             },
           });
           const mb = (render.result.sizeBytes / 1024 / 1024).toFixed(1);
-          const engine = (render.result as Partial<RemoteRenderResult>).engine;
-          const where = engine
-            ? `rendered on ${engine.host}${engine.concurrency ? ` with ${engine.concurrency} Chrome tab(s)` : ""}, ${engine.sentFiles} file(s) sent`
-            : `${render.concurrency} Chrome tab(s)`;
+          const engine = (render.result as Partial<RemoteRenderResult & SharedRenderResult>).engine;
+          const where = engine?.shares
+            ? `shared: ${engine.shares.map((s) => `${s.host} ${s.from}–${s.to} s in ${s.seconds.toFixed(0)} s`).join(", ")}; joined on ${engine.assembler}, ${engine.sentFiles} file(s) sent`
+            : engine
+              ? `rendered on ${engine.host}${engine.concurrency ? ` with ${engine.concurrency} Chrome tab(s)` : ""}, ${engine.sentFiles} file(s) sent`
+              : `${render.concurrency} Chrome tab(s)`;
           const lines = [
             `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}, ${where}`,
             ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),

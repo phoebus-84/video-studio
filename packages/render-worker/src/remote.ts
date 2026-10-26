@@ -8,9 +8,9 @@ import { createReadStream, createWriteStream, renameSync, rmSync, statSync } fro
 import path from "node:path";
 import type { RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
 import { localGit, renderCommit, syncCode, type Git } from "./code-sync.js";
-import { sha256File, prepareJob } from "./files.js";
+import { sha256File, prepareJob, type JobFile } from "./files.js";
 import { engineCommand, findEngine, readHostsConfig, type EngineTarget, type HostsConfig, type TailscalePeer } from "./hosts.js";
-import { checkKey, encodeBundle, lastJsonLine, RenderWorkerError, type EngineVersion } from "./protocol.js";
+import { checkKey, encodeBundle, lastJsonLine, RenderWorkerError, type EngineVersion, type RenderJob } from "./protocol.js";
 import { sshExec, type Exec, type ExecResult } from "./ssh.js";
 
 export interface RemoteRendererOptions {
@@ -35,89 +35,116 @@ export interface RemoteRenderResult extends RenderResult {
   engine: { host: string; commit: string | null; concurrency?: number; browsers?: number; sentFiles: number; sentBytes: number };
 }
 
-const DEFAULT_REPO_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
+export const DEFAULT_REPO_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 
 export function remoteRenderer(options: RemoteRendererOptions): (render: RenderTimelineOptions) => Promise<RemoteRenderResult> {
   const key = checkKey(options.key);
+  return async (render) => {
+    const engine = await openEngine({ ...options, key });
+    const prepared = await prepareJob(render);
+    const sent = await sendFiles(engine, prepared.files);
+    const result = await renderOn<RenderResult & { engine?: EngineAnswer }>(engine, prepared.job, (p) => render.onProgress?.(p));
+    await fetchVideo(engine, render.outputPath, result);
+    const { engine: answered, ...rendered } = result;
+    return { ...rendered, path: render.outputPath, engine: { host: engine.target.name, ...engineFacts(answered, engine.sha), ...sent } };
+  };
+}
+
+/** What an engine says about itself in a render's answer. */
+export interface EngineAnswer { concurrency?: number; browsers?: number; commit?: string | null }
+
+export function engineFacts(answer: EngineAnswer | undefined, sha: string): { commit: string | null; concurrency?: number; browsers?: number } {
+  return {
+    commit: answer?.commit ?? sha,
+    ...(answer?.concurrency !== undefined ? { concurrency: answer.concurrency } : {}),
+    ...(answer?.browsers !== undefined ? { browsers: answer.browsers } : {}),
+  };
+}
+
+/** An engine found and on this commit, ready for one episode's commands. */
+export interface EngineSession {
+  target: EngineTarget;
+  exec: Exec;
+  key: string;
+  sha: string;
+  log: (line: string) => void;
+  signal?: AbortSignal;
+}
+
+export async function openEngine(options: Omit<RemoteRendererOptions, "key"> & { key: string }): Promise<EngineSession> {
   const exec = options.exec ?? sshExec();
   const log = options.onLog ?? (() => undefined);
-  const signal = options.signal;
-  const withSignal = signal ? { signal } : {};
+  const withSignal = options.signal ? { signal: options.signal } : {};
+  const config = options.config ?? readHostsConfig(options.configFile);
+  const found = await findEngine(options.host, {
+    exec,
+    config,
+    ...(options.peers ? { peers: options.peers } : {}),
+    ...(options.env ? { env: options.env } : {}),
+  });
+  const target = found.target;
+  log(`rendering on ${target.name} (${target.destination})`);
+  warnMismatches(found.version, log);
 
-  return async (render) => {
-    const config = options.config ?? readHostsConfig(options.configFile);
-    const found = await findEngine(options.host, {
-      exec,
-      config,
-      ...(options.peers ? { peers: options.peers } : {}),
-      ...(options.env ? { env: options.env } : {}),
-    });
-    const target = found.target;
-    log(`rendering on ${target.name} (${target.destination})`);
-    warnMismatches(found.version, log);
+  const git = options.git ?? localGit(options.repoRoot ?? DEFAULT_REPO_ROOT);
+  const sha = renderCommit(git);
+  const synced = found.version?.synced === sha && found.version.commit === sha ? sha : null;
+  if (await syncCode({ git, exec, target, sha, synced, onLog: log, ...withSignal })) {
+    const after = lastJsonLine<EngineVersion>((await call(exec, target, ["version"], {}, "version")).stdout);
+    warnMismatches(after, log);
+    if (!after.browser) log(`${target.name} has no Remotion browser yet; the render will download one`);
+  }
+  return { target, exec, key: checkKey(options.key), sha, log, ...withSignal };
+}
 
-    const git = options.git ?? localGit(options.repoRoot ?? DEFAULT_REPO_ROOT);
-    const sha = renderCommit(git);
-    const synced = found.version?.synced === sha && found.version.commit === sha ? sha : null;
-    if (await syncCode({ git, exec, target, sha, synced, onLog: log, ...withSignal })) {
-      const after = lastJsonLine<EngineVersion>((await call(exec, target, ["version"], {}, "version")).stdout);
-      warnMismatches(after, log);
-      if (!after.browser) log(`${target.name} has no Remotion browser yet; the render will download one`);
-    }
-
-    const prepared = await prepareJob(render);
-    const manifest = prepared.files.map((f) => f.entry);
-    const { missing } = lastJsonLine<{ missing: string[] }>((await call(exec, target, ["diff", key], { stdin: JSON.stringify(manifest), ...withSignal }, "diff")).stdout);
-    let sentBytes = 0;
-    if (missing.length > 0) {
-      const wanted = new Set(missing);
-      const sending = prepared.files.filter((f) => wanted.has(f.entry.path));
-      sentBytes = sending.reduce((n, f) => n + f.entry.size, 0);
-      log(`sending ${sending.length} file(s), ${formatBytes(sentBytes)}, to ${target.name}`);
-      await call(exec, target, ["receive", key], {
-        stdin: encodeBundle(sending.map((f) => ({ entry: f.entry, read: () => createReadStream(f.local) }))),
-        ...withSignal,
-      }, "receive");
-    }
-
-    const answer = await call(exec, target, ["render", key], {
-      stdin: JSON.stringify(prepared.job),
-      onStderrLine: (line) => {
-        const progress = /^progress (\d+(?:\.\d+)?)$/.exec(line);
-        if (progress) render.onProgress?.(Number(progress[1]));
-        else if (line.trim()) log(line);
-      },
+/** Sends the job's files the engine does not have yet. */
+export async function sendFiles(engine: EngineSession, files: readonly JobFile[]): Promise<{ sentFiles: number; sentBytes: number }> {
+  const { target, exec, key } = engine;
+  const withSignal = engine.signal ? { signal: engine.signal } : {};
+  const manifest = files.map((f) => f.entry);
+  const { missing } = lastJsonLine<{ missing: string[] }>((await call(exec, target, ["diff", key], { stdin: JSON.stringify(manifest), ...withSignal }, "diff")).stdout);
+  let sentBytes = 0;
+  if (missing.length > 0) {
+    const wanted = new Set(missing);
+    const sending = files.filter((f) => wanted.has(f.entry.path));
+    sentBytes = sending.reduce((n, f) => n + f.entry.size, 0);
+    engine.log(`sending ${sending.length} file(s), ${formatBytes(sentBytes)}, to ${target.name}`);
+    await call(exec, target, ["receive", key], {
+      stdin: encodeBundle(sending.map((f) => ({ entry: f.entry, read: () => createReadStream(f.local) }))),
       ...withSignal,
-    }, "render");
-    const result = lastJsonLine<RenderResult & { engine?: { concurrency?: number; browsers?: number; commit?: string | null } }>(answer.stdout);
+    }, "receive");
+  }
+  return { sentFiles: missing.length, sentBytes };
+}
 
-    const partial = `${render.outputPath}.download`;
-    try {
-      await call(exec, target, ["fetch", key], { stdout: createWriteStream(partial), ...withSignal }, "fetch");
-      const size = statSync(partial).size;
-      const hash = await sha256File(partial);
-      if (size !== result.sizeBytes || hash !== result.hash) {
-        throw new RenderWorkerError("transfer-failed", `the video came back as ${size} bytes ${hash}, the engine rendered ${result.sizeBytes} bytes ${result.hash}`);
-      }
-      renameSync(partial, render.outputPath);
-    } finally {
-      rmSync(partial, { force: true });
+/** Runs a job on the engine; its answer is the last stdout line. */
+export async function renderOn<T>(engine: EngineSession, job: RenderJob, onProgress: (progress: number) => void): Promise<T> {
+  const answer = await call(engine.exec, engine.target, ["render", engine.key], {
+    stdin: JSON.stringify(job),
+    onStderrLine: (line) => {
+      const progress = /^progress (\d+(?:\.\d+)?)$/.exec(line);
+      if (progress) onProgress(Number(progress[1]));
+      else if (line.trim()) engine.log(line);
+    },
+    ...(engine.signal ? { signal: engine.signal } : {}),
+  }, "render");
+  return lastJsonLine<T>(answer.stdout);
+}
+
+/** Brings the engine's rendered mp4 to `outputPath`, checked against what it said it rendered. */
+export async function fetchVideo(engine: EngineSession, outputPath: string, rendered: { sizeBytes: number; hash: string }): Promise<void> {
+  const partial = `${outputPath}.download`;
+  try {
+    await call(engine.exec, engine.target, ["fetch", engine.key], { stdout: createWriteStream(partial), ...(engine.signal ? { signal: engine.signal } : {}) }, "fetch");
+    const size = statSync(partial).size;
+    const hash = await sha256File(partial);
+    if (size !== rendered.sizeBytes || hash !== rendered.hash) {
+      throw new RenderWorkerError("transfer-failed", `the video came back as ${size} bytes ${hash}, the engine rendered ${rendered.sizeBytes} bytes ${rendered.hash}`);
     }
-
-    const { engine, ...rendered } = result;
-    return {
-      ...rendered,
-      path: render.outputPath,
-      engine: {
-        host: target.name,
-        commit: engine?.commit ?? sha,
-        ...(engine?.concurrency !== undefined ? { concurrency: engine.concurrency } : {}),
-        ...(engine?.browsers !== undefined ? { browsers: engine.browsers } : {}),
-        sentFiles: missing.length,
-        sentBytes,
-      },
-    };
-  };
+    renameSync(partial, outputPath);
+  } finally {
+    rmSync(partial, { force: true });
+  }
 }
 
 function warnMismatches(version: EngineVersion | null, log: (line: string) => void): void {
@@ -125,7 +152,7 @@ function warnMismatches(version: EngineVersion | null, log: (line: string) => vo
 }
 
 /** One engine command; a failure becomes the engine's own error when it sent one. */
-async function call(exec: Exec, target: EngineTarget, args: string[], input: Parameters<Exec>[2], what: string): Promise<ExecResult> {
+export async function call(exec: Exec, target: EngineTarget, args: string[], input: Parameters<Exec>[2], what: string): Promise<ExecResult> {
   const run = await exec(target.destination, engineCommand(target, args), input);
   if (run.code === 0) return run;
   let error: { code?: string; message?: string; problems?: { code: string; message: string; path?: string }[] } | undefined;
@@ -138,7 +165,7 @@ async function call(exec: Exec, target: EngineTarget, args: string[], input: Par
   throw new RenderWorkerError("engine-failed", `${target.name}: ${what} failed (exit ${run.code}): ${run.stderr.split("\n").filter(Boolean).slice(-5).join(" | ")}`);
 }
 
-function formatBytes(n: number): string {
+export function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KiB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MiB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GiB`;

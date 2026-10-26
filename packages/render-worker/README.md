@@ -34,3 +34,9 @@ A render goes like this:
 Each episode has its own folder on the engine, `<cache root>/<channel>/<series>/<episode>`. It holds `files/`, `index.json`, `cache/` (renderTimeline's `cacheDir`), `render.lock`, and `out.mp4`, which is written as `out.partial.mp4` until it is complete. Nothing is shared between episodes, and nothing is removed.
 
 Errors keep their codes (`no-engine`, `dirty-code`, `code-sync-failed`, `engine-busy`, `timeline-invalid`, …) and their `problems`. The engine compares its binaries with `engine.env`'s pins and warns when they differ. Those pins live only in `engine.env`.
+
+## Sharing a render between machines
+
+`pva_compose_video` also takes `hosts`, a list of machines (`local` is this one, the others as for `host`), and an optional `assembleOn` (`local` by default, and it need not be in `hosts`). It is used only when the operator asks for it. `sharedRenderer` splits the video's one-second segments into contiguous runs, one per machine in order, and each machine draws its run in parallel: `local` into `<outputPath>.shared`, an engine with a `drawOnly` job into its `drawn/`. The assembler then joins every segment, adds the audio, normalises loudness and writes the mp4; only the assembler readies the soundtrack.
+
+Segments travel through this machine. `send-drawn <key>` streams the segments an engine drew, as a bundle rooted at `drawn/`, and each one is checked against the hash its draw answered (`not what it drew`). `receive-drawn <key>` puts them in a remote assembler's `drawn/`. The assembler's job names every segment it should find there, by hash, its own included, so a missing or changed one fails with `missing-file` or `hash-mismatch` before anything is joined. Segments encoded on different systems (Windows and Linux) cannot be joined, and the join refuses them. A failed share fails the whole render and removes `<outputPath>.shared`.
