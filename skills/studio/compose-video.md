@@ -1,6 +1,6 @@
 ---
 name: compose-video
-version: "0.6.0"
+version: "0.7.0"
 description: Compose the final video through the episode's edit timeline, rendered with Remotion
 inputs:
   - name: illustrations
@@ -113,6 +113,25 @@ recompiled and why) and lists every finding, writing nothing.
 - **Captions**: one `captions@1.1.0` per cue of a canonical narration
   manifest, inside the profile's safe zone. A manifest that is not canonical
   gives narration without captions, and the tool says why.
+
+## Where it renders
+
+By default `pva_compose_video` renders on this machine. Keep it there unless
+the operator asks for another one (`packages/render-worker/README.md` says how
+it works and how to set a machine up):
+
+- `host` renders the whole video on another machine of the tailnet: a peer
+  name, a host from `library/.render/render-hosts.json`, or `auto`.
+- `hosts` (with `assembleOn`) shares one render among several machines, the
+  faster ones drawing more. Only when the operator asks for a shared render.
+- Do not render in WSL on the machine it runs on (`host: "asus-wsl"`): same
+  CPU, always slower than the native render. Only when the operator asks.
+- **A remote machine renders committed code only.** Commit what the render
+  needs first; with uncommitted changes it refuses (`dirty-code`). It rebuilds
+  the composer's `dist/` itself.
+- **A local render reads `packages/remotion-composer/dist`.** After changing
+  the composer's `src/`, run `npm run build` in `packages/remotion-composer`
+  before rendering here, or the render runs the old code.
 
 ## Long versions (1–10 hours)
 
