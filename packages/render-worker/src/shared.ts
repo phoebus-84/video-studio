@@ -127,6 +127,8 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     const held = new Map<number, Held>();
     const answers = new Map<string, EngineAnswer | undefined>();
     const seconds = new Map<string, number>();
+    /** Segments each machine drew now, not from its cache: what its speed is measured on. */
+    const drawnNow = new Map<string, number>();
     /** Segments on the remote assembler, by index → hash: its own share and what was pushed to it. */
     const assemblerHas = new Map<number, string>();
 
@@ -153,6 +155,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         const result = await draw({ ...rest, cacheDir: render.cacheDir!, segments, dir: sharedDir, audio: assembler === LOCAL, onProgress });
         for (const s of result.segments) held.set(s.index, { file: s.file, hash: s.hash, bytes: s.bytes });
         seconds.set(host, (Date.now() - started) / 1000);
+        drawnNow.set(host, result.cache?.segmentsRendered ?? segments.length);
         onProgress(1);
         await pushToAssembler(segments);
         return;
@@ -164,6 +167,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       const answer = await renderOn<DrawAnswer>(engine, { ...job, drawOnly: { segments, audio: host === assembler } }, onProgress);
       answers.set(host, answer.engine);
       seconds.set(host, (Date.now() - started) / 1000);
+      drawnNow.set(host, answer.rendered ?? segments.length);
       onProgress(1);
       if (answer.totalSegments !== total) throw new RenderWorkerError("engine-failed", `${host} counts ${answer.totalSegments} segments, this machine ${total}`);
       if (host === assembler) {
@@ -233,7 +237,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       if (failed) throw failed.reason;
       if (options.speedsFile) {
         try {
-          recordSpeeds(options.speedsFile, runs.map((r) => ({ key: r.key, segments: r.segments.length, seconds: seconds.get(r.host) ?? 0 })));
+          recordSpeeds(options.speedsFile, runs.map((r) => ({ key: r.key, segments: drawnNow.get(r.host) ?? 0, seconds: seconds.get(r.host) ?? 0 })));
         } catch (error) {
           log(`warning: the machines' speeds were not saved: ${(error as Error).message}`);
         }

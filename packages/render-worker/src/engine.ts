@@ -289,7 +289,7 @@ async function render(dir: string, io: EngineIO, ctx: EngineContext): Promise<un
       const drawn = await (ctx.draw ?? composerDraw(ctx.repo))({
         ...common, segments: job.drawOnly.segments, dir: path.join(dir, "drawn"), audio: job.drawOnly.audio ?? false,
       });
-      const reply: DrawAnswer = { segments: drawn.segments.map(({ index, hash, bytes }) => ({ index, hash, bytes })), totalSegments: drawn.totalSegments, engine };
+      const reply: DrawAnswer = { segments: drawn.segments.map(({ index, hash, bytes }) => ({ index, hash, bytes })), totalSegments: drawn.totalSegments, rendered: drawn.cache.segmentsRendered, engine };
       return reply;
     }
     let drawn: Record<number, string> | undefined;

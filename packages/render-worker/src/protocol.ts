@@ -75,6 +75,8 @@ export interface RenderJob {
 export interface DrawAnswer {
   segments: { index: number; hash: string; bytes: number }[];
   totalSegments: number;
+  /** How many of them were drawn now rather than taken from the cache: a share's speed counts only these. */
+  rendered?: number;
   engine?: { concurrency?: number; browsers?: number; commit?: string | null };
 }
 
