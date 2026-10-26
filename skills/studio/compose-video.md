@@ -122,10 +122,11 @@ it works and how to set a machine up):
 
 - `host` renders the whole video on another machine of the tailnet: a peer
   name, a host from `library/.render/render-hosts.json`, or `auto`.
-- `hosts` (with `assembleOn`) shares one render among several machines, the
-  faster ones drawing more. Only when the operator asks for a shared render.
-- Do not render in WSL on the machine it runs on (`host: "asus-wsl"`): same
-  CPU, always slower than the native render. Only when the operator asks.
+- `hosts` (with `assembleOn`) shares one render among several machines
+  through a queue: each comes back for more as it finishes, so the faster
+  ones draw more. Only when the operator asks for a shared render.
+- Do not render in a WSL on the machine the studio runs on: same CPU, always
+  slower than the native render. Only when the operator asks.
 - **A remote machine renders committed code only.** Commit what the render
   needs first; with uncommitted changes it refuses (`dirty-code`). It rebuilds
   the composer's `dist/` itself.
