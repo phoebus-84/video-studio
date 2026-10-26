@@ -19,6 +19,7 @@ import {soundLayers} from './layers.js';
 import {resolveKit} from './kits/index.js';
 import {placeSounds} from './sound-mix.js';
 import type {CacheReport} from './render-cache.js';
+import {timed} from './timings.js';
 
 export interface RenderTimelineOptions {
   /** A studio.video/v1alpha2 EditTimeline that already passed validateEditTimeline. */
@@ -87,11 +88,11 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     try {
       // The bundle — which copies the staged public directory — lives in the work
       // directory, so it is removed with it, on success and on failure.
-      const serveUrl = await bundle({
+      const serveUrl = await timed('bundle', () => bundle({
         entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle'),
         ...(options.kits?.length ? {webpackOverride: resolveFromApplication} : {}),
-      });
-      const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps});
+      }));
+      const composition = await timed('select composition', () => selectComposition({serveUrl, id: 'Timeline', inputProps}));
       if (options.cacheDir) {
         cache = await renderWithCache({
           composition, serveUrl, inputProps, cacheDir: path.resolve(options.cacheDir),
@@ -115,7 +116,7 @@ export async function renderTimeline(options: RenderTimelineOptions): Promise<Re
     let loudness: LoudnessResult | null = null;
     if (hasAudio) {
       try {
-        loudness = await normalizeLoudness(rendered, output, options.loudness ?? timeline.profile.loudness);
+        loudness = await timed('loudness', () => normalizeLoudness(rendered, output, options.loudness ?? timeline.profile.loudness));
       } catch (e) {
         throw new ComposerError('loudness-failed', `loudness could not be normalised: ${e instanceof Error ? e.message : String(e)}`);
       }

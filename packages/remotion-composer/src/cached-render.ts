@@ -5,6 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {ensureBrowser, openBrowser, renderMedia} from '@remotion/renderer';
+import {timed} from './timings.js';
 import type {VideoConfig} from 'remotion';
 import {sha256} from './assets.js';
 import {shapesSegments} from './identity.js';
@@ -130,7 +131,7 @@ export async function renderWithCache(options: {
   // A whole-video hit with no audio never opens one.
   const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
   const opened: Promise<Awaited<ReturnType<typeof openBrowser>>>[] = [];
-  const getBrowser = (lane = 0) => opened[lane] ??= openBrowser('chrome', {chromeMode: chromeMode(), chromiumOptions: {gl: chromiumGl()}});
+  const getBrowser = (lane = 0) => opened[lane] ??= timed(`open browser ${lane}`, () => openBrowser('chrome', {chromeMode: chromeMode(), chromiumOptions: {gl: chromiumGl()}}));
   const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
   // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
   // beside the pictures; a browser sound pass waits for them (see below).
@@ -185,12 +186,12 @@ export async function renderWithCache(options: {
         // moves every later keyframe off the second: scene-cut detection off.
         const first = segments[0]!, last = segments.at(-1)!;
         const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
-        await renderMedia({
+        await timed(`frames ${first.from}-${last.to} (lane ${lane})`, async () => renderMedia({
           ...common, concurrency: browsers > 1 ? tabsEach : common.concurrency, ...encoding, puppeteerInstance: await getBrowser(lane),
           ...withProps(silentProps), outputLocation: whole,
           frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
           onProgress: ({progress}) => onRunProgress(progress),
-        });
+        }));
         if (segments.length === 1) return;
         const cuts = segments.slice(1).map((segment) => segment.from - first.from);
         const pattern = path.join(work, `run-${first.from}-%05d.mp4`);
