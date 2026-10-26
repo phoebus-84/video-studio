@@ -23,6 +23,9 @@ const chromiumGl = (): (typeof glBackends)[number] | null => {
   const gl = process.env.AVG_CHROMIUM_GL?.trim();
   return (glBackends as readonly string[]).includes(gl ?? '') ? gl as (typeof glBackends)[number] : null;
 };
+// Which Chrome draws: the headless shell by default; on Linux only the full
+// Chrome for Testing reaches a GPU (e.g. WSL's D3D12 through Mesa).
+const chromeMode = () => process.env.AVG_CHROME_MODE?.trim() === 'chrome-for-testing' ? 'chrome-for-testing' as const : 'headless-shell' as const;
 const run = (args: string[]) => exec(ffmpeg(), ['-hide_banner', '-loglevel', 'error', '-y', ...args], {maxBuffer: 8 * 1024 * 1024});
 
 // Explicit settings shared by every independently decodable, silent H.264 segment.
@@ -48,7 +51,7 @@ async function codeHashes(dir: string, keep: (file: string) => boolean = () => t
 
 async function rendererKey(serveUrl: string): Promise<string> {
   const require = createRequire(import.meta.url);
-  const browser = await ensureBrowser();
+  const browser = await ensureBrowser({chromeMode: chromeMode()});
   if (!('path' in browser)) throw new Error('No headless browser is available');
   const dependencies = await Promise.all(['@remotion/renderer', '@remotion/bundler', 'remotion', 'react', 'react-dom'].map(async (name) =>
     [name, JSON.parse(await readFile(require.resolve(`${name}/package.json`), 'utf8')).version]));
@@ -127,7 +130,7 @@ export async function renderWithCache(options: {
   // A whole-video hit with no audio never opens one.
   const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
   const opened: Promise<Awaited<ReturnType<typeof openBrowser>>>[] = [];
-  const getBrowser = (lane = 0) => opened[lane] ??= openBrowser('chrome', {chromiumOptions: {gl: chromiumGl()}});
+  const getBrowser = (lane = 0) => opened[lane] ??= openBrowser('chrome', {chromeMode: chromeMode(), chromiumOptions: {gl: chromiumGl()}});
   const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
   // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
   // beside the pictures; a browser sound pass waits for them (see below).
