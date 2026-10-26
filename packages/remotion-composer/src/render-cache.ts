@@ -133,21 +133,13 @@ export class VideoCache {
  * work in the cache.
  */
 export function missRuns(missing: number[], max: number): number[][] {
-  const groups: number[][] = [];
+  const runs: number[][] = [];
   for (const index of missing) {
-    const group = groups.at(-1);
-    if (group && group.at(-1) === index - 1) group.push(index);
-    else groups.push([index]);
+    const run = runs.at(-1);
+    if (run && run.at(-1) === index - 1 && run.length < max) run.push(index);
+    else runs.push([index]);
   }
-  // A long group is cut into runs of even length, not full runs and a short
-  // tail: ten seconds on four lanes as 3+3+2+2, not 3+3+3+1 (the lanes wait for
-  // the longest run, 2026-10-26).
-  return groups.flatMap((group) => {
-    const count = Math.ceil(group.length / max);
-    // The first runs take one more segment each, until they are all used.
-    const start = (i: number) => i * Math.floor(group.length / count) + Math.min(i, group.length % count);
-    return Array.from({length: count}, (_, i) => group.slice(start(i), start(i + 1)));
-  });
+  return runs;
 }
 
 /** Callbacks keep cache policy testable without Chrome or FFmpeg. */
