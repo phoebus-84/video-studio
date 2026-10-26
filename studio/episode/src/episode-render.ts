@@ -14,7 +14,7 @@ import { defaultRenderConcurrency, renderBrowsers } from "./render-concurrency.j
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { auditExpectation, auditRender, EditTimelineSchema, renderTimeline, type AuditFinding, type AuditResult, type RenderResult } from "@av/remotion-composer";
+import { auditExpectation, auditRender, EditTimelineSchema, renderTimeline, type AuditFinding, type AuditResult, type RenderResult, type RenderTimelineOptions } from "@av/remotion-composer";
 import { validateEditTimeline } from "@studio/contracts/src/edit-timeline.mjs";
 import { outputProfile } from "@studio/contracts/src/output-profiles.mjs";
 import {
@@ -343,6 +343,13 @@ export interface EpisodeRenderOptions extends BuildOptions {
    */
   sheetApproval?: "review" | "pipeline-gate";
   onProgress?: (progress: number) => void;
+  /**
+   * What renders the timeline: renderTimeline on this machine (the default),
+   * or another one that gives the same file — an engine over SSH
+   * (@av/render-worker). Everything else stays here: the checks before, the
+   * output's name, the audit, current.json.
+   */
+  render?: (options: RenderTimelineOptions) => Promise<RenderResult>;
 }
 
 export interface EpisodeRender {
@@ -395,7 +402,7 @@ export async function renderEpisode(episodeDir: string, options: EpisodeRenderOp
   const concurrency = defaultRenderConcurrency();
   let result: RenderResult;
   try {
-    result = await renderTimeline({
+    result = await (options.render ?? renderTimeline)({
       timeline: current.timeline,
       assetRoot: episodeDir,
       sharedRoots: sharedRootsOf(episodeDir),

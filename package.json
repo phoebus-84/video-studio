@@ -20,6 +20,7 @@
     "packages/terminal-recorder",
     "packages/video-composer",
     "packages/remotion-composer",
+    "packages/render-worker",
     "studio/contracts",
     "studio/series",
     "studio/episode",

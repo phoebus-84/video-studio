@@ -11,6 +11,7 @@ import { Type } from "typebox";
 import { createHash } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { remoteRenderer, type RemoteRenderResult } from "@av/render-worker";
 import { extname, join } from "node:path";
 import { resolveConfig, DEFAULT_TTS_WORKER_URL } from "./config.js";
 import { guardEpisodePath } from "./trust-guards.js";
@@ -1310,9 +1311,11 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       episode: Type.String({ description: "Episode slug" }),
       profile: profileParam,
       label: Type.Optional(Type.String({ default: "render", description: "Lowercase kebab-case render label" })),
+      host: Type.Optional(Type.String({ description: "Render on another machine over SSH (packages/render-worker): a tailnet peer name or a render-hosts.json host, or \"auto\" for the first engine that answers; omitted, renders here. Needs the render code committed." })),
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const dir = episodeDir(params.channel, params.series, params.episode);
+      const host = params.host?.trim();
       const episodeRef = { channel: params.channel, series: params.series, episode: params.episode };
       try {
         return await withFileMutationQueue(join(dir, "output", "current.json"), async () => {
@@ -1322,14 +1325,31 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             episodeRef,
             ...(params.profile ? { profile: params.profile } : {}),
             ...(params.label ? { label: params.label } : {}),
+            ...(host
+              ? {
+                  render: remoteRenderer({
+                    host,
+                    key: `${params.channel}/${params.series}/${params.episode}`,
+                    configFile: process.env.AVG_RENDER_HOSTS || join(LIBRARY_ROOT, "render-hosts.json"),
+                    onLog(line) {
+                      onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { engine: line } });
+                    },
+                    ...(signal ? { signal } : {}),
+                  }),
+                }
+              : {}),
             onProgress(progress) {
               const line = bar(progress, Date.now());
               if (line) onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { progress } });
             },
           });
           const mb = (render.result.sizeBytes / 1024 / 1024).toFixed(1);
+          const engine = (render.result as Partial<RemoteRenderResult>).engine;
+          const where = engine
+            ? `rendered on ${engine.host}${engine.concurrency ? ` with ${engine.concurrency} Chrome tab(s)` : ""}, ${engine.sentFiles} file(s) sent`
+            : `${render.concurrency} Chrome tab(s)`;
           const lines = [
-            `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}, ${render.concurrency} Chrome tab(s)`,
+            `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}, ${where}`,
             ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),
             ...(render.compiledBy
               ? [`compiled by ${render.compiledBy.compiler} from episode-spec.json revision ${render.compiledBy.revision}`
