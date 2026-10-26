@@ -15,6 +15,8 @@ import { remoteRenderer } from "../src/remote.js";
 import { fakeEngine, sha256, tempDir } from "./helpers.js";
 
 const SHA = "b".repeat(40);
+/** The theme bed relative to the episode, in this platform's separators (backslashes on Windows). */
+const BED = path.join("..", "..", "themes", "t1", "bed.wav");
 const peers = [{ name: "render-box", dnsName: null, addresses: ["100.64.0.9"], online: true, os: "linux" }];
 const cleanGit: Git = (args) => (args[0] === "rev-parse" ? { code: 0, stdout: `${SHA}\n`, stderr: "" } : { code: 0, stdout: "", stderr: "" });
 
@@ -35,7 +37,7 @@ function episode() {
     timeline: {
       assets: {
         img: { path: "media/a.png", hash: sha256(img), kind: "image" },
-        bed: { path: "..\\..\\themes\\t1\\bed.wav", hash: sha256(music), kind: "audio" },
+        bed: { path: BED, hash: sha256(music), kind: "audio" },
         abs: { path: path.join(theme, "bed.wav"), hash: sha256(music), kind: "audio" },
       },
     },
@@ -58,7 +60,7 @@ test("prepareJob mirrors every file once and rewrites only paths the engine coul
   assert.deepEqual(job.sharedRoots, [mirrorPath(theme)]);
   assert.equal(job.kits[0]!.file, mirrorPath(path.join(path.dirname(path.dirname(path.dirname(ep))), "kit.cjs")));
   assert.equal(files.length, 3, "the shared bed is sent once");
-  assert.equal((options.timeline as { assets: Record<string, { path: string }> }).assets.bed!.path, "..\\..\\themes\\t1\\bed.wav", "the caller's timeline is untouched");
+  assert.equal((options.timeline as { assets: Record<string, { path: string }> }).assets.bed!.path, BED, "the caller's timeline is untouched");
 });
 
 test("prepareJob refuses a file whose bytes are not the ones the timeline promises", async () => {
