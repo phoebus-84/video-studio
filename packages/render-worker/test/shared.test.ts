@@ -111,7 +111,7 @@ test("more machines than seconds: the extra ones draw nothing", async () => {
   assert.equal(engines.get("box-c")!.calls.length, 0);
 });
 
-test("a faster machine draws more, and every share's speed is kept", async () => {
+test("a faster machine draws more, and a share's speed is kept when it drew enough to measure", async () => {
   const { options } = episode();
   const { exec } = machines();
   const speedsFile = path.join(tempDir("rw-speeds-"), "render-speeds.json");
@@ -120,7 +120,7 @@ test("a faster machine draws more, and every share's speed is kept", async () =>
   assert.deepEqual(result.engine.shares.map((s) => [s.host, s.from, s.to]), [["box-a", 0, 3], ["box-b", 4, 4]]);
   const kept = readSpeeds(speedsFile);
   assert.equal(kept["box-a"]!.samples, 2);
-  assert.equal(kept["box-b"]!.samples, 2);
+  assert.equal(kept["box-b"]!.samples, 1, "one segment is too few to measure");
 });
 
 test("a speed in render-hosts.json fixes the weight", async () => {
@@ -143,7 +143,7 @@ test("weightsFor and recordSpeeds: configured, then measured, then the average",
   assert.deepEqual(weightsFor(["a", "b", "c"], ["a", "b", "c"], speeds, { hosts: { c: { address: "x", speed: 6 } } }), [2, 4, 6]);
   assert.deepEqual(weightsFor(["a", "b"], ["a", "b"], {}, {}), [1, 1]);
   const file = path.join(tempDir("rw-speeds-"), "s.json");
-  recordSpeeds(file, [{ key: "a", segments: 10, seconds: 5 }, { key: "b", segments: 0, seconds: 3 }], new Date(0));
+  recordSpeeds(file, [{ key: "a", segments: 10, seconds: 5 }, { key: "b", segments: 2, seconds: 3 }], new Date(0));
   recordSpeeds(file, [{ key: "a", segments: 10, seconds: 2.5 }], new Date(0));
   assert.deepEqual(readSpeeds(file), { a: { segmentsPerSecond: 3, samples: 2, updatedAt: new Date(0).toISOString() } });
 });

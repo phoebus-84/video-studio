@@ -29,11 +29,17 @@ export function readSpeeds(file?: string): Speeds {
   }
 }
 
+/**
+ * Fewer segments than this measure the browser's start more than the drawing
+ * (one fresh segment on a mostly cached share read 0.12 instead of 0.18).
+ */
+export const MIN_MEASURED_SEGMENTS = 3;
+
 /** Folds measured shares into the file: the new measure weighs as much as everything before it. */
 export function recordSpeeds(file: string, measured: readonly { key: string; segments: number; seconds: number }[], now = new Date()): Speeds {
   const speeds = readSpeeds(file);
   for (const m of measured) {
-    if (m.segments <= 0 || m.seconds <= 0) continue;
+    if (m.segments < MIN_MEASURED_SEGMENTS || m.seconds <= 0) continue;
     const speed = m.segments / m.seconds;
     const old = speeds[m.key];
     speeds[m.key] = {
