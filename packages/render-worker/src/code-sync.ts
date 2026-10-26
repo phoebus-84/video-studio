@@ -37,7 +37,7 @@ export function localGit(repoRoot: string): Git {
 export function renderCommit(git: Git): string {
   const head = git(["rev-parse", "HEAD"]);
   if (head.code !== 0) throw new RenderWorkerError("code-sync-failed", `not a git checkout: ${head.stderr.trim()}`);
-  const status = git(["status", "--porcelain", "--untracked-files=no", "--", ...RENDER_CODE]);
+  const status = git(["status", "--porcelain", "--untracked-files=all", "--", ...RENDER_CODE]);
   if (status.code !== 0) throw new RenderWorkerError("code-sync-failed", `git status failed: ${status.stderr.trim()}`);
   const dirty = status.stdout.split("\n").map((l) => l.slice(3).trim()).filter(Boolean);
   if (dirty.length > 0) {

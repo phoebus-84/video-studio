@@ -10,7 +10,7 @@ import type { RenderTimelineOptions } from "@av/remotion-composer";
 import type { Git } from "../src/code-sync.js";
 import { runEngine } from "../src/engine.js";
 import { drawnPath } from "../src/protocol.js";
-import { sharedRenderer, type SharedRendererOptions } from "../src/shared.js";
+import { runsOf, sharedRenderer, type SharedRendererOptions, type SharedRenderResult } from "../src/shared.js";
 import { readSpeeds, recordSpeeds, splitByWeight, weightsFor } from "../src/speeds.js";
 import type { Exec } from "../src/ssh.js";
 import { fakeDraw, fakeEngine, fakeRender, sha256, tempDir, type FakeEngine } from "./helpers.js";
@@ -56,19 +56,44 @@ function renderer(exec: Exec, options: Partial<SharedRendererOptions> & { hosts:
   });
 }
 
-const segment = (i: number, by: string, audio = false) => `[segment ${i} by ${by}${audio ? " +audio" : ""}]`;
+/** Who drew each second of an assembled video, in order. */
+function drawnBy(file: string) {
+  return [...readFileSync(file, "utf-8").matchAll(/\[segment (\d+) by ([\w-]+)( \+audio)?\]/g)].map(([, i, by, audio]) => ({ i: Number(i), by, audio: Boolean(audio) }));
+}
+
+/** fakeDraw that takes `ms` a chunk, so the engines here get some of the queue. */
+function slowDraw(name: string, ms: number): SharedRendererOptions["draw"] {
+  const draw = fakeDraw(name);
+  return async (o) => {
+    await new Promise((r) => setTimeout(r, ms));
+    return draw(o);
+  };
+}
+
+/** Every second once, in order; each by the machine whose share holds it; the soundtrack warmed only on the assembler. */
+function assertAssembled(file: string, shares: SharedRenderResult["engine"]["shares"], assembler: string) {
+  const drawn = drawnBy(file);
+  assert.deepEqual(drawn.map((d) => d.i), [0, 1, 2, 3, 4]);
+  for (const d of drawn) {
+    const share = shares.find((s) => s.runs.some(([a, b]) => a <= d.i && d.i <= b));
+    assert.equal(share?.host, d.by, `segment ${d.i}`);
+    if (d.audio) assert.equal(d.by, assembler, `segment ${d.i} warmed the soundtrack off the assembler`);
+  }
+  assert.equal(shares.reduce((n, s) => n + s.segments, 0), 5);
+}
 
 test("a share here and one on an engine, assembled here", async () => {
   const { ep, options } = episode();
   const { engines, exec } = machines();
   const progress: number[] = [];
-  const result = await renderer(exec, { hosts: ["local", "box-a"] })({ ...options, onProgress: (p) => progress.push(p) });
+  const result = await renderer(exec, { hosts: ["local", "box-a"], draw: slowDraw("local", 150) })({ ...options, onProgress: (p) => progress.push(p) });
 
-  assert.equal(readFileSync(path.join(ep, "out.mp4"), "utf-8"),
-    `MP4:image bytes${segment(0, "local", true)}${segment(1, "local", true)}${segment(2, "box-a")}${segment(3, "box-a")}${segment(4, "box-a")}`);
-  assert.deepEqual(engines.get("box-a")!.draws.map((d) => [d.segments, d.audio]), [[[2, 3, 4], false]]);
+  assertAssembled(path.join(ep, "out.mp4"), result.engine.shares, "local");
+  const drawn = drawnBy(path.join(ep, "out.mp4"));
+  assert.ok(drawn[0]!.audio && drawn[0]!.by === "local", "the first chunk here warms the soundtrack");
+  assert.ok(drawn.some((d) => d.by === "box-a"), "the engine helps");
+  assert.ok(engines.get("box-a")!.draws.every((d) => !d.audio));
   assert.equal(engines.get("box-a")!.renders.length, 0, "the engine only draws");
-  assert.deepEqual(result.engine.shares.map((s) => [s.host, s.from, s.to]), [["local", 0, 1], ["box-a", 2, 4]]);
   assert.equal(result.engine.assembler, "local");
   assert.equal(result.engine.sentFiles, 1);
   assert.equal(progress.at(-1), 1);
@@ -81,23 +106,21 @@ test("three engines, one of them assembles: the others' segments reach it throug
   const { engines, exec } = machines();
   const result = await renderer(exec, { hosts: ["box-a", "box-b", "box-c"], assembleOn: "box-b" })(options);
 
-  assert.equal(readFileSync(path.join(ep, "out.mp4"), "utf-8"),
-    `MP4:image bytes${segment(0, "box-a")}${segment(1, "box-b", true)}${segment(2, "box-b", true)}${segment(3, "box-c")}${segment(4, "box-c")}`);
+  assertAssembled(path.join(ep, "out.mp4"), result.engine.shares, "box-b");
   assert.equal(engines.get("box-b")!.renders.length, 1, "box-b assembles");
   assert.deepEqual(Object.keys(engines.get("box-b")!.renders[0]!.drawn ?? {}).map(Number).sort(), [0, 1, 2, 3, 4]);
   assert.equal(engines.get("box-a")!.renders.length + engines.get("box-c")!.renders.length, 0);
   assert.equal(result.engine.host, "box-b");
   assert.equal(result.engine.commit, SHA);
-  assert.deepEqual(result.engine.shares.map((s) => [s.host, s.segments]), [["box-a", 1], ["box-b", 2], ["box-c", 2]]);
 });
 
 test("an assembler that draws nothing gets the files and everyone's segments", async () => {
   const { ep, options } = episode();
   const { engines, exec } = machines();
-  await renderer(exec, { hosts: ["local", "box-a"], assembleOn: "box-c" })(options);
+  const result = await renderer(exec, { hosts: ["local", "box-a"], assembleOn: "box-c", draw: slowDraw("local", 150) })(options);
 
-  assert.equal(readFileSync(path.join(ep, "out.mp4"), "utf-8"),
-    `MP4:image bytes${segment(0, "local")}${segment(1, "local")}${segment(2, "box-a")}${segment(3, "box-a")}${segment(4, "box-a")}`);
+  assertAssembled(path.join(ep, "out.mp4"), result.engine.shares, "box-c");
+  assert.ok(drawnBy(path.join(ep, "out.mp4")).some((d) => d.by === "box-a"));
   assert.equal(engines.get("box-c")!.draws.length, 0);
   assert.equal(engines.get("box-c")!.renders.length, 1);
 });
@@ -111,23 +134,25 @@ test("more machines than seconds: the extra ones draw nothing", async () => {
   assert.equal(engines.get("box-c")!.calls.length, 0);
 });
 
-test("a faster machine draws more, and a share's speed is kept when it drew enough to measure", async () => {
-  const { options } = episode();
-  const { exec } = machines();
+test("a faster machine starts with more, and a share's speed is kept when it drew enough to measure", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
   const speedsFile = path.join(tempDir("rw-speeds-"), "render-speeds.json");
   writeFileSync(speedsFile, JSON.stringify({ speeds: { "box-a": { segmentsPerSecond: 3, samples: 1, updatedAt: "x" }, "box-b": { segmentsPerSecond: 1, samples: 1, updatedAt: "x" } } }));
   const result = await renderer(exec, { hosts: ["box-a", "box-b"], speedsFile })(options);
-  assert.deepEqual(result.engine.shares.map((s) => [s.host, s.from, s.to]), [["box-a", 0, 3], ["box-b", 4, 4]]);
+  assertAssembled(path.join(ep, "out.mp4"), result.engine.shares, "box-a");
+  assert.deepEqual(engines.get("box-a")!.draws[0]!.segments, [0, 1], "half its fair part, from the front");
+  assert.deepEqual(engines.get("box-b")!.draws[0]!.segments, [4], "no more than it draws before box-a would finish");
   const kept = readSpeeds(speedsFile);
-  assert.equal(kept["box-a"]!.samples, 2);
-  assert.equal(kept["box-b"]!.samples, 1, "one segment is too few to measure");
+  for (const s of result.engine.shares) assert.equal(kept[s.host]!.samples, s.segments >= 3 ? 2 : 1, s.host);
 });
 
-test("a speed in render-hosts.json fixes the weight", async () => {
+test("a speed in render-hosts.json sizes the first chunks", async () => {
   const { options } = episode();
-  const { exec } = machines();
-  const result = await renderer(exec, { hosts: ["box-a", "box-b"], config: { hosts: { "Box-A": { address: "100.64.0.10", speed: 1 }, "box-b": { address: "100.64.0.11", speed: 4 } } } })(options);
-  assert.deepEqual(result.engine.shares.map((s) => s.segments), [1, 4]);
+  const { engines, exec } = machines();
+  await renderer(exec, { hosts: ["box-a", "box-b"], config: { hosts: { "Box-A": { address: "100.64.0.10", speed: 1 }, "box-b": { address: "100.64.0.11", speed: 4 } } } })(options);
+  assert.deepEqual(engines.get("box-a")!.draws[0]!.segments, [0]);
+  assert.deepEqual(engines.get("box-b")!.draws[0]!.segments, [3, 4]);
 });
 
 test("splitByWeight: contiguous counts by weight, at least one each", () => {
@@ -136,6 +161,12 @@ test("splitByWeight: contiguous counts by weight, at least one each", () => {
   assert.deepEqual(splitByWeight(10, [100, 1, 1]), [8, 1, 1]);
   assert.deepEqual(splitByWeight(2, [1, 1, 1]), [1, 1]);
   assert.deepEqual(splitByWeight(7, [2, 1, 1]).reduce((a, b) => a + b, 0), 7);
+});
+
+test("runsOf: neighbouring segments as runs", () => {
+  assert.deepEqual(runsOf([5, 0, 1, 2, 7, 6]), [[0, 2], [5, 7]]);
+  assert.deepEqual(runsOf([3]), [[3, 3]]);
+  assert.deepEqual(runsOf([]), []);
 });
 
 test("weightsFor and recordSpeeds: configured, then measured, then the average", () => {
@@ -148,11 +179,22 @@ test("weightsFor and recordSpeeds: configured, then measured, then the average",
   assert.deepEqual(readSpeeds(file), { a: { segmentsPerSecond: 3, samples: 2, updatedAt: new Date(0).toISOString() } });
 });
 
-test("a failed share fails the render and leaves nothing behind", async () => {
+test("an engine that cannot start draws nothing, and the others draw its part", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  engines.get("box-a")!.unreachable.add("someone@100.64.0.10");
+  const lines: string[] = [];
+  const result = await renderer(exec, { hosts: ["local", "box-a"], onLog: (l) => lines.push(l) })(options);
+  assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => d.by), ["local", "local", "local", "local", "local"]);
+  assert.equal(result.engine.shares.find((s) => s.host === "box-a")?.segments ?? 0, 0);
+  assert.ok(lines.some((l) => l.includes("box-a does not draw")), lines.join(" | "));
+});
+
+test("an assembler that cannot start fails the render and leaves nothing behind", async () => {
   const { options } = episode();
   const { engines, exec } = machines();
   engines.get("box-a")!.unreachable.add("someone@100.64.0.10");
-  await assert.rejects(renderer(exec, { hosts: ["local", "box-a"] })(options));
+  await assert.rejects(renderer(exec, { hosts: ["local", "box-a"], assembleOn: "box-a" })(options));
   assert.ok(!existsSync(options.outputPath));
   assert.ok(!existsSync(`${options.outputPath}.shared`));
 });
@@ -171,7 +213,7 @@ test("a segment that changed on the way is refused", async () => {
     }
     return run;
   };
-  await assert.rejects(renderer(tamper, { hosts: ["local", "box-a"] })(options), /not what it drew/);
+  await assert.rejects(renderer(tamper, { hosts: ["local", "box-a"], draw: slowDraw("local", 150) })(options), /not what it drew/);
 });
 
 test("names are checked before anything runs", () => {

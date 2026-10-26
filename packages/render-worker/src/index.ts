@@ -2,7 +2,8 @@ export {
   call, DEFAULT_REPO_ROOT, engineFacts, fetchVideo, formatBytes, openEngine, remoteRenderer, renderOn, sendFiles,
   type EngineAnswer, type EngineSession, type RemoteRendererOptions, type RemoteRenderResult,
 } from "./remote.js";
-export { LOCAL, sharedRenderer, type SharedRendererOptions, type SharedRenderResult, type SharedShare } from "./shared.js";
+export { LOCAL, runsOf, sharedRenderer, type SharedRendererOptions, type SharedRenderResult, type SharedShare } from "./shared.js";
+export { SegmentQueue, type QueueDrawer } from "./queue.js";
 export { readSpeeds, recordSpeeds, speedKey, splitByWeight, weightsFor, type SpeedEntry, type Speeds } from "./speeds.js";
 export {
   DEFAULT_REPO, engineCommand, engineTarget, findEngine, findPeer, mayBeEngine, parseTailscaleStatus, probeEngine, readHostsConfig, tailscalePeers, tailscalePrograms,

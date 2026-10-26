@@ -1,9 +1,9 @@
 // A renderer with renderTimeline's shape that shares a video among machines:
-// its one-second segments are split into contiguous runs sized by how fast
-// each machine drew before (speeds.ts), each machine draws
-// its run (into its own cache, so a later render reuses them), and one of
-// them, local or remote, assembles the video from everyone's segments with
-// the soundtrack and loudness. Segments travel through this machine: an
+// its one-second segments wait in a queue (queue.ts), each machine draws
+// chunk after chunk of them (into its own cache, so a later render reuses
+// them) until the queue is empty, and one of them, local or remote,
+// assembles the video from everyone's segments with the soundtrack and
+// loudness. Segments travel through this machine: an
 // engine only ever talks to the machine that drives it.
 
 import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync } from "node:fs";
@@ -14,7 +14,8 @@ import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimel
 import { prepareJob, type PreparedJob } from "./files.js";
 import { readHostsConfig } from "./hosts.js";
 import { decodeBundle, drawnPath, encodeBundle, RenderWorkerError, type DrawAnswer } from "./protocol.js";
-import { readSpeeds, recordSpeeds, speedKey, splitByWeight, weightsFor } from "./speeds.js";
+import { SegmentQueue } from "./queue.js";
+import { readSpeeds, recordSpeeds, speedKey, weightsFor } from "./speeds.js";
 import { call, engineFacts, fetchVideo, openEngine, renderOn, sendFiles, type EngineAnswer, type EngineSession, type RemoteRendererOptions } from "./remote.js";
 
 /** The machine this runs on, in `hosts` and `assembleOn`. */
@@ -28,12 +29,23 @@ export interface SharedRendererOptions extends Omit<RemoteRendererOptions, "host
   /** This machine's drawSegments and renderTimeline (the composer's, by default). */
   draw?: (options: DrawSegmentsOptions) => Promise<DrawSegmentsResult>;
   renderLocal?: (options: RenderTimelineOptions) => Promise<RenderResult>;
-  /** Where the machines' measured speeds are kept; without it the split is even unless render-hosts.json sets `speed`. */
+  /** Where the machines' measured speeds are kept: the first chunks follow them, or render-hosts.json's `speed`. */
   speedsFile?: string;
 }
 
-/** One machine's share: its segments, how long it drew them, and the weight that sized it. */
-export interface SharedShare { host: string; segments: number; from: number; to: number; seconds: number; weight: number }
+/** One machine's share: its segments, as runs [from, to], how long it drew them, and the weight its first chunk followed. */
+export interface SharedShare { host: string; segments: number; runs: [number, number][]; seconds: number; weight: number }
+
+/** Neighbouring segments as runs [from, to]. */
+export function runsOf(segments: readonly number[]): [number, number][] {
+  const runs: [number, number][] = [];
+  for (const i of [...segments].sort((a, b) => a - b)) {
+    const last = runs.at(-1);
+    if (last && last[1] === i - 1) last[1] = i;
+    else runs.push([i, i]);
+  }
+  return runs;
+}
 
 export interface SharedRenderResult extends RenderResult {
   engine: {
@@ -68,13 +80,9 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     // More machines than seconds: the slowest ones sit out.
     const order = hosts.map((_, i) => i).sort((a, b) => weights[b]! - weights[a]!).slice(0, total).sort((a, b) => a - b);
     const drawers = order.map((i) => hosts[i]!);
-    const counts = splitByWeight(total, order.map((i) => weights[i]!));
-    let next = 0;
-    const runs = drawers.map((host, k) => {
-      const from = next;
-      next += counts[k]!;
-      return { host, key: keys[order[k]!]!, weight: weights[order[k]!]!, segments: Array.from({ length: counts[k]! }, (_, i) => from + i) };
-    });
+    const runs = order.map((i) => ({ host: hosts[i]!, key: keys[i]!, weight: weights[i]!, segments: [] as number[] }));
+    const front = drawers.includes(LOCAL) ? LOCAL : drawers[0];
+    const queue = new SegmentQueue(total, runs.map((r) => ({ host: r.host, prior: r.weight, fromFront: r.host === front })));
     const local = [...drawers, assembler].includes(LOCAL);
     if (local && !render.cacheDir) throw new RenderWorkerError("bad-request", "a shared render that draws or assembles here needs the render's cacheDir");
 
@@ -87,21 +95,18 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     rmSync(sharedDir, { recursive: true, force: true });
     mkdirSync(sharedDir, { recursive: true });
 
-    // Overall progress: the shares are 90%, the assembly the rest.
-    const drawnShare = new Map<string, number>();
-    const logged = new Map<string, number>();
+    // Overall progress: the segments are 90%, the assembly the rest.
+    let segmentsDone = 0;
+    const chunkDone = new Map<string, number>();
     let assembly = 0;
+    let reported = 0;
     const report = () => {
-      const drawn = runs.reduce((n, r) => n + (drawnShare.get(r.host) ?? 0) * r.segments.length, 0) / total;
-      render.onProgress?.(0.9 * drawn + 0.1 * assembly);
+      const drawn = (segmentsDone + [...chunkDone.values()].reduce((a, b) => a + b, 0)) / total;
+      reported = Math.max(reported, 0.9 * Math.min(1, drawn) + 0.1 * assembly);
+      render.onProgress?.(reported);
     };
-    const shareProgress = (host: string) => (p: number) => {
-      drawnShare.set(host, p);
-      const step = Math.floor(p * 10);
-      if (step > (logged.get(host) ?? -1)) {
-        logged.set(host, step);
-        log(`${host}: ${step * 10}% of its share`);
-      }
+    const chunkProgress = (host: string, size: number) => (p: number) => {
+      chunkDone.set(host, Math.min(1, p) * size);
       report();
     };
 
@@ -146,29 +151,23 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       for (const i of indices) assemblerHas.set(i, held.get(i)!.hash);
     };
 
-    const drawShare = async ({ host, segments }: { host: string; segments: number[] }) => {
-      let started = Date.now();
-      const onProgress = shareProgress(host);
+    /** One chunk of `host`'s; the soundtrack too on its first, when it assembles. */
+    const drawChunk = async (host: string, segments: number[], first: boolean) => {
+      const onProgress = chunkProgress(host, segments.length);
       if (host === LOCAL) {
         const { outputPath: _out, onProgress: _p, drawn: _d, loudness: _l, ...rest } = render;
         const draw = options.draw ?? (await import("@av/remotion-composer")).drawSegments;
-        const result = await draw({ ...rest, cacheDir: render.cacheDir!, segments, dir: sharedDir, audio: assembler === LOCAL, onProgress });
+        const result = await draw({ ...rest, cacheDir: render.cacheDir!, segments, dir: sharedDir, audio: first && assembler === LOCAL, onProgress });
         for (const s of result.segments) held.set(s.index, { file: s.file, hash: s.hash, bytes: s.bytes });
-        seconds.set(host, (Date.now() - started) / 1000);
-        drawnNow.set(host, result.cache?.segmentsRendered ?? segments.length);
-        onProgress(1);
+        drawnNow.set(host, (drawnNow.get(host) ?? 0) + (result.cache?.segmentsRendered ?? segments.length));
         await pushToAssembler(segments);
         return;
       }
       const engine = await engineOf(host);
       const job = (await prepared()).job;
-      // Its speed is its drawing, not the code and files it was sent first.
-      started = Date.now();
-      const answer = await renderOn<DrawAnswer>(engine, { ...job, drawOnly: { segments, audio: host === assembler } }, onProgress);
+      const answer = await renderOn<DrawAnswer>(engine, { ...job, drawOnly: { segments, audio: first && host === assembler } }, onProgress);
       answers.set(host, answer.engine);
-      seconds.set(host, (Date.now() - started) / 1000);
-      drawnNow.set(host, answer.rendered ?? segments.length);
-      onProgress(1);
+      drawnNow.set(host, (drawnNow.get(host) ?? 0) + (answer.rendered ?? segments.length));
       if (answer.totalSegments !== total) throw new RenderWorkerError("engine-failed", `${host} counts ${answer.totalSegments} segments, this machine ${total}`);
       if (host === assembler) {
         for (const s of answer.segments) assemblerHas.set(s.index, s.hash);
@@ -176,6 +175,35 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       }
       await pullFrom(engine, answer);
       await pushToAssembler(segments);
+    };
+
+    /** `host` draws chunks from the queue until it has nothing more to draw. */
+    const drawShare = async (run: (typeof runs)[number]) => {
+      const { host } = run;
+      // Its speed is its drawing, not the code and files it was sent first.
+      if (host !== LOCAL) {
+        try {
+          await engineOf(host);
+        } catch (error) {
+          // It holds nothing yet: the others draw its part, unless it must assemble.
+          if (host === assembler || abort.signal.aborted) throw error;
+          queue.leave(host);
+          log(`warning: ${host} does not draw, the others draw its part: ${(error as Error).message}`);
+          return;
+        }
+      }
+      for (let chunk = queue.take(host), first = true; chunk.length > 0; chunk = queue.take(host), first = false) {
+        const started = Date.now();
+        await drawChunk(host, chunk, first);
+        const took = (Date.now() - started) / 1000;
+        queue.done(host, took);
+        run.segments.push(...chunk);
+        seconds.set(host, (seconds.get(host) ?? 0) + took);
+        chunkDone.delete(host);
+        segmentsDone += chunk.length;
+        report();
+        log(`${host}: ${chunk[0]}–${chunk.at(-1)} in ${took.toFixed(0)} s, ${queue.left} s of video left`);
+      }
     };
 
     /** A remote share's segments, into the shared folder, each checked against the engine's answer. */
@@ -225,7 +253,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     };
 
     try {
-      log(`shared render: ${runs.map((r) => `${r.host} ${r.segments[0]}–${r.segments.at(-1)}`).join(", ")} of ${total} s, by speed ${runs.map((r) => r.weight.toFixed(3)).join(" : ")}; ${assembler} assembles`);
+      log(`shared render: ${total} s among ${drawers.join(", ")} chunk by chunk, starting by speed ${runs.map((r) => r.weight.toFixed(3)).join(" : ")}; ${assembler} assembles`);
       const work = runs.map(drawShare);
       // A remote assembler that draws nothing still needs the files.
       if (assembler !== LOCAL && !drawers.includes(assembler)) work.push(engineOf(assembler).then(() => undefined));
@@ -248,7 +276,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         assembly = p;
         report();
       };
-      const shares: SharedShare[] = runs.map((r) => ({ host: r.host, segments: r.segments.length, from: r.segments[0]!, to: r.segments.at(-1)!, seconds: seconds.get(r.host) ?? 0, weight: r.weight }));
+      const shares: SharedShare[] = runs.map((r) => ({ host: r.host, segments: r.segments.length, runs: runsOf(r.segments), seconds: seconds.get(r.host) ?? 0, weight: r.weight }));
       const sent = [...sentTo.values()].reduce((n, s) => ({ sentFiles: n.sentFiles + s.sentFiles, sentBytes: n.sentBytes + s.sentBytes }), { sentFiles: 0, sentBytes: 0 });
 
       if (assembler === LOCAL) {

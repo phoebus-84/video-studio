@@ -21,7 +21,7 @@ function fakeGit(status: string, push = { code: 0, stderr: "" }): Git & { calls:
 test("the render commit is HEAD, checked only over the code that renders", () => {
   const git = fakeGit("");
   assert.equal(renderCommit(git), SHA);
-  assert.deepEqual(git.calls[1]!.args, ["status", "--porcelain", "--untracked-files=no", "--", ...RENDER_CODE]);
+  assert.deepEqual(git.calls[1]!.args, ["status", "--porcelain", "--untracked-files=all", "--", ...RENDER_CODE]);
 });
 
 test("uncommitted render code stops the render and names the files", () => {
