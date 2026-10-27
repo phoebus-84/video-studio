@@ -364,7 +364,7 @@ export function readPins(repo: string): Record<string, string> {
 export function pinMismatches(pins: Record<string, string>, found: { node: string; ffmpeg: string | null; bun: string | null }): string[] {
   const out: string[] = [];
   if (pins.NODE_VERSION && found.node !== `v${pins.NODE_VERSION}`) out.push(`node is ${found.node}, engine.env pins v${pins.NODE_VERSION}`);
-  const ffmpeg = pins.FFMPEG_FILE ? /^ffmpeg-(.+?)-linux/.exec(pins.FFMPEG_FILE)?.[1] : undefined;
+  const ffmpeg = pins.FFMPEG_FILE ? /^ffmpeg-(.+?)-(?:linux|win)/.exec(pins.FFMPEG_FILE)?.[1] : undefined;
   if (ffmpeg && !(found.ffmpeg ?? "").includes(ffmpeg)) out.push(`ffmpeg is "${found.ffmpeg ?? "missing"}", engine.env pins ${ffmpeg}`);
   if (pins.BUN_VERSION && found.bun !== pins.BUN_VERSION) out.push(`bun is ${found.bun ?? "missing"}, engine.env pins ${pins.BUN_VERSION}`);
   return out;
@@ -372,7 +372,7 @@ export function pinMismatches(pins: Record<string, string>, found: { node: strin
 
 function bunProgram(repo: string): string {
   const pinned = readPins(repo).BUN_VERSION;
-  const file = pinned ? path.join(repo, ".engine", `bun-v${pinned}`, "bun") : "";
+  const file = pinned ? path.join(repo, ".engine", `bun-v${pinned}`, process.platform === "win32" ? "bun.exe" : "bun") : "";
   return file && existsSync(file) ? file : "bun";
 }
 
@@ -422,9 +422,10 @@ export async function syncEngine(repo: string, sha: string, log: (line: string) 
     if (run.status === 0) changed = run.stdout.split("\n").filter(Boolean);
   }
   const composer = path.join(repo, "packages", "remotion-composer");
-  const run = (program: string, args: string[], cwd: string) => {
+  // npm is npm.cmd on Windows, which spawns only through a shell.
+  const run = (program: string, args: string[], cwd: string, shell = false) => {
     log(`$ ${path.basename(program)} ${args.join(" ")}`);
-    const r = spawnSync(program, args, { cwd, stdio: ["ignore", 2, 2] });
+    const r = spawnSync(program, args, { cwd, stdio: ["ignore", 2, 2], shell });
     if (r.status !== 0) throw new RenderWorkerError("code-sync-failed", `${path.basename(program)} ${args.join(" ")} failed (${r.error?.message ?? `exit ${r.status}`})`);
   };
   const install = changed === null
@@ -432,7 +433,7 @@ export async function syncEngine(repo: string, sha: string, log: (line: string) 
     || changed.some((f) => f === "bun.lock" || f === "package.json" || f.endsWith("/package.json"));
   if (install) run(bunProgram(repo), ["install", "--frozen-lockfile"], repo);
   else if (changed!.some((f) => f.startsWith("packages/remotion-composer/")) || !existsSync(path.join(composer, "dist", "index.js"))) {
-    run("npm", ["run", "--silent", "build"], composer);
+    run("npm", ["run", "--silent", "build"], composer, process.platform === "win32");
   }
   mkdirSync(path.dirname(syncedFile), { recursive: true });
   writeFileSync(syncedFile, `${sha}\n`);

@@ -3,6 +3,7 @@
 // stdout carries only the answer (protocol.ts); everything else the render
 // prints goes to stderr.
 
+import { homedir } from "node:os";
 import path from "node:path";
 import { defaultCacheRoot, runEngine } from "./engine.js";
 
@@ -15,7 +16,7 @@ if (argv[0] === "--cache") {
     process.stderr.write("--cache needs a directory\n");
     process.exit(2);
   }
-  cache = path.resolve(dir.startsWith("~/") ? path.join(process.env.HOME ?? "", dir.slice(2)) : dir);
+  cache = path.resolve(dir.startsWith("~/") ? path.join(homedir(), dir.slice(2)) : dir);
   argv.splice(0, 2);
 }
 
