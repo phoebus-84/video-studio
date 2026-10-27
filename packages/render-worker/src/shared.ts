@@ -10,7 +10,7 @@ import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync } fr
 import { finished } from "node:stream/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
+import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimelineOptions, SegmentDrawer } from "@av/remotion-composer";
 import { prepareJob, type PreparedJob } from "./files.js";
 import { readHostsConfig } from "./hosts.js";
 import { decodeBundle, drawnPath, encodeBundle, RenderWorkerError, type DrawAnswer } from "./protocol.js";
@@ -151,13 +151,25 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       for (const i of indices) assemblerHas.set(i, held.get(i)!.hash);
     };
 
+    // This machine's share is drawn by one drawer: the bundle and the browsers
+    // once, not for every chunk (a minute each, while the chunk waits on it).
+    const { outputPath: _out, onProgress: _p, drawn: _d, loudness: _l, ...drawOptions } = render;
+    let localDrawer: Promise<SegmentDrawer> | undefined;
+    const openLocal = () => (localDrawer ??= import("@av/remotion-composer").then((c) => c.openSegmentDrawer({ ...drawOptions, cacheDir: render.cacheDir!, dir: sharedDir })));
+    const closeLocal = async () => {
+      const opened = localDrawer;
+      localDrawer = undefined;
+      await (await opened?.catch(() => undefined))?.close();
+    };
+
     /** One chunk of `host`'s; the soundtrack too on its first, when it assembles. */
     const drawChunk = async (host: string, segments: number[], first: boolean) => {
       const onProgress = chunkProgress(host, segments.length);
       if (host === LOCAL) {
-        const { outputPath: _out, onProgress: _p, drawn: _d, loudness: _l, ...rest } = render;
-        const draw = options.draw ?? (await import("@av/remotion-composer")).drawSegments;
-        const result = await draw({ ...rest, cacheDir: render.cacheDir!, segments, dir: sharedDir, audio: first && assembler === LOCAL, onProgress });
+        const audio = first && assembler === LOCAL;
+        const result = options.draw
+          ? await options.draw({ ...drawOptions, cacheDir: render.cacheDir!, segments, dir: sharedDir, audio, onProgress })
+          : await (await openLocal()).draw({ segments, audio, onProgress });
         for (const s of result.segments) held.set(s.index, { file: s.file, hash: s.hash, bytes: s.bytes });
         drawnNow.set(host, (drawnNow.get(host) ?? 0) + (result.cache?.segmentsRendered ?? segments.length));
         await pushToAssembler(segments);
@@ -180,7 +192,9 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     /** `host` draws chunks from the queue until it has nothing more to draw. */
     const drawShare = async (run: (typeof runs)[number]) => {
       const { host } = run;
-      // Its speed is its drawing, not the code and files it was sent first.
+      // Its speed is its drawing, not the code and files it was sent first,
+      // nor the bundle it draws with: no chunk waits on them.
+      if (host === LOCAL && !options.draw) await openLocal();
       if (host !== LOCAL) {
         try {
           await engineOf(host);
@@ -261,6 +275,8 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         abort.abort(e);
         throw e;
       })));
+      // Its browsers leave the assembly the memory.
+      await closeLocal();
       const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
       if (failed) throw failed.reason;
       if (options.speedsFile) {
@@ -308,6 +324,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       };
     } finally {
       options.signal?.removeEventListener("abort", stop);
+      await closeLocal();
       rmSync(sharedDir, { recursive: true, force: true });
     }
   };

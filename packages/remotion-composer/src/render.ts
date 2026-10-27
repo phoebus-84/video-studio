@@ -13,7 +13,7 @@ import {normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './lou
 import {isAudioItem, type EditTimeline, type VisualItem} from './schema.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
-import {renderWithCache} from './cached-render.js';
+import {closeBrowsers, renderWithCache, type Browser} from './cached-render.js';
 import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
 import {soundLayers} from './layers.js';
 import {resolveKit} from './kits/index.js';
@@ -73,8 +73,8 @@ interface Prepared {
   composition: Awaited<ReturnType<typeof selectComposition>>;
 }
 
-/** Validates, stages and bundles; `body` runs with the composition, and the work directory and staging go after it. */
-async function withComposition<T>(options: Omit<RenderTimelineOptions, 'outputPath'>, body: (prepared: Prepared) => Promise<T>): Promise<T> {
+/** Validates, stages and bundles; `close` removes the work directory and the staging. */
+async function prepareComposition(options: Omit<RenderTimelineOptions, 'outputPath'>): Promise<Prepared & {close: () => Promise<void>}> {
   const library = await readLibraryKits(options.kits ?? []);
   const checked = validateTimeline(options.timeline, {kits: library.versions});
   if (!checked.ok) {
@@ -88,6 +88,10 @@ async function withComposition<T>(options: Omit<RenderTimelineOptions, 'outputPa
   }
   const {staged} = staging;
   const work = await mkdtemp(path.join(tmpdir(), 'remotion-composer-render-'));
+  const close = async () => {
+    await staged.cleanup();
+    await rm(work, {recursive: true, force: true});
+  };
   try {
     const assetFrames: Record<string, number> = {};
     for (const [id, asset] of Object.entries(timeline.assets)) {
@@ -111,10 +115,20 @@ async function withComposition<T>(options: Omit<RenderTimelineOptions, 'outputPa
     } catch (e) {
       throw new ComposerError('render-failed', `Remotion could not render the timeline: ${e instanceof Error ? e.message : String(e)}`);
     }
-    return await body({timeline, staged, library, work, inputProps, soundItems, hasAudio, serveUrl, composition});
+    return {timeline, staged, library, work, inputProps, soundItems, hasAudio, serveUrl, composition, close};
+  } catch (e) {
+    await close();
+    throw e;
+  }
+}
+
+/** `body` runs with the composition, and the work directory and staging go after it. */
+async function withComposition<T>(options: Omit<RenderTimelineOptions, 'outputPath'>, body: (prepared: Prepared) => Promise<T>): Promise<T> {
+  const prepared = await prepareComposition(options);
+  try {
+    return await body(prepared);
   } finally {
-    await staged.cleanup();
-    await rm(work, {recursive: true, force: true});
+    await prepared.close();
   }
 }
 
@@ -193,28 +207,59 @@ export interface DrawSegmentsOptions extends Omit<RenderTimelineOptions, 'output
 export interface DrawnSegment { index: number; file: string; hash: string; bytes: number }
 export interface DrawSegmentsResult { segments: DrawnSegment[]; totalSegments: number; cache: CacheReport }
 
+/** One chunk of a share: its segments, and whether this machine also readies the soundtrack. */
+export interface SegmentChunk { segments: number[]; audio?: boolean; onProgress?: (progress: number) => void }
+
+/** A timeline opened once, bundle and browsers, to draw chunk after chunk of its segments. */
+export interface SegmentDrawer {
+  draw(chunk: SegmentChunk): Promise<DrawSegmentsResult>;
+  close(): Promise<void>;
+}
+
+/**
+ * Opens a shared render's share once: validation, staging, the bundle and
+ * the browsers are paid for the first chunk, not for every one (each
+ * drawSegments call pays them again, about a minute on a laptop).
+ */
+export async function openSegmentDrawer(options: Omit<DrawSegmentsOptions, 'segments' | 'audio' | 'onProgress'>): Promise<SegmentDrawer> {
+  const dir = path.resolve(options.dir);
+  await mkdir(dir, {recursive: true});
+  const prepared = await prepareComposition(options);
+  const browserPool: Promise<Browser>[] = [];
+  return {
+    async draw(chunk) {
+      let cache: CacheReport;
+      try {
+        cache = await renderWithCache({
+          ...cacheOptions({...options, onProgress: chunk.onProgress}, options.cacheDir, prepared), output: path.join(prepared.work, 'unused.mkv'),
+          segments: {indices: chunk.segments, dir, audio: chunk.audio ?? false}, browserPool,
+        });
+      } catch (e) {
+        throw new ComposerError('render-failed', `Remotion could not draw the segments: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      const segments = await Promise.all([...new Set(chunk.segments)].sort((a, b) => a - b).map(async (index) => {
+        const file = path.join(dir, `segment-${index}.mp4`);
+        return {index, file, hash: await sha256(file), bytes: (await stat(file)).size};
+      }));
+      return {segments, totalSegments: cache.totalSegments, cache};
+    },
+    async close() {
+      await closeBrowsers(browserPool);
+      await prepared.close();
+    },
+  };
+}
+
 /**
  * A shared render's share: some of a timeline's segments, drawn (or taken
  * from the cache) and left as files, for renderTimeline's `drawn` on the
  * machine that assembles the video.
  */
 export async function drawSegments(options: DrawSegmentsOptions): Promise<DrawSegmentsResult> {
-  const dir = path.resolve(options.dir);
-  await mkdir(dir, {recursive: true});
-  return withComposition(options, async (prepared) => {
-    let cache: CacheReport;
-    try {
-      cache = await renderWithCache({
-        ...cacheOptions(options, options.cacheDir, prepared), output: path.join(prepared.work, 'unused.mkv'),
-        segments: {indices: options.segments, dir, audio: options.audio ?? false},
-      });
-    } catch (e) {
-      throw new ComposerError('render-failed', `Remotion could not draw the segments: ${e instanceof Error ? e.message : String(e)}`);
-    }
-    const segments = await Promise.all([...new Set(options.segments)].sort((a, b) => a - b).map(async (index) => {
-      const file = path.join(dir, `segment-${index}.mp4`);
-      return {index, file, hash: await sha256(file), bytes: (await stat(file)).size};
-    }));
-    return {segments, totalSegments: cache.totalSegments, cache};
-  });
+  const drawer = await openSegmentDrawer(options);
+  try {
+    return await drawer.draw({segments: options.segments, audio: options.audio, onProgress: options.onProgress});
+  } finally {
+    await drawer.close();
+  }
 }

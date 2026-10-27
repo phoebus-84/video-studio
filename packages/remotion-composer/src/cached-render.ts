@@ -159,6 +159,11 @@ export async function renderWithCache(options: {
   segments?: {indices: readonly number[]; dir: string; audio?: boolean};
   /** Segments other machines drew, by index (see cachedVideo). */
   provided?: ReadonlyMap<number, string>;
+  /**
+   * Browsers kept open across calls, by lane (a segment drawer's): they are
+   * opened into it when missing and left open; the caller closes them.
+   */
+  browserPool?: Promise<Browser>[];
 }): Promise<CacheReport> {
   const {inputProps, composition, serveUrl, work, hasAudio} = options;
   const {timeline} = inputProps;
@@ -177,7 +182,7 @@ export async function renderWithCache(options: {
   // Reuse each browser across misses, rather than launching Chrome each second.
   // A whole-video hit with no audio never opens one.
   const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
-  const opened: Promise<Awaited<ReturnType<typeof openBrowser>>>[] = [];
+  const opened: Promise<Browser>[] = options.browserPool ?? [];
   const getBrowser = (lane = 0) => opened[lane] ??= timed(`open browser ${lane}`, () => openBrowser('chrome', {chromeMode: chromeMode(), chromiumOptions: {gl: chromiumGl()}}));
   const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
   // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
@@ -308,6 +313,12 @@ export async function renderWithCache(options: {
     options.onProgress?.(1);
     return cacheReport;
   } finally {
-    await Promise.all(opened.map(async (browser) => (await browser.catch(() => null))?.close({silent: true})));
+    if (!options.browserPool) await closeBrowsers(opened);
   }
+}
+
+export type Browser = Awaited<ReturnType<typeof openBrowser>>;
+
+export async function closeBrowsers(opened: readonly Promise<Browser>[]): Promise<void> {
+  await Promise.all(opened.map(async (browser) => (await browser.catch(() => null))?.close({silent: true})));
 }
