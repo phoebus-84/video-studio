@@ -10,7 +10,10 @@
 // time, its calls' start included); until it has done a chunk, its prior
 // weight, scaled like the machines already measured. A machine takes no more
 // than it can finish before the others would finish everything without it,
-// and a machine that cannot help with even one segment stops for good.
+// and a machine that cannot help with even one segment stops for good. The
+// others' chunks count only for what their rate has not drawn yet since they
+// took them: counted whole, a slow machine near the end took the last heavy
+// seconds while the fast ones had all but finished, and they waited for it.
 //
 // A machine that fails gives its chunk back: the others draw it first, before
 // the rest, so a lost machine costs time and never a hole in the video.
@@ -23,7 +26,7 @@ export interface QueueDrawer {
   fromFront?: boolean;
 }
 
-interface State extends QueueDrawer { segments: number; seconds: number; inFlight: number[]; stopped: boolean; failed: boolean }
+interface State extends QueueDrawer { segments: number; seconds: number; inFlight: number[]; since: number; stopped: boolean; failed: boolean }
 
 export class SegmentQueue {
   private front: number;
@@ -32,10 +35,11 @@ export class SegmentQueue {
   private returned: number[] = [];
   private readonly drawers = new Map<string, State>();
 
-  constructor(total: number, drawers: readonly QueueDrawer[]) {
+  /** `now` is the clock in seconds, for tests. */
+  constructor(total: number, drawers: readonly QueueDrawer[], private readonly now: () => number = () => Date.now() / 1000) {
     this.front = 0;
     this.back = total - 1;
-    for (const d of drawers) this.drawers.set(d.host, { ...d, segments: 0, seconds: 0, inFlight: [], stopped: false, failed: false });
+    for (const d of drawers) this.drawers.set(d.host, { ...d, segments: 0, seconds: 0, inFlight: [], since: 0, stopped: false, failed: false });
   }
 
   get left(): number {
@@ -53,7 +57,7 @@ export class SegmentQueue {
     if (this.returned.length > 0) {
       // Every machine still alive is waiting or drawing: weigh it against all of them.
       const count = this.count(me, [...this.drawers.values()].filter((d) => d !== me && !d.failed), this.returned.length);
-      return count < 1 ? [] : (me.inFlight = this.returned.splice(0, count));
+      return count < 1 ? [] : this.hand(me, this.returned.splice(0, count));
     }
     if (me.stopped || this.left === 0) return this.stop(me);
     const count = this.count(me, [...this.drawers.values()].filter((d) => d !== me && !d.stopped), this.left);
@@ -63,8 +67,7 @@ export class SegmentQueue {
       : Array.from({ length: count }, (_, i) => this.back - count + 1 + i);
     if (me.fromFront) this.front += count;
     else this.back -= count;
-    me.inFlight = chunk;
-    return chunk;
+    return this.hand(me, chunk);
   }
 
   /** Whether `host`, with nothing to draw now, may still be given a chunk another machine fails to draw. */
@@ -104,11 +107,20 @@ export class SegmentQueue {
     const othersRate = others.reduce((n, d) => n + this.rate(d), 0);
     if (othersRate <= 0) return left;
     const rate = this.rate(me);
-    const work = left + others.reduce((n, d) => n + d.inFlight.length, 0);
+    const now = this.now();
+    // What the others still hold: their chunks less what their rate drew since they took them.
+    const held = others.reduce((n, d) => n + Math.max(0, d.inFlight.length - this.rate(d) * (now - d.since)), 0);
+    const work = left + held;
     const fair = Math.ceil((work * rate) / (rate + othersRate) / 2);
     // No more than it draws before the others would have drawn it all.
     const helps = Math.floor((rate * work) / othersRate + 1e-9);
     return Math.min(left, fair, helps);
+  }
+
+  private hand(me: State, chunk: number[]): number[] {
+    me.inFlight = chunk;
+    me.since = this.now();
+    return chunk;
   }
 
   private state(host: string): State {

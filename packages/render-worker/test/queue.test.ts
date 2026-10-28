@@ -79,3 +79,19 @@ test("a machine with nothing left waits while others draw, and takes what a fail
   assert.ok(!q.mayGetMore("b"));
   assert.deepEqual(q.take("a"), [5], "a stopped machine draws the chunk b gave back");
 });
+
+test("near the end a slow machine leaves the last seconds to the fast ones, counting what they already drew", () => {
+  // A three-machine render at its 86th second: the slow one could take two heavy seconds and keep the others waiting.
+  let now = 0;
+  const q = new SegmentQueue(35, [
+    { host: "local", prior: 0.208, fromFront: true }, { host: "pc", prior: 0.13 }, { host: "server", prior: 0.041 },
+  ], () => now);
+  assert.equal(q.take("local").length, 10);
+  assert.equal(q.take("pc").length, 7);
+  assert.equal(q.take("server").length, 2);
+  now = 43, q.done("local", 43);
+  now = 52, q.take("local");
+  now = 86, q.done("server", 76);
+  assert.deepEqual(q.take("server"), [], "local and pc have nearly drawn their chunks and finish the rest sooner");
+  assert.equal(q.take("server").length, 0, "and it stays stopped");
+});
