@@ -52,7 +52,8 @@ async function codeHashes(dir: string, keep: (file: string) => boolean = () => t
   return rows;
 }
 
-async function rendererKey(serveUrl: string): Promise<string> {
+/** What draws a frame besides the timeline: the bundle, the Node code, the browser, FFmpeg. */
+export async function rendererKey(serveUrl: string): Promise<string> {
   const require = createRequire(import.meta.url);
   const browser = await ensureBrowser({chromeMode: chromeMode()});
   if (!('path' in browser)) throw new Error('No headless browser is available');

@@ -19,7 +19,8 @@
 // leaves them the last seconds.
 //
 // A machine that fails gives its chunk back: the others draw it first, before
-// the rest, so a lost machine costs time and never a hole in the video. A
+// the rest, so a lost machine costs time and never a hole in the video. One
+// whose connection dropped may come back once, and take chunks again. A
 // machine draws its next chunk while the last one travels here; a chunk that
 // never arrives whole goes back the same way, and one already travelling when
 // its machine fails still arrives: the others wait for it, not redraw it.
@@ -101,6 +102,13 @@ export class SegmentQueue {
     me.inFlight = [];
     me.failed = true;
     this.stop(me);
+  }
+
+  /** `host`, which left, draws again: its chunk was given back, its speed stays. */
+  rejoin(host: string): void {
+    const me = this.state(host);
+    me.failed = false;
+    me.stopped = false;
   }
 
   /** `host` drew its chunk in `seconds`; `travelling`, its chunk is on its way here, until `confirm`. */

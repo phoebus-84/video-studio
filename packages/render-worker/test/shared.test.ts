@@ -210,6 +210,23 @@ test("an engine that fails a chunk gives it back, and the others draw it", async
   assert.equal(result.engine.shares.find((s) => s.host === "box-a")?.segments, engines.get("box-a")!.draws[0]!.segments.length);
 });
 
+test("an engine whose connection dropped once comes back and draws again", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  const boxA = engines.get("box-a")!;
+  boxA.failAfter = 1;
+  const lines: string[] = [];
+  const result = await renderer(exec, {
+    hosts: ["local", "box-a"], draw: slowDraw("local", 150),
+    // The connection is back as soon as the failure is seen.
+    onLog: (l) => { lines.push(l); if (/box-a failed/.test(l)) boxA.failAfter = null; },
+  })(options);
+  assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => d.i), [0, 1, 2, 3, 4], "no second is missing");
+  assert.ok(lines.some((l) => l.includes("box-a answers again")), lines.join(" | "));
+  assert.ok(boxA.draws.length >= 2, "it drew after coming back");
+  assert.equal(result.engine.shares.find((s) => s.host === "box-a")?.segments, boxA.draws.reduce((n, d) => n + d.segments.length, 0));
+});
+
 test("a machine that has finished still draws what a failing one gives back", async () => {
   const { ep, options } = episode();
   const { engines, exec } = machines();

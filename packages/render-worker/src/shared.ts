@@ -293,6 +293,25 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         segmentsDone -= chunk.length;
         report();
       };
+      /**
+       * A machine that failed once comes back if it answers again: a dropped
+       * connection (a reset, a Wi-Fi blip) costs its chunk, not its share.
+       */
+      let retried = false;
+      const reopen = async (): Promise<boolean> => {
+        if (retried || abort.signal.aborted) return false;
+        retried = true;
+        engines.delete(host);
+        try {
+          await engineOf(host);
+        } catch {
+          return false;
+        }
+        queue.rejoin(host);
+        log(`${host} answers again: it draws again`);
+        wakeQueue();
+        return true;
+      };
       for (let first = true; !abort.signal.aborted; ) {
         const chunk = queue.take(host);
         if (chunk.length === 0) {
@@ -309,6 +328,10 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
           if (host === LOCAL || host === assembler || abort.signal.aborted) throw error;
           // A chunk that failed on its way here already gave this one back.
           if (!queue.failed(host)) giveBack(chunk, error);
+          if (await reopen()) {
+            first = true;
+            continue;
+          }
           return;
         }
         if (queue.failed(host)) return;

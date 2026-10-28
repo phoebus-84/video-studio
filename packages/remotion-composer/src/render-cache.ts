@@ -53,14 +53,27 @@ export interface CacheReport {
  * read (KitVersion.segmentProps), when it says so; otherwise by its props.
  */
 export function planVideo(timeline: EditTimeline, renderer: string, assetFrames: Record<string, number> = {}, kits?: readonly KitVersion[]): VideoPlan {
+  const key = rangeKeys(timeline, renderer, assetFrames, kits);
+  const segments: VideoSegment[] = [];
+  for (let from = 0; from < timeline.durationInFrames; from += timeline.fps) {
+    const to = Math.min(from + timeline.fps, timeline.durationInFrames) - 1;
+    segments.push({from, to, key: key(from, to)});
+  }
+  return {key: cacheKey(segments), segments};
+}
+
+/**
+ * The key of frames from..to (inclusive) of `timeline`, as planVideo keys a
+ * segment: what draws them, and nothing else. A layout sheet keys its stills
+ * with it, so a correction redraws only the stills it touches.
+ */
+export function rangeKeys(timeline: EditTimeline, renderer: string, assetFrames: Record<string, number> = {}, kits?: readonly KitVersion[]): (from: number, to: number) => string {
   const layers = visualLayers(timeline);
   const global = {
     version: 1, renderer, fps: timeline.fps, duration: timeline.durationInFrames,
     resolution: timeline.resolution, profile: timeline.profile, assetFrames,
   };
-  const segments: VideoSegment[] = [];
-  for (let from = 0; from < timeline.durationInFrames; from += timeline.fps) {
-    const to = Math.min(from + timeline.fps, timeline.durationInFrames) - 1;
+  return (from, to) => {
     const active = layers.filter(({item}) => item.from <= to && item.from + item.duration > from);
     // Drawing order is already resolved; source pointers/track names are editorial only.
     const items = active.map(({item: {source: _source, ...item}}) => {
@@ -71,9 +84,8 @@ export function planVideo(timeline: EditTimeline, renderer: string, assetFrames:
     const ids = new Set<string>();
     items.forEach((item) => assetRefs(item.props, ids));
     const assets = Object.fromEntries([...ids].sort().map((id) => [id, timeline.assets[id]]));
-    segments.push({from, to, key: cacheKey({global, from, to, items, assets})});
-  }
-  return {key: cacheKey(segments), segments};
+    return cacheKey({global, from, to, items, assets});
+  };
 }
 
 /**

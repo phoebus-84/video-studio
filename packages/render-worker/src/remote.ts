@@ -236,7 +236,9 @@ export async function call(exec: Exec, target: EngineTarget, args: string[], inp
     error = undefined;
   }
   if (error?.code && error.message) throw new RenderWorkerError(error.code, `${target.name}: ${error.message}`, error.problems);
-  throw new RenderWorkerError("engine-failed", `${target.name}: ${what} failed (exit ${run.code}): ${run.stderr.split("\n").filter(Boolean).slice(-5).join(" | ")}`);
+  // OpenSSH's banners ("** WARNING: … post-quantum …") are not the failure: they would crowd it out.
+  const said = run.stderr.split("\n").filter((line) => line.trim() && !line.startsWith("** "));
+  throw new RenderWorkerError("engine-failed", `${target.name}: ${what} failed (exit ${run.code}): ${said.slice(-5).join(" | ")}`);
 }
 
 export function formatBytes(n: number): string {
