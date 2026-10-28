@@ -14,6 +14,9 @@
 // others' chunks count only for what their rate has not drawn yet since they
 // took them: counted whole, a slow machine near the end took the last heavy
 // seconds while the fast ones had all but finished, and they waited for it.
+// A remote's chunk then travels here: the journey its last chunk took counts
+// too, so a machine whose segments would arrive after the others' finish
+// leaves them the last seconds.
 //
 // A machine that fails gives its chunk back: the others draw it first, before
 // the rest, so a lost machine costs time and never a hole in the video. A
@@ -33,7 +36,7 @@ export interface QueueDrawer {
   fromFront?: boolean;
 }
 
-interface State extends QueueDrawer { segments: number; seconds: number; inFlight: number[]; unconfirmed: number[]; since: number; stopped: boolean; failed: boolean }
+interface State extends QueueDrawer { segments: number; seconds: number; inFlight: number[]; unconfirmed: number[]; since: number; stopped: boolean; failed: boolean; sent: number; travel: number }
 
 export class SegmentQueue {
   private front: number;
@@ -49,7 +52,7 @@ export class SegmentQueue {
     this.segments = typeof segments === "number" ? Array.from({ length: segments }, (_, i) => i) : [...segments].sort((a, b) => a - b);
     this.front = 0;
     this.back = this.segments.length - 1;
-    for (const d of drawers) this.drawers.set(d.host, { ...d, segments: 0, seconds: 0, inFlight: [], unconfirmed: [], since: 0, stopped: false, failed: false });
+    for (const d of drawers) this.drawers.set(d.host, { ...d, segments: 0, seconds: 0, inFlight: [], unconfirmed: [], since: 0, stopped: false, failed: false, sent: 0, travel: 0 });
   }
 
   get left(): number {
@@ -105,7 +108,10 @@ export class SegmentQueue {
     const me = this.state(host);
     me.segments += me.inFlight.length;
     me.seconds += seconds;
-    if (travelling) me.unconfirmed = [...me.unconfirmed, ...me.inFlight];
+    if (travelling) {
+      me.unconfirmed = [...me.unconfirmed, ...me.inFlight];
+      me.sent = this.now();
+    }
     me.inFlight = [];
   }
 
@@ -113,6 +119,7 @@ export class SegmentQueue {
   confirm(host: string, segments: readonly number[]): void {
     const me = this.state(host);
     me.unconfirmed = me.unconfirmed.filter((i) => !segments.includes(i));
+    if (me.sent > 0) me.travel = Math.max(0, this.now() - me.sent);
   }
 
   /** `segments` of `host`'s never arrived: the others draw them, first. */
@@ -146,8 +153,8 @@ export class SegmentQueue {
     const held = others.reduce((n, d) => n + Math.max(0, d.inFlight.length - this.rate(d) * (now - d.since)), 0);
     const work = left + held;
     const fair = Math.ceil((work * rate) / (rate + othersRate) / 2);
-    // No more than it draws before the others would have drawn it all.
-    const helps = Math.floor((rate * work) / othersRate + 1e-9);
+    // No more than it draws, and sends here, before the others would have drawn it all.
+    const helps = Math.floor(rate * (work / othersRate - me.travel) + 1e-9);
     return Math.min(left, fair, helps);
   }
 

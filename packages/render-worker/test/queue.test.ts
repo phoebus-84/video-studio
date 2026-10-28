@@ -106,3 +106,18 @@ test("a queue over some segments hands out only those, in their order", () => {
   q.done("b", 1);
   assert.deepEqual([...q.take("a"), ...q.take("b")].sort((x, y) => x - y), [3, 7]);
 });
+
+test("a machine whose segments arrive after the others finish leaves them the last seconds", () => {
+  let now = 0;
+  const q = new SegmentQueue(12, [{ host: "local", prior: 1, fromFront: true }, { host: "far", prior: 1 }], () => now);
+  q.take("local");
+  q.done("local", 1); // 3 segments a second
+  assert.deepEqual(q.take("far"), [9, 10, 11]);
+  now = 1;
+  q.done("far", 1, true); // as fast, but its chunk travels 4 s
+  now = 5;
+  q.confirm("far", [9, 10, 11]);
+  q.take("local");
+  assert.deepEqual(q.take("far"), [], "local draws the rest before far's next chunk would arrive");
+  assert.ok(q.take("local").length > 0);
+});
