@@ -21,6 +21,8 @@ import {placeSounds} from './sound-mix.js';
 import type {CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
 import {timed} from './timings.js';
+import {createHash} from 'node:crypto';
+import {drawingCodeHash} from './identity.js';
 
 export interface RenderTimelineOptions {
   /** A studio.video/v1alpha2 EditTimeline that already passed validateEditTimeline. */
@@ -82,7 +84,7 @@ async function prepareComposition(options: Omit<RenderTimelineOptions, 'outputPa
     throw new ComposerError(code, `the timeline cannot be rendered: ${checked.problems.map((p) => `${p.code} at ${p.path}`).join('; ')}`, checked.problems);
   }
   const timeline = checked.timeline;
-  const staging = await stageAssets(timeline, options.assetRoot, options.sharedRoots);
+  const staging = await timed('stage assets', () => stageAssets(timeline, options.assetRoot, options.sharedRoots));
   if (!staging.ok) {
     throw new ComposerError(staging.problems[0]!.code, `assets are not what the timeline says: ${staging.problems.map((p) => p.message).join('; ')}`, staging.problems);
   }
@@ -108,7 +110,7 @@ async function prepareComposition(options: Omit<RenderTimelineOptions, 'outputPa
       // The bundle — the cached code linked with the staged public directory — lives
       // in the work directory, so it is removed with it, on success and on failure.
       serveUrl = await timed('bundle', () => bundleInto({entryPoint, withKits: Boolean(options.kits?.length)}, staged.publicDir, path.join(work, 'bundle')));
-      composition = await timed('select composition', () => selectComposition({serveUrl, id: 'Timeline', inputProps}));
+      composition = await timed('select composition', () => selectOnce(serveUrl, entryPoint, inputProps));
     } catch (e) {
       throw new ComposerError('render-failed', `Remotion could not render the timeline: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -117,6 +119,24 @@ async function prepareComposition(options: Omit<RenderTimelineOptions, 'outputPa
     await close();
     throw e;
   }
+}
+
+/**
+ * The composition of the same code and props, selected once: a shared render
+ * prepares it to draw and again to assemble, and a correction renders the
+ * props it rendered before. Selecting opens a page in a browser.
+ */
+const selected = new Map<string, Promise<Prepared['composition']>>();
+function selectOnce(serveUrl: string, entryPoint: string, inputProps: Record<string, unknown>): Promise<Prepared['composition']> {
+  const key = createHash('sha256').update(JSON.stringify([entryPoint, drawingCodeHash(), inputProps])).digest('hex');
+  let pending = selected.get(key);
+  if (!pending) {
+    pending = selectComposition({serveUrl, id: 'Timeline', inputProps});
+    pending.catch(() => selected.delete(key));
+    if (selected.size >= 16) selected.delete(selected.keys().next().value!);
+    selected.set(key, pending);
+  }
+  return pending;
 }
 
 /** `body` runs with the composition, and the work directory and staging go after it. */

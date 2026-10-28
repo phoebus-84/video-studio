@@ -1351,7 +1351,9 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
           const mb = (render.result.sizeBytes / 1024 / 1024).toFixed(1);
           const engine = (render.result as Partial<RemoteRenderResult & SharedRenderResult>).engine;
           const where = engine?.shares
-            ? `shared: ${engine.shares.map((s) => `${s.host} ${s.runs.map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(",")} s in ${s.seconds.toFixed(0)} s`).join(", ")}; joined on ${engine.assembler}, ${engine.sentFiles} file(s) sent`
+            ? `shared: ${engine.shares.some((s) => s.runs.length > 0)
+              ? engine.shares.filter((s) => s.runs.length > 0).map((s) => `${s.host} ${s.runs.map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(",")} s in ${s.seconds.toFixed(0)} s`).join(", ")
+              : "every second from the cache, none drawn"}; joined on ${engine.assembler}, ${engine.sentFiles} file(s) sent`
             : engine
               ? `rendered on ${engine.host}${engine.concurrency ? ` with ${engine.concurrency} Chrome tab(s)` : ""}, ${engine.sentFiles} file(s) sent`
               : `${render.concurrency} Chrome tab(s)`;

@@ -337,7 +337,7 @@ export async function renderWithCache(options: {
         // paths or quoting, and no shell execution.
         const list = path.join(work, 'segments.txt');
         await writeFile(list, files.map((file) => `file '${path.basename(file)}'`).join('\n'));
-        await run(['-f', 'concat', '-safe', '1', '-i', list, '-map', '0:v:0', '-c:v', 'copy', '-an', output]);
+        await timed('concat', () => run(['-f', 'concat', '-safe', '1', '-i', list, '-map', '0:v:0', '-c:v', 'copy', '-an', output]));
       },
     });
     if (share) {

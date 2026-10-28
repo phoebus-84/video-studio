@@ -2,6 +2,7 @@
 // the measured values (linear), copying the video stream.
 
 import {spawn} from 'node:child_process';
+import {setPriority} from 'node:os';
 
 export interface LoudnessTarget {
   integrated: number;
@@ -18,6 +19,13 @@ export interface LoudnessResult {
 function run(ffmpeg: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpeg, args, {stdio: ['ignore', 'ignore', 'pipe']});
+    // Below the browsers: the soundtrack is levelled while they draw, and it
+    // is needed only once they finish. Idle, the machine runs it as fast.
+    if (child.pid !== undefined) {
+      try {
+        setPriority(child.pid, 10);
+      } catch { /* it runs at the usual priority */ }
+    }
     let stderr = '';
     child.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
     child.on('error', reject);
