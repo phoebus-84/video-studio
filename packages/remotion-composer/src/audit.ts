@@ -94,8 +94,22 @@ export async function auditRender(file: string, expect: AuditExpectation, tools:
   const checks: string[] = [];
   const findings: AuditFinding[] = [];
 
+  // The passes read the file side by side: the full decode is the long one,
+  // and the others need not wait for it.
+  const loudness = expect.loudness;
+  const passes = {
+    decoded: run(ffmpeg, ['-v', 'error', '-i', file, '-f', 'null', '-']),
+    probed: run(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,sample_rate,nb_frames,duration', '-of', 'json', file]),
+    measured: expect.audio && loudness
+      ? run(ffmpeg, ['-hide_banner', '-i', file, '-vn', '-af', `loudnorm=I=${loudness.integrated}:TP=${loudness.truePeak}:LRA=${loudness.range}:print_format=json`, '-f', 'null', '-'])
+      : null,
+  };
+  // A file that does not decode leaves the others' results unread.
+  void passes.probed.catch(() => undefined);
+  void passes.measured?.catch(() => undefined);
+
   checks.push('decode');
-  const decoded = await run(ffmpeg, ['-v', 'error', '-i', file, '-f', 'null', '-']);
+  const decoded = await passes.decoded;
   const errors = decoded.stderr.trim();
   if (decoded.code !== 0 || errors) {
     findings.push({code: 'decode-errors', message: `the file does not decode cleanly: ${errors.split('\n').slice(0, 3).join(' | ') || `ffmpeg exited ${decoded.code}`}`});
@@ -104,7 +118,7 @@ export async function auditRender(file: string, expect: AuditExpectation, tools:
   }
 
   checks.push('streams');
-  const probed = await run(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,sample_rate,nb_frames,duration', '-of', 'json', file]);
+  const probed = await passes.probed;
   if (probed.code !== 0) throw new Error(`ffprobe could not read ${file}: ${probed.stderr.slice(-400)}`);
   const streams = (JSON.parse(probed.stdout.toString()) as {streams: Stream[]}).streams;
   const video = streams.find((s) => s.codec_type === 'video');
@@ -131,10 +145,10 @@ export async function auditRender(file: string, expect: AuditExpectation, tools:
     }
   }
 
-  if (expect.audio && expect.loudness && audio) {
+  if (passes.measured && loudness && audio) {
     checks.push('loudness');
-    const t = expect.loudness;
-    const measured = await run(ffmpeg, ['-hide_banner', '-i', file, '-vn', '-af', `loudnorm=I=${t.integrated}:TP=${t.truePeak}:LRA=${t.range}:print_format=json`, '-f', 'null', '-']);
+    const t = loudness;
+    const measured = await passes.measured;
     const start = measured.stderr.lastIndexOf('{');
     const end = measured.stderr.lastIndexOf('}');
     if (measured.code !== 0 || start < 0 || end < start) throw new Error(`ffmpeg could not measure the loudness of ${file}`);
