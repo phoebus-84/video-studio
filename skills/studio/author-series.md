@@ -181,7 +181,8 @@ is listed here:
    - `pva_create_episode`;
    - `pva_init_spec` with the exact release, then the `fill-episode-spec`
      skill;
-   - pictures and sounds (`pva_generate_image`, `pva_synthesize_sound`);
+   - pictures and sounds (`pva_generate_images` for several pictures at once,
+     drawn concurrently, or `pva_generate_image`; `pva_synthesize_sound`);
    - takes (`pva_synthesize_speech` or a recording, then `pva_register_take`
      and `pva_align_take`, then `pva_verify_take`, so a missing line is caught
      before the timeline);
