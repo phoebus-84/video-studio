@@ -115,8 +115,8 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       let opened = engines.get(host);
       if (!opened) {
         opened = (async () => {
-          const engine = await openEngine({ ...remoteOptions, host });
-          const job = await prepared();
+          // The files are hashed while the engine gets its code.
+          const [engine, job] = await Promise.all([openEngine({ ...remoteOptions, host }), prepared()]);
           const sent = await sendFiles(engine, job.files);
           sentTo.set(host, sent);
           return engine;
@@ -321,6 +321,9 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
 
     try {
       log(`shared render: ${total} s among ${drawers.join(", ")} chunk by chunk, starting by speed ${runs.map((r) => r.weight.toFixed(3)).join(" : ")}; ${assembler} assembles`);
+      // The engines get their code and files while this machine bundles: no
+      // engine waits for the bundle, nor the bundle for an engine.
+      for (const run of runs) if (run.host !== LOCAL) void engineOf(run.host).catch(() => undefined);
       const work = runs.map(drawShare);
       // A remote assembler that draws nothing still needs the files.
       if (assembler !== LOCAL && !drawers.includes(assembler)) work.push(engineOf(assembler).then(() => undefined));

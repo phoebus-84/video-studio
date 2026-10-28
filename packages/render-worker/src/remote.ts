@@ -88,7 +88,7 @@ export async function openEngine(options: Omit<RemoteRendererOptions, "key"> & {
   warnMismatches(found.version, log);
 
   const git = options.git ?? localGit(options.repoRoot ?? DEFAULT_REPO_ROOT);
-  const sha = renderCommit(git);
+  const sha = await renderCommit(git);
   const synced = found.version?.synced === sha && found.version.commit === sha ? sha : null;
   if (await syncCode({ git, exec, target, sha, synced, onLog: log, ...withSignal })) {
     const after = lastJsonLine<EngineVersion>((await call(exec, target, ["version"], {}, "version")).stdout);

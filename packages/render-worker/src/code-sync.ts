@@ -5,7 +5,7 @@
 // renders cannot travel this way, so they stop the render instead of being
 // silently left out.
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { RenderWorkerError } from "./protocol.js";
 import { shellPath, shellQuote, type Exec } from "./ssh.js";
 import { engineCommand, type EngineTarget } from "./hosts.js";
@@ -16,28 +16,37 @@ export const RENDER_CODE = ["packages/remotion-composer", "packages/render-worke
 /** Where the pushed commit lands on the engine before it is checked out. */
 export const INCOMING_REF = "refs/render-worker/incoming";
 
-export interface Git {
-  (args: readonly string[], options?: { env?: Record<string, string> }): { code: number; stdout: string; stderr: string };
+export interface GitResult {
+  code: number;
+  stdout: string;
+  stderr: string;
 }
 
+export interface Git {
+  (args: readonly string[], options?: { env?: Record<string, string> }): GitResult | Promise<GitResult>;
+}
+
+/**
+ * git in `repoRoot`, as a child process the event loop does not wait on: a
+ * push takes seconds, and the other engines and this machine's bundle go on.
+ */
 export function localGit(repoRoot: string): Git {
-  return (args, options = {}) => {
-    const run = spawnSync("git", args, {
-      cwd: repoRoot,
-      encoding: "utf-8",
-      windowsHide: true,
-      env: { ...process.env, ...options.env },
-    });
-    if (run.error) throw new RenderWorkerError("code-sync-failed", `git could not run: ${run.error.message}`);
-    return { code: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
-  };
+  return (args, options = {}) => new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd: repoRoot, windowsHide: true, env: { ...process.env, ...options.env } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf-8").on("data", (d: string) => (stdout += d));
+    child.stderr.setEncoding("utf-8").on("data", (d: string) => (stderr += d));
+    child.on("error", (e) => reject(new RenderWorkerError("code-sync-failed", `git could not run: ${e.message}`)));
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });
 }
 
 /** The commit to render with; refuses when the render code has uncommitted changes. */
-export function renderCommit(git: Git): string {
-  const head = git(["rev-parse", "HEAD"]);
+export async function renderCommit(git: Git): Promise<string> {
+  const head = await git(["rev-parse", "HEAD"]);
   if (head.code !== 0) throw new RenderWorkerError("code-sync-failed", `not a git checkout: ${head.stderr.trim()}`);
-  const status = git(["status", "--porcelain", "--untracked-files=all", "--", ...RENDER_CODE]);
+  const status = await git(["status", "--porcelain", "--untracked-files=all", "--", ...RENDER_CODE]);
   if (status.code !== 0) throw new RenderWorkerError("code-sync-failed", `git status failed: ${status.stderr.trim()}`);
   const dirty = status.stdout.split("\n").map((l) => l.slice(3).trim()).filter(Boolean);
   if (dirty.length > 0) {
@@ -73,7 +82,7 @@ export async function syncCode(options: {
   if (options.synced === sha) return false;
   const ssh = options.sshProgram ?? process.env.AVG_RENDER_SSH ?? "ssh";
   options.onLog?.(`sending commit ${sha.slice(0, 10)} to ${target.name}`);
-  const push = git(["push", "--quiet", gitRemote(target), `+${sha}:${INCOMING_REF}`], {
+  const push = await git(["push", "--quiet", gitRemote(target), `+${sha}:${INCOMING_REF}`], {
     env: { GIT_SSH_COMMAND: `${ssh} -o BatchMode=yes -o ConnectTimeout=10` },
   });
   if (push.code !== 0) throw new RenderWorkerError("code-sync-failed", `git push to ${target.name} failed: ${push.stderr.trim()}`);

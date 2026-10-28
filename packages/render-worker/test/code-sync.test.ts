@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { gitRemote, INCOMING_REF, RENDER_CODE, renderCommit, syncCode, type Git } from "../src/code-sync.js";
+import { gitRemote, INCOMING_REF, localGit, RENDER_CODE, renderCommit, syncCode, type Git } from "../src/code-sync.js";
 import type { ExecInput } from "../src/ssh.js";
 
 const SHA = "a".repeat(40);
@@ -18,15 +18,15 @@ function fakeGit(status: string, push = { code: 0, stderr: "" }): Git & { calls:
   return git;
 }
 
-test("the render commit is HEAD, checked only over the code that renders", () => {
+test("the render commit is HEAD, checked only over the code that renders", async () => {
   const git = fakeGit("");
-  assert.equal(renderCommit(git), SHA);
+  assert.equal(await renderCommit(git), SHA);
   assert.deepEqual(git.calls[1]!.args, ["status", "--porcelain", "--untracked-files=all", "--", ...RENDER_CODE]);
 });
 
-test("uncommitted render code stops the render and names the files", () => {
+test("uncommitted render code stops the render and names the files", async () => {
   const git = fakeGit(" M packages/remotion-composer/src/render.ts\nM  bun.lock\n");
-  assert.throws(() => renderCommit(git), (e: Error & { code?: string }) => e.code === "dirty-code" && /render\.ts/.test(e.message) && /bun\.lock/.test(e.message));
+  await assert.rejects(renderCommit(git), (e: Error & { code?: string }) => e.code === "dirty-code" && /render\.ts/.test(e.message) && /bun\.lock/.test(e.message));
 });
 
 test("a clone path becomes an ssh remote, ~ kept for the remote side", () => {
@@ -62,4 +62,13 @@ test("a refused push stops before anything runs on the engine", async () => {
     { code: "code-sync-failed" },
   );
   assert.equal(ran, false);
+});
+
+test("local git runs beside the event loop, which goes on while it runs", async () => {
+  let ticked = false;
+  setImmediate(() => (ticked = true));
+  const run = await localGit(process.cwd())(["rev-parse", "--is-inside-work-tree"]);
+  assert.equal(run.code, 0);
+  assert.equal(run.stdout.trim(), "true");
+  assert.equal(ticked, true);
 });
