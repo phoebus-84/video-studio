@@ -123,6 +123,27 @@ export async function checkJoinable(files: string[], provided: number[], frames:
   }
 }
 
+async function planOf(options: {inputProps: TimelineProps; serveUrl: string; kits?: readonly KitVersion[]}) {
+  const {inputProps} = options;
+  // Keys use asset ids, not staging filenames (which change when audio is added).
+  const assetFrames = Object.fromEntries(Object.entries(inputProps.files)
+    .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
+    .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
+  const renderer = await rendererKey(options.serveUrl);
+  return {renderer, assetFrames, plan: planVideo(inputProps.timeline, renderer, assetFrames, options.kits)};
+}
+
+/**
+ * The segments `cacheDir` already holds, by index: a render takes them from
+ * there and draws none of them. A shared render leaves them out of its queue.
+ */
+export async function cachedSegments(options: {inputProps: TimelineProps; serveUrl: string; cacheDir: string; kits?: readonly KitVersion[]}): Promise<number[]> {
+  const {plan} = await planOf(options);
+  const cache = new VideoCache(path.join(options.cacheDir, 'segments'), []);
+  const held = await Promise.all(plan.segments.map((s) => cache.has(s.key)));
+  return held.flatMap((h, index) => (h ? [index] : []));
+}
+
 export async function renderWithCache(options: {
   inputProps: TimelineProps;
   composition: VideoConfig;
@@ -167,12 +188,7 @@ export async function renderWithCache(options: {
 }): Promise<CacheReport> {
   const {inputProps, composition, serveUrl, work, hasAudio} = options;
   const {timeline} = inputProps;
-  // Keys use asset ids, not staging filenames (which change when audio is added).
-  const assetFrames = Object.fromEntries(Object.entries(inputProps.files)
-    .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
-    .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
-  const renderer = await rendererKey(serveUrl);
-  const plan = planVideo(timeline, renderer, assetFrames, options.kits);
+  const {renderer, assetFrames, plan} = await planOf(options);
   const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
   const silentProps = {...inputProps, pass: 'picture' as const, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
   // The component is handed the props of the composition (inputProps only reach getInputProps()): each pass

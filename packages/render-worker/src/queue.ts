@@ -16,7 +16,14 @@
 // seconds while the fast ones had all but finished, and they waited for it.
 //
 // A machine that fails gives its chunk back: the others draw it first, before
-// the rest, so a lost machine costs time and never a hole in the video.
+// the rest, so a lost machine costs time and never a hole in the video. A
+// machine draws its next chunk while the last one travels here; a chunk that
+// never arrives whole goes back the same way, and one already travelling when
+// its machine fails still arrives: the others wait for it, not redraw it.
+//
+// The queue may hold only some of the segments: those no cache already has.
+// A correction redraws what changed, and the cached seconds, which cost no
+// drawing, never count as a machine's speed.
 
 export interface QueueDrawer {
   host: string;
@@ -26,7 +33,7 @@ export interface QueueDrawer {
   fromFront?: boolean;
 }
 
-interface State extends QueueDrawer { segments: number; seconds: number; inFlight: number[]; since: number; stopped: boolean; failed: boolean }
+interface State extends QueueDrawer { segments: number; seconds: number; inFlight: number[]; unconfirmed: number[]; since: number; stopped: boolean; failed: boolean }
 
 export class SegmentQueue {
   private front: number;
@@ -34,12 +41,15 @@ export class SegmentQueue {
   /** Segments a failed machine gave back, drawn before the rest. */
   private returned: number[] = [];
   private readonly drawers = new Map<string, State>();
+  /** The segments to draw, in order; front and back are positions in it. */
+  private readonly segments: readonly number[];
 
-  /** `now` is the clock in seconds, for tests. */
-  constructor(total: number, drawers: readonly QueueDrawer[], private readonly now: () => number = () => Date.now() / 1000) {
+  /** `segments` is how many to draw, from 0, or which; `now` is the clock in seconds, for tests. */
+  constructor(segments: number | readonly number[], drawers: readonly QueueDrawer[], private readonly now: () => number = () => Date.now() / 1000) {
+    this.segments = typeof segments === "number" ? Array.from({ length: segments }, (_, i) => i) : [...segments].sort((a, b) => a - b);
     this.front = 0;
-    this.back = total - 1;
-    for (const d of drawers) this.drawers.set(d.host, { ...d, segments: 0, seconds: 0, inFlight: [], since: 0, stopped: false, failed: false });
+    this.back = this.segments.length - 1;
+    for (const d of drawers) this.drawers.set(d.host, { ...d, segments: 0, seconds: 0, inFlight: [], unconfirmed: [], since: 0, stopped: false, failed: false });
   }
 
   get left(): number {
@@ -63,34 +73,58 @@ export class SegmentQueue {
     const count = this.count(me, [...this.drawers.values()].filter((d) => d !== me && !d.stopped), this.left);
     if (count < 1) return this.stop(me);
     const chunk = me.fromFront
-      ? Array.from({ length: count }, (_, i) => this.front + i)
-      : Array.from({ length: count }, (_, i) => this.back - count + 1 + i);
+      ? Array.from({ length: count }, (_, i) => this.segments[this.front + i]!)
+      : Array.from({ length: count }, (_, i) => this.segments[this.back - count + 1 + i]!);
     if (me.fromFront) this.front += count;
     else this.back -= count;
     return this.hand(me, chunk);
   }
 
+  /** Whether `host` draws in this render. */
+  has(host: string): boolean {
+    return this.drawers.has(host);
+  }
+
   /** Whether `host`, with nothing to draw now, may still be given a chunk another machine fails to draw. */
   mayGetMore(host: string): boolean {
     const me = this.state(host);
-    return !me.failed && [...this.drawers.values()].some((d) => d !== me && d.inFlight.length > 0);
+    return !me.failed && [...this.drawers.values()].some((d) => d !== me && ((!d.failed && d.inFlight.length > 0) || d.unconfirmed.length > 0));
   }
 
-  /** `host` draws nothing more: the others no longer wait for it, and draw the chunk it held. */
+  /** `host` draws nothing more: the others draw the chunk it held; those travelling may still arrive. */
   leave(host: string): void {
     const me = this.state(host);
-    this.returned = [...this.returned, ...me.inFlight].sort((a, b) => a - b);
+    this.giveBack(me.inFlight);
     me.inFlight = [];
     me.failed = true;
     this.stop(me);
   }
 
-  /** `host` drew its chunk in `seconds`. */
-  done(host: string, seconds: number): void {
+  /** `host` drew its chunk in `seconds`; `travelling`, its chunk is on its way here, until `confirm`. */
+  done(host: string, seconds: number, travelling = false): void {
     const me = this.state(host);
     me.segments += me.inFlight.length;
     me.seconds += seconds;
+    if (travelling) me.unconfirmed = [...me.unconfirmed, ...me.inFlight];
     me.inFlight = [];
+  }
+
+  /** `segments` of `host`'s arrived whole. */
+  confirm(host: string, segments: readonly number[]): void {
+    const me = this.state(host);
+    me.unconfirmed = me.unconfirmed.filter((i) => !segments.includes(i));
+  }
+
+  /** `segments` of `host`'s never arrived: the others draw them, first. */
+  lost(host: string, segments: readonly number[]): void {
+    const me = this.state(host);
+    this.giveBack(me.unconfirmed.filter((i) => segments.includes(i)));
+    me.unconfirmed = me.unconfirmed.filter((i) => !segments.includes(i));
+  }
+
+  /** Whether `host` left the render, failing. */
+  failed(host: string): boolean {
+    return this.state(host).failed;
   }
 
   /** Segments per second of wall time in this render, or the prior scaled like the measured machines. */
@@ -115,6 +149,10 @@ export class SegmentQueue {
     // No more than it draws before the others would have drawn it all.
     const helps = Math.floor((rate * work) / othersRate + 1e-9);
     return Math.min(left, fair, helps);
+  }
+
+  private giveBack(segments: readonly number[]): void {
+    this.returned = [...this.returned, ...segments].sort((a, b) => a - b);
   }
 
   private hand(me: State, chunk: number[]): number[] {

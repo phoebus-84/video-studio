@@ -95,3 +95,14 @@ test("near the end a slow machine leaves the last seconds to the fast ones, coun
   assert.deepEqual(q.take("server"), [], "local and pc have nearly drawn their chunks and finish the rest sooner");
   assert.equal(q.take("server").length, 0, "and it stays stopped");
 });
+
+test("a queue over some segments hands out only those, in their order", () => {
+  const q = new SegmentQueue([7, 2, 3, 9], [{ host: "a", prior: 1, fromFront: true }, { host: "b", prior: 1 }]);
+  assert.ok(q.has("a") && !q.has("c"));
+  assert.deepEqual(q.take("a"), [2]);
+  assert.deepEqual(q.take("b"), [9]);
+  assert.equal(q.left, 2);
+  q.done("a", 1);
+  q.done("b", 1);
+  assert.deepEqual([...q.take("a"), ...q.take("b")].sort((x, y) => x - y), [3, 7]);
+});

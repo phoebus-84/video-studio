@@ -3,7 +3,7 @@
 // A segment is rendered at its ORIGINAL frame range, not a rebased timeline:
 // kit animation, clip trims and crossfades keep their absolute/local clocks.
 import {createHash, randomUUID} from 'node:crypto';
-import {copyFile, mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
+import {access, copyFile, mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {sha256} from './assets.js';
 import {resolveKit} from './kits/index.js';
@@ -110,6 +110,16 @@ export class VideoCache {
     return false;
   }
 
+  /** Whether `key` is cached, without reading it: get still checks it. */
+  async has(key: string): Promise<boolean> {
+    try {
+      await Promise.all([access(path.join(this.root, `${key}.json`)), access(path.join(this.root, `${key}${this.ext}`))]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async put(key: string, source: string): Promise<void> {
     const temp = path.join(this.root, `.${key}.${randomUUID()}`);
     try {
@@ -171,8 +181,9 @@ export async function cachedVideo(options: {
   only?: readonly number[];
   /**
    * Segments other machines drew, by index: a segment the cache lacks is
-   * taken from here rather than drawn. They are not cached (their encoder is
-   * another machine's), nor is a whole video made with them.
+   * taken from here rather than drawn. Once `checkProvided` passes they join
+   * like this machine's own, and are cached with the whole video: a later
+   * render, a correction above all, draws none of them again.
    */
   provided?: ReadonlyMap<number, string>;
   /** Called before the concat with the indices taken from `provided`: it may refuse them. */
@@ -236,8 +247,11 @@ export async function cachedVideo(options: {
   const failure = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
   if (failure) throw failure.reason;
   if (options.only) return {video: '', report, files};
-  if (provided.length > 0) await options.checkProvided?.(files, provided);
+  if (provided.length > 0) {
+    await options.checkProvided?.(files, provided);
+    for (const i of provided) await segments.put(plan.segments[i]!.key, files[i]!);
+  }
   await options.concatenate(files, video);
-  if (provided.length === 0) await whole.put(plan.key, video);
+  await whole.put(plan.key, video);
   return {video, report, files};
 }

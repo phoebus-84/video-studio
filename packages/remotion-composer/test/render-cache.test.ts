@@ -170,6 +170,8 @@ describe('video cache storage and execution', () => {
     await writeFile(source, 'complete video');
     await Promise.all([cache.put('key', source), cache.put('key', source)]);
     assert.equal(await cache.get('key', dest), true);
+    assert.equal(await cache.has('key'), true);
+    assert.equal(await cache.has('other'), false);
     assert.deepEqual((await readdir(path.join(root, 'cache'))).sort(), ['key.json', 'key.mp4']);
     await writeFile(path.join(root, 'cache/key.mp4'), 'truncated');
     assert.equal(await cache.get('key', dest), false);
@@ -314,7 +316,7 @@ describe('video cache storage and execution', () => {
       renderRun: async () => {}, concatenate: async () => {}}), /no segment 3/);
   }));
 
-  it('the assembly takes the segments drawn elsewhere, checks them, and caches no whole video', async () => workspace(async (root) => {
+  it('the assembly takes the segments drawn elsewhere, checks them, and caches them with the whole video', async () => workspace(async (root) => {
     const plan = planVideo(cacheTimeline(), 'r');
     const cacheDir = path.join(root, 'cache');
     const elsewhere = path.join(root, 'elsewhere-1.mp4');
@@ -334,9 +336,14 @@ describe('video cache storage and execution', () => {
     assert.deepEqual(checked, [[1]]);
     assert.equal(result.report.segmentsProvided, 1);
     assert.equal((await readFile(result.video, 'utf8')).split('|')[1], 'from casa');
-    assert.deepEqual(await readdir(path.join(cacheDir, 'video')).catch(() => []), [], 'a whole video made with another encoder is not cached');
+    const segments = new VideoCache(path.join(cacheDir, 'segments'), []);
+    assert.equal(await segments.has(plan.segments[1]!.key), true, 'a correction draws it no more');
+    assert.equal(await new VideoCache(path.join(cacheDir, 'video'), []).has(plan.key), true);
+    const copy = path.join(root, 'copy.mp4');
+    assert.equal(await segments.get(plan.segments[1]!.key, copy), true);
+    assert.equal(await readFile(copy, 'utf8'), 'from casa');
     await assert.rejects(cachedVideo({
-      plan, cacheDir, work: await mkdtemp(path.join(root, 'work-')), provided: new Map([[1, elsewhere]]),
+      plan, cacheDir: path.join(root, 'cache-2'), work: await mkdtemp(path.join(root, 'work-')), provided: new Map([[1, elsewhere]]),
       renderRun: async () => {}, concatenate: async () => {},
       checkProvided: async () => { throw new Error('not encoded like this machine'); },
     }), /not encoded like this machine/);

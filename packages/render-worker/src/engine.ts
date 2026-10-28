@@ -395,6 +395,7 @@ function defaultDrawer(ctx: EngineContext): (options: DrawerOptions) => Promise<
   if (draw) {
     return async (options) => ({
       draw: (chunk) => draw({ ...options, segments: chunk.segments, audio: chunk.audio ?? false, ...(chunk.onProgress ? { onProgress: chunk.onProgress } : {}) }),
+      cached: async () => [],
       close: async () => undefined,
     });
   }

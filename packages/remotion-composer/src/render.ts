@@ -13,7 +13,7 @@ import {normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './lou
 import {isAudioItem, type EditTimeline, type VisualItem} from './schema.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
-import {closeBrowsers, renderWithCache, type Browser} from './cached-render.js';
+import {cachedSegments, closeBrowsers, renderWithCache, type Browser} from './cached-render.js';
 import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
 import {soundLayers} from './layers.js';
 import {resolveKit} from './kits/index.js';
@@ -213,6 +213,8 @@ export interface SegmentChunk { segments: number[]; audio?: boolean; onProgress?
 /** A timeline opened once, bundle and browsers, to draw chunk after chunk of its segments. */
 export interface SegmentDrawer {
   draw(chunk: SegmentChunk): Promise<DrawSegmentsResult>;
+  /** The segments this machine's cache already holds, by index: assembled from there, never drawn. */
+  cached(): Promise<number[]>;
   close(): Promise<void>;
 }
 
@@ -242,6 +244,9 @@ export async function openSegmentDrawer(options: Omit<DrawSegmentsOptions, 'segm
         return {index, file, hash: await sha256(file), bytes: (await stat(file)).size};
       }));
       return {segments, totalSegments: cache.totalSegments, cache};
+    },
+    cached() {
+      return cachedSegments(cacheOptions(options, options.cacheDir, prepared));
     },
     async close() {
       await closeBrowsers(browserPool);

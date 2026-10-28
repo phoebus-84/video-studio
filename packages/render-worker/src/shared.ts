@@ -29,6 +29,8 @@ export interface SharedRendererOptions extends Omit<RemoteRendererOptions, "host
   /** This machine's drawSegments and renderTimeline (the composer's, by default). */
   draw?: (options: DrawSegmentsOptions) => Promise<DrawSegmentsResult>;
   renderLocal?: (options: RenderTimelineOptions) => Promise<RenderResult>;
+  /** The segments this machine's cache holds (the composer's drawer says, by default; none beside a custom `draw`). */
+  cached?: () => Promise<number[]>;
   /** Where the machines' measured speeds are kept: the first chunks follow them, or render-hosts.json's `speed`. */
   speedsFile?: string;
 }
@@ -64,6 +66,9 @@ export interface SharedRenderResult extends RenderResult {
 /** A segment file on this machine, with what it hashes to. */
 interface Held { file: string; hash: string; bytes: number }
 
+/** About what an engine takes to start: work this machine finishes sooner it draws alone. */
+const ALONE_SECONDS = 10;
+
 export function sharedRenderer(options: SharedRendererOptions): (render: RenderTimelineOptions) => Promise<SharedRenderResult> {
   const hosts = [...new Set(options.hosts.map((h) => h.trim()).filter(Boolean))];
   const assembler = (options.assembleOn ?? LOCAL).trim() || LOCAL;
@@ -82,7 +87,6 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     const drawers = order.map((i) => hosts[i]!);
     const runs = order.map((i) => ({ host: hosts[i]!, key: keys[i]!, weight: weights[i]!, segments: [] as number[] }));
     const front = drawers.includes(LOCAL) ? LOCAL : drawers[0];
-    const queue = new SegmentQueue(total, runs.map((r) => ({ host: r.host, prior: r.weight, fromFront: r.host === front })));
     const local = [...drawers, assembler].includes(LOCAL);
     if (local && !render.cacheDir) throw new RenderWorkerError("bad-request", "a shared render that draws or assembles here needs the render's cacheDir");
 
@@ -100,8 +104,9 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     const chunkDone = new Map<string, number>();
     let assembly = 0;
     let reported = 0;
+    let cachedHere = 0;
     const report = () => {
-      const drawn = (segmentsDone + [...chunkDone.values()].reduce((a, b) => a + b, 0)) / total;
+      const drawn = (cachedHere + segmentsDone + [...chunkDone.values()].reduce((a, b) => a + b, 0)) / total;
       reported = Math.max(reported, 0.9 * Math.min(1, drawn) + 0.1 * assembly);
       render.onProgress?.(reported);
     };
@@ -181,8 +186,13 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       if (failed && !quiet) throw failed.reason;
     };
 
-    /** One chunk of `host`'s; the soundtrack too on its first, when it assembles. */
-    const drawChunk = async (host: string, segments: number[], first: boolean) => {
+    /**
+     * One chunk of `host`'s; the soundtrack too on its first, when it
+     * assembles. A remote that does not assemble answers with the chunk's
+     * journey here, left to the caller: the engine draws its next chunk while
+     * this one travels.
+     */
+    const drawChunk = async (host: string, segments: number[], first: boolean): Promise<(() => Promise<void>) | undefined> => {
       const onProgress = chunkProgress(host, segments.length);
       if (host === LOCAL) {
         const audio = first && assembler === LOCAL;
@@ -192,7 +202,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         for (const s of result.segments) held.set(s.index, { file: s.file, hash: s.hash, bytes: s.bytes });
         drawnNow.set(host, (drawnNow.get(host) ?? 0) + (result.cache?.segmentsRendered ?? segments.length));
         await pushToAssembler(segments);
-        return;
+        return undefined;
       }
       const engine = await engineOf(host);
       const answer = await (await sessionOf(host)).draw({ segments, audio: first && host === assembler }, onProgress);
@@ -201,11 +211,17 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       if (answer.totalSegments !== total) throw new RenderWorkerError("engine-failed", `${host} counts ${answer.totalSegments} segments, this machine ${total}`);
       if (host === assembler) {
         for (const s of answer.segments) assemblerHas.set(s.index, s.hash);
-        return;
+        return undefined;
       }
-      await pullFrom(engine, answer);
-      await pushToAssembler(segments);
+      return async () => {
+        await pullFrom(engine, answer);
+        await pushToAssembler(segments);
+      };
     };
+
+    // The chunks on their way here, one host's after another's: the
+    // assembly waits for them all.
+    const travelling = new Map<string, Promise<void>>();
 
     // Machines with nothing to draw wait here while the others draw.
     let wakeQueue = () => {};
@@ -219,9 +235,33 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     });
     abort.signal.addEventListener("abort", () => wakeQueue());
 
+    // The segments this machine's cache holds stay out of the queue: the
+    // assembly takes them from there, and no machine's speed counts them. When
+    // what is left takes this machine less than an engine's start, it draws
+    // alone: a correction redraws a few seconds and waits for no engine.
+    const queueReady = (async () => {
+      const toDraw = Array.from({ length: total }, (_, i) => i);
+      let drawing = runs;
+      if (assembler === LOCAL && drawers.includes(LOCAL)) {
+        const cached = new Set(await (options.cached ?? (options.draw ? async () => [] : async () => (await openLocal()).cached()))());
+        const missing = toDraw.filter((i) => !cached.has(i));
+        cachedHere = cached.size;
+        const alone = cached.size > 0 && missing.length / runs.find((r) => r.host === LOCAL)!.weight <= ALONE_SECONDS;
+        if (alone && runs.length > 1) drawing = runs.filter((r) => r.host === LOCAL);
+        if (cached.size > 0 || drawing !== runs) {
+          log(`${cached.size} s of video cached here, ${missing.length} s to draw${drawing !== runs ? `, ${LOCAL} alone` : ""}`);
+        }
+        report();
+        return new SegmentQueue(missing, drawing.map((r) => ({ host: r.host, prior: r.weight, fromFront: r.host === front })));
+      }
+      return new SegmentQueue(toDraw, drawing.map((r) => ({ host: r.host, prior: r.weight, fromFront: r.host === front })));
+    })();
+
     /** `host` draws chunks from the queue until it has nothing more to draw. */
     const drawShare = async (run: (typeof runs)[number]) => {
       const { host } = run;
+      const queue = await queueReady;
+      if (!queue.has(host)) return;
       // Its speed is its drawing, not the code and files it was sent first,
       // nor the bundle it draws with: no chunk waits on them.
       if (host === LOCAL && !options.draw) await openLocal();
@@ -236,6 +276,23 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
           return;
         }
       }
+      /** A remote that only draws gives back its chunk to the others, and draws no more. */
+      const giveBack = (chunk: number[], error: unknown) => {
+        queue.leave(host);
+        chunkDone.delete(host);
+        const session = sessions.get(host);
+        sessions.delete(host);
+        void session?.then((s) => s.close()).catch(() => undefined);
+        log(`warning: ${host} failed on ${chunk[0]}–${chunk.at(-1)}, the others draw them: ${(error as Error).message}`);
+        report();
+        wakeQueue();
+      };
+      /** A drawn chunk that never arrived: it is not this host's share any more. */
+      const forget = (chunk: number[]) => {
+        run.segments.splice(0, run.segments.length, ...run.segments.filter((i) => !chunk.includes(i)));
+        segmentsDone -= chunk.length;
+        report();
+      };
       for (let first = true; !abort.signal.aborted; ) {
         const chunk = queue.take(host);
         if (chunk.length === 0) {
@@ -245,24 +302,36 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
           continue;
         }
         const started = Date.now();
+        let travel: (() => Promise<void>) | undefined;
         try {
-          await drawChunk(host, chunk, first);
+          travel = await drawChunk(host, chunk, first);
         } catch (error) {
-          // A remote that only draws gives its chunk back to the others.
           if (host === LOCAL || host === assembler || abort.signal.aborted) throw error;
-          queue.leave(host);
-          chunkDone.delete(host);
-          const session = sessions.get(host);
-          sessions.delete(host);
-          void session?.then((s) => s.close()).catch(() => undefined);
-          log(`warning: ${host} failed on ${chunk[0]}–${chunk.at(-1)}, the others draw them: ${(error as Error).message}`);
-          report();
-          wakeQueue();
+          // A chunk that failed on its way here already gave this one back.
+          if (!queue.failed(host)) giveBack(chunk, error);
           return;
         }
+        if (queue.failed(host)) return;
         first = false;
         const took = (Date.now() - started) / 1000;
-        queue.done(host, took);
+        queue.done(host, took, travel !== undefined);
+        if (travel) {
+          const journey = travel;
+          // Drawn is drawn: it travels even if the engine fails its next chunk.
+          const arrived = (travelling.get(host) ?? Promise.resolve()).then(async () => {
+            try {
+              await journey();
+              queue.confirm(host, chunk);
+            } catch (error) {
+              if (abort.signal.aborted) return;
+              forget(chunk);
+              queue.lost(host, chunk);
+              if (queue.failed(host)) log(`warning: ${host}'s ${chunk[0]}–${chunk.at(-1)} did not arrive, the others draw them: ${(error as Error).message}`);
+              else giveBack(chunk, error);
+            }
+          }).finally(() => wakeQueue());
+          travelling.set(host, arrived);
+        }
         wakeQueue();
         run.segments.push(...chunk);
         seconds.set(host, (seconds.get(host) ?? 0) + took);
@@ -277,7 +346,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     const pullFrom = async (engine: EngineSession, answer: DrawAnswer) => {
       const expected = new Map(answer.segments.map((s) => [s.index, s]));
       // Through a file: the bundle arrives while nothing else reads the SSH pipe.
-      const bundle = path.join(sharedDir, `from-${engine.target.name.replace(/[^A-Za-z0-9._-]/g, "_")}.bundle`);
+      const bundle = path.join(sharedDir, `from-${engine.target.name.replace(/[^A-Za-z0-9._-]/g, "_")}-${answer.segments[0]?.index ?? 0}.bundle`);
       await call(engine.exec, engine.target, ["send-drawn", engine.key], {
         stdin: JSON.stringify([...expected.keys()]),
         stdout: createWriteStream(bundle),
@@ -331,6 +400,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         abort.abort(e);
         throw e;
       })));
+      await Promise.all(travelling.values());
       // Its browsers leave the assembly the memory; a remote assembler's lock is free again.
       await closeLocal();
       const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");

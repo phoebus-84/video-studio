@@ -253,6 +253,44 @@ test("a segment that changed on the way is refused, and drawn again by another m
   assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => [d.i, d.by]), [0, 1, 2, 3, 4].map((i) => [i, "local"]));
 });
 
+test("an engine draws its next chunk while the last one travels here", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  const boxA = engines.get("box-a")!;
+  const overlapped: boolean[] = [];
+  const slowPull: Exec = async (destination, command, input) => {
+    if (!command.includes("send-drawn")) return exec(destination, command, input);
+    const before = boxA.draws.length;
+    await new Promise((r) => setTimeout(r, 250));
+    const run = await exec(destination, command, input);
+    overlapped.push(boxA.draws.length > before);
+    return run;
+  };
+  const result = await renderer(slowPull, { hosts: ["local", "box-a"], draw: slowDraw("local", 600) })(options);
+  assert.ok(boxA.draws.length >= 2, `box-a drew ${boxA.draws.length} chunks`);
+  assert.ok(overlapped[0], "box-a waited for its first chunk to arrive before drawing the next");
+  assertAssembled(path.join(ep, "out.mp4"), result.engine.shares, "local");
+});
+
+test("a chunk that fails on its way here goes back to the others, with those behind it", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  const boxA = engines.get("box-a")!;
+  const brokenPull: Exec = async (destination, command, input) => {
+    if (command.includes("send-drawn")) {
+      await new Promise((r) => setTimeout(r, 100));
+      return { code: 1, stdout: "", stderr: "connection reset" };
+    }
+    return exec(destination, command, input);
+  };
+  const lines: string[] = [];
+  const result = await renderer(brokenPull, { hosts: ["local", "box-a"], draw: slowDraw("local", 150), onLog: (l) => lines.push(l) })(options);
+  assert.ok(boxA.draws.length >= 1);
+  assert.ok(lines.some((l) => /box-a failed on .*the others draw them/.test(l)), lines.join(" | "));
+  assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => [d.i, d.by]), [0, 1, 2, 3, 4].map((i) => [i, "local"]));
+  assert.equal(result.engine.shares.find((s) => s.host === "box-a")?.segments ?? 0, 0);
+});
+
 test("names are checked before anything runs", () => {
   assert.throws(() => sharedRenderer({ key: "a/b/c", hosts: [] }), /at least one machine/);
   assert.throws(() => sharedRenderer({ key: "a/b/c", hosts: ["auto"] }), /names its machines/);
@@ -321,4 +359,14 @@ test("a draw session prepares the job once and answers each chunk on its own lin
   assert.deepEqual(lines.map((l) => l.segments.map((s) => s.index)), [[0, 1], [4]]);
   assert.deepEqual(lines.map((l) => l.rendered), [2, 1]);
   assert.ok(!existsSync(path.join(cache, "a", "b", "c", "render.lock")), "the lock goes with the session");
+});
+
+test("a correction: cached seconds are not drawn, and a few missing ones are drawn here alone", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  const result = await renderer(exec, { hosts: ["local", "box-a"], cached: async () => [0, 1, 2] })(options);
+
+  assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => [d.i, d.by]), [[3, "local"], [4, "local"]]);
+  assert.equal(engines.get("box-a")!.draws.length, 0, "no engine waited on for two seconds");
+  assert.equal(result.engine.shares.reduce((n, s) => n + s.segments, 0), 2);
 });
