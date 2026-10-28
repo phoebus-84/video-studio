@@ -8,6 +8,7 @@ An engine is a Linux machine that renders episodes for another one over SSH. It 
 2. From the controlling machine, push a commit to it: `git push ssh://<user>@<host>/~/video-studio HEAD:refs/heads/engine`, then on the engine `git -C ~/video-studio checkout -f engine`.
 3. On the engine, run `~/video-studio/packages/render-worker/setup.sh`. It installs the apt packages Chrome needs plus fonts (the only step that uses sudo; with a password, run it with `SETUP_SUDO_STDIN=1` and give the password on the first line of stdin), then Node, FFmpeg, Bun, `bun install` (Bun is pinned too, as the repository's package manager) and the browser. It can be repeated; finished steps are skipped. To change a version, edit the constants at its top.
 4. It writes `.engine/env.sh`, which puts the pinned Node and FFmpeg first on `PATH` and sets `FFMPEG_PATH` and `FFPROBE_PATH`. `packages/render-worker/engine.sh <args>` sources it and runs the engine CLI; that is what the controlling machine calls.
+5. To tune the engine, add exports to `.engine/env.sh`; `setup.sh` keeps the `export AVG_…` lines when it runs again. `AVG_CHROMIUM_GL=angle` draws on the engine's GPU, `AVG_RENDER_CONCURRENCY` and `AVG_RENDER_BROWSERS` set its tabs and browsers ([Render memory](../../docs/running.md#render-memory)). Measure before keeping a setting: on a GPU with 2 GB of video memory, four browsers of eight tabs ran out of memory, while four of four were the fastest.
 
 ## Rendering on an engine
 
