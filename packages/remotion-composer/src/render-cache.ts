@@ -3,7 +3,7 @@
 // A segment is rendered at its ORIGINAL frame range, not a rebased timeline:
 // kit animation, clip trims and crossfades keep their absolute/local clocks.
 import {createHash, randomUUID} from 'node:crypto';
-import {access, copyFile, mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
+import {access, copyFile, mkdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {sha256} from './assets.js';
 import {resolveKit} from './kits/index.js';
@@ -20,6 +20,32 @@ function canonical(value: unknown): unknown {
 }
 
 export const cacheKey = (value: unknown): string => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+
+/** Hashes already read in this process, by what identifies a file's content without reading it. */
+const remembered = new Map<string, Promise<string>>();
+const REMEMBER = 8192;
+
+/**
+ * sha256, read once per process for a file whose identity, size and
+ * modification time have not changed, as git trusts its index. The same file
+ * reached by another path or a hard link (a linked bundle) is the same
+ * entry. A render and a layout sheet each read the browser (200 MB) and the
+ * code again, and a correction every cached second. Not the change time:
+ * linking a file changes it, never its content.
+ */
+export async function sha256Cached(file: string): Promise<string> {
+  const s = await stat(file, {bigint: true});
+  // Without a file id (some filesystems give 0) the path names the file.
+  const key = `${s.ino !== 0n ? `${s.dev}:${s.ino}` : path.resolve(file)}:${s.size}:${s.mtimeNs}`;
+  let pending = remembered.get(key);
+  if (!pending) {
+    pending = sha256(file);
+    pending.catch(() => remembered.delete(key));
+    if (remembered.size >= REMEMBER) remembered.delete(remembered.keys().next().value!);
+    remembered.set(key, pending);
+  }
+  return pending;
+}
 
 function assetRefs(value: unknown, ids: Set<string>): void {
   if (Array.isArray(value)) value.forEach((v) => assetRefs(v, ids));
@@ -120,8 +146,13 @@ export class VideoCache {
     try {
       const record = JSON.parse(await readFile(path.join(this.root, `${key}.json`), 'utf8')) as {hash: string; meta?: unknown};
       if (!/^sha256:[a-f0-9]{64}$/.test(record.hash)) return null;
-      await copyFile(path.join(this.root, `${key}${this.ext}`), destination);
-      if (await sha256(destination) === record.hash) return {meta: record.meta};
+      // The entry is checked where it lies, once per process while it stays
+      // as it is (an entry is published whole, by rename, and never
+      // rewritten): a correction reads every cached second again.
+      const entry = path.join(this.root, `${key}${this.ext}`);
+      if (await sha256Cached(entry) !== record.hash) return null;
+      await copyFile(entry, destination);
+      return {meta: record.meta};
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.warnings.push(`Cache read missed: ${(error as Error).message}`);
     }
@@ -173,6 +204,9 @@ export function missRuns(missing: number[], max: number): number[][] {
   return runs;
 }
 
+/** Cache entries read at once. */
+const CACHE_READERS = 8;
+
 /** Callbacks keep cache policy testable without Chrome or FFmpeg. */
 export async function cachedVideo(options: {
   plan: VideoPlan;
@@ -207,7 +241,13 @@ export async function cachedVideo(options: {
   provided?: ReadonlyMap<number, string>;
   /** Called before the concat with the indices taken from `provided`: it may refuse them. */
   checkProvided?: (files: string[], provided: number[]) => Promise<void>;
-}): Promise<{video: string; report: CacheReport; files: string[]}> {
+  /**
+   * Return once the video is joined, and cache it whole meanwhile: `stored`
+   * settles when it is (the caller reads the video, never writes it, and
+   * awaits it before reading the report's warnings).
+   */
+  deferStore?: boolean;
+}): Promise<{video: string; report: CacheReport; files: string[]; stored?: Promise<void>}> {
   const {plan, work} = options;
   const wanted = options.only ? [...new Set(options.only)].sort((a, b) => a - b) : plan.segments.map((_, index) => index);
   for (const index of wanted) {
@@ -225,13 +265,25 @@ export async function cachedVideo(options: {
   }
   const missing: number[] = [];
   const provided: number[] = [];
+  // Read side by side: one at a time, an hour's 3600 seconds took half a minute before any drawing.
+  const found = new Array<'cached' | 'provided' | 'missing'>(plan.segments.length);
+  let at = 0;
+  const reader = async () => {
+    for (let k = at++; k < wanted.length; k = at++) {
+      const index = wanted[k]!;
+      const from = options.provided?.get(index);
+      if (await segments.get(plan.segments[index]!.key, files[index]!)) found[index] = 'cached';
+      else if (from !== undefined) {
+        await copyFile(from, files[index]!);
+        found[index] = 'provided';
+      } else found[index] = 'missing';
+    }
+  };
+  await Promise.all(Array.from({length: Math.min(CACHE_READERS, wanted.length)}, reader));
   for (const index of wanted) {
-    const from = options.provided?.get(index);
-    if (await segments.get(plan.segments[index]!.key, files[index]!)) report.segmentsReused++;
-    else if (from !== undefined) {
-      await copyFile(from, files[index]!);
-      provided.push(index);
-    } else missing.push(index);
+    if (found[index] === 'cached') report.segmentsReused++;
+    else if (found[index] === 'provided') provided.push(index);
+    else missing.push(index);
   }
   if (provided.length > 0) report.segmentsProvided = provided.length;
   const done = () => report.segmentsReused + provided.length;
@@ -256,21 +308,27 @@ export async function cachedVideo(options: {
         failed = true;
         throw e;
       }
-      for (const i of run) await segments.put(plan.segments[i]!.key, files[i]!);
+      // Cached while the lane draws its next run.
+      storing.push(Promise.all(run.map((i) => segments.put(plan.segments[i]!.key, files[i]!))).then(() => undefined));
       partial.delete(run);
       report.segmentsRendered += run.length;
       progress();
     }
   };
+  const storing: Promise<void>[] = [];
   const settled = await Promise.allSettled(Array.from({length: Math.min(lanes, runs.length)}, (_, index) => lane(index)));
+  // put never throws: a failed write is a warning.
+  await Promise.all(storing);
   const failure = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
   if (failure) throw failure.reason;
   if (options.only) return {video: '', report, files};
   if (provided.length > 0) {
     await options.checkProvided?.(files, provided);
-    for (const i of provided) await segments.put(plan.segments[i]!.key, files[i]!);
+    await Promise.all(provided.map((i) => segments.put(plan.segments[i]!.key, files[i]!)));
   }
   await options.concatenate(files, video);
-  await whole.put(plan.key, video);
+  const stored = whole.put(plan.key, video);
+  if (options.deferStore) return {video, report, files, stored};
+  await stored;
   return {video, report, files};
 }

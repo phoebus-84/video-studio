@@ -82,6 +82,26 @@ describe('auditRender', () => {
     assert.deepEqual(r.checks, ['decode']);
   });
 
+  it('decodes in stretches at once and finds a fault in any of them, sound or none', async () => {
+    const codec = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '30'];
+    const long = {...EXPECT, durationInFrames: 180};
+    const good = make('stretches.mp4', {seconds: 6, codec});
+    assert.deepEqual(codes(await auditRender(good, long, {decoders: 3})), []);
+    assert.deepEqual(codes(await auditRender(make('stretches-silent.mp4', {seconds: 6, codec, audio: null}), {...long, audio: false}, {decoders: 3})), []);
+    // Garbage in the picture two thirds in: the last stretch's decoder meets it.
+    const bytes = readFileSync(good);
+    const broken = path.join(dir, 'stretches-broken.mp4');
+    const at = Math.floor(bytes.length * 0.7);
+    bytes.fill(0x5a, at, at + 4000);
+    writeFileSync(broken, bytes);
+    assert.deepEqual(codes(await auditRender(broken, long)), ['decode-errors'], 'one decoder sees it');
+    assert.deepEqual(codes(await auditRender(broken, long, {decoders: 3})), ['decode-errors'], 'so do three');
+    // A file whose length cannot be read is decoded whole, which says why.
+    const cut = path.join(dir, 'stretches-cut.mp4');
+    writeFileSync(cut, readFileSync(good).subarray(0, Math.floor(bytes.length / 2)));
+    assert.deepEqual(codes(await auditRender(cut, long, {decoders: 3})), ['decode-errors']);
+  });
+
   it('measures loudness against the target when there is sound', async () => {
     const target = {integrated: -14, truePeak: -1, range: 11};
     const quiet = await auditRender(make('quiet.mp4', {volume: '0.01'}), {...EXPECT, loudness: target});
