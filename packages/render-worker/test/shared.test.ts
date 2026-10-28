@@ -364,9 +364,14 @@ test("a draw session prepares the job once and answers each chunk on its own lin
 test("a correction: cached seconds are not drawn, and a few missing ones are drawn here alone", async () => {
   const { ep, options } = episode();
   const { engines, exec } = machines();
-  const result = await renderer(exec, { hosts: ["local", "box-a"], cached: async () => [0, 1, 2] })(options);
+  const called: string[] = [];
+  const result = await renderer((destination, command, input) => {
+    called.push(destination);
+    return exec(destination, command, input);
+  }, { hosts: ["local", "box-a"], cached: async () => [0, 1, 2] })(options);
 
   assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => [d.i, d.by]), [[3, "local"], [4, "local"]]);
   assert.equal(engines.get("box-a")!.draws.length, 0, "no engine waited on for two seconds");
+  assert.deepEqual(called, [], "no engine even started");
   assert.equal(result.engine.shares.reduce((n, s) => n + s.segments, 0), 2);
 });

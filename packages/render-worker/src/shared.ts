@@ -158,7 +158,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
 
     // This machine's share is drawn by one drawer: the bundle and the browsers
     // once, not for every chunk (a minute each, while the chunk waits on it).
-    const { outputPath: _out, onProgress: _p, drawn: _d, loudness: _l, ...drawOptions } = render;
+    const { outputPath: _out, onProgress: _p, drawn: _d, ...drawOptions } = render;
     let localDrawer: Promise<SegmentDrawer> | undefined;
     const openLocal = () => (localDrawer ??= import("@av/remotion-composer").then((c) => c.openSegmentDrawer({ ...drawOptions, cacheDir: render.cacheDir!, dir: sharedDir })));
     const closeLocal = async () => {
@@ -391,8 +391,15 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     try {
       log(`shared render: ${total} s among ${drawers.join(", ")} chunk by chunk, starting by speed ${runs.map((r) => r.weight.toFixed(3)).join(" : ")}; ${assembler} assembles`);
       // The engines get their code and files while this machine bundles: no
-      // engine waits for the bundle, nor the bundle for an engine.
-      for (const run of runs) if (run.host !== LOCAL) void engineOf(run.host).catch(() => undefined);
+      // engine waits for the bundle, nor the bundle for an engine. When this
+      // machine holds segments, a correction may be its alone: the engines
+      // wait for that decision, and none starts for nothing.
+      const mayDrawAlone = assembler === LOCAL && drawers.includes(LOCAL) && runs.length > 1 &&
+        (options.cached !== undefined || (!options.draw && (await import("@av/remotion-composer")).holdsSegments(render.cacheDir!)));
+      const warming = (await mayDrawAlone) ? queueReady.then((queue) => runs.filter((r) => queue.has(r.host))) : Promise.resolve(runs);
+      void warming.then((warm) => {
+        for (const run of warm) if (run.host !== LOCAL) void engineOf(run.host).catch(() => undefined);
+      }, () => undefined);
       const work = runs.map(drawShare);
       // A remote assembler that draws nothing still needs the files.
       if (assembler !== LOCAL && !drawers.includes(assembler)) work.push(engineOf(assembler).then(() => undefined));
