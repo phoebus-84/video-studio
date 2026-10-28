@@ -163,7 +163,16 @@ export function openDrawSession(engine: EngineSession, job: RenderJob): DrawSess
           fail(new RenderWorkerError("engine-failed", `${engine.target.name}: the engine did not answer with JSON: ${line.slice(0, 300)}`));
           continue;
         }
-        if (!answer.error) waiting.shift()?.resolve(answer);
+        if (!answer.error) {
+          waiting.shift()?.resolve(answer);
+          continue;
+        }
+        // The engine failed a chunk and ends its session: the chunk waits on nothing more.
+        const { code, message } = answer.error as { code?: unknown; message?: unknown };
+        fail(new RenderWorkerError(
+          typeof code === "string" ? code : "engine-failed",
+          `${engine.target.name}: ${typeof message === "string" ? message : "the draw failed"}`,
+        ));
       }
       done();
     },

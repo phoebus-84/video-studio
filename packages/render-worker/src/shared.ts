@@ -207,6 +207,18 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       await pushToAssembler(segments);
     };
 
+    // Machines with nothing to draw wait here while the others draw.
+    let wakeQueue = () => {};
+    const queueChanged = () => new Promise<void>((resolve) => {
+      const before = wakeQueue;
+      wakeQueue = () => {
+        wakeQueue = () => {};
+        before();
+        resolve();
+      };
+    });
+    abort.signal.addEventListener("abort", () => wakeQueue());
+
     /** `host` draws chunks from the queue until it has nothing more to draw. */
     const drawShare = async (run: (typeof runs)[number]) => {
       const { host } = run;
@@ -224,11 +236,34 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
           return;
         }
       }
-      for (let chunk = queue.take(host), first = true; chunk.length > 0; chunk = queue.take(host), first = false) {
+      for (let first = true; !abort.signal.aborted; ) {
+        const chunk = queue.take(host);
+        if (chunk.length === 0) {
+          // Another machine may yet fail and give its chunk back.
+          if (!queue.mayGetMore(host)) return;
+          await queueChanged();
+          continue;
+        }
         const started = Date.now();
-        await drawChunk(host, chunk, first);
+        try {
+          await drawChunk(host, chunk, first);
+        } catch (error) {
+          // A remote that only draws gives its chunk back to the others.
+          if (host === LOCAL || host === assembler || abort.signal.aborted) throw error;
+          queue.leave(host);
+          chunkDone.delete(host);
+          const session = sessions.get(host);
+          sessions.delete(host);
+          void session?.then((s) => s.close()).catch(() => undefined);
+          log(`warning: ${host} failed on ${chunk[0]}–${chunk.at(-1)}, the others draw them: ${(error as Error).message}`);
+          report();
+          wakeQueue();
+          return;
+        }
+        first = false;
         const took = (Date.now() - started) / 1000;
         queue.done(host, took);
+        wakeQueue();
         run.segments.push(...chunk);
         seconds.set(host, (seconds.get(host) ?? 0) + took);
         chunkDone.delete(host);

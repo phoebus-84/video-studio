@@ -197,6 +197,33 @@ test("an engine that cannot start draws nothing, and the others draw its part", 
   assert.ok(lines.some((l) => l.includes("box-a does not draw")), lines.join(" | "));
 });
 
+test("an engine that fails a chunk gives it back, and the others draw it", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  engines.get("box-a")!.failAfter = 1;
+  const lines: string[] = [];
+  const result = await renderer(exec, { hosts: ["local", "box-a"], draw: slowDraw("local", 150), onLog: (l) => lines.push(l) })(options);
+  const drawn = drawnBy(path.join(ep, "out.mp4"));
+  assert.deepEqual(drawn.map((d) => d.i), [0, 1, 2, 3, 4], "no second is missing");
+  assert.ok(drawn.some((d) => d.by === "box-a"), "its first chunk is kept");
+  assert.ok(lines.some((l) => /box-a failed on .*the others draw them/.test(l)), lines.join(" | "));
+  assert.equal(result.engine.shares.find((s) => s.host === "box-a")?.segments, engines.get("box-a")!.draws[0]!.segments.length);
+});
+
+test("a machine that has finished still draws what a failing one gives back", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  engines.get("box-a")!.failAfter = 0;
+  // box-a holds its chunk while local finishes the rest, then fails it.
+  const slow: Exec = async (destination, command, input) => {
+    if (command.includes(" draw ")) await new Promise((r) => setTimeout(r, 300));
+    return exec(destination, command, input);
+  };
+  const result = await renderer(slow, { hosts: ["local", "box-a"] })(options);
+  assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => [d.i, d.by]), [0, 1, 2, 3, 4].map((i) => [i, "local"]));
+  assert.equal(result.engine.shares.find((s) => s.host === "box-a")?.segments ?? 0, 0);
+});
+
 test("an assembler that cannot start fails the render and leaves nothing behind", async () => {
   const { options } = episode();
   const { engines, exec } = machines();
@@ -206,8 +233,8 @@ test("an assembler that cannot start fails the render and leaves nothing behind"
   assert.ok(!existsSync(`${options.outputPath}.shared`));
 });
 
-test("a segment that changed on the way is refused", async () => {
-  const { options } = episode();
+test("a segment that changed on the way is refused, and drawn again by another machine", async () => {
+  const { ep, options } = episode();
   const { exec } = machines();
   const tamper: Exec = async (destination, command, input) => {
     const run = await exec(destination, command, input);
@@ -220,7 +247,10 @@ test("a segment that changed on the way is refused", async () => {
     }
     return run;
   };
-  await assert.rejects(renderer(tamper, { hosts: ["local", "box-a"], draw: slowDraw("local", 150) })(options), /not what it drew/);
+  const lines: string[] = [];
+  await renderer(tamper, { hosts: ["local", "box-a"], draw: slowDraw("local", 150), onLog: (l) => lines.push(l) })(options);
+  assert.ok(lines.some((l) => /box-a failed on .*not what it drew/.test(l)), lines.join(" | "));
+  assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => [d.i, d.by]), [0, 1, 2, 3, 4].map((i) => [i, "local"]));
 });
 
 test("names are checked before anything runs", () => {

@@ -53,3 +53,29 @@ test("an unmeasured machine's prior is scaled like the measured ones", () => {
   assert.ok(Math.abs(q.rate({ prior: 1, segments: 0, seconds: 0 }) - 1.7) < 1e-9);
   assert.throws(() => q.take("c"), /does not draw/);
 });
+
+test("a machine that leaves gives its chunk back, drawn before the rest, and takes nothing more", () => {
+  const q = new SegmentQueue(20, [{ host: "a", prior: 1, fromFront: true }, { host: "b", prior: 1 }]);
+  q.take("a");
+  assert.deepEqual(q.take("b"), [15, 16, 17, 18, 19]);
+  q.leave("b");
+  assert.equal(q.left, 15, "its segments are counted again");
+  assert.deepEqual(q.take("b"), [], "a machine that failed takes nothing");
+  assert.deepEqual(q.take("a"), [15, 16, 17, 18, 19], "the chunk given back comes first");
+  q.done("a", 1);
+  assert.deepEqual(q.take("a"), [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.equal(q.left, 0);
+});
+
+test("a machine with nothing left waits while others draw, and takes what a failing one gives back", () => {
+  const q = new SegmentQueue(6, [{ host: "a", prior: 1, fromFront: true }, { host: "b", prior: 1 }, { host: "c", prior: 1 }]);
+  const held = { a: q.take("a"), b: q.take("b"), c: q.take("c") };
+  assert.deepEqual(held, { a: [0], b: [5], c: [4] });
+  while (q.left > 0) q.done("a", 1), q.take("a");
+  q.done("a", 1);
+  assert.deepEqual(q.take("a"), [], "nothing left to take now");
+  assert.ok(q.mayGetMore("a"), "b and c still hold chunks");
+  q.leave("b");
+  assert.ok(!q.mayGetMore("b"));
+  assert.deepEqual(q.take("a"), [5], "a stopped machine draws the chunk b gave back");
+});

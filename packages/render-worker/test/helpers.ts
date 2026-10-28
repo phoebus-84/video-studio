@@ -49,6 +49,8 @@ export interface FakeEngine {
   /** Destinations that refuse SSH (exit 255) and those reachable without an engine (exit 127). */
   unreachable: Set<string>;
   noEngine: Set<string>;
+  /** Its draws fail once it has drawn this many chunks. */
+  failAfter: number | null;
   state: { commit: string | null; synced: string | null };
 }
 
@@ -61,6 +63,7 @@ export function fakeEngine(options: { render?: EngineContext["render"]; name?: s
     draws: [],
     unreachable: new Set(),
     noEngine: new Set(),
+    failAfter: null,
     state: { commit: null, synced: null },
     exec: async (destination, command, input = {}) => {
       engine.calls.push({ destination, command });
@@ -95,6 +98,7 @@ export function fakeEngine(options: { render?: EngineContext["render"]; name?: s
           return (options.render ?? fakeRender)(o);
         },
         draw: async (o) => {
+          if (engine.failAfter !== null && engine.draws.length >= engine.failAfter) throw new Error("the browser crashed");
           engine.draws.push(o);
           return fakeDraw(options.name ?? "engine")(o);
         },
