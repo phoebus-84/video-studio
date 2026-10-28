@@ -242,11 +242,13 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     const queueReady = (async () => {
       const toDraw = Array.from({ length: total }, (_, i) => i);
       let drawing = runs;
-      if (assembler === LOCAL && drawers.includes(LOCAL)) {
+      // Assembling here is enough: an engine alone draws only what this cache lacks.
+      if (assembler === LOCAL) {
         const cached = new Set(await (options.cached ?? (options.draw ? async () => [] : async () => (await openLocal()).cached()))());
         const missing = toDraw.filter((i) => !cached.has(i));
         cachedHere = cached.size;
-        const alone = cached.size > 0 && missing.length / runs.find((r) => r.host === LOCAL)!.weight <= ALONE_SECONDS;
+        const local = runs.find((r) => r.host === LOCAL);
+        const alone = local !== undefined && cached.size > 0 && missing.length / local.weight <= ALONE_SECONDS;
         if (alone && runs.length > 1) drawing = runs.filter((r) => r.host === LOCAL);
         if (cached.size > 0 || drawing !== runs) {
           log(`${cached.size} s of video cached here, ${missing.length} s to draw${drawing !== runs ? `, ${LOCAL} alone` : ""}`);

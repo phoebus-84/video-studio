@@ -1311,7 +1311,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       episode: Type.String({ description: "Episode slug" }),
       profile: profileParam,
       label: Type.Optional(Type.String({ default: "render", description: "Lowercase kebab-case render label" })),
-      host: Type.Optional(Type.String({ description: "Render on another machine over SSH (packages/render-worker): a tailnet peer name or a render-hosts.json host, or \"auto\" for the first engine that answers; omitted, renders here. Needs the render code committed." })),
+      host: Type.Optional(Type.String({ description: "Render on another machine over SSH (packages/render-worker): a tailnet peer name or a render-hosts.json host, or \"auto\" for the first engine that answers; omitted, renders here. A named machine draws only the seconds this machine's render cache lacks, and this machine joins them and adds the sound. Needs the render code committed." })),
       hosts: Type.Optional(Type.Array(Type.String(), { description: "A shared render, only when the operator asks for one: the video's one-second segments split among these machines in order, the faster ones (as measured by earlier shared renders) drawing more (\"local\" is this one, the others as for host), then joined on one machine. Instead of host." })),
       assembleOn: Type.Optional(Type.String({ description: "With hosts: the machine that joins the segments, adds the audio and writes the mp4; \"local\" by default, and it need not draw a share." })),
     }),
@@ -1340,9 +1340,13 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             ...(params.label ? { label: params.label } : {}),
             ...(hosts?.length
               ? { render: sharedRenderer({ ...remote, hosts, speedsFile: process.env.AVG_RENDER_SPEEDS || join(LIBRARY_ROOT, ".render", "render-speeds.json"), ...(params.assembleOn ? { assembleOn: params.assembleOn.trim() } : {}) }) }
-              : host
-                ? { render: remoteRenderer({ ...remote, host }) }
-                : {}),
+              // A named engine draws only the seconds this machine's cache lacks,
+              // and this machine joins them: a correction redraws its seconds there.
+              : host && host !== "auto"
+                ? { render: sharedRenderer({ ...remote, hosts: [host], speedsFile: process.env.AVG_RENDER_SPEEDS || join(LIBRARY_ROOT, ".render", "render-speeds.json") }) }
+                : host
+                  ? { render: remoteRenderer({ ...remote, host }) }
+                  : {}),
             onProgress(progress) {
               const line = bar(progress, Date.now());
               if (line) onUpdate?.({ content: [{ type: "text" as const, text: line }], details: { progress } });

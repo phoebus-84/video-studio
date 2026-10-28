@@ -12,7 +12,7 @@ An engine is a Linux machine that renders episodes for another one over SSH. It 
 
 ## Rendering on an engine
 
-`pva_compose_video` takes an optional `host`: a tailnet peer name, a host named in `render-hosts.json`, or `auto` for the first engine that answers. Without it the episode renders here, as before. With it, everything but the render stays on this machine (the decision and sheet checks, naming, the audit, `output/current.json`, the journal); only `renderTimeline` runs on the engine, through `remoteRenderer` from this package, which has its shape.
+`pva_compose_video` takes an optional `host`: a tailnet peer name, a host named in `render-hosts.json`, or `auto` for the first engine that answers. Without it the episode renders here, as before. With it, everything but the render stays on this machine (the decision and sheet checks, naming, the audit, `output/current.json`, the journal); only `renderTimeline` runs on the engine, through `remoteRenderer` from this package, which has its shape. A named host (not `auto`) renders as a shared render of that one engine, assembled here: the engine draws only the seconds this machine's render cache lacks, so a correction redraws its own seconds there, not the video.
 
 Nothing about the machines is written in code.
 

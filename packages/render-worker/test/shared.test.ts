@@ -378,6 +378,15 @@ test("a draw session prepares the job once and answers each chunk on its own lin
   assert.ok(!existsSync(path.join(cache, "a", "b", "c", "render.lock")), "the lock goes with the session");
 });
 
+test("an engine alone, assembled here: it draws only the seconds this machine's cache lacks", async () => {
+  const { ep, options } = episode();
+  const { engines, exec } = machines();
+  const result = await renderer(exec, { hosts: ["box-a"], cached: async () => [0, 1, 2] })(options);
+  assert.deepEqual(drawnBy(path.join(ep, "out.mp4")).map((d) => [d.i, d.by]), [[3, "box-a"], [4, "box-a"]]);
+  assert.deepEqual(engines.get("box-a")!.draws.flatMap((d) => d.segments), [3, 4]);
+  assert.equal(result.engine.assembler, "local");
+});
+
 test("a correction: cached seconds are not drawn, and a few missing ones are drawn here alone", async () => {
   const { ep, options } = episode();
   const { engines, exec } = machines();
