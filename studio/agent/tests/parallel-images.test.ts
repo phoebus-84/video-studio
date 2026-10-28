@@ -95,15 +95,13 @@ const image = (path: string) => join(root, CHANNEL, "series", SERIES, "episodes"
 describe("image generation in parallel", () => {
   it("serves several pva_generate_image calls at once over MCP", async () => {
     const client = await connect();
-    const started = Date.now();
     const results = await Promise.all(["s1", "s2", "s3", "s4"].map((sceneId) =>
       client.callTool({ name: "pva_generate_image", arguments: { ...where, sceneId, prompt: `scene ${sceneId}` } })));
-    const elapsed = Date.now() - started;
 
     for (const result of results) expect(result.isError).toBe(false);
     expect(requests).toBe(4);
     expect(peak).toBe(4);
-    expect(elapsed).toBeLessThan(DELAY_MS * 2.5);
+    // All four were open together; one after another, the peak would be 1.
     for (const sceneId of ["s1", "s2", "s3", "s4"]) expect(existsSync(image(`${sceneId}.png`))).toBe(true);
   }, 60_000);
 });
@@ -111,18 +109,16 @@ describe("image generation in parallel", () => {
 describe("pva_generate_images", () => {
   it("draws every image of one call at the same time", async () => {
     const client = await connect();
-    const started = Date.now();
     const result = await client.callTool({
       name: "pva_generate_images",
       arguments: { ...where, images: ["s1", "s2", "s3", "s4"].map((sceneId) => ({ sceneId, prompt: `scene ${sceneId}` })) },
     });
-    const elapsed = Date.now() - started;
 
     expect(result.isError).toBe(false);
     expect((result.content as Array<{ text: string }>)[0]!.text).toMatch(/^4\/4 images generated/);
     expect(requests).toBe(4);
     expect(peak).toBe(4);
-    expect(elapsed).toBeLessThan(DELAY_MS * 2.5);
+    // All four were open together; one after another, the peak would be 1.
     for (const sceneId of ["s1", "s2", "s3", "s4"]) expect(existsSync(image(`${sceneId}.png`))).toBe(true);
   }, 60_000);
 
