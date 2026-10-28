@@ -16,7 +16,7 @@ import { readHostsConfig } from "./hosts.js";
 import { decodeBundle, drawnPath, encodeBundle, RenderWorkerError, type DrawAnswer } from "./protocol.js";
 import { SegmentQueue } from "./queue.js";
 import { readSpeeds, recordSpeeds, speedKey, weightsFor } from "./speeds.js";
-import { call, engineFacts, fetchVideo, openEngine, renderOn, sendFiles, type EngineAnswer, type EngineSession, type RemoteRendererOptions } from "./remote.js";
+import { call, engineFacts, fetchVideo, openDrawSession, openEngine, renderOn, sendFiles, type DrawSession, type EngineAnswer, type EngineSession, type RemoteRendererOptions } from "./remote.js";
 
 /** The machine this runs on, in `hosts` and `assembleOn`. */
 export const LOCAL = "local";
@@ -162,6 +162,25 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       await (await opened?.catch(() => undefined))?.close();
     };
 
+    // A remote's share is drawn on one engine command too, for the same reason.
+    const sessions = new Map<string, Promise<DrawSession>>();
+    const sessionOf = (host: string) => {
+      let opened = sessions.get(host);
+      if (!opened) {
+        opened = (async () => openDrawSession(await engineOf(host), (await prepared()).job))();
+        sessions.set(host, opened);
+      }
+      return opened;
+    };
+    /** Ends the draw sessions, which hold their engines' render lock; the first failure, unless `quiet`. */
+    const closeSessions = async (quiet: boolean) => {
+      const opened = [...sessions.values()];
+      sessions.clear();
+      const closed = await Promise.allSettled(opened.map(async (s) => (await s).close()));
+      const failed = closed.find((c): c is PromiseRejectedResult => c.status === "rejected");
+      if (failed && !quiet) throw failed.reason;
+    };
+
     /** One chunk of `host`'s; the soundtrack too on its first, when it assembles. */
     const drawChunk = async (host: string, segments: number[], first: boolean) => {
       const onProgress = chunkProgress(host, segments.length);
@@ -176,8 +195,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         return;
       }
       const engine = await engineOf(host);
-      const job = (await prepared()).job;
-      const answer = await renderOn<DrawAnswer>(engine, { ...job, drawOnly: { segments, audio: first && host === assembler } }, onProgress);
+      const answer = await (await sessionOf(host)).draw({ segments, audio: first && host === assembler }, onProgress);
       answers.set(host, answer.engine);
       drawnNow.set(host, (drawnNow.get(host) ?? 0) + (answer.rendered ?? segments.length));
       if (answer.totalSegments !== total) throw new RenderWorkerError("engine-failed", `${host} counts ${answer.totalSegments} segments, this machine ${total}`);
@@ -275,9 +293,10 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         abort.abort(e);
         throw e;
       })));
-      // Its browsers leave the assembly the memory.
+      // Its browsers leave the assembly the memory; a remote assembler's lock is free again.
       await closeLocal();
       const failed = settled.find((s): s is PromiseRejectedResult => s.status === "rejected");
+      await closeSessions(failed !== undefined);
       if (failed) throw failed.reason;
       if (options.speedsFile) {
         try {
@@ -325,6 +344,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     } finally {
       options.signal?.removeEventListener("abort", stop);
       await closeLocal();
+      await closeSessions(true);
       rmSync(sharedDir, { recursive: true, force: true });
     }
   };

@@ -7,13 +7,15 @@
 //   diff <key>         ← manifest [{path,size,hash}]   → {"missing":[path…]}
 //   receive <key>      ← bundle of the missing files   → {"received":n,"bytes":n}
 //   render <key>       ← job                           → RenderResult (last stdout line); stderr "progress 0.42"
+//   draw <key>         ← job, then one chunk {"segments":[i…],"audio"?} per line → a DrawAnswer line per chunk
 //   fetch <key>        → the rendered mp4's bytes
 //   send-drawn <key>   ← [index…]                      → bundle of drawn/segment-<i>.mp4
 //   receive-drawn <key> ← bundle of drawn/segment-<i>.mp4 → {"received":n,"bytes":n}
 //
 // A shared render (shared.ts) splits a video's one-second segments among
 // engines: a job with `drawOnly` draws its share into the job's drawn/ and
-// answers with their hashes; the assembling engine's job lists in `drawn` every
+// answers with their hashes (`draw` does the same chunk after chunk, preparing
+// the job once); the assembling engine's job lists in `drawn` every
 // segment in its drawn/: its own share and those receive-drawn put there.
 //
 // Files are named by where they are on the controlling machine: an absolute

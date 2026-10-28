@@ -94,6 +94,9 @@ test("a share here and one on an engine, assembled here", async () => {
   assert.ok(drawn.some((d) => d.by === "box-a"), "the engine helps");
   assert.ok(engines.get("box-a")!.draws.every((d) => !d.audio));
   assert.equal(engines.get("box-a")!.renders.length, 0, "the engine only draws");
+  const commands = engines.get("box-a")!.calls.map((c) => c.command);
+  assert.equal(commands.filter((c) => / draw ch\/series\/ep1$/.test(c)).length, 1, "every chunk goes through one draw session");
+  assert.ok(!commands.some((c) => / render /.test(c)));
   assert.equal(result.engine.assembler, "local");
   assert.equal(result.engine.sentFiles, 1);
   assert.equal(progress.at(-1), 1);
@@ -110,6 +113,10 @@ test("three engines, one of them assembles: the others' segments reach it throug
   assert.equal(engines.get("box-b")!.renders.length, 1, "box-b assembles");
   assert.deepEqual(Object.keys(engines.get("box-b")!.renders[0]!.drawn ?? {}).map(Number).sort(), [0, 1, 2, 3, 4]);
   assert.equal(engines.get("box-a")!.renders.length + engines.get("box-c")!.renders.length, 0);
+  for (const name of NAMES) {
+    const sessions = engines.get(name)!.calls.filter((c) => / draw ch\/series\/ep1$/.test(c.command)).length;
+    assert.ok(sessions <= 1, `${name} opened ${sessions} draw sessions`);
+  }
   assert.equal(result.engine.host, "box-b");
   assert.equal(result.engine.commit, SHA);
 });
@@ -247,4 +254,41 @@ x`;
   const job = (drawn: Record<string, string>) => JSON.stringify({ version: 1, timeline: {}, assetRoot: "files/x", sharedRoots: [], kits: [], drawn });
   assert.match((await engineRun(["render", "a/b/c"], cache, job({ 0: sha256("other") }))).stdout, /"code":"hash-mismatch"/);
   assert.match((await engineRun(["render", "a/b/c"], cache, job({ 1: sha256(bytes) }))).stdout, /"code":"missing-file"/);
+});
+
+test("a draw session prepares the job once and answers each chunk on its own line", async () => {
+  const cache = tempDir();
+  const job = JSON.stringify({ version: 1, timeline: {}, assetRoot: "files/x", sharedRoots: [], kits: [] });
+  const opened: string[] = [];
+  const chunks: { segments: number[]; audio?: boolean }[] = [];
+  const out = new PassThrough();
+  const answers: Buffer[] = [];
+  out.on("data", (b: Buffer) => answers.push(b));
+  const code = await runEngine(["draw", "a/b/c"], {
+    stdin: Readable.from([`${job}\n{"segments":[0,1],"audio":true}\n`, `{"segments":[4]}\n`]),
+    stdout: out,
+    stderrLine: () => undefined,
+  }, {
+    repo: "/nowhere",
+    cache,
+    openDrawer: async (o) => {
+      opened.push(o.dir);
+      return {
+        draw: async (chunk) => {
+          chunks.push({ segments: chunk.segments, ...(chunk.audio ? { audio: true } : {}) });
+          return { segments: chunk.segments.map((index) => ({ index, file: "", hash: sha256(String(index)), bytes: 1 })), totalSegments: 5, cache: { segmentsRendered: chunk.segments.length } } as never;
+        },
+        close: async () => {
+          opened.push("closed");
+        },
+      };
+    },
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(opened, [path.join(cache, "a", "b", "c", "drawn"), "closed"]);
+  assert.deepEqual(chunks, [{ segments: [0, 1], audio: true }, { segments: [4] }]);
+  const lines = Buffer.concat(answers).toString().trim().split("\n").map((l) => JSON.parse(l) as { segments: { index: number }[]; rendered: number });
+  assert.deepEqual(lines.map((l) => l.segments.map((s) => s.index)), [[0, 1], [4]]);
+  assert.deepEqual(lines.map((l) => l.rendered), [2, 1]);
+  assert.ok(!existsSync(path.join(cache, "a", "b", "c", "render.lock")), "the lock goes with the session");
 });

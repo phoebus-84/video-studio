@@ -6,11 +6,12 @@
 
 import { createReadStream, createWriteStream, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
+import { PassThrough, Writable } from "node:stream";
 import type { RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
 import { localGit, renderCommit, syncCode, type Git } from "./code-sync.js";
 import { sha256File, prepareJob, type JobFile } from "./files.js";
 import { engineCommand, findEngine, readHostsConfig, type EngineTarget, type HostsConfig, type TailscalePeer } from "./hosts.js";
-import { checkKey, encodeBundle, lastJsonLine, RenderWorkerError, type EngineVersion, type RenderJob } from "./protocol.js";
+import { checkKey, encodeBundle, lastJsonLine, RenderWorkerError, type DrawAnswer, type EngineVersion, type RenderJob } from "./protocol.js";
 import { sshExec, type Exec, type ExecResult } from "./ssh.js";
 
 export interface RemoteRendererOptions {
@@ -131,6 +132,70 @@ export async function renderOn<T>(engine: EngineSession, job: RenderJob, onProgr
   return lastJsonLine<T>(answer.stdout);
 }
 
+/** A share drawn chunk by chunk on one engine command, so the engine prepares the job once. */
+export interface DrawSession {
+  draw(chunk: { segments: number[]; audio?: boolean }, onProgress: (progress: number) => void): Promise<DrawAnswer>;
+  /** Ends the session; its failure, if the engine failed. */
+  close(): Promise<void>;
+}
+
+export function openDrawSession(engine: EngineSession, job: RenderJob): DrawSession {
+  const stdin = new PassThrough();
+  stdin.write(`${JSON.stringify(job)}\n`);
+  const waiting: { resolve: (answer: DrawAnswer) => void; reject: (e: unknown) => void; onProgress: (progress: number) => void }[] = [];
+  let partial = "";
+  let last = "";
+  let failure: unknown = null;
+  const fail = (e: unknown) => {
+    failure ??= e;
+    for (const w of waiting.splice(0)) w.reject(failure);
+  };
+  const stdout = new Writable({
+    write(chunk: Buffer, _encoding, done) {
+      const lines = (partial + chunk.toString("utf-8")).split("\n");
+      partial = lines.pop() ?? "";
+      for (const line of lines.filter((l) => l.trim())) {
+        last = line;
+        let answer: DrawAnswer & { error?: unknown };
+        try {
+          answer = JSON.parse(line) as typeof answer;
+        } catch {
+          fail(new RenderWorkerError("engine-failed", `${engine.target.name}: the engine did not answer with JSON: ${line.slice(0, 300)}`));
+          continue;
+        }
+        if (!answer.error) waiting.shift()?.resolve(answer);
+      }
+      done();
+    },
+  });
+  const run = call(engine.exec, engine.target, ["draw", engine.key], {
+    stdin,
+    stdout,
+    onStderrLine: (line) => {
+      const progress = /^progress (\d+(?:\.\d+)?)$/.exec(line);
+      if (progress) waiting[0]?.onProgress(Number(progress[1]));
+      else if (line.trim()) engine.log(line);
+    },
+    ...(engine.signal ? { signal: engine.signal } : {}),
+  }, "draw", () => last);
+  const ended = run.then(
+    () => fail(new RenderWorkerError("engine-failed", `${engine.target.name}: the draw session ended early`)),
+    (e: unknown) => fail(e),
+  );
+  return {
+    draw: (chunk, onProgress) => new Promise<DrawAnswer>((resolve, reject) => {
+      if (failure) return reject(failure);
+      waiting.push({ resolve, reject, onProgress });
+      stdin.write(`${JSON.stringify(chunk)}\n`);
+    }),
+    async close() {
+      stdin.end();
+      await ended;
+      await run;
+    },
+  };
+}
+
 /** Brings the engine's rendered mp4 to `outputPath`, checked against what it said it rendered. */
 export async function fetchVideo(engine: EngineSession, outputPath: string, rendered: { sizeBytes: number; hash: string }): Promise<void> {
   const partial = `${outputPath}.download`;
@@ -151,13 +216,13 @@ function warnMismatches(version: EngineVersion | null, log: (line: string) => vo
   for (const m of version?.mismatches ?? []) log(`warning: ${m}`);
 }
 
-/** One engine command; a failure becomes the engine's own error when it sent one. */
-export async function call(exec: Exec, target: EngineTarget, args: string[], input: Parameters<Exec>[2], what: string): Promise<ExecResult> {
+/** One engine command; a failure becomes the engine's own error when it sent one (`lastLine`: stdout's, when it was streamed elsewhere). */
+export async function call(exec: Exec, target: EngineTarget, args: string[], input: Parameters<Exec>[2], what: string, lastLine?: () => string): Promise<ExecResult> {
   const run = await exec(target.destination, engineCommand(target, args), input);
   if (run.code === 0) return run;
   let error: { code?: string; message?: string; problems?: { code: string; message: string; path?: string }[] } | undefined;
   try {
-    error = (JSON.parse(run.stdout.trimEnd().split("\n").pop() ?? "") as { error?: typeof error }).error;
+    error = (JSON.parse(lastLine?.() ?? run.stdout.trimEnd().split("\n").pop() ?? "") as { error?: typeof error }).error;
   } catch {
     error = undefined;
   }

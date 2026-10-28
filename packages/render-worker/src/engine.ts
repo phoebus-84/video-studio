@@ -4,7 +4,7 @@
 //   files/         the job's files, mirrored by their path on the controlling machine
 //   index.json     {path: {size, mtimeMs, hash}} — what files/ holds, so `diff` need not rehash
 //   cache/         the composer's render cache (renderTimeline's cacheDir)
-//   render.lock    held by the running render (its pid)
+//   render.lock    held by the running render or draw session (its pid)
 //   out.mp4        the last render, for `fetch`
 //   drawn/         a shared render's segments: drawn here, or received from other engines
 //
@@ -20,7 +20,8 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { finished } from "node:stream/promises";
 import type { Writable } from "node:stream";
-import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimelineOptions } from "@av/remotion-composer";
+import { StringDecoder } from "node:string_decoder";
+import type { DrawSegmentsOptions, DrawSegmentsResult, RenderResult, RenderTimelineOptions, SegmentDrawer } from "@av/remotion-composer";
 import { defaultRenderConcurrency, renderBrowsers } from "./concurrency.js";
 import { sha256File } from "./files.js";
 import {
@@ -44,8 +45,12 @@ export interface EngineContext {
   render?: (options: RenderTimelineOptions) => Promise<RenderResult>;
   /** A shared render's share (the composer's drawSegments). */
   draw?: (options: DrawSegmentsOptions) => Promise<DrawSegmentsResult>;
+  /** A draw session's drawer (the composer's openSegmentDrawer); without it, `draw` is called per chunk when given. */
+  openDrawer?: (options: DrawerOptions) => Promise<SegmentDrawer>;
   concurrency?: () => { concurrency: number; browsers: number };
 }
+
+export type DrawerOptions = Omit<DrawSegmentsOptions, "segments" | "audio" | "onProgress">;
 
 export function defaultCacheRoot(env: Record<string, string | undefined> = process.env): string {
   return path.join(env.XDG_CACHE_HOME || path.join(homedir(), ".cache"), "video-studio", "render");
@@ -70,6 +75,9 @@ export async function runEngine(argv: readonly string[], io: EngineIO, ctx: Engi
         return answer(io, await receive(jobDir(ctx, args[0]), io.stdin));
       case "render":
         return answer(io, await render(jobDir(ctx, args[0]), io, ctx));
+      case "draw":
+        await drawSession(jobDir(ctx, args[0]), io, ctx);
+        return 0;
       case "fetch": {
         const out = path.join(jobDir(ctx, args[0]), "out.mp4");
         if (!existsSync(out)) throw new RenderWorkerError("missing-file", "nothing has been rendered for this episode");
@@ -82,7 +90,7 @@ export async function runEngine(argv: readonly string[], io: EngineIO, ctx: Engi
       case "receive-drawn":
         return answer(io, await receive(jobDir(ctx, args[0]), io.stdin, "drawn"));
       default:
-        throw new RenderWorkerError("bad-request", `unknown command "${command ?? ""}"; commands: version, sync, diff, receive, render, fetch, send-drawn, receive-drawn`);
+        throw new RenderWorkerError("bad-request", `unknown command "${command ?? ""}"; commands: version, sync, diff, receive, render, draw, fetch, send-drawn, receive-drawn`);
     }
   } catch (e) {
     const error = e as { code?: unknown; message?: unknown; problems?: unknown };
@@ -257,16 +265,17 @@ function alive(pid: number): boolean {
   }
 }
 
-async function render(dir: string, io: EngineIO, ctx: EngineContext): Promise<unknown> {
-  const job = parseJson<RenderJob>(await readAll(io.stdin), "the job");
+function checkJob(job: RenderJob): RenderJob {
   if (job?.version !== PROTOCOL_VERSION) throw new RenderWorkerError("bad-request", `the job is protocol ${String(job?.version)}, this engine speaks ${PROTOCOL_VERSION}`);
+  return job;
+}
+
+/** What a render and a draw share: the job's files where they are here, the cache, the machine's share of it. */
+function jobOptions(dir: string, job: RenderJob, ctx: EngineContext) {
   const local = (rel: string) => path.join(dir, ...checkJobPath(rel).split("/"));
-  const release = await lock(dir);
-  try {
-    const { concurrency, browsers } = (ctx.concurrency ?? defaultConcurrency)();
-    let last = -1;
-    let lastAt = 0;
-    const common = {
+  const { concurrency, browsers } = (ctx.concurrency ?? defaultConcurrency)();
+  return {
+    common: {
       timeline: job.timeline,
       assetRoot: local(job.assetRoot),
       sharedRoots: job.sharedRoots.map(local),
@@ -274,23 +283,41 @@ async function render(dir: string, io: EngineIO, ctx: EngineContext): Promise<un
       cacheDir: path.join(dir, "cache"),
       concurrency,
       browsers,
-      onProgress: (p: number) => {
-        const now = Date.now();
-        if (p >= 1 || p - last >= 0.01 || now - lastAt >= 2000) {
-          last = p;
-          lastAt = now;
-          io.stderrLine(`progress ${p.toFixed(3)}`);
-        }
-      },
-    };
-    const engine = { concurrency, browsers, commit: gitHead(ctx.repo) };
+    },
+    engine: { concurrency, browsers, commit: gitHead(ctx.repo) },
+  };
+}
+
+/** "progress 0.42" on stderr, at most every hundredth or every two seconds. */
+function progressLines(io: EngineIO): (p: number) => void {
+  let last = -1;
+  let lastAt = 0;
+  return (p) => {
+    const now = Date.now();
+    if (p >= 1 || p - last >= 0.01 || now - lastAt >= 2000) {
+      last = p;
+      lastAt = now;
+      io.stderrLine(`progress ${p.toFixed(3)}`);
+    }
+  };
+}
+
+function drawAnswer(drawn: DrawSegmentsResult, engine: DrawAnswer["engine"] | undefined): DrawAnswer {
+  return { segments: drawn.segments.map(({ index, hash, bytes }) => ({ index, hash, bytes })), totalSegments: drawn.totalSegments, rendered: drawn.cache.segmentsRendered, ...(engine ? { engine } : {}) };
+}
+
+async function render(dir: string, io: EngineIO, ctx: EngineContext): Promise<unknown> {
+  const job = checkJob(parseJson<RenderJob>(await readAll(io.stdin), "the job"));
+  const release = await lock(dir);
+  try {
+    const { common: base, engine } = jobOptions(dir, job, ctx);
+    const common = { ...base, onProgress: progressLines(io) };
     if (job.drawOnly) {
       // Segments received from other engines stay: this engine may assemble next.
       const drawn = await (ctx.draw ?? composerDraw(ctx.repo))({
         ...common, segments: job.drawOnly.segments, dir: path.join(dir, "drawn"), audio: job.drawOnly.audio ?? false,
       });
-      const reply: DrawAnswer = { segments: drawn.segments.map(({ index, hash, bytes }) => ({ index, hash, bytes })), totalSegments: drawn.totalSegments, rendered: drawn.cache.segmentsRendered, engine };
-      return reply;
+      return drawAnswer(drawn, engine);
     }
     let drawn: Record<number, string> | undefined;
     if (job.drawn) {
@@ -317,6 +344,65 @@ async function render(dir: string, io: EngineIO, ctx: EngineContext): Promise<un
   } finally {
     release();
   }
+}
+
+/**
+ * A shared render's share, chunk after chunk, with one preparation: the job
+ * on stdin's first line, then one chunk {"segments":[…],"audio"?} per line,
+ * each answered by a DrawAnswer line on stdout as soon as it is drawn. The
+ * bundle and browsers stay open until stdin ends.
+ */
+async function drawSession(dir: string, io: EngineIO, ctx: EngineContext): Promise<void> {
+  const input = lines(io.stdin)[Symbol.asyncIterator]();
+  const first = await input.next();
+  if (first.done) throw new RenderWorkerError("bad-request", "draw takes the job on its first line");
+  const job = checkJob(parseJson<RenderJob>(first.value, "the job"));
+  const release = await lock(dir);
+  try {
+    const { common, engine } = jobOptions(dir, job, ctx);
+    const drawer = await (ctx.openDrawer ?? defaultDrawer(ctx))({ ...common, dir: path.join(dir, "drawn") });
+    try {
+      for (let next = await input.next(); !next.done; next = await input.next()) {
+        const chunk = parseJson<{ segments?: unknown; audio?: unknown }>(next.value, "a chunk");
+        if (!Array.isArray(chunk?.segments) || !chunk.segments.every((i) => Number.isInteger(i) && i >= 0)) {
+          throw new RenderWorkerError("bad-request", "a chunk is {\"segments\":[index…],\"audio\"?:boolean}");
+        }
+        const drawn = await drawer.draw({ segments: chunk.segments as number[], audio: chunk.audio === true, onProgress: progressLines(io) });
+        answer(io, drawAnswer(drawn, engine));
+      }
+    } finally {
+      await drawer.close();
+    }
+  } finally {
+    release();
+  }
+}
+
+async function* lines(input: AsyncIterable<Buffer | string>): AsyncGenerator<string> {
+  const decoder = new StringDecoder("utf-8");
+  let partial = "";
+  for await (const chunk of input) {
+    const parts = (partial + (typeof chunk === "string" ? chunk : decoder.write(chunk))).split("\n");
+    partial = parts.pop() ?? "";
+    for (const line of parts) if (line.trim()) yield line;
+  }
+  partial += decoder.end();
+  if (partial.trim()) yield partial;
+}
+
+function defaultDrawer(ctx: EngineContext): (options: DrawerOptions) => Promise<SegmentDrawer> {
+  const draw = ctx.draw;
+  if (draw) {
+    return async (options) => ({
+      draw: (chunk) => draw({ ...options, segments: chunk.segments, audio: chunk.audio ?? false, ...(chunk.onProgress ? { onProgress: chunk.onProgress } : {}) }),
+      close: async () => undefined,
+    });
+  }
+  return async (options) => {
+    process.chdir(path.join(ctx.repo, "packages", "remotion-composer"));
+    const { openSegmentDrawer } = await import("@av/remotion-composer");
+    return openSegmentDrawer(options);
+  };
 }
 
 function defaultConcurrency(): { concurrency: number; browsers: number } {
