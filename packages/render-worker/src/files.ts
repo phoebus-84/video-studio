@@ -6,6 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { RenderTimelineOptions } from "@av/remotion-composer";
 import { mirrorPath, PROTOCOL_VERSION, RenderWorkerError, type ManifestEntry, type RenderJob } from "./protocol.js";
@@ -14,6 +15,26 @@ export async function sha256File(file: string): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
   return `sha256:${hash.digest("hex")}`;
+}
+
+const remembered = new Map<string, Promise<string>>();
+
+/**
+ * sha256File, read once per process while the file's identity, size and
+ * modification time stay the same: every shared render hashed every
+ * picture again, and so did the render on this machine right after.
+ */
+export async function sha256FileCached(file: string): Promise<string> {
+  const s = await stat(file, { bigint: true });
+  const key = `${s.ino !== 0n ? `${s.dev}:${s.ino}` : path.resolve(file)}:${s.size}:${s.mtimeNs}`;
+  let pending = remembered.get(key);
+  if (!pending) {
+    pending = sha256File(file);
+    pending.catch(() => remembered.delete(key));
+    if (remembered.size >= 4096) remembered.delete(remembered.keys().next().value!);
+    remembered.set(key, pending);
+  }
+  return pending;
 }
 
 export interface JobFile {
@@ -56,7 +77,7 @@ export async function prepareJob(options: RenderTimelineOptions): Promise<Prepar
       problems.push({ code: "missing-file", message: `${where}: ${local} is not a file`, path: where });
       return null;
     }
-    const actual = await sha256File(local);
+    const actual = await sha256FileCached(local);
     if (actual !== hash) {
       problems.push({ code: "hash-mismatch", message: `${where}: ${local} is ${actual}, expected ${hash}`, path: where });
       return null;

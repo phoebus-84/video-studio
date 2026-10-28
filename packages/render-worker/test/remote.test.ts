@@ -110,6 +110,35 @@ test("a file changed since the last render is sent again, the others are not", a
   assert.equal(result.engine.sentFiles, 1);
 });
 
+test("bytes the engine holds under another path or another episode are copied there, not sent again", async () => {
+  const first = episode();
+  const engine = fakeEngine();
+  const renderer = (key: string) => remoteRenderer({ host: "render-box", key, exec: engine.exec, git: cleanGit, peers, env: {} });
+  assert.equal((await renderer("ch/series/ep1")(first.options)).engine.sentFiles, 3);
+
+  // Another episode, elsewhere here, with the same picture and kit and one new sound.
+  const second = episode();
+  const sound = Buffer.from("a new sound");
+  writeFileSync(path.join(second.ep, "media", "new.wav"), sound);
+  const timeline = structuredClone(second.options.timeline) as { assets: Record<string, unknown> };
+  timeline.assets.voice = { path: "media/new.wav", hash: sha256(sound), kind: "audio" };
+  const logs: string[] = [];
+  const result = await remoteRenderer({ host: "render-box", key: "ch/series/ep2", exec: engine.exec, git: cleanGit, peers, env: {}, onLog: (l) => logs.push(l) })({ ...second.options, timeline });
+  assert.equal(result.engine.sentFiles, 1, "only the new sound travels");
+  assert.equal(result.engine.sentBytes, sound.length);
+  const copied = path.join(engine.cache, "ch", "series", "ep2", ...mirrorPath(path.join(second.ep, "media", "a.png")).split("/"));
+  assert.deepEqual(readFileSync(copied), second.img);
+  const index = JSON.parse(readFileSync(path.join(engine.cache, "ch", "series", "ep2", "index.json"), "utf-8")) as Record<string, { hash: string }>;
+  assert.equal(index[mirrorPath(path.join(second.ep, "media", "a.png"))]!.hash, sha256(second.img), "the copy is indexed like a file received");
+
+  // A held file changed since it was indexed is not trusted: it is sent.
+  const third = episode();
+  writeFileSync(path.join(engine.cache, "ch", "series", "ep1", ...mirrorPath(path.join(first.ep, "media", "a.png")).split("/")), "tampered!!!");
+  writeFileSync(path.join(engine.cache, "ch", "series", "ep2", ...mirrorPath(path.join(second.ep, "media", "a.png")).split("/")), "tampered!!!");
+  const again = await renderer("ch/series/ep3")(third.options);
+  assert.equal(again.engine.sentFiles, 1, "the picture is sent; the sound and the kit are copied");
+});
+
 test("a render the engine refuses arrives as its error, problems included, and leaves no video", async () => {
   const { options } = episode();
   const engine = fakeEngine({
