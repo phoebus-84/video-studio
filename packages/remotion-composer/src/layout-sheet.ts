@@ -6,12 +6,12 @@
 import {mkdir, mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {bundle} from '@remotion/bundler';
 import {openBrowser, renderStill, selectComposition, type HeadlessBrowser} from '@remotion/renderer';
 import {stageAssets, sha256} from './assets.js';
 import {ComposerError} from './errors.js';
 import {timelineKits, type LockedKit} from './kit-lock.js';
-import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
+import {libraryEntry, readLibraryKits, type LibraryKit} from './library-kits.js';
+import {bundleInto} from './bundle-cache.js';
 import {sheetSize, type SheetProps} from './Sheet.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
@@ -123,10 +123,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
     const sheetPath = path.join(outDir, 'sheet.jpg');
     let sheet: SheetProps;
     try {
-      const serveUrl = await bundle({
-        entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle'),
-        ...(options.kits?.length ? {webpackOverride: resolveFromApplication} : {}),
-      });
+      const serveUrl = await bundleInto({entryPoint, withKits: Boolean(options.kits?.length)}, staged.publicDir, path.join(work, 'bundle'));
       browser = await openBrowser('chrome');
       const inputProps = {timeline, files: staged.files, assetFrames};
       const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps, puppeteerInstance: browser});

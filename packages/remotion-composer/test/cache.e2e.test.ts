@@ -57,6 +57,14 @@ it('real cache: crossfade/clip/captions, audio-only reuse, partial rebuild, corr
     const decoded = pixels(cold.path);
     assert.equal(decoded.length, 75 * 320 * 180 * 3, 'no missing/duplicated frames at concat seams or short tail');
     const voiceBefore = ffmpeg(['-i', cold.path, '-map', '0:a:0', '-f', 's16le', '-']);
+    assert.equal(cold.cache!.loudnessReused, false);
+    // The same render again, as a correction that changed nothing: the
+    // normalised soundtrack comes whole from the cache, the file is the same.
+    const again = await render();
+    assert.equal(again.cache!.wholeVideoReused, true);
+    assert.equal(again.cache!.loudnessReused, true);
+    assert.deepEqual(again.loudness, cold.loudness);
+    assert.deepEqual(ffmpeg(['-i', again.path, '-map', '0:a:0', '-f', 's16le', '-']), voiceBefore);
 
     tone(660);
     timeline.assets.voice!.hash = await sha256(path.join(root, 'voice.wav'));

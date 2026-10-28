@@ -41,6 +41,8 @@ export interface CacheReport {
   totalSegments: number;
   /** The mixed soundtrack came from the cache: no audio pass ran. */
   audioReused?: boolean;
+  /** The soundtrack, normalised, came from the cache: no loudness pass ran. */
+  loudnessReused?: boolean;
   /** Cache I/O is best effort, never a reason to lose a valid render. */
   warnings: string[];
 }
@@ -98,16 +100,21 @@ export class VideoCache {
   constructor(private root: string, private warnings: string[], private ext = '.mp4') {}
 
   async get(key: string, destination: string): Promise<boolean> {
+    return (await this.read(key, destination)) !== null;
+  }
+
+  /** get, with what put recorded beside the file: null on a miss. */
+  async read(key: string, destination: string): Promise<{meta?: unknown} | null> {
     try {
-      const record = JSON.parse(await readFile(path.join(this.root, `${key}.json`), 'utf8')) as {hash: string};
-      if (!/^sha256:[a-f0-9]{64}$/.test(record.hash)) return false;
+      const record = JSON.parse(await readFile(path.join(this.root, `${key}.json`), 'utf8')) as {hash: string; meta?: unknown};
+      if (!/^sha256:[a-f0-9]{64}$/.test(record.hash)) return null;
       await copyFile(path.join(this.root, `${key}${this.ext}`), destination);
-      if (await sha256(destination) === record.hash) return true;
+      if (await sha256(destination) === record.hash) return {meta: record.meta};
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.warnings.push(`Cache read missed: ${(error as Error).message}`);
     }
     await rm(destination, {force: true});
-    return false;
+    return null;
   }
 
   /** Whether `key` is cached, without reading it: get still checks it. */
@@ -120,13 +127,13 @@ export class VideoCache {
     }
   }
 
-  async put(key: string, source: string): Promise<void> {
+  async put(key: string, source: string, meta?: unknown): Promise<void> {
     const temp = path.join(this.root, `.${key}.${randomUUID()}`);
     try {
       await mkdir(this.root, {recursive: true});
       await copyFile(source, `${temp}${this.ext}`);
       const hash = await sha256(`${temp}${this.ext}`);
-      await writeFile(`${temp}.json`, JSON.stringify({hash}));
+      await writeFile(`${temp}.json`, JSON.stringify(meta === undefined ? {hash} : {hash, meta}));
       await rename(`${temp}${this.ext}`, path.join(this.root, `${key}${this.ext}`));
       await rename(`${temp}.json`, path.join(this.root, `${key}.json`));
     } catch (error) {

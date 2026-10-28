@@ -14,6 +14,7 @@ import type {TimelineProps} from './Timeline.js';
 import type {KitVersion} from './kits/types.js';
 import type {VisualItem} from './schema.js';
 import {mixSounds, type PlacedSound} from './sound-mix.js';
+import {normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './loudness.js';
 
 const exec = promisify(execFile);
 const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
@@ -75,6 +76,12 @@ async function mixerKey(): Promise<unknown[]> {
   const dir = path.dirname(fileURLToPath(import.meta.url));
   const files = (await readdir(dir)).filter((f) => /^(sound-mix|volume)\.(js|ts)$/.test(f)).sort();
   return Promise.all(files.map(async (f) => [f, await sha256(path.join(dir, f))]));
+}
+
+/** The Node code a normalised soundtrack depends on, besides the mix and FFmpeg (in the renderer key). */
+async function loudnessKey(): Promise<string> {
+  const self = fileURLToPath(import.meta.url);
+  return sha256(path.join(path.dirname(self), path.basename(self).replace(/^cached-render/, 'loudness')));
 }
 
 /** The tabs of a browser sound pass: it draws nothing, so a few do (half the render's, at most 4). */
@@ -144,6 +151,18 @@ export async function cachedSegments(options: {inputProps: TimelineProps; serveU
   return held.flatMap((h, index) => (h ? [index] : []));
 }
 
+/**
+ * Whether `cacheDir` holds any segment at all, of any video: a cheap look
+ * before cachedSegments, which needs the composition prepared.
+ */
+export async function holdsSegments(cacheDir: string): Promise<boolean> {
+  try {
+    return (await readdir(path.join(cacheDir, 'segments'))).some((f) => f.endsWith('.json'));
+  } catch {
+    return false;
+  }
+}
+
 export async function renderWithCache(options: {
   inputProps: TimelineProps;
   composition: VideoConfig;
@@ -172,6 +191,12 @@ export async function renderWithCache(options: {
   browsers?: number;
   onProgress?: (progress: number) => void;
   /**
+   * Normalise the soundtrack alone to this loudness, cached on the mix's key,
+   * and mux it as the output's audio: the video stream is never read again.
+   * A correction that leaves the sound alone takes it whole from the cache.
+   */
+  loudness?: LoudnessTarget;
+  /**
    * A shared render's share: draw (or take from the cache) only these
    * segments and copy them to `dir` as segment-<index>.mp4; nothing is
    * muxed and `output` is not written. `audio` also readies the cached
@@ -185,7 +210,7 @@ export async function renderWithCache(options: {
    * opened into it when missing and left open; the caller closes them.
    */
   browserPool?: Promise<Browser>[];
-}): Promise<CacheReport> {
+}): Promise<CacheReport & {loudness?: LoudnessResult}> {
   const {inputProps, composition, serveUrl, work, hasAudio} = options;
   const {timeline} = inputProps;
   const {renderer, assetFrames, plan} = await planOf(options);
@@ -207,8 +232,11 @@ export async function renderWithCache(options: {
   let videoDone = 0, audioDone = hasAudio && (!options.segments || options.segments.audio) ? 0 : 1;
   const report = () => options.onProgress?.(videoDone * 0.8 + audioDone * 0.2);
   const audio = path.join(work, 'audio.wav');
+  const levelled = path.join(work, 'audio.m4a');
   const sampleRate = 48000;
   const audioWarnings: string[] = [];
+  let loudness: LoudnessResult | undefined;
+  let loudnessReused = false;
   const soundtrack = async (): Promise<boolean> => {
     if (!hasAudio) return false;
     // The mix is cached on its own key: a change to the pictures alone, or a
@@ -217,7 +245,28 @@ export async function renderWithCache(options: {
     // Mixed without a browser, the soundtrack also depends on the Node code that places the sounds.
     const mixer = options.sounds ? await mixerKey() : null;
     const key = planAudio(timeline, mixer ? cacheKey({renderer, mixer}) : renderer, sampleRate, sounding, assetFrames);
+    // The normalised soundtrack is cached on the mix's key: a hit needs
+    // neither the mix nor a loudness pass.
+    const target = options.loudness;
+    const levels = new VideoCache(path.join(options.cacheDir, 'loudness'), audioWarnings, '.m4a');
+    const levelKey = target ? cacheKey({version: 1, audio: key, target, code: await loudnessKey()}) : '';
+    if (target) {
+      const hit = await levels.read(levelKey, levelled);
+      if (hit?.meta) {
+        loudness = hit.meta as LoudnessResult;
+        loudnessReused = true;
+        audioDone = 1;
+        report();
+        return true;
+      }
+    }
+    const level = async () => {
+      if (!target) return;
+      loudness = await timed('loudness', () => normalizeLoudness(audio, levelled, target));
+      await levels.put(levelKey, levelled, loudness);
+    };
     if (await cache.get(key, audio)) {
+      await level();
       audioDone = 1;
       report();
       return true;
@@ -225,6 +274,7 @@ export async function renderWithCache(options: {
     if (options.sounds) {
       await mixSounds({sounds: options.sounds, timeline, output: audio, sampleRate, onProgress: (p) => { audioDone = p; report(); }});
       await cache.put(key, audio);
+      await level();
       return false;
     }
     // Keep ALL audio tracks: ducking looks up other tracks in the timeline.
@@ -240,6 +290,7 @@ export async function renderWithCache(options: {
       onProgress: ({progress}) => { audioDone = progress; report(); },
     });
     await cache.put(key, audio);
+    await level();
     return false;
   };
   try {
@@ -304,6 +355,7 @@ export async function renderWithCache(options: {
       const [drawnReport, audioReused] = options.sounds ? await Promise.all([drawn(), soundtrack()]) : [await drawn(), await soundtrack()];
       drawnReport.warnings.push(...audioWarnings);
       drawnReport.audioReused = audioReused;
+      if (options.loudness) drawnReport.loudnessReused = loudnessReused;
       options.onProgress?.(1);
       return drawnReport;
     }
@@ -316,6 +368,13 @@ export async function renderWithCache(options: {
     cacheReport.warnings.push(...audioWarnings);
     if (hasAudio) {
       cacheReport.audioReused = audioReused;
+      if (loudness) {
+        // The soundtrack is already normalised and encoded: both streams are copied.
+        cacheReport.loudnessReused = loudnessReused;
+        await timed('mux', () => run(['-i', video, '-i', levelled, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', options.output]));
+        options.onProgress?.(1);
+        return {...cacheReport, loudness};
+      }
       // Lossless audio intermediate: loudnorm does the sole final AAC encode.
       await run(['-i', video, '-i', audio, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', options.output]);
     } else {

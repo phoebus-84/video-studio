@@ -1,6 +1,6 @@
 export {renderTimeline, drawSegments, openSegmentDrawer, type SegmentDrawer, type SegmentChunk, type RenderTimelineOptions, type RenderResult, type DrawSegmentsOptions, type DrawSegmentsResult, type DrawnSegment} from './render.js';
 export {type CacheReport} from './render-cache.js';
-export {checkJoinable} from './cached-render.js';
+export {checkJoinable, holdsSegments} from './cached-render.js';
 export {validateTimeline} from './validate.js';
 export {renderLayoutSheet, sheetTime, MAX_SHEET_PICKS, type LayoutSheetOptions, type LayoutSheetResult, type LayoutSheetFrame} from './layout-sheet.js';
 export {kitLockHash, timelineKits, type LockedKit} from './kit-lock.js';

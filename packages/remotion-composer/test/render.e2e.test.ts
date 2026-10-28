@@ -58,7 +58,9 @@ describe('renderTimeline end to end', {skip: !enabled && 'set REMOTION_E2E=1 to 
     const out = path.join(root, 'renders', 'nested', 'out.mp4'); // a directory that does not exist yet
     const leftoversBefore = remotionTemp();
     const result = await renderTimeline({timeline: doc, assetRoot: root, outputPath: out});
-    assert.deepEqual(remotionTemp(), leftoversBefore, 'a render must leave no bundle or staging directory behind');
+    // Only what this render added counts: test files run side by side, and
+    // theirs remove their own directories meanwhile.
+    assert.deepEqual(remotionTemp().filter((d) => !leftoversBefore.includes(d)), [], 'a render must leave no bundle or staging directory behind');
     const info = probe(out);
     const video = info.streams.find((s) => s.codec_type === 'video')!;
     assert.equal(video.codec_name, 'h264');
