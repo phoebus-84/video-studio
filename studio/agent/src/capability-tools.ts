@@ -672,16 +672,11 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       ...IMAGE_PARAMS,
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      try {
-        const { text, details } = await generateOneImage(params, signal, ctx);
-        return { content: [{ type: "text" as const, text }], details };
-      } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: imageFailure(err) }],
-          details: {},
-          isError: true as unknown as boolean,
-        };
-      }
+      // A failure is thrown, never returned with isError: Pi takes a returned
+      // result for a success (docs/contributing.md); the MCP host folds the
+      // throw into an error result.
+      const { text, details } = await generateOneImage(params, signal, ctx);
+      return { content: [{ type: "text" as const, text }], details };
     },
   });
 
@@ -707,14 +702,17 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const { images, ...workspace } = params;
-      const ids = images.map((image) => image.sceneId);
-      const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
-      if (duplicate !== undefined) {
-        return {
-          content: [{ type: "text" as const, text: `❌ Failed: sceneId ${duplicate} appears twice; each image needs its own` }],
-          details: {},
-          isError: true as unknown as boolean,
-        };
+      // Two sceneIds that differ only by case name one file where the
+      // filesystem ignores case (Windows, macOS): both would be drawn and
+      // paid for, and one silently lost. They are refused like a repeat.
+      const ids = images.map((image) => image.sceneId.toLowerCase());
+      const repeated = ids.findIndex((id, index) => ids.indexOf(id) !== index);
+      if (repeated !== -1) {
+        const first = images[ids.indexOf(ids[repeated]!)]!.sceneId;
+        const again = images[repeated]!.sceneId;
+        throw new Error(first === again
+          ? `sceneId ${again} appears twice; each image needs its own`
+          : `sceneIds ${first} and ${again} name the same file on a case-insensitive filesystem; each image needs its own`);
       }
       let done = 0;
       const settled = await Promise.allSettled(images.map(async (image) => {
@@ -731,6 +729,11 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       const lines = settled.map((outcome, index) =>
         outcome.status === "fulfilled" ? outcome.value.text : `${images[index]!.sceneId}: ${imageFailure(outcome.reason)}`);
       const failed = settled.filter((outcome) => outcome.status === "rejected").length;
+      // Nothing was drawn: that is a failed call, thrown so that Pi sees it.
+      // A partial batch returns, listing what failed.
+      if (failed === images.length) {
+        throw new Error([`0/${images.length} images generated`, ...lines].join("\n"));
+      }
       return {
         content: [{
           type: "text" as const,
@@ -741,7 +744,6 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
             ? { sceneId: images[index]!.sceneId, ok: true, ...outcome.value.details }
             : { sceneId: images[index]!.sceneId, ok: false, error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason) }),
         },
-        ...(failed === images.length ? { isError: true as unknown as boolean } : {}),
       };
     },
   });

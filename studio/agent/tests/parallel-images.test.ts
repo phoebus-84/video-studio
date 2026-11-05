@@ -150,4 +150,52 @@ describe("pva_generate_images", () => {
     expect(result.isError).toBe(true);
     expect(requests).toBe(0);
   }, 60_000);
+
+  it("refuses sceneIds that differ only by case: one file where case is ignored", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "pva_generate_images",
+      arguments: { ...where, images: [{ sceneId: "s1", prompt: "a" }, { sceneId: "S1", prompt: "b" }] },
+    });
+    expect(result.isError).toBe(true);
+    expect((result.content as Array<{ text: string }>)[0]!.text).toMatch(/s1 and S1 name the same file/);
+    expect(requests).toBe(0);
+  }, 60_000);
+
+  it("fails the call when no image is drawn, and lists why", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "pva_generate_images",
+      arguments: { ...where, images: [{ sceneId: "s1", prompt: "a", referenceImagePaths: ["assets/images/missing.png"] }] },
+    });
+    expect(result.isError).toBe(true);
+    expect((result.content as Array<{ text: string }>)[0]!.text).toMatch(/^0\/1 images generated\ns1: ❌ Failed: Reference image not found/);
+  }, 60_000);
+});
+
+describe("failures reach Pi as errors", () => {
+  // Pi takes a tool that returns for a success: a failure must be thrown.
+  async function tools() {
+    const { registerCapabilityTools } = await import("../src/capability-tools.js");
+    const found = new Map<string, { execute: (...args: unknown[]) => Promise<unknown> }>();
+    registerCapabilityTools({
+      registerTool: (t: { name: string; execute: (...args: unknown[]) => Promise<unknown> }) => found.set(t.name, t),
+    } as never);
+    return found;
+  }
+  const ctx = { modelRegistry: { getApiKeyForProvider: async () => undefined } };
+
+  it("pva_generate_images throws on a repeat and when nothing is drawn", async () => {
+    const batch = (await tools()).get("pva_generate_images")!;
+    await expect(batch.execute("c", { ...where, images: [{ sceneId: "a", prompt: "x" }, { sceneId: "A", prompt: "y" }] }, undefined, undefined, ctx))
+      .rejects.toThrow(/name the same file/);
+    await expect(batch.execute("c", { ...where, images: [{ sceneId: "a", prompt: "x", referenceImagePaths: ["nope.png"] }] }, undefined, undefined, ctx))
+      .rejects.toThrow(/0\/1 images generated/);
+  });
+
+  it("pva_generate_image throws its failure", async () => {
+    const single = (await tools()).get("pva_generate_image")!;
+    await expect(single.execute("c", { ...where, sceneId: "bad id!", prompt: "x" }, undefined, undefined, ctx))
+      .rejects.toThrow(/sceneId must contain only/);
+  });
 });
