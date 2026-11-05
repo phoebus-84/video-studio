@@ -14,6 +14,7 @@ import { registerWorkspaceTools } from "../src/workspace-tools.js";
 import { registerPipelineTools } from "../src/pipeline-tools.js";
 import { registerCapabilityTools } from "../src/capability-tools.js";
 import { registerWanTools } from "../src/wan-tools.js";
+import { registerFlux3MaxTools } from "../src/flux3-max-tools.js";
 import { registerBlenderTools } from "../src/blender-tools.js";
 import { registerArchiveTools } from "../src/archive-tools.js";
 import { registerMapillaryTools } from "../src/mapillary-tools.js";
@@ -297,6 +298,7 @@ export default function (pi: ExtensionAPI): void {
   // --- Register capability tools ----------------------------------------
 
   registerCapabilityTools(pi);
+  registerFlux3MaxTools(pi);
   registerWanTools(pi);
   registerBlenderTools(pi);
   registerArchiveTools(pi);
