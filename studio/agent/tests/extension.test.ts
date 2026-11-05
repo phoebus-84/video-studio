@@ -129,7 +129,7 @@ describe("extensions/index.ts — tool registration", () => {
   });
 
   it("registers the expected suite of production tools", () => {
-    expect(mockPi.tools.length).toBe(69);
+    expect(mockPi.tools.length).toBe(70);
     const names = mockPi.tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "pva_align_take",
@@ -164,6 +164,7 @@ describe("extensions/index.ts — tool registration", () => {
       "pva_gather_context",
       "pva_generate_flux3_max_video",
       "pva_generate_image",
+      "pva_generate_images",
       "pva_generate_minimax_h3_video",
       "pva_generate_wan_video",
       "pva_health",
