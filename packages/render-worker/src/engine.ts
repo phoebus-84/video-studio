@@ -181,7 +181,7 @@ async function diff(dir: string, stdin: EngineIO["stdin"], cacheRoot?: string): 
   const held = lacking.length > 0 ? heldByContent(dir, index, cacheRoot) : null;
   for (const { rel, file, entry } of lacking) {
     const from = held?.get(entry.hash);
-    if (!from || !adopt(from, file, entry)) {
+    if (!from || !(await adopt(from, file, entry))) {
       missing.push(rel);
       continue;
     }
@@ -224,21 +224,27 @@ function heldByContent(dir: string, index: Index, cacheRoot?: string): Map<strin
   return held;
 }
 
-/** Copies `from` to `file` when it is still the file its index recorded; whether it did. */
-function adopt(from: HeldFile, file: string, entry: ManifestEntry): boolean {
+/**
+ * Copies `from` to `file` when it is still the file its index recorded and
+ * the copy hashes to what the job asks for; whether it did. Another
+ * episode's index is trusted to find a candidate, never for its bytes: the
+ * copy is read here, which costs a local disk read instead of a transfer.
+ */
+async function adopt(from: HeldFile, file: string, entry: ManifestEntry): Promise<boolean> {
+  const part = `${file}.part`;
   try {
     const stat = statSync(from.file);
     if (!stat.isFile() || stat.size !== from.size || stat.mtimeMs !== from.mtimeMs || stat.size !== entry.size) return false;
     mkdirSync(path.dirname(file), { recursive: true });
-    const part = `${file}.part`;
     copyFileSync(from.file, part);
-    if (statSync(part).size !== entry.size) {
+    if (statSync(part).size !== entry.size || (await sha256File(part)) !== entry.hash) {
       rmSync(part, { force: true });
       return false;
     }
     renameSync(part, file);
     return true;
   } catch {
+    rmSync(part, { force: true });
     return false;
   }
 }

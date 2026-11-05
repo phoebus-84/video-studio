@@ -24,22 +24,38 @@ export const cacheKey = (value: unknown): string => createHash('sha256').update(
 /** Hashes already read in this process, by what identifies a file's content without reading it. */
 const remembered = new Map<string, Promise<string>>();
 const REMEMBER = 8192;
+/** A file changed this recently may change again within one tick of a coarse clock (FAT, SMB: 2 s). */
+const SETTLED_NS = 3_000_000_000n;
 
 /**
- * sha256, read once per process for a file whose identity, size and
- * modification time have not changed, as git trusts its index. The same file
- * reached by another path or a hard link (a linked bundle) is the same
- * entry. A render and a layout sheet each read the browser (200 MB) and the
- * code again, and a correction every cached second. Not the change time:
- * linking a file changes it, never its content.
+ * What stands for a file's bytes without reading them: its identity, size,
+ * modification and change times, as git's index keeps them. The change time
+ * is the kernel's: nothing a writer does to the bytes leaves it as it was,
+ * even when the modification time is put back.
  */
-export async function sha256Cached(file: string): Promise<string> {
+export async function fileIdentity(file: string): Promise<{key: string; settled: boolean}> {
   const s = await stat(file, {bigint: true});
   // Without a file id (some filesystems give 0) the path names the file.
-  const key = `${s.ino !== 0n ? `${s.dev}:${s.ino}` : path.resolve(file)}:${s.size}:${s.mtimeNs}`;
+  const key = `${s.ino !== 0n ? `${s.dev}:${s.ino}` : path.resolve(file)}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+  const now = BigInt(Date.now()) * 1_000_000n;
+  return {key, settled: now - s.mtimeNs >= SETTLED_NS && now - s.ctimeNs >= SETTLED_NS};
+}
+
+/**
+ * sha256, read once per process while the file's identity (fileIdentity)
+ * stays the same: a render and a layout sheet each read the browser (200 MB)
+ * and the code again, and a correction every cached second. A file changed
+ * in the last few seconds is read every time (git's "racily clean"): a
+ * second change within the same tick of a coarse clock would leave the
+ * identity as it was. A hard link changes the change time, so a bundle
+ * linked into a render's folder is read again: correct, only slower.
+ */
+export async function sha256Cached(file: string): Promise<string> {
+  const {key, settled} = await fileIdentity(file);
   let pending = remembered.get(key);
   if (!pending) {
     pending = sha256(file);
+    if (!settled) return pending;
     pending.catch(() => remembered.delete(key));
     if (remembered.size >= REMEMBER) remembered.delete(remembered.keys().next().value!);
     remembered.set(key, pending);
@@ -148,10 +164,18 @@ export class VideoCache {
       if (!/^sha256:[a-f0-9]{64}$/.test(record.hash)) return null;
       // The entry is checked where it lies, once per process while it stays
       // as it is (an entry is published whole, by rename, and never
-      // rewritten): a correction reads every cached second again.
+      // rewritten): a correction reads every cached second again. If it was
+      // replaced between the check and the copy (another writer's rename),
+      // the bytes copied are not the ones checked: the copy is checked.
       const entry = path.join(this.root, `${key}${this.ext}`);
+      const before = await fileIdentity(entry);
       if (await sha256Cached(entry) !== record.hash) return null;
       await copyFile(entry, destination);
+      if ((await fileIdentity(entry)).key !== before.key && await sha256(destination) !== record.hash) {
+        this.warnings.push(`Cache entry ${key} changed while it was read`);
+        await rm(destination, {force: true});
+        return null;
+      }
       return {meta: record.meta};
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.warnings.push(`Cache read missed: ${(error as Error).message}`);

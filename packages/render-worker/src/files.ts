@@ -18,18 +18,25 @@ export async function sha256File(file: string): Promise<string> {
 }
 
 const remembered = new Map<string, Promise<string>>();
+/** A file changed this recently may change again within one tick of a coarse clock (FAT, SMB: 2 s). */
+const SETTLED_NS = 3_000_000_000n;
 
 /**
- * sha256File, read once per process while the file's identity, size and
- * modification time stay the same: every shared render hashed every
- * picture again, and so did the render on this machine right after.
+ * sha256File, read once per process while the file's identity, size,
+ * modification and change times stay the same, as git's index keeps them:
+ * every shared render hashed every picture again, and so did the render on
+ * this machine right after. The change time is the kernel's: a writer that
+ * puts the modification time back still changes it. A file changed in the
+ * last few seconds is read every time (git's "racily clean").
  */
 export async function sha256FileCached(file: string): Promise<string> {
   const s = await stat(file, { bigint: true });
-  const key = `${s.ino !== 0n ? `${s.dev}:${s.ino}` : path.resolve(file)}:${s.size}:${s.mtimeNs}`;
+  const key = `${s.ino !== 0n ? `${s.dev}:${s.ino}` : path.resolve(file)}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+  const now = BigInt(Date.now()) * 1_000_000n;
   let pending = remembered.get(key);
   if (!pending) {
     pending = sha256File(file);
+    if (now - s.mtimeNs < SETTLED_NS || now - s.ctimeNs < SETTLED_NS) return pending;
     pending.catch(() => remembered.delete(key));
     if (remembered.size >= 4096) remembered.delete(remembered.keys().next().value!);
     remembered.set(key, pending);

@@ -2,7 +2,7 @@
 // engine running in this process (helpers.ts).
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { PassThrough, Readable } from "node:stream";
@@ -199,4 +199,25 @@ test("pinMismatches compares installed binaries with engine.env's pins", () => {
   assert.deepEqual(pinMismatches(pins, { node: "v9.8.7", ffmpeg: "ffmpeg version n1.2.3-4-gabc Copyright", bun: "0.1.2" }), []);
   assert.equal(pinMismatches(pins, { node: "v1.0.0", ffmpeg: null, bun: "0.1.3" }).length, 3);
   assert.deepEqual(pinMismatches({}, { node: "v1.0.0", ffmpeg: null, bun: null }), []);
+});
+
+test("a held file whose index no longer tells its bytes is not adopted: its copy is hashed", async () => {
+  const first = episode();
+  const engine = fakeEngine();
+  const renderer = (key: string) => remoteRenderer({ host: "render-box", key, exec: engine.exec, git: cleanGit, peers, env: {} });
+  await renderer("ch/series/ep1")(first.options);
+  const held = path.join(engine.cache, "ch", "series", "ep1", ...mirrorPath(path.join(first.ep, "media", "a.png")).split("/"));
+  writeFileSync(held, "X".repeat(first.img.length));
+  // Its index still says the old hash for its size and modification time:
+  // what a rewrite that puts the time back, or a coarse clock, leaves behind.
+  const indexFile = path.join(engine.cache, "ch", "series", "ep1", "index.json");
+  const index = JSON.parse(readFileSync(indexFile, "utf-8")) as Record<string, { size: number; mtimeMs: number; hash: string }>;
+  index[mirrorPath(path.join(first.ep, "media", "a.png"))]!.mtimeMs = statSync(held).mtimeMs;
+  writeFileSync(indexFile, JSON.stringify(index));
+
+  const second = episode();
+  const result = await renderer("ch/series/ep2")(second.options);
+  assert.equal(result.engine.sentFiles, 1, "the picture travels: the bytes held are not the ones indexed");
+  const copied = path.join(engine.cache, "ch", "series", "ep2", ...mirrorPath(path.join(second.ep, "media", "a.png")).split("/"));
+  assert.deepEqual(readFileSync(copied), second.img);
 });
