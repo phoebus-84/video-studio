@@ -265,6 +265,44 @@ describe('video cache storage and execution', () => {
     assert.equal(await readFile(result.video, 'utf8'), plan.segments.map((s) => s.key).join('|'), 'joined in order whatever lane drew them');
   }));
 
+  it('draws a failed run again once before failing the render', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const cacheDir = path.join(root, 'cache');
+    let failures = 1;
+    const calls: number[][] = [];
+    const result = await cachedVideo({
+      plan, cacheDir, work: await mkdtemp(path.join(root, 'work-')),
+      renderRun: async (segments, outputs) => {
+        calls.push(segments.map((s) => s.from));
+        // FFmpeg that could not start at the end of a run (Windows 0xC0000142)
+        if (failures-- > 0) throw new Error('FFmpeg quit with code 3221225794');
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+      },
+      concatenate: async (_files, output) => { await writeFile(output, 'joined'); },
+    });
+    assert.deepEqual(calls, [[0, 30, 60], [0, 30, 60]], 'the same run, drawn again');
+    assert.equal(result.report.segmentsRendered, 3);
+    assert.match(result.report.warnings.join('\n'), /drawn again after: FFmpeg quit/);
+    await assert.rejects(cachedVideo({
+      plan: planVideo(cacheTimeline(), 'other'), cacheDir, work: await mkdtemp(path.join(root, 'work-')), retries: 0,
+      renderRun: async () => { throw new Error('Chrome failed'); },
+      concatenate: async () => {},
+    }), /Chrome failed/, 'retries: 0 fails at once');
+  }));
+
+  it('runs are half a minute at most by default, so a long render publishes as it goes', async () => workspace(async (root) => {
+    const doc = cacheTimeline();
+    doc.durationInFrames = 75 * doc.fps;
+    for (const track of doc.tracks) for (const item of track.items) item.duration = doc.durationInFrames;
+    const calls: number[] = [];
+    await cachedVideo({
+      plan: planVideo(doc, 'r'), cacheDir: path.join(root, 'cache'), work: await mkdtemp(path.join(root, 'work-')),
+      renderRun: async (segments, outputs) => { calls.push(segments.length); await each(async (s, o) => writeFile(o, s.key))(segments, outputs); },
+      concatenate: async (_files, output) => { await writeFile(output, 'joined'); },
+    });
+    assert.deepEqual(calls, [30, 30, 15]);
+  }));
+
   it('a failed lane fails the render, and the other lane publishes what it finished', async () => workspace(async (root) => {
     const plan = planVideo(cacheTimeline(), 'r');
     const cacheDir = path.join(root, 'cache');

@@ -18,8 +18,14 @@ export function checkWindowsKeyAcl(file) {
     $access = @($a.Access | ForEach-Object { @{ sid = $_.IdentityReference.Translate($sid).Value; allow = ($_.AccessControlType -eq 'Allow') } });
     @{ owner = $owner; current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; access = $access } | ConvertTo-Json -Depth 5 -Compress
   } catch { exit 1 }`;
+  // PowerShell 7 puts its own module directories first in PSModulePath, and a
+  // process started from it passes them on. Windows PowerShell then finds the
+  // 7.x Microsoft.PowerShell.Security, cannot load it, and Get-Acl fails, so a
+  // gateway launched from pwsh refused every key. Without the variable,
+  // powershell.exe builds its own default path.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toLowerCase() !== "psmodulepath"));
   let acl;
-  try { acl = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf-8", timeout: 10_000, windowsHide: true, env: { ...process.env, AVG_ACL_CHECK_FILE: file } })); }
+  try { acl = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf-8", timeout: 10_000, windowsHide: true, env: { ...env, AVG_ACL_CHECK_FILE: file } })); }
   catch { throw new Error("Operator key permissions: Windows ACL verification failed; refusing to read the key"); }
   assertPrivateWindowsAcl(acl);
 }
