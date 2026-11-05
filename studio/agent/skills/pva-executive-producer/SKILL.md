@@ -56,21 +56,6 @@ commands become available through the agent.
   performances, references and long shots. **Channel `ambient-through-time`: animate every live island with
   this tool** (crop as `imagePath`, `loop: true`) — not MiniMax H3, and not through the CreativeStudio bridge.
 
-### Work in parallel (operator rule)
-
-Wall time is the operator's main complaint; serial work is a defect.
-
-- **Generations go out together**: every independent `pva_generate_image` (Codex/gpt-image) and every
-  `pva_generate_wan_video` / H3 clip of a step is sent in ONE message, never one after the other.
-- **Never wait idle**: while generations or a render run, prepare the next step (crops, spec, music, checks);
-  process each clip as soon as it lands, not after the whole batch.
-- **Delegate local work to parallel subagents**: compositing, loops, FFmpeg/Python batches, Remotion tests and
-  code fixes go to subagents running side by side (background), each with a clear brief; the main thread
-  coordinates and judges results. Scripts use all CPU cores (process pools, one process per event/island).
-- **Shared render** on the operator's machines (`hosts: ["local", "asus", "server-casa"]`) for anything
-  longer than a short test.
-- Read one contact sheet / layout sheet per check, not frame by frame.
-
 Create parents in order: channel, series, then episode. Creation is intentionally
 non-destructive: revise existing metadata with reviewed file edits rather than
 using the create tools as overwrite operations.
