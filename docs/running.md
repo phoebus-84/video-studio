@@ -888,7 +888,7 @@ vpr channel media my-channel --check --episode my-series/ep001 --verify --librar
 ```
 
 Alternatively rebuild excluded derivatives/deliveries, then verify their hashes.
-The test on `ambient-through-time` and acceptance of its existing signed layout
+The test on a real channel and acceptance of its existing signed layout
 sheet by `pva_compose_video` remain an operator-run production check. No transfer
 creates an approval, and approval verification still requires the existing
 shared operator HMAC key (ADR-0045). A render on another machine need not be

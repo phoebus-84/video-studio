@@ -6,7 +6,7 @@ Accepted (`avg-dcf.4.1`). Implemented:
 - the `ChannelTheme` contract and the optional theme pin in `SeriesTemplate`;
 - the composer's `look` vocabulary, fonts by family and ten neutral 16:9 lesson-stage kits;
 - the loader reading a pinned theme;
-- the Dentro i versi theme as the first release (a fixture until the channel exists, `avg-dcf.1`).
+- the first channel's theme as the first release (a fixture until the channel exists, `avg-dcf.1`).
 
 ## Context
 
@@ -15,7 +15,7 @@ The studio is moving to a boundary (`avg-d1x`):
 - **the application** executes;
 - **composers and channel-neutral kits** are extensions.
 
-The short's kits (`avg-dcf.3`) were built the other way round: the Dentro i versi palette, fonts, positions and costumes are composer code (ADR-0039 records it). The long lesson has about twice as many pieces. Building them the same way would double the channel code to move out later.
+The short's kits (`avg-dcf.3`) were built the other way round: the first channel's palette, fonts, positions and costumes are composer code (ADR-0039 records it). The long lesson has about twice as many pieces. Building them the same way would double the channel code to move out later.
 
 ## Decision
 
@@ -56,5 +56,5 @@ The composer may not import the contracts (`check:boundaries`), so the two schem
 
 - **Neutral 16:9 stage kits** draw any channel's lessons: `room`, `panel`, `interprete@1.1.0`, `verse-bar`, `block-title`, `figure-title`, `chapter-opener`, `cover`, `warp`, `brand-mark@2.0.0`. Their examples use a demo look with no channel in it.
 - **Changing a channel's look** is a new theme release and a new series template release: data, reviewed like data, with no kit version. The operator seals the theme (`vpr theme seal`), releases the template on it (`vpr template release … --from <v> --theme <id>@<v>`), and each episode moves onto the new release with `pva_upgrade_spec`.
-- **The short's kits still carry the Dentro i versi look in code.** Moving them onto the theme is `avg-d1x`.
+- **The short's kits still carry the first channel's look in code.** Moving them onto the theme is `avg-d1x`.
 - **A release without a theme** loads and renders exactly as before.

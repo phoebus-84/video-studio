@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (`avg-dcf.3`). The kits of the Dentro i versi short —
+Accepted (`avg-dcf.3`). The kits of the first channel's short —
 `museum-hall`, `room-effect`, `verse-plate`, `interprete`, `lower-third`,
 `title-chip`, `brand-mark`, all `1.0.0` — are the first to import library
 modules, and `remotion-composer`'s lock covers them.
@@ -12,7 +12,7 @@ modules, and `remotion-composer`'s lock covers them.
 A kit version never changes (ADR-0034): a delivered episode must re-render
 as it was. So far a kit file could import only `react`, `remotion`, `zod`
 and types, which kept it self-contained and its lock entry — the file's
-sha256 — honest. CreativeStudio's museum format is seven pieces drawn with
+sha256 — honest. The predecessor project's museum format is seven pieces drawn with
 the same math (smoothstep ramps, envelopes, deterministic noise), the same
 palette and fonts, the same picture and room effects and the same actor.
 Copying all of it into each of seven files would freeze seven diverging
@@ -54,7 +54,7 @@ is drawn before its fonts.
 - The lock check reads imports: a library import that is not
   `<name>/<version>.js`, or a module that imports beyond the rule, fails
   `npm test`.
-- Channel specifics now live in composer code (`lib/dentro-i-versi` — the
+- Channel specifics now live in composer code (`lib/<channel>` — the
   palette —, the actor's costumes and poses, the series compiler). That is
   against the boundary the studio is moving to (`avg-d1x`): looks and
   parameters as library data, the application executing, composers and
