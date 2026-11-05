@@ -1,9 +1,10 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {link, mkdtemp, mkdir, readFile, readdir, rm, utimes, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {cachedVideo, missRuns, planAudio, planVideo, VideoCache, type VideoPlan, type VideoSegment} from '../src/render-cache.js';
+import {cachedVideo, missRuns, planAudio, planVideo, sha256Cached, VideoCache, type VideoPlan, type VideoSegment} from '../src/render-cache.js';
+import {sha256} from '../src/assets.js';
 import type {KitVersion} from '../src/kits/types.js';
 import type {EditTimeline, VisualItem} from '../src/schema.js';
 
@@ -170,6 +171,8 @@ describe('video cache storage and execution', () => {
     await writeFile(source, 'complete video');
     await Promise.all([cache.put('key', source), cache.put('key', source)]);
     assert.equal(await cache.get('key', dest), true);
+    assert.equal(await cache.has('key'), true);
+    assert.equal(await cache.has('other'), false);
     assert.deepEqual((await readdir(path.join(root, 'cache'))).sort(), ['key.json', 'key.mp4']);
     await writeFile(path.join(root, 'cache/key.mp4'), 'truncated');
     assert.equal(await cache.get('key', dest), false);
@@ -179,6 +182,44 @@ describe('video cache storage and execution', () => {
     assert.equal(await cache.get('key', dest), false);
     await rm(path.join(root, 'cache/key.json'));
     assert.equal(await cache.get('key', dest), false);
+  }));
+
+  it('a file is hashed once while it stays as it is, by any of its names', async () => workspace(async (root) => {
+    const file = path.join(root, 'picture');
+    await writeFile(file, 'first');
+    assert.equal(await sha256Cached(file), await sha256(file));
+    const linked = path.join(root, 'linked');
+    await link(file, linked);
+    assert.equal(await sha256Cached(linked), await sha256(file));
+    // Rewritten, it is read again: another time, another size.
+    await writeFile(file, 'the second picture');
+    assert.equal(await sha256Cached(file), await sha256(file));
+    await writeFile(file, 'third');
+    await utimes(file, new Date(Date.now() + 5000), new Date(Date.now() + 5000));
+    assert.equal(await sha256Cached(file), await sha256(file));
+  }));
+
+  it('a cached entry changed in place is a miss, never a stale hit', async () => workspace(async (root) => {
+    const cache = new VideoCache(path.join(root, 'cache'), []);
+    const source = path.join(root, 'source');
+    await writeFile(source, 'segment A');
+    await cache.put('key', source);
+    assert.equal(await cache.get('key', path.join(root, 'dest')), true);
+    await writeFile(path.join(root, 'cache', 'key.mp4'), 'segment B');
+    assert.equal(await cache.get('key', path.join(root, 'dest')), false);
+  }));
+
+  it('with deferStore the video is returned at once and cached whole when `stored` settles', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const cacheDir = path.join(root, 'cache');
+    const options = {plan, cacheDir, renderRun: each(async (_segment, output) => { await writeFile(output, 'video'); }),
+      concatenate: async (_files: string[], output: string) => { await writeFile(output, 'joined'); }};
+    const first = await cachedVideo({...options, work: await mkdtemp(path.join(root, 'work-')), deferStore: true});
+    assert.ok(first.stored);
+    await first.stored;
+    const second = await cachedVideo({...options, work: await mkdtemp(path.join(root, 'work-'))});
+    assert.equal(second.report.wholeVideoReused, true);
+    assert.equal(second.stored, undefined);
   }));
 
   it('a failed segment is not published; completed segments can resume', async () => workspace(async (root) => {
@@ -330,6 +371,59 @@ describe('video cache storage and execution', () => {
       onProgress: (p) => seen.push(p),
     });
     assert.deepEqual(seen, [0, 0.5, 1]);
+  }));
+
+  it('a share draws only its segments and joins nothing', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const rendered: number[][] = [];
+    let concatenations = 0;
+    const share = await cachedVideo({
+      plan, cacheDir: path.join(root, 'cache'), work: await mkdtemp(path.join(root, 'work-')), only: [2, 1, 2],
+      renderRun: async (segments, outputs) => {
+        rendered.push(segments.map((s) => s.from));
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+      },
+      concatenate: async () => { concatenations++; },
+    });
+    assert.deepEqual(rendered, [[30, 60]]);
+    assert.equal(share.video, '');
+    assert.equal(concatenations, 0);
+    assert.equal(await readFile(share.files[1]!, 'utf8'), plan.segments[1]!.key);
+    await assert.rejects(cachedVideo({plan, cacheDir: path.join(root, 'cache'), work: root, only: [3],
+      renderRun: async () => {}, concatenate: async () => {}}), /no segment 3/);
+  }));
+
+  it('the assembly takes the segments drawn elsewhere, checks them, and caches them with the whole video', async () => workspace(async (root) => {
+    const plan = planVideo(cacheTimeline(), 'r');
+    const cacheDir = path.join(root, 'cache');
+    const elsewhere = path.join(root, 'elsewhere-1.mp4');
+    await writeFile(elsewhere, 'from casa');
+    const rendered: number[] = [];
+    const checked: number[][] = [];
+    const result = await cachedVideo({
+      plan, cacheDir, work: await mkdtemp(path.join(root, 'work-')), provided: new Map([[1, elsewhere]]),
+      renderRun: async (segments, outputs) => {
+        rendered.push(...segments.map((s) => s.from));
+        await each(async (s, o) => writeFile(o, s.key))(segments, outputs);
+      },
+      checkProvided: async (_files, provided) => { checked.push(provided); },
+      concatenate: async (files, output) => { await writeFile(output, (await Promise.all(files.map((f) => readFile(f, 'utf8')))).join('|')); },
+    });
+    assert.deepEqual(rendered, [0, 60]);
+    assert.deepEqual(checked, [[1]]);
+    assert.equal(result.report.segmentsProvided, 1);
+    assert.equal((await readFile(result.video, 'utf8')).split('|')[1], 'from casa');
+    const segments = new VideoCache(path.join(cacheDir, 'segments'), []);
+    assert.equal(await segments.has(plan.segments[1]!.key), true, 'a correction draws it no more');
+    assert.equal(await new VideoCache(path.join(cacheDir, 'video'), []).has(plan.key), true);
+    const copy = path.join(root, 'copy.mp4');
+    assert.equal(await segments.get(plan.segments[1]!.key, copy), true);
+    assert.equal(await readFile(copy, 'utf8'), 'from casa');
+    await assert.rejects(cachedVideo({
+      plan, cacheDir: path.join(root, 'cache-2'), work: await mkdtemp(path.join(root, 'work-')), provided: new Map([[1, elsewhere]]),
+      renderRun: async () => {}, concatenate: async () => {},
+      checkProvided: async () => { throw new Error('not encoded like this machine'); },
+    }), /not encoded like this machine/);
   }));
 });
 

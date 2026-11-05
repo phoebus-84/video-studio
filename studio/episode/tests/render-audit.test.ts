@@ -108,3 +108,38 @@ describe("renderEpisode audits the file before it becomes current", () => {
     expect(JSON.parse(readFileSync(at("output/current.json"), "utf-8")).renderId).toBe(first.renderId);
   });
 });
+
+describe("renderEpisode renders through the renderer it is given", () => {
+  it("hands it what renderTimeline would get and keeps naming, report and audit here", async () => {
+    const seen: any[] = [];
+    const render = await renderEpisode(dir(), {
+      episodeRef: REF,
+      render: async (options) => {
+        seen.push(options);
+        writeFileSync(options.outputPath, "remote mp4");
+        options.onProgress?.(0.5);
+        const timeline = options.timeline as any;
+        return {
+          path: "/elsewhere/out.mp4",
+          durationSeconds: timeline.durationInFrames / timeline.fps,
+          sizeBytes: 10,
+          hash: sha256("remote mp4"),
+          kits: [],
+          profile: timeline.profile.id,
+          loudness: null,
+        };
+      },
+      onProgress: () => undefined,
+    });
+    expect(rendered).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].assetRoot).toBe(dir());
+    expect(seen[0].outputPath).toBe(join(dir(), "output", `.${render.renderId}.partial.mp4`));
+    expect(seen[0].cacheDir).toBe(join(dir(), ".cache", "remotion"));
+    expect(Array.isArray(seen[0].kits)).toBe(true);
+    expect(render.result.path).toBe(render.outputPath);
+    expect(readFileSync(render.outputPath, "utf-8")).toBe("remote mp4");
+    expect(JSON.parse(readFileSync(render.reportPath, "utf-8")).render.path).toBe(`${render.renderId}.mp4`);
+    expect(JSON.parse(readFileSync(at("output/current.json"), "utf-8")).renderId).toBe(render.renderId);
+  });
+});

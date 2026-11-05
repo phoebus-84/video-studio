@@ -19,14 +19,17 @@ const CODE = /\.(js|ts|tsx|json)$/;
  * mixed without a browser (sound-mix), and the Node
  * side that only decides how drawn frames are encoded, cut into cached
  * segments and joined (cached-render, render-cache) or how the command lines
- * call the renderer (cli, sheet-cli). A sheet stays current when only these
+ * call the renderer (cli, sheet-cli), how a layout sheet picks, caches and
+ * lays out its stills (layout-sheet: the scale and quality are among a sheet's
+ * inputs and a still's key; the grid is drawn by Sheet), and the step timings
+ * (timings). A sheet stays current when only these
  * change: a faster render must not send a person back to re-read pictures that
  * did not change. The render cache still keys on the encoding modules
  * (ENCODING): they change the bytes of a segment. Not the probe: it counts a
  * clip's frames, which decide when the clip holds or loops. Every other
  * module counts as drawing until it is named here.
  */
-export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'volume', 'sound-mix', 'cached-render', 'render-cache', 'cli', 'sheet-cli']);
+export const NOT_DRAWING: ReadonlySet<string> = new Set(['audit', 'loudness', 'volume', 'sound-mix', 'cached-render', 'render-cache', 'cli', 'sheet-cli', 'layout-sheet', 'timings']);
 
 /** The modules that never draw but decide a cached segment's bytes: the render cache keys on them. */
 export const ENCODING: ReadonlySet<string> = new Set(['cached-render', 'render-cache']);

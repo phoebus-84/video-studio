@@ -125,6 +125,13 @@ and kits: about 2 GB with large paintings.
   tabs: Chrome draws all of a browser's tabs in a single GPU process, which
   past a few tabs is what holds a render back. `AVG_RENDER_BROWSERS=<n>`
   forces their number (`1` is the old single browser).
+- **GPU.** Left alone, Chrome picks its own graphics path, which on some
+  machines is software. `AVG_CHROMIUM_GL=angle` asks for the GPU (other
+  values: `egl`, `angle-egl`, `vulkan`, `swangle`, `swiftshader`); on the
+  machines measured it drew several times faster. Every tab then holds its
+  pictures in video memory: on a card with little of it (2 GB), keep the tabs
+  per browser low, for example four browsers with `AVG_RENDER_CONCURRENCY=4`
+  rather than 8, or Chrome stops with "ran out of memory".
 - **Large pictures.** Original image bytes are preserved: a kit may crop or
   zoom beyond 2×, and even an unzoomed panoramic image may need its full
   resolution to cover the frame. Prepare smaller assets explicitly when the

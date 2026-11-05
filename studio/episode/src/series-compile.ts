@@ -106,6 +106,21 @@ const at = (file: string, problems: { code: string; message: string; path?: stri
 const sha256 = (bytes: Buffer | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
 /**
+ * A file's hash, kept while its size and modification time stay. A render
+ * loads its episode several times (the timeline, its rules, the sheet, the
+ * kits), and the media are most of the bytes: read once, not every time.
+ */
+const known = new Map<string, { size: number; mtimeMs: number; hash: string }>();
+function hashOfFile(real: string, bytes?: Buffer): string {
+  const { size, mtimeMs } = statSync(real);
+  const seen = known.get(real);
+  if (seen && seen.size === size && seen.mtimeMs === mtimeMs) return seen.hash;
+  const hash = sha256(bytes ?? readFileSync(real));
+  known.set(real, { size, mtimeMs, hash });
+  return hash;
+}
+
+/**
  * Read, check and hash everything the episode's compiler needs. Reads files
  * only; writes nothing. Every file read is in `input.inputs` with its hash,
  * keyed by its path relative to the episode (release files as ../../templates/…).
@@ -221,8 +236,8 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   const inputs: Record<string, string> = {};
   const warnings: SeriesCompileProblem[] = [];
 
-  /** Read a file that must stay inside `within` once symlinks are followed. */
-  const read = (file: string, within: string, missing: () => never): Buffer => {
+  /** A file that must stay inside `within` once symlinks are followed: its key and real path. */
+  const locate = (file: string, within: string, missing: () => never): { key: string; real: string } => {
     const key = relative(episodeDir, file).split(sep).join("/");
     if (!existsSync(file)) return missing();
     const real = realpathSync(file);
@@ -232,9 +247,19 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
       stop("path-escape", key, `${key} leads outside ${where} (${real})`);
     }
     if (!statSync(real).isFile()) stop("not-a-file", key, `${key} is not a file`);
+    return { key, real };
+  };
+  /** Read such a file, its hash among the inputs. */
+  const read = (file: string, within: string, missing: () => never): Buffer => {
+    const { key, real } = locate(file, within, missing);
     const bytes = readFileSync(real);
-    inputs[key] = sha256(bytes);
+    inputs[key] = hashOfFile(real, bytes);
     return bytes;
+  };
+  /** Such a file's hash among the inputs, unread when it is known: a picture or a sound is only checked here. */
+  const hash = (file: string, within: string, missing: () => never): string => {
+    const { key, real } = locate(file, within, missing);
+    return (inputs[key] = hashOfFile(real));
   };
   const inEpisode = (path: string, where: string) => {
     if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) stop("path-escape", where, `${path} is not a path inside the episode`);
@@ -337,9 +362,9 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
   const timings: Record<string, any> = {};
   (narration.takes as any[]).forEach((take, i) => {
     const where = `${NARRATION_TAKES_PATH}#$.takes[${i}]`;
-    const audio = read(inEpisode(take.audio.path, `${where}.audio.path`), episodeDir,
+    const audio = hash(inEpisode(take.audio.path, `${where}.audio.path`), episodeDir,
       () => stop("missing-asset", `${where}.audio.path`, `take "${take.id}": ${take.audio.path} is missing`));
-    if (sha256(audio) !== take.audio.hash) {
+    if (audio !== take.audio.hash) {
       stop("hash-mismatch", `${where}.audio.hash`, `take "${take.id}": ${take.audio.path} is not the audio the take recorded`);
     }
     assets[`narration-${take.id}`] = { path: take.audio.path, hash: take.audio.hash, kind: "audio" };
@@ -376,7 +401,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
       const id = `${prefix}-${file.slice(0, -extname(file).length)}`;
       const path = `assets/${dir}/${file}`;
       if (assets[id]) stop("ambiguous-asset", path, `${assets[id].path} and ${path} are both ${id.slice(prefix.length + 1)}: keep one`);
-      read(join(episodeDir, path), episodeDir, () => stop("missing-asset", path, `${path} is missing`));
+      hash(join(episodeDir, path), episodeDir, () => stop("missing-asset", path, `${path} is missing`));
       assets[id] = { path, hash: inputs[path]!, kind };
     }
   }
@@ -423,7 +448,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     }
     const offer = (id: string, file: string, kind: CompileAsset["kind"]) => {
       const path = `${themeKey}/${file}`;
-      read(join(themeDir, file), themeDir, () => stop("missing-asset", path, `${path} is missing`));
+      hash(join(themeDir, file), themeDir, () => stop("missing-asset", path, `${path} is missing`));
       if (sealed && sealed[file] !== inputs[path]) {
         stop("theme-mismatch", path, `${path} is not the file ${template.theme.id}@${template.theme.version} sealed (${sealed[file]}): a release never changes, make a new one`);
       }
@@ -465,15 +490,15 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
     const srcDir = sourceDir(dirname(channelDir), basename(channelDir), pinDoc.source);
     const files = pinDoc.files as Record<string, { hash: string }>;
     /** A file of the source, held to the pin's inventory. */
-    const fromSource = (path: string, where: string): Buffer => {
+    const fromSource = <T extends Buffer | string = Buffer>(path: string, where: string, how: (file: string, within: string, missing: () => never) => T = read as never): T => {
       if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) stop("path-escape", where, `${path} is not a path inside the pinned source`);
       const file = join(srcDir, path);
       const key = relative(episodeDir, file).split(sep).join("/");
       const entry = files[path];
       if (!entry) stop("pin-mismatch", where, `${path} of the pinned source is not in pin "${id}": renew the pin (vpr pin)`);
-      const bytes = read(file, srcDir, () => stop("pin-mismatch", key, `${key} is missing: renew the pin (vpr pin) or restore it`));
+      const got = how(file, srcDir, () => stop("pin-mismatch", key, `${key} is missing: renew the pin (vpr pin) or restore it`));
       if (inputs[key] !== entry!.hash) stop("pin-mismatch", key, `${key} changed since pin "${id}" inventoried it: renew the pin (vpr pin)`);
-      return bytes;
+      return got;
     };
     const keyOf = (path: string) => relative(episodeDir, join(srcDir, path)).split(sep).join("/");
     const sourceNarration = files[NARRATION_TAKES_PATH] ? JSON.parse(fromSource(NARRATION_TAKES_PATH, pinKey).toString("utf-8")) : null;
@@ -483,8 +508,8 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
       if (problems.length > 0) throw new Stop(at(keyOf(NARRATION_TAKES_PATH), problems));
       (sourceNarration.takes as any[]).forEach((take, i) => {
         const where = `${keyOf(NARRATION_TAKES_PATH)}#$.takes[${i}]`;
-        const audio = fromSource(take.audio.path, `${where}.audio.path`);
-        if (sha256(audio) !== take.audio.hash) stop("hash-mismatch", `${where}.audio.hash`, `pinned take "${take.id}": ${take.audio.path} is not the audio the take recorded`);
+        const audio = fromSource(take.audio.path, `${where}.audio.path`, hash);
+        if (audio !== take.audio.hash) stop("hash-mismatch", `${where}.audio.hash`, `pinned take "${take.id}": ${take.audio.path} is not the audio the take recorded`);
         assets[`source-${id}-narration-${take.id}`] = { path: keyOf(take.audio.path), hash: take.audio.hash, kind: "audio" };
         if (!take.timing) return;
         const timingBytes = fromSource(take.timing.path, `${where}.timing.path`);
@@ -500,7 +525,7 @@ function load(episodeDir: string, episodeRef: { channel: string; series: string;
       for (const path of Object.keys(files).filter((p) => p.startsWith(`assets/${dir}/`) && !p.slice(`assets/${dir}/`.length).includes("/")).sort()) {
         const file = path.slice(`assets/${dir}/`.length);
         if (file.startsWith(".") || !(extensions as readonly string[]).includes(extname(file).toLowerCase())) continue;
-        fromSource(path, pinKey);
+        fromSource(path, pinKey, hash);
         assets[`source-${id}-${prefix}-${file.slice(0, -extname(file).length)}`] = { path: keyOf(path), hash: files[path]!.hash, kind };
       }
     }

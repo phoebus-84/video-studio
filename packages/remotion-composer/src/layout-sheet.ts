@@ -6,15 +6,18 @@
 import {mkdir, mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {bundle} from '@remotion/bundler';
 import {openBrowser, renderStill, selectComposition, type HeadlessBrowser} from '@remotion/renderer';
 import {stageAssets, sha256} from './assets.js';
 import {ComposerError} from './errors.js';
 import {timelineKits, type LockedKit} from './kit-lock.js';
-import {libraryEntry, readLibraryKits, resolveFromApplication, type LibraryKit} from './library-kits.js';
+import {libraryEntry, readLibraryKits, type LibraryKit} from './library-kits.js';
+import {bundleInto} from './bundle-cache.js';
 import {sheetSize, type SheetProps} from './Sheet.js';
 import {validateTimeline} from './validate.js';
 import {videoFrames} from './probe.js';
+import {timed} from './timings.js';
+import {rendererKey} from './cached-render.js';
+import {cacheKey, rangeKeys, VideoCache} from './render-cache.js';
 
 /** The most stills one sheet holds. */
 export const MAX_SHEET_PICKS = 120;
@@ -36,6 +39,12 @@ export interface LayoutSheetOptions {
   columns?: number;
   /** Stills rendered at once. Default 6. */
   parallel?: number;
+  /**
+   * The render cache's directory: a still is kept under `stills/`, keyed like
+   * a segment by what draws its frame. A sheet made again after a correction
+   * draws only the stills the correction touches.
+   */
+  cacheDir?: string;
   /** Kits the channel or the series carries (avg-d1x), beside the application's. */
   kits?: readonly LibraryKit[];
 }
@@ -55,6 +64,8 @@ export interface LayoutSheetResult {
   sheet: {path: string; hash: string; columns: number; rows: number; width: number; height: number};
   /** Each kit the timeline draws with, and its code hash from kits.lock.json. */
   kits: LockedKit[];
+  /** Stills taken from the cache, not drawn; with no cacheDir, 0. */
+  stillsReused: number;
 }
 
 /** mm:ss.ff — minutes, seconds and the frame within the second. */
@@ -96,7 +107,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
 
   const kits = timelineKits(timeline, options.kits ?? []) ?? refuse('a kit of this timeline is neither in kits.lock.json nor a library kit it was handed');
 
-  const staging = await stageAssets(timeline, options.assetRoot, options.sharedRoots);
+  const staging = await timed('sheet: stage assets', () => stageAssets(timeline, options.assetRoot, options.sharedRoots));
   if (!staging.ok) {
     throw new ComposerError(staging.problems[0]!.code, `assets are not what the timeline says: ${staging.problems.map((p) => p.message).join('; ')}`, staging.problems);
   }
@@ -122,22 +133,32 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
     }));
     const sheetPath = path.join(outDir, 'sheet.jpg');
     let sheet: SheetProps;
+    let stillsReused = 0;
     try {
-      const serveUrl = await bundle({
-        entryPoint, publicDir: staged.publicDir, outDir: path.join(work, 'bundle'),
-        ...(options.kits?.length ? {webpackOverride: resolveFromApplication} : {}),
-      });
-      browser = await openBrowser('chrome');
+      const serveUrl = await bundleInto({entryPoint, withKits: Boolean(options.kits?.length)}, staged.publicDir, path.join(work, 'bundle'));
+      browser = await timed('sheet: open browser', () => openBrowser('chrome'));
       const inputProps = {timeline, files: staged.files, assetFrames};
-      const composition = await selectComposition({serveUrl, id: 'Timeline', inputProps, puppeteerInstance: browser});
+      const composition = await timed('sheet: select composition', () => selectComposition({serveUrl, id: 'Timeline', inputProps, puppeteerInstance: browser}));
+      const cache = options.cacheDir ? new VideoCache(path.join(options.cacheDir, 'stills'), [], '.jpg') : null;
+      let keyOf: ((frame: number) => string) | null = null;
+      if (cache) {
+        // Keys use asset ids, as the render's segments do, not staged file names.
+        const ids = Object.fromEntries(Object.entries(staged.files).filter(([, file]) => assetFrames[file] !== undefined).map(([id, file]) => [id, assetFrames[file]!]));
+        const range = rangeKeys(timeline, await timed('sheet: renderer key', () => rendererKey(serveUrl)), ids, library.versions);
+        keyOf = (frame) => cacheKey({kind: 'still', version: 1, scale, quality: 80, frame: range(frame, frame)});
+      }
+      const missing: LayoutSheetFrame[] = [];
+      for (const f of frames) if (!cache || !(await cache.get(keyOf!(f.frame), f.path))) missing.push(f);
+      stillsReused = frames.length - missing.length;
       let next = 0;
       const worker = async () => {
-        while (next < frames.length) {
-          const f = frames[next++]!;
+        while (next < missing.length) {
+          const f = missing[next++]!;
           await renderStill({composition, serveUrl, inputProps, output: f.path, frame: f.frame, scale, imageFormat: 'jpeg', jpegQuality: 80, puppeteerInstance: browser});
+          await cache?.put(keyOf!(f.frame), f.path);
         }
       };
-      await Promise.all(Array.from({length: Math.max(1, Math.min(options.parallel ?? 6, frames.length))}, worker));
+      await timed(`sheet: ${missing.length} stills drawn`, () => Promise.all(Array.from({length: Math.max(1, Math.min(options.parallel ?? 6, missing.length))}, worker)));
 
       sheet = {
         columns,
@@ -149,7 +170,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
         }))),
       };
       const grid = await selectComposition({serveUrl, id: 'Sheet', inputProps: sheet, puppeteerInstance: browser});
-      await renderStill({composition: grid, serveUrl, inputProps: sheet, output: sheetPath, frame: 0, imageFormat: 'jpeg', jpegQuality: 85, puppeteerInstance: browser});
+      await timed('sheet: grid', () => renderStill({composition: grid, serveUrl, inputProps: sheet, output: sheetPath, frame: 0, imageFormat: 'jpeg', jpegQuality: 85, puppeteerInstance: browser}));
     } catch (e) {
       throw new ComposerError('sheet-failed', `Remotion could not render the layout sheet: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -159,6 +180,7 @@ export async function renderLayoutSheet(options: LayoutSheetOptions): Promise<La
       frames,
       sheet: {path: sheetPath, hash: await sha256(sheetPath), columns, rows: Math.ceil(frames.length / columns), ...size},
       kits,
+      stillsReused,
     };
   } finally {
     await browser?.close({silent: true}).catch(() => undefined);

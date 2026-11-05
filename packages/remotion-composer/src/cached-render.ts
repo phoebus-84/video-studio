@@ -1,21 +1,35 @@
 import {execFile} from 'node:child_process';
-import {readFile, readdir, rename, rm, writeFile} from 'node:fs/promises';
+import {copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
+import {availableParallelism} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {ensureBrowser, openBrowser, renderMedia} from '@remotion/renderer';
+import {timed} from './timings.js';
 import type {VideoConfig} from 'remotion';
-import {sha256} from './assets.js';
 import {shapesSegments} from './identity.js';
-import {cachedVideo, cacheKey, planAudio, planVideo, VideoCache, type CacheReport} from './render-cache.js';
+import {cachedVideo, cacheKey, planAudio, planVideo, sha256Cached, VideoCache, type CacheReport} from './render-cache.js';
 import type {TimelineProps} from './Timeline.js';
 import type {KitVersion} from './kits/types.js';
 import type {VisualItem} from './schema.js';
 import {mixSounds, type PlacedSound} from './sound-mix.js';
+import {normalizeLoudness, type LoudnessResult, type LoudnessTarget} from './loudness.js';
 
 const exec = promisify(execFile);
 const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
+// The OpenGL backend Chrome draws with (Remotion's `gl`). Unset keeps Chrome's
+// own choice; a machine whose default is software can pick its GPU path.
+const glBackends = ['swangle', 'angle', 'egl', 'swiftshader', 'vulkan', 'angle-egl'] as const;
+const chromiumGl = (): (typeof glBackends)[number] | null => {
+  const gl = process.env.AVG_CHROMIUM_GL?.trim();
+  return (glBackends as readonly string[]).includes(gl ?? '') ? gl as (typeof glBackends)[number] : null;
+};
+// Which Chrome draws: the headless shell by default; on Linux only the full
+// Chrome for Testing reaches a GPU (e.g. WSL's D3D12 through Mesa).
+const chromeMode = () => process.env.AVG_CHROME_MODE?.trim() === 'chrome-for-testing' ? 'chrome-for-testing' as const : 'headless-shell' as const;
+const ffprobe = () => process.env.FFPROBE_PATH || 'ffprobe';
+
 /**
  * FFmpeg that could not start (Windows 0xC0000142, or no memory or process for
  * it) is retried: the split, the joins and the final mux of a render that took
@@ -48,8 +62,10 @@ type Closable = {close: (options: {silent: boolean}) => Promise<void>};
  * browser that crashed (2026-10-26). While the pictures draw, a lane's browser
  * serves that lane alone; the browser sound pass runs after them.
  */
-export function browserLanes<B extends Closable>(open: () => Promise<B>) {
-  const opened: Promise<B>[] = [];
+export function browserLanes<B extends Closable>(open: () => Promise<B>, pool?: Promise<B>[]) {
+  // A pool (a segment drawer's) outlives this render: its browsers are opened
+  // into it and dropped from it, but closed only by its owner.
+  const opened: Promise<B>[] = pool ?? [];
   const close = async (browser?: Promise<B>) => { await (await browser?.catch(() => null))?.close({silent: true}).catch(() => {}); };
   return {
     get: (lane = 0) => opened[lane] ??= open(),
@@ -58,7 +74,7 @@ export function browserLanes<B extends Closable>(open: () => Promise<B>) {
       delete opened[lane];
       await close(browser);
     },
-    closeAll: async () => { await Promise.all(opened.map(close)); },
+    closeAll: async () => { if (!pool) await Promise.all(opened.map(close)); },
   };
 }
 
@@ -77,36 +93,76 @@ async function codeHashes(dir: string, keep: (file: string) => boolean = () => t
     // Never hash staged media as renderer code: it belongs in per-segment keys.
     if (entry.isDirectory() && entry.name !== 'public') rows.push([entry.name, await codeHashes(path.join(dir, entry.name), keep, base)]);
     else if (entry.isFile() && /\.(js|tsx?|json)$/.test(entry.name) && !entry.name.endsWith('.d.ts') && keep(path.relative(base, path.join(dir, entry.name)))) {
-      rows.push([entry.name, await sha256(path.join(dir, entry.name))]);
+      rows.push([entry.name, await sha256Cached(path.join(dir, entry.name))]);
     }
   }
   return rows;
 }
 
-async function rendererKey(serveUrl: string): Promise<string> {
-  const require = createRequire(import.meta.url);
-  const browser = await ensureBrowser();
-  if (!('path' in browser)) throw new Error('No headless browser is available');
-  const dependencies = await Promise.all(['@remotion/renderer', '@remotion/bundler', 'remotion', 'react', 'react-dom'].map(async (name) =>
-    [name, JSON.parse(await readFile(require.resolve(`${name}/package.json`), 'utf8')).version]));
-  return cacheKey({
-    cacheVersion: 1, encoding, platform: process.platform, arch: process.arch,
-    node: process.version, browser: await sha256(browser.path), dependencies,
+/** What draws a frame besides the timeline: the bundle, the Node code, the browser, FFmpeg. */
+export async function rendererKey(serveUrl: string): Promise<string> {
+  // Every part is read side by side; the files are hashed once per process
+  // while they stay as they are (sha256Cached): the browser alone is 200 MB.
+  const [browser, dependencies, bundle, runtime, ffmpegVersion] = await Promise.all([
+    timed('renderer key: browser', async () => {
+      const found = await ensureBrowser({chromeMode: chromeMode()});
+      if (!('path' in found)) throw new Error('No headless browser is available');
+      return sha256Cached(found.path);
+    }),
+    dependencyVersions(),
     // The bundle includes the actual kit/React/Remotion code, hashed whole (a
     // volume change, which it holds, still misses). Node-side code is also
     // hashed, so a renderer fix invalidates entries without a version bump —
     // but not the modules that never draw (a loudness or audit fix keeps them).
-    bundle: await codeHashes(serveUrl),
-    runtime: await runtimeCodeHashes(path.dirname(fileURLToPath(import.meta.url))),
-    ffmpeg: (await exec(ffmpeg(), ['-version'])).stdout,
+    codeHashes(serveUrl),
+    runtimeCodeHashes(path.dirname(fileURLToPath(import.meta.url))),
+    ffmpegVersionOf(ffmpeg()),
+  ]);
+  return cacheKey({
+    cacheVersion: 1, encoding, platform: process.platform, arch: process.arch,
+    node: process.version, browser, dependencies, bundle, runtime, ffmpeg: ffmpegVersion,
   });
+}
+
+// What a process cannot change under itself: the installed packages' versions.
+let dependenciesRead: Promise<unknown[]> | undefined;
+function dependencyVersions(): Promise<unknown[]> {
+  const require = createRequire(import.meta.url);
+  dependenciesRead ??= Promise.all(['@remotion/renderer', '@remotion/bundler', 'remotion', 'react', 'react-dom'].map(async (name) =>
+    [name, JSON.parse(await readFile(require.resolve(`${name}/package.json`), 'utf8')).version]));
+  dependenciesRead.catch(() => (dependenciesRead = undefined));
+  return dependenciesRead;
+}
+
+// FFmpeg's -version, by program and the program file's identity: replaced, it is asked again.
+const ffmpegVersions = new Map<string, Promise<string>>();
+async function ffmpegVersionOf(program: string): Promise<string> {
+  let file = '';
+  try {
+    const s = await stat(program);
+    file = `${s.size}:${s.mtimeMs}`;
+  } catch { /* on the PATH: asked once per process */ }
+  const key = `${program}|${file}`;
+  let pending = ffmpegVersions.get(key);
+  if (!pending) {
+    pending = exec(program, ['-version']).then((r) => r.stdout);
+    pending.catch(() => ffmpegVersions.delete(key));
+    ffmpegVersions.set(key, pending);
+  }
+  return pending;
 }
 
 /** The Node code a soundtrack mixed without a browser depends on: where each sound goes, and how loud. */
 async function mixerKey(): Promise<unknown[]> {
   const dir = path.dirname(fileURLToPath(import.meta.url));
   const files = (await readdir(dir)).filter((f) => /^(sound-mix|volume)\.(js|ts)$/.test(f)).sort();
-  return Promise.all(files.map(async (f) => [f, await sha256(path.join(dir, f))]));
+  return Promise.all(files.map(async (f) => [f, await sha256Cached(path.join(dir, f))]));
+}
+
+/** The Node code a normalised soundtrack depends on, besides the mix and FFmpeg (in the renderer key). */
+async function loudnessKey(): Promise<string> {
+  const self = fileURLToPath(import.meta.url);
+  return sha256Cached(path.join(path.dirname(self), path.basename(self).replace(/^cached-render/, 'loudness')));
 }
 
 /** The tabs of a browser sound pass: it draws nothing, so a few do (half the render's, at most 4). */
@@ -116,6 +172,76 @@ export const soundTabs = (concurrency: number | undefined) => Math.max(1, Math.m
 function keyframesEverySecond({args}: {args: string[]}): string[] {
   const at = args.indexOf('-g');
   return at < 0 ? args : [...args.slice(0, at + 2), '-sc_threshold', '0', ...args.slice(at + 2)];
+}
+
+// What must be the same in two segments for the concat demuxer to join them
+// with -c copy: the stream's parameters and its SPS/PPS (extradata).
+const joinFields = ['codec_name', 'profile', 'level', 'width', 'height', 'pix_fmt', 'r_frame_rate', 'time_base',
+  'color_space', 'color_transfer', 'color_primaries', 'color_range', 'has_b_frames', 'refs', 'extradata_hash'] as const;
+
+async function describeSegment(file: string): Promise<Record<string, unknown>> {
+  const {stdout} = await exec(ffprobe(), ['-v', 'error', '-select_streams', 'v:0', '-count_packets', '-show_data_hash', 'sha256',
+    '-show_entries', `stream=${[...joinFields, 'nb_read_packets'].join(',')}`, '-of', 'json', file], {maxBuffer: 8 * 1024 * 1024});
+  const stream = (JSON.parse(stdout) as {streams?: Record<string, unknown>[]}).streams?.[0];
+  if (!stream) throw new Error(`${path.basename(file)} has no video stream`);
+  return stream;
+}
+
+/**
+ * Segments another machine drew join this machine's only when their streams
+ * agree: the same parameters and SPS/PPS, and each segment its own frames.
+ * Windows and Linux agree (same x264 settings, identical SPS/PPS), so their
+ * segments join; the check catches an engine whose encoder drifted.
+ */
+export async function checkJoinable(files: string[], provided: number[], frames: (index: number) => number): Promise<void> {
+  const others = new Set(provided);
+  const reference = files.findIndex((_, i) => !others.has(i));
+  const base = await describeSegment(files[reference < 0 ? provided[0]! : reference]!);
+  for (let at = 0; at < provided.length; at += 8) {
+    await Promise.all(provided.slice(at, at + 8).map(async (index) => {
+      const stream = await describeSegment(files[index]!);
+      const differ = joinFields.filter((field) => String(stream[field]) !== String(base[field]));
+      if (differ.length > 0) {
+        throw new Error(`segment ${index}, drawn on another machine, is not encoded like this machine's (${differ.map((f) => `${f} ${String(stream[f])} ≠ ${String(base[f])}`).join(', ')}): its encoder's settings differ from this machine's`);
+      }
+      if (Number(stream.nb_read_packets) !== frames(index)) {
+        throw new Error(`segment ${index}, drawn on another machine, has ${String(stream.nb_read_packets)} frames, not ${frames(index)}`);
+      }
+    }));
+  }
+}
+
+async function planOf(options: {inputProps: TimelineProps; serveUrl: string; kits?: readonly KitVersion[]}) {
+  const {inputProps} = options;
+  // Keys use asset ids, not staging filenames (which change when audio is added).
+  const assetFrames = Object.fromEntries(Object.entries(inputProps.files)
+    .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
+    .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
+  const renderer = await timed('renderer key', () => rendererKey(options.serveUrl));
+  return {renderer, assetFrames, plan: planVideo(inputProps.timeline, renderer, assetFrames, options.kits)};
+}
+
+/**
+ * The segments `cacheDir` already holds, by index: a render takes them from
+ * there and draws none of them. A shared render leaves them out of its queue.
+ */
+export async function cachedSegments(options: {inputProps: TimelineProps; serveUrl: string; cacheDir: string; kits?: readonly KitVersion[]}): Promise<number[]> {
+  const {plan} = await planOf(options);
+  const cache = new VideoCache(path.join(options.cacheDir, 'segments'), []);
+  const held = await Promise.all(plan.segments.map((s) => cache.has(s.key)));
+  return held.flatMap((h, index) => (h ? [index] : []));
+}
+
+/**
+ * Whether `cacheDir` holds any segment at all, of any video: a cheap look
+ * before cachedSegments, which needs the composition prepared.
+ */
+export async function holdsSegments(cacheDir: string): Promise<boolean> {
+  try {
+    return (await readdir(path.join(cacheDir, 'segments'))).some((f) => f.endsWith('.json'));
+  } catch {
+    return false;
+  }
 }
 
 export async function renderWithCache(options: {
@@ -145,15 +271,30 @@ export async function renderWithCache(options: {
    */
   browsers?: number;
   onProgress?: (progress: number) => void;
-}): Promise<CacheReport> {
+  /**
+   * Normalise the soundtrack alone to this loudness, cached on the mix's key,
+   * and mux it as the output's audio: the video stream is never read again.
+   * A correction that leaves the sound alone takes it whole from the cache.
+   */
+  loudness?: LoudnessTarget;
+  /**
+   * A shared render's share: draw (or take from the cache) only these
+   * segments and copy them to `dir` as segment-<index>.mp4; nothing is
+   * muxed and `output` is not written. `audio` also readies the cached
+   * soundtrack, for the machine that will assemble the video.
+   */
+  segments?: {indices: readonly number[]; dir: string; audio?: boolean};
+  /** Segments other machines drew, by index (see cachedVideo). */
+  provided?: ReadonlyMap<number, string>;
+  /**
+   * Browsers kept open across calls, by lane (a segment drawer's): they are
+   * opened into it when missing and left open; the caller closes them.
+   */
+  browserPool?: Promise<Browser>[];
+}): Promise<CacheReport & {loudness?: LoudnessResult}> {
   const {inputProps, composition, serveUrl, work, hasAudio} = options;
   const {timeline} = inputProps;
-  // Keys use asset ids, not staging filenames (which change when audio is added).
-  const assetFrames = Object.fromEntries(Object.entries(inputProps.files)
-    .filter(([, file]) => inputProps.assetFrames[file] !== undefined)
-    .map(([id, file]) => [id, inputProps.assetFrames[file]!]));
-  const renderer = await rendererKey(serveUrl);
-  const plan = planVideo(timeline, renderer, assetFrames, options.kits);
+  const {renderer, assetFrames, plan} = await planOf(options);
   const common = {composition, serveUrl, concurrency: options.concurrency ?? null};
   const silentProps = {...inputProps, pass: 'picture' as const, timeline: {...timeline, tracks: timeline.tracks.filter((t) => t.type === 'visual')}};
   // The component is handed the props of the composition (inputProps only reach getInputProps()): each pass
@@ -163,15 +304,19 @@ export async function renderWithCache(options: {
   // Reuse each browser across misses, rather than launching Chrome each second.
   // A whole-video hit with no audio never opens one.
   const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
-  const lanes = browserLanes(() => openBrowser('chrome'));
+  const lanes = browserLanes(() => timed('open browser', () => openBrowser('chrome', {chromeMode: chromeMode(), chromiumOptions: {gl: chromiumGl()}})), options.browserPool);
   const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
   // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
   // beside the pictures; a browser sound pass waits for them (see below).
-  let videoDone = 0, audioDone = hasAudio ? 0 : 1;
+  // A share that leaves the soundtrack to another machine has only pictures to report.
+  let videoDone = 0, audioDone = hasAudio && (!options.segments || options.segments.audio) ? 0 : 1;
   const report = () => options.onProgress?.(videoDone * 0.8 + audioDone * 0.2);
   const audio = path.join(work, 'audio.wav');
+  const levelled = path.join(work, 'audio.m4a');
   const sampleRate = 48000;
   const audioWarnings: string[] = [];
+  let loudness: LoudnessResult | undefined;
+  let loudnessReused = false;
   const soundtrack = async (): Promise<boolean> => {
     if (!hasAudio) return false;
     // The mix is cached on its own key: a change to the pictures alone, or a
@@ -180,7 +325,28 @@ export async function renderWithCache(options: {
     // Mixed without a browser, the soundtrack also depends on the Node code that places the sounds.
     const mixer = options.sounds ? await mixerKey() : null;
     const key = planAudio(timeline, mixer ? cacheKey({renderer, mixer}) : renderer, sampleRate, sounding, assetFrames);
+    // The normalised soundtrack is cached on the mix's key: a hit needs
+    // neither the mix nor a loudness pass.
+    const target = options.loudness;
+    const levels = new VideoCache(path.join(options.cacheDir, 'loudness'), audioWarnings, '.m4a');
+    const levelKey = target ? cacheKey({version: 1, audio: key, target, code: await loudnessKey()}) : '';
+    if (target) {
+      const hit = await levels.read(levelKey, levelled);
+      if (hit?.meta) {
+        loudness = hit.meta as LoudnessResult;
+        loudnessReused = true;
+        audioDone = 1;
+        report();
+        return true;
+      }
+    }
+    const level = async () => {
+      if (!target) return;
+      loudness = await timed('loudness', () => normalizeLoudness(audio, levelled, target));
+      await levels.put(levelKey, levelled, loudness);
+    };
     if (await cache.get(key, audio)) {
+      await level();
       audioDone = 1;
       report();
       return true;
@@ -188,6 +354,7 @@ export async function renderWithCache(options: {
     if (options.sounds) {
       await mixSounds({sounds: options.sounds, timeline, output: audio, sampleRate, onProgress: (p) => { audioDone = p; report(); }});
       await cache.put(key, audio);
+      await level();
       return false;
     }
     // Keep ALL audio tracks: ducking looks up other tracks in the timeline.
@@ -203,11 +370,17 @@ export async function renderWithCache(options: {
       onProgress: ({progress}) => { audioDone = progress; report(); },
     });
     await cache.put(key, audio);
+    await level();
     return false;
   };
   try {
+    const share = options.segments;
     const pictures = () => cachedVideo({
-      plan, cacheDir: options.cacheDir, work, lanes: browsers,
+      plan, cacheDir: options.cacheDir, work, lanes: browsers, deferStore: true,
+      ...(share ? {only: share.indices} : {}),
+      ...(options.provided ? {provided: options.provided} : {}),
+      checkProvided: (files, provided) => timed('check provided segments', () =>
+        checkJoinable(files, provided, (index) => plan.segments[index]!.to - plan.segments[index]!.from + 1)),
       onProgress: (p) => { videoDone = p; report(); },
       renderRun: async (segments, outputs, onRunProgress, lane) => {
         // One renderer call for the whole run, every tab busy across it. A
@@ -219,12 +392,12 @@ export async function renderWithCache(options: {
         const first = segments[0]!, last = segments.at(-1)!;
         const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
         try {
-          await renderMedia({
+          await timed(`frames ${first.from}-${last.to} (lane ${lane})`, async () => renderMedia({
             ...common, concurrency: browsers > 1 ? tabsEach : common.concurrency, ...encoding, puppeteerInstance: await lanes.get(lane),
             ...withProps(silentProps), outputLocation: whole,
             frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
             onProgress: ({progress}) => onRunProgress(progress),
-          });
+          }));
         } catch (error) {
           await lanes.drop(lane);
           throw error;
@@ -244,36 +417,98 @@ export async function renderWithCache(options: {
         }
         await rm(whole, {force: true});
       },
-      concatenate: async (files, output) => {
-        // Only generated basenames go in the concat script; no caller-controlled
-        // paths or quoting, and no shell execution.
-        const list = path.join(work, 'segments.txt');
-        await writeFile(list, files.map((file) => `file '${path.basename(file)}'`).join('\n'));
-        await run(['-f', 'concat', '-safe', '1', '-i', list, '-map', '0:v:0', '-c:v', 'copy', '-an', output]);
-      },
+      concatenate: (files, output) => timed('concat', () => joinSegments(files, output, work)),
     });
+    if (share) {
+      const drawn = async () => {
+        const result = await pictures();
+        await mkdir(share.dir, {recursive: true});
+        await Promise.all([...new Set(share.indices)].map((index) => copyFile(result.files[index]!, path.join(share.dir, `segment-${index}.mp4`))));
+        return result.report;
+      };
+      if (!share.audio || !hasAudio) {
+        const drawnReport = await drawn();
+        options.onProgress?.(1);
+        return drawnReport;
+      }
+      const [drawnReport, audioReused] = options.sounds ? await Promise.all([drawn(), soundtrack()]) : [await drawn(), await soundtrack()];
+      drawnReport.warnings.push(...audioWarnings);
+      drawnReport.audioReused = audioReused;
+      if (options.loudness) drawnReport.loudnessReused = loudnessReused;
+      options.onProgress?.(1);
+      return drawnReport;
+    }
     // The browser's sound pass mounts every sounding kit on every frame: beside
     // the pictures, on the same browser, it slowed them about 4× (a long,
     // 2026-10-16). It runs after them, with few tabs; FFmpeg's mix runs beside.
-    const [{video, report: cacheReport}, audioReused] = options.sounds || !hasAudio
+    const [{video, report: cacheReport, stored}, audioReused] = options.sounds || !hasAudio
       ? await Promise.all([pictures(), soundtrack()])
       : [await pictures(), await soundtrack()];
-    cacheReport.warnings.push(...audioWarnings);
-    if (hasAudio) {
-      cacheReport.audioReused = audioReused;
-      // Lossless audio intermediate: loudnorm does the sole final AAC encode.
-      await run(['-i', video, '-i', audio, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', options.output]);
-    } else {
+    // The joined video is cached whole while it is muxed: both only read it.
+    const mux = async () => {
+      if (hasAudio) {
+        if (loudness) {
+          // The soundtrack is already normalised and encoded: both streams are copied.
+          await timed('mux', () => run(['-i', video, '-i', levelled, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', options.output]));
+          return;
+        }
+        // Lossless audio intermediate: loudnorm does the sole final AAC encode.
+        await run(['-i', video, '-i', audio, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', options.output]);
+        return;
+      }
       // Preserve the public API's silent audio track for timelines without audio.
       await run([
         '-i', video, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo',
         '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac',
         '-t', String(timeline.durationInFrames / timeline.fps), options.output,
       ]);
-    }
+    };
+    const [muxed] = await Promise.allSettled([mux(), stored]);
+    if (muxed.status === 'rejected') throw muxed.reason;
+    cacheReport.warnings.push(...audioWarnings);
+    if (hasAudio) cacheReport.audioReused = audioReused;
+    if (hasAudio && loudness) cacheReport.loudnessReused = loudnessReused;
     options.onProgress?.(1);
-    return cacheReport;
+    return hasAudio && loudness ? {...cacheReport, loudness} : cacheReport;
   } finally {
     await lanes.closeAll();
   }
+}
+
+/** Segments one FFmpeg joins, at least, before its part is joined with the others'. */
+export const JOIN_GROUP = 12;
+
+/**
+ * The segments, joined in order by stream copy. FFmpeg's concat opens each
+ * file and decodes its first frame, one after another, on one core: 90
+ * one-second files took 7 s, an hour's 3600 would take minutes. Many are
+ * joined in groups side by side, then the groups' files are joined: the
+ * same packets, the same timestamps.
+ */
+export async function joinSegments(
+  files: readonly string[], output: string, work: string,
+  groups = Math.min(6, Math.max(1, Math.floor(availableParallelism() / 2)), Math.floor(files.length / JOIN_GROUP)),
+): Promise<void> {
+  const join = async (names: readonly string[], list: string, target: string) => {
+    // Only generated basenames go in the concat script; no caller-controlled
+    // paths or quoting, and no shell execution.
+    await writeFile(path.join(work, list), names.map((file) => `file '${path.basename(file)}'`).join('\n'));
+    await run(['-f', 'concat', '-safe', '1', '-i', path.join(work, list), '-map', '0:v:0', '-c:v', 'copy', '-an', target]);
+  };
+  if (groups <= 1) return join(files, 'segments.txt', output);
+  const size = Math.ceil(files.length / groups);
+  const parts = Array.from({length: Math.ceil(files.length / size)}, (_, g) => files.slice(g * size, (g + 1) * size));
+  const pieces = parts.map((_, g) => path.join(work, `joined-${g}.mp4`));
+  try {
+    await Promise.all(parts.map((part, g) => join(part, `segments-${g}.txt`, pieces[g]!)));
+    await join(pieces, 'segments.txt', output);
+  } finally {
+    await Promise.all(pieces.map((piece) => rm(piece, {force: true})));
+  }
+}
+
+export type Browser = Awaited<ReturnType<typeof openBrowser>>;
+
+export async function closeBrowsers(opened: readonly Promise<Browser>[]): Promise<void> {
+  await Promise.all(opened.map(async (browser) => (await browser?.catch(() => null))?.close({silent: true}).catch(() => {})));
 }

@@ -122,7 +122,11 @@ export async function makeLayoutSheet(episodeDir: string, options: BuildOptions)
   const final = join(episodeDir, LAYOUT_SHEET_DIR);
   let report: LayoutSheetReport;
   try {
-    const result = await renderLayoutSheet({ timeline: decision.timeline, assetRoot: episodeDir, sharedRoots: sharedRootsOf(episodeDir), picks, outDir: temp, scale: SHEET_SCALE, kits: libraryKitsOf(episodeDir, options) });
+    // Stills come from the render cache when what draws them is unchanged.
+    const result = await renderLayoutSheet({
+      timeline: decision.timeline, assetRoot: episodeDir, sharedRoots: sharedRootsOf(episodeDir), picks, outDir: temp, scale: SHEET_SCALE,
+      kits: libraryKitsOf(episodeDir, options), cacheDir: join(episodeDir, ".cache", "remotion"),
+    });
     report = {
       createdAt: new Date().toISOString(),
       timeline: { path: EDIT_TIMELINE_PATH, hash: inputs.timeline },

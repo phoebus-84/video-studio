@@ -67,6 +67,24 @@ describe('renderLayoutSheet end to end', {skip: !enabled && 'set REMOTION_E2E=1 
       {name: 'captions', version: '1.0.0', hash: kitLockHash('captions', '1.0.0')},
       {name: 'still', version: '1.0.0', hash: kitLockHash('still', '1.0.0')},
     ]);
+    assert.equal(result.stillsReused, 0);
+
+    // With a cache, a sheet made again takes its stills from it, and after an
+    // edit draws only the stills the edit reaches.
+    const cacheDir = path.join(root, 'cache');
+    const cold = await renderLayoutSheet({timeline: doc, assetRoot: root, picks, outDir: path.join(root, 'cold'), columns: 2, cacheDir});
+    assert.equal(cold.stillsReused, 0);
+    const warm = await renderLayoutSheet({timeline: doc, assetRoot: root, picks, outDir: path.join(root, 'warm'), columns: 2, cacheDir});
+    assert.equal(warm.stillsReused, 3);
+    assert.deepEqual(warm.frames.map((f: {hash: string}) => f.hash), cold.frames.map((f: {hash: string}) => f.hash));
+    const edited = clone(doc);
+    const caption = (edited.tracks as {items: {from: number; duration: number; props: Record<string, unknown>}[]}[])
+      .flatMap((t) => t.items).find((item) => typeof item.props?.text === 'string' && item.from <= 300 && 300 < item.from + item.duration);
+    assert.ok(caption, 'the fixture has a caption on frame 300');
+    caption.props.text = `${caption.props.text} (edited)`;
+    const after = await renderLayoutSheet({timeline: edited, assetRoot: root, picks, outDir: path.join(root, 'after'), columns: 2, cacheDir});
+    assert.equal(after.stillsReused, 2, 'only the still the caption reaches is drawn again');
+    assert.notEqual(after.frames[1].hash, cold.frames[1].hash);
     await rm(root, {recursive: true, force: true});
   });
 });

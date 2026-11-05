@@ -1,0 +1,24 @@
+{
+  "name": "@av/render-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Renders an edit timeline on another machine over SSH, with the same renderTimeline and the same files: code by git push, files by content, the video back. Knows nothing about episodes, pipelines or Pi.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@av/remotion-composer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0"
+  }
+}

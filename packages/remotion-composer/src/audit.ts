@@ -5,6 +5,7 @@
 // exceptions, for a bad file: the caller decides what a failed audit means.
 
 import {spawn} from 'node:child_process';
+import {availableParallelism} from 'node:os';
 import type {LoudnessTarget} from './loudness.js';
 import {isAudioItem, type EditTimeline} from './schema.js';
 
@@ -38,7 +39,17 @@ export interface AuditResult {
 export interface AuditTools {
   ffmpeg?: string;
   ffprobe?: string;
+  /**
+   * How many FFmpeg processes decode the picture, each its own stretch of
+   * the file. By default one per DECODE_STRETCH seconds, up to half the
+   * cores (at most 6): one decoder keeps about two cores busy, and the
+   * decode was most of the time between the mp4 and the report.
+   */
+  decoders?: number;
 }
+
+/** A stretch of the picture no shorter than this (s) is worth its own decoder. */
+export const DECODE_STRETCH = 15;
 
 /** The sound may end this much (s) before or after the picture: AAC's priming and padding, never a cut. */
 export const SOUND_DURATION_TOLERANCE = 0.2;
@@ -88,14 +99,59 @@ async function frame(ffmpeg: string, file: string, index: number): Promise<Buffe
   return stdout;
 }
 
+/**
+ * Decodes the whole file, in `parts` stretches at once when more than one:
+ * the picture's stretches each from the keyframe before its start (a
+ * render's keyframes are a second apart), the sound in one pass of its own,
+ * which costs little. FFmpeg's errors, all of them, and its exit code.
+ */
+async function decode(ffmpeg: string, ffprobe: string, file: string, parts: number): Promise<{code: number; stderr: string}> {
+  const whole = () => run(ffmpeg, ['-v', 'error', '-i', file, '-f', 'null', '-']);
+  if (parts <= 1) return whole();
+  const probe = await run(ffprobe, ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type', '-of', 'json', file]).catch(() => null);
+  let seconds = 0, video = false, audio = false;
+  try {
+    const read = JSON.parse(probe?.stdout.toString() ?? '') as {format?: {duration?: string}; streams?: {codec_type?: string}[]};
+    seconds = Number(read.format?.duration);
+    video = (read.streams ?? []).some((s) => s.codec_type === 'video');
+    audio = (read.streams ?? []).some((s) => s.codec_type === 'audio');
+  } catch { /* decoded in one pass below */ }
+  // A file whose length or picture cannot be read is decoded in one pass, which says why.
+  if (!probe || probe.code !== 0 || !(seconds > 0) || !video) return whole();
+  const stretch = seconds / parts;
+  const done = await Promise.all([
+    ...(audio ? [run(ffmpeg, ['-v', 'error', '-i', file, '-map', '0:a', '-f', 'null', '-'])] : []),
+    // The last stretch has no end: whatever follows the stated length is decoded too.
+    ...Array.from({length: parts}, (_, i) => run(ffmpeg, ['-v', 'error', ...(i > 0 ? ['-ss', (i * stretch).toFixed(3)] : []),
+      ...(i < parts - 1 ? ['-t', stretch.toFixed(3)] : []), '-i', file, '-map', '0:v', '-f', 'null', '-'])),
+  ]);
+  return {code: done.find((r) => r.code !== 0)?.code ?? 0, stderr: done.map((r) => r.stderr).join('')};
+}
+
 export async function auditRender(file: string, expect: AuditExpectation, tools: AuditTools = {}): Promise<AuditResult> {
   const ffmpeg = tools.ffmpeg ?? (process.env.FFMPEG_PATH || 'ffmpeg');
   const ffprobe = tools.ffprobe ?? (process.env.FFPROBE_PATH || 'ffprobe');
   const checks: string[] = [];
   const findings: AuditFinding[] = [];
 
+  // The passes read the file side by side: the full decode is the long one,
+  // and the others need not wait for it.
+  const loudness = expect.loudness;
+  const decoders = Math.max(1, Math.floor(tools.decoders
+    ?? Math.min(6, Math.floor(availableParallelism() / 2), Math.floor(expect.durationInFrames / expect.fps / DECODE_STRETCH))));
+  const passes = {
+    decoded: decode(ffmpeg, ffprobe, file, decoders),
+    probed: run(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,sample_rate,nb_frames,duration', '-of', 'json', file]),
+    measured: expect.audio && loudness
+      ? run(ffmpeg, ['-hide_banner', '-i', file, '-vn', '-af', `loudnorm=I=${loudness.integrated}:TP=${loudness.truePeak}:LRA=${loudness.range}:print_format=json`, '-f', 'null', '-'])
+      : null,
+  };
+  // A file that does not decode leaves the others' results unread.
+  void passes.probed.catch(() => undefined);
+  void passes.measured?.catch(() => undefined);
+
   checks.push('decode');
-  const decoded = await run(ffmpeg, ['-v', 'error', '-i', file, '-f', 'null', '-']);
+  const decoded = await passes.decoded;
   const errors = decoded.stderr.trim();
   if (decoded.code !== 0 || errors) {
     findings.push({code: 'decode-errors', message: `the file does not decode cleanly: ${errors.split('\n').slice(0, 3).join(' | ') || `ffmpeg exited ${decoded.code}`}`});
@@ -104,7 +160,7 @@ export async function auditRender(file: string, expect: AuditExpectation, tools:
   }
 
   checks.push('streams');
-  const probed = await run(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,sample_rate,nb_frames,duration', '-of', 'json', file]);
+  const probed = await passes.probed;
   if (probed.code !== 0) throw new Error(`ffprobe could not read ${file}: ${probed.stderr.slice(-400)}`);
   const streams = (JSON.parse(probed.stdout.toString()) as {streams: Stream[]}).streams;
   const video = streams.find((s) => s.codec_type === 'video');
@@ -131,10 +187,10 @@ export async function auditRender(file: string, expect: AuditExpectation, tools:
     }
   }
 
-  if (expect.audio && expect.loudness && audio) {
+  if (passes.measured && loudness && audio) {
     checks.push('loudness');
-    const t = expect.loudness;
-    const measured = await run(ffmpeg, ['-hide_banner', '-i', file, '-vn', '-af', `loudnorm=I=${t.integrated}:TP=${t.truePeak}:LRA=${t.range}:print_format=json`, '-f', 'null', '-']);
+    const t = loudness;
+    const measured = await passes.measured;
     const start = measured.stderr.lastIndexOf('{');
     const end = measured.stderr.lastIndexOf('}');
     if (measured.code !== 0 || start < 0 || end < start) throw new Error(`ffmpeg could not measure the loudness of ${file}`);
