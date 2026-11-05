@@ -69,7 +69,7 @@ engines. A 1-minute calibration gave the same ratio (Remotion 41 fps, FFmpeg
 - `avg-tk7.6` may proceed with the cutover.
 - Optional: expose `chromiumOptions.gl` (default `angle` on macOS) in
   `renderTimeline` — a memory saving, not a speed-up.
-- Re-run this benchmark when the "Dentro i versi" kits exist (`avg-dcf.4`).
+- Re-run this benchmark on a timeline drawn with a channel's own stage kits.
 
 ## PR #73: Apple Silicon recheck (2026-10-18)
 

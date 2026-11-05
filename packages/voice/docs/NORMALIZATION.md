@@ -41,9 +41,9 @@ Lexicons are exact, locale-scoped inputs rather than source rewrites:
 ```python
 PronunciationLexicon(entries=(
     PronunciationEntry(
-        entry_id="jaromail",
-        display="JaroMail",
-        spoken="Jaro Mail",
+        entry_id="pgadmin",
+        display="pgAdmin",
+        spoken="P G admin",
         language="en-US",
     ),
     PronunciationEntry(

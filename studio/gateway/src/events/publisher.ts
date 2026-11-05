@@ -62,6 +62,7 @@ export class EventPublisher {
   private libraryRoot: string;
   private operatorKey: string | null;
   private knownStages = new Map<string, StageState[]>();
+  private watched = new Map<string, { ref: EpisodeRef; pipeline?: string }>();
   private interval: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: EventPublisherOptions) {
@@ -74,13 +75,12 @@ export class EventPublisher {
   /** Start polling and watch for events. */
   start(_watcher: WorkspaceWatcher): void {
     // The watcher already publishes workspace events to the bus directly.
-    // We just need to poll for pipeline state changes.
+    // We just need to poll for pipeline state changes, of the episodes some
+    // caller has asked about (pollForEpisode): the gateway knows no episode
+    // of its own.
     this.interval = setInterval(() => {
-      this.pollStatus().catch(() => { /* silent */ });
+      this.pollWatched().catch(() => { /* silent */ });
     }, this.pollMs);
-
-    // Initial poll
-    this.pollStatus().catch(() => {});
   }
 
   /** Stop polling. */
@@ -91,19 +91,19 @@ export class EventPublisher {
     }
   }
 
-  /** Poll one episode's status and emit stage events. */
+  /** Poll one episode's status and emit stage events; the interval polls it from then on. */
   async pollForEpisode(ref: EpisodeRef, pipeline?: string): Promise<void> {
+    this.watched.set(`${ref.channel}/${ref.series}/${ref.episode}`, { ref, pipeline });
     await this.pollStatus(ref, pipeline);
   }
 
-  private async pollStatus(ref?: EpisodeRef, pipeline?: string): Promise<void> {
-    // Default to known fairy-tale episode if none specified
-    const target: EpisodeRef = ref ?? {
-      channel: "childrens",
-      series: "fairy-tales",
-      episode: "little-red",
-    };
+  private async pollWatched(): Promise<void> {
+    for (const { ref, pipeline } of [...this.watched.values()]) {
+      await this.pollStatus(ref, pipeline);
+    }
+  }
 
+  private async pollStatus(target: EpisodeRef, pipeline?: string): Promise<void> {
     try {
       const service = makeExecutionService(() => {}, this.libraryRoot, this.operatorKey);
       const result = await service.status(target, pipeline ?? DEFAULT_PIPELINE);

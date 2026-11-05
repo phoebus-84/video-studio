@@ -41,7 +41,7 @@
         },
         "themeId": {
           "type": "string",
-          "description": "Reference to the VHS theme used (e.g., 'dyne'). Inlined in the tape, tracked here for search."
+          "description": "Reference to the VHS theme used (e.g., 'studio-dark'). Inlined in the tape, tracked here for search."
         },
         "estimatedDurationSeconds": {
           "type": "number",
