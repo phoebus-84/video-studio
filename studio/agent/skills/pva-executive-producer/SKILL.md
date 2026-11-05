@@ -56,17 +56,22 @@ commands become available through the agent.
 - `pva_generate_wan_video` — Animate one episode image with Wan 2.2 A14B turbo on fal ($0.10/clip at 720p,
   $0.05 at 480p; on the spend ledger). `loop: true` ends on the same image: a closed loop. Prefer it to
   `pva_generate_minimax_h3_video` (~$0.48/clip) for loops and small moving details; keep H3 for
-  performances, references and long shots. **Channel `ambient-through-time`: animate every live island with
-  this tool** (crop as `imagePath`, `loop: true`) — not MiniMax H3, and not through the CreativeStudio bridge.
+  performances, references and long shots.
 
 Create parents in order: channel, series, then episode. Creation is intentionally
 non-destructive: revise existing metadata with reviewed file edits rather than
 using the create tools as overwrite operations.
 
-Additional tools for pipeline, configuration, and capability management are
-registered by dependent extensions as the package evolves.
+The list above is not the whole set. Every tool the studio registers is listed, with
+what it does, in `docs/running.md` ("Tools the agent can call"); the tool's own
+description is the authority on its parameters.
+
+**What a channel or a series wants lives in its library, not here.** Before working
+on an episode, read the channel's and the series' own skills (`library/<channel>/skills/`,
+`library/<channel>/series/<series>/skills/`, found with `pva_list_skills`): a
+channel's preferred tools, voices, music rules and procedures are written there.
 
 ## Reference
 
-See `CONTRIBUTING.md` for development setup and `SECURITY.md` for the full-system-access
-implications of this package.
+See `studio/agent/CONTRIBUTING.md` for development setup and `studio/agent/SECURITY.md`
+for the full-system-access implications of this package.

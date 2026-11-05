@@ -60,7 +60,7 @@ QTW_ALIGN_LIVE=1 pytest tests/test_alignment.py   # also a real alignment (macOS
 - [Audio processing](docs/AUDIO-PROCESSING.md) — non-destructive edge trim, exact pauses, provenance, and fade decision
 - [Narration mastering](docs/MASTERING.md) — manifest order, boundary checks, two-pass loudness, and final provenance
 - [Narration migration](docs/NARRATION-MIGRATION.md) — canonical workspace contract, compatibility readers, timing, and staleness
-- [Production acceptance](docs/PRODUCTION-ACCEPTANCE.md) — controlled candidate, JaroMail/fairy runs, listener workflow, findings, and limitations
+- [Production acceptance](docs/PRODUCTION-ACCEPTANCE.md) — controlled candidate, production runs, listener workflow, findings, and limitations
 - [Blinded review publication](docs/LISTENING-REVIEW.md) — key-free packaging, deferred GitHub Pages deployment, collection, and analysis
 
 ## Plan

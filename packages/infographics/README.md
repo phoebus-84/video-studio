@@ -48,4 +48,4 @@ The render is deterministic for a given spec, package version, and font environm
 }
 ```
 
-See `src/schema.ts` for the canonical runtime validation and `library/dyne/software/jaromail/production/remotion-infographic/spec.json` for a complete production example.
+See `src/schema.ts` for the canonical runtime validation.

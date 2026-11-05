@@ -5,7 +5,7 @@
   "fixture": {
     "baseline_input_policy": "send expected segment display_text; retain spoken_text as the candidate normalization target",
     "fixture_version": "1.0.0",
-    "path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/evaluation/fixtures/quality-v1.json",
+    "path": "<qwen-tts-worker>/evaluation/fixtures/quality-v1.json",
     "repeat_count": 3,
     "sha256": "55ebc47e3df8fc06911ffdcd3ce1882e853e408ae0c8362f0145ec17578af74e",
     "suite_id": "qtw-quality-core"
@@ -38,7 +38,7 @@
         "size_bytes": 2393308931
       }
     },
-    "path": "/Users/alcibiade/strange_things/avg/qwen-tts-worker/models/qwen3-tts-1.7b-customvoice-8bit",
+    "path": "<qwen-tts-worker>/models/qwen3-tts-1.7b-customvoice-8bit",
     "profile": "custom_voice",
     "quantization": "8bit-affine-g64"
   },

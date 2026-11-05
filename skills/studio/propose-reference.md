@@ -8,7 +8,7 @@ inputs:
     description: The channel/series/episode the person says is exemplary of its series, with its current render approved
   - name: referenceId
     type: string
-    description: A new lowercase kebab-case id for the reference, e.g. san-martino-v1
+    description: A new lowercase kebab-case id for the reference, e.g. pilot-v1
 outputs:
   - reviews/references/<id>/:
       kind: directory

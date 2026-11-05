@@ -99,7 +99,7 @@ export function registerSourceTools(pi: ExtensionAPI): void {
       "`series` and `episode`, following the channel's procedure (its channel skill, see pva_list_skills).",
     parameters: Type.Object({
       channel: Type.String({ description: "Existing channel slug" }),
-      name: Type.String({ description: "The source's name, lowercase words joined by - (e.g. san-martino)" }),
+      name: Type.String({ description: "The source's name, lowercase words joined by - (e.g. harbour-at-dawn)" }),
       title: Type.String({ description: "Human-readable title" }),
       procedure: Type.Optional(Type.String({ description: "The channel skill that makes it (e.g. poem-source)" })),
       description: Type.Optional(Type.String({ description: "What it is, in one paragraph" })),

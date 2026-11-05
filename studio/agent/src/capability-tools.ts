@@ -1339,7 +1339,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
       channel: Type.String({ description: "Channel slug" }),
       series: Type.String({ description: "Series slug" }),
       episode: Type.String({ description: "Episode slug" }),
-      referenceId: Type.String({ description: "Lowercase kebab-case id, new in the series, e.g. san-martino-v1" }),
+      referenceId: Type.String({ description: "Lowercase kebab-case id, new in the series, e.g. pilot-v1" }),
     }),
     async execute(_toolCallId, params) {
       const dir = episodeDir(params.channel, params.series, params.episode);

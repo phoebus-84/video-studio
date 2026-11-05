@@ -68,7 +68,7 @@ export function sheetInstants(timeline: SheetTimeline, rules?: SheetRules, targe
     ? [...declared].sort((a, b) => a.from - b.from)
     : [{ id: "timeline", from: 0, duration: timeline.durationInFrames }];
 
-  // CreativeStudio's spread: k frames per section in proportion to its length,
+  // The spread: k frames per section in proportion to its length,
   // at least one, placed at (i + 0.6) / k of the way through.
   const total = sections.reduce((sum, s) => sum + s.duration, 0) || 1;
   const spread = Math.max(0, target - 2);

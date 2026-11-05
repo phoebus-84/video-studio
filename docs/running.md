@@ -287,8 +287,9 @@ The voice worker can speak with an enrolled clone voice, through the Qwen3-TTS
 - **Sampling:** `temperature` and `repetitionPenalty` can be set on any
   voice. Without them the worker's defaults apply: temperature 0.7, and a
   repetition penalty of 1.5 for a clone or 1.05 for a preset. Values out of
-  range are refused before synthesis. On Novembre the recital read better at
-  1.1, synthesized one stanza at a time with each verse on its own line.
+  range are refused before synthesis. For recited verse, a repetition
+  penalty near 1.1, one stanza at a time with each verse on its own line, is
+  a reasonable first try.
 - **The receipt** names the voice's revision, the reference's hashes, the
   model, the seed, and the sampling when it was set.
 - **A channel's characters** name their voice in `voices/registry.local.json`.
