@@ -96,6 +96,8 @@ interface StageOutcomeView {
   reason?: string;
   outputs?: string[];
   attemptNumber?: number;
+  leaseId?: string;
+  expiresAt?: string;
 }
 
 /**
@@ -138,7 +140,7 @@ function describeOutcome(outcome: StageOutcomeView): string {
   }
   if (outcome.status === "awaiting_review") return `${who} completed and is awaiting review`;
   if (outcome.status === "would-run") return `${who} would run — nothing was written`;
-  if (outcome.status === "claimed") return `${who} is claimed — perform it, then complete it`;
+  if (outcome.status === "claimed") return `${who} is claimed — no work has run yet. Give the agent this leaseId: ${outcome.leaseId ?? "missing (do not complete)"}. Expires: ${outcome.expiresAt ?? "unknown"}. Perform the work, then complete this exact lease; review is still required where configured.`;
   if (outcome.status === "approved") return `${who} approved`;
   if (outcome.status === "rejected") return `${who} rejected`;
   if (outcome.status === "selected") {
@@ -181,6 +183,13 @@ export function actionsFor(state: string, source: "journal" | "files" = "journal
     default:
       return [];
   }
+}
+
+/** Only an operator may offer an attended handoff. The server still checks every gate. */
+export function canClaimForAgent(stage: StageStatus | undefined, source: "journal" | "files", operator: boolean): boolean {
+  if (!operator || source !== "journal" || !stage) return false;
+  return stage.state === "runnable" || (stage.state === "blocked" &&
+    Boolean(stage.stateReason?.includes('declares autopilot: false')));
 }
 
 class ProductionStore {
@@ -324,6 +333,11 @@ class ProductionStore {
   /** Run one stage. */
   runStage(stageId: string): Promise<void> {
     return this.#act(stageId, `/stages/${encodeURIComponent(stageId)}/execute`);
+  }
+
+  /** Lease work for an external performer; does not execute or approve it. */
+  claimStage(stageId: string): Promise<void> {
+    return this.#act(stageId, `/stages/${encodeURIComponent(stageId)}/claim`);
   }
 
   /** Approve a stage waiting at a gate. */

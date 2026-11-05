@@ -162,6 +162,7 @@ describe("extensions/index.ts — tool registration", () => {
       "pva_extend_episode",
       "pva_fetch_media",
       "pva_gather_context",
+      "pva_generate_flux3_max_video",
       "pva_generate_image",
       "pva_generate_images",
       "pva_generate_minimax_h3_video",

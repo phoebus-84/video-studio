@@ -55,7 +55,9 @@ describe("videoGenerationStatus", () => {
   it("reports Wan beside MiniMax, each ready only with FAL_KEY", () => {
     const ready = videoGenerationStatus(true);
     expect(ready["video-generation"].available).toBe(true);
+    expect(ready["video-generation-flux3-max"]).toMatchObject({ available: true, detail: expect.stringContaining("pva_generate_flux3_max_video") });
     expect(ready["video-generation-wan"]).toMatchObject({ available: true, detail: expect.stringContaining("pva_generate_wan_video") });
+    expect(videoGenerationStatus(false)["video-generation-flux3-max"]).toEqual({ available: false, detail: "FAL_KEY not set" });
     expect(videoGenerationStatus(false)["video-generation-wan"]).toEqual({ available: false, detail: "FAL_KEY not set" });
   });
 });

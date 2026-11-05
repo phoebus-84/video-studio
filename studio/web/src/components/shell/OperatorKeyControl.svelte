@@ -14,15 +14,21 @@
 
   let open = $state(false);
   let entered = $state("");
+  let error = $state("");
   const signedIn = hasOperatorKey();
 
   function save(event: SubmitEvent) {
     event.preventDefault();
-    saveOperatorKey(localStorage, entered);
-    entered = "";
-    // The gateway client and its socket are built once with the credential
-    // they started with; reloading is what makes the new one take effect.
-    location.reload();
+    try {
+      saveOperatorKey(localStorage, entered);
+      entered = "";
+      error = "";
+      // The gateway client and its socket are built once with the credential
+      // they started with; reloading is what makes the new one take effect.
+      location.reload();
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : "Invalid key format";
+    }
   }
 
   function forget() {
@@ -56,6 +62,7 @@
         bind:value={entered}
         placeholder={signedIn ? "replace the stored key" : "paste the key"}
       />
+      {#if error}<p role="alert">{error}</p>{/if}
       <div class="operator-actions">
         <button type="submit" disabled={!entered.trim()}>Save</button>
         {#if signedIn}
