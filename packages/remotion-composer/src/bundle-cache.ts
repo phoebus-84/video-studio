@@ -27,8 +27,14 @@ export interface BundleRequest {
 
 /** How many bundles stay on disk, the most recently used. */
 const KEEP = 6;
-const root = () => path.join(tmpdir(), 'av-bundles');
+const defaultRoot = () => path.join(tmpdir(), 'av-bundles');
 const building = new Map<string, Promise<string>>();
+
+/** What builds a bundle, and where bundles are kept: webpack and the temp folder, but for tests. */
+export interface BundleCacheUsing {
+  build?: (request: BundleRequest, publicDir: string, outDir: string) => Promise<void>;
+  root?: string;
+}
 
 /** The bundle for `request` at `outDir`, with `publicDir`'s files under its `public/`; returns the serve URL. */
 export async function bundleInto(request: BundleRequest, publicDir: string, outDir: string): Promise<string> {
@@ -38,31 +44,55 @@ export async function bundleInto(request: BundleRequest, publicDir: string, outD
   return outDir;
 }
 
-/** The folder holding the code-only bundle for `request`, built if no render built it yet. */
-export function cachedBundle(request: BundleRequest): Promise<string> {
-  const key = createHash('sha256').update(JSON.stringify([request.entryPoint, request.withKits, drawingCodeHash()])).digest('hex').slice(0, 16);
-  let pending = building.get(key);
-  if (!pending) {
-    pending = findOrBuild(key, request);
-    building.set(key, pending);
-    pending.catch(() => building.delete(key));
+/**
+ * The folder holding the code-only bundle for `request`, built if no render
+ * built it yet. A bundle this process remembers is used only while it is
+ * still on disk: prune() (here, or in another process sharing the folder)
+ * may have removed it since, and it is then built again rather than handed
+ * out as a path that is gone. Each use marks it recently used, so the
+ * bundle a long session keeps using is not the one pruned.
+ */
+export async function cachedBundle(request: BundleRequest, using: BundleCacheUsing = {}): Promise<string> {
+  const root = using.root ?? defaultRoot();
+  const key = createHash('sha256').update(JSON.stringify([root, request.entryPoint, request.withKits, drawingCodeHash()])).digest('hex').slice(0, 16);
+  for (;;) {
+    const pending = building.get(key);
+    if (!pending) {
+      const started = findOrBuild(root, key, request, using.build ?? bundleElsewhere);
+      building.set(key, started);
+      started.catch(() => {
+        if (building.get(key) === started) building.delete(key);
+      });
+      return started;
+    }
+    // A failed build fails every render that waited on it.
+    const dir = await pending;
+    if (await complete(dir)) {
+      await touch(dir);
+      return dir;
+    }
+    if (building.get(key) === pending) building.delete(key);
   }
-  return pending;
 }
 
-async function findOrBuild(key: string, request: BundleRequest): Promise<string> {
-  const dir = path.join(root(), key);
+const touch = async (dir: string) => {
+  const now = new Date();
+  await utimes(dir, now, now).catch(() => {});
+};
+
+async function findOrBuild(root: string, key: string, request: BundleRequest,
+  build: NonNullable<BundleCacheUsing['build']>): Promise<string> {
+  const dir = path.join(root, key);
   if (await complete(dir)) {
-    const now = new Date();
-    await utimes(dir, now, now).catch(() => {});
+    await touch(dir);
     return dir;
   }
-  const temp = path.join(root(), `.${key}.${process.pid}.${Date.now()}`);
+  const temp = path.join(root, `.${key}.${process.pid}.${Date.now()}`);
   const empty = path.join(temp, 'empty-public');
   const out = path.join(temp, 'bundle');
   await mkdir(empty, {recursive: true});
   try {
-    await bundleElsewhere(request, empty, out);
+    await build(request, empty, out);
     await rm(path.join(out, 'public'), {recursive: true, force: true});
     try {
       await rename(out, dir);
@@ -73,7 +103,7 @@ async function findOrBuild(key: string, request: BundleRequest): Promise<string>
   } finally {
     await rm(temp, {recursive: true, force: true});
   }
-  await prune();
+  await prune(root);
   return dir;
 }
 
@@ -113,8 +143,8 @@ async function linkTree(from: string, to: string): Promise<void> {
 }
 
 /** Removes all but the most recently used bundles. */
-async function prune(): Promise<void> {
-  const names = (await readdir(root()).catch(() => [] as string[])).filter((n) => !n.startsWith('.'));
-  const dated = await Promise.all(names.map(async (n) => ({n, t: (await stat(path.join(root(), n)).catch(() => null))?.mtimeMs ?? 0})));
-  for (const {n} of dated.sort((a, b) => b.t - a.t).slice(KEEP)) await rm(path.join(root(), n), {recursive: true, force: true}).catch(() => {});
+async function prune(root: string): Promise<void> {
+  const names = (await readdir(root).catch(() => [] as string[])).filter((n) => !n.startsWith('.'));
+  const dated = await Promise.all(names.map(async (n) => ({n, t: (await stat(path.join(root, n)).catch(() => null))?.mtimeMs ?? 0})));
+  for (const {n} of dated.sort((a, b) => b.t - a.t).slice(KEEP)) await rm(path.join(root, n), {recursive: true, force: true}).catch(() => {});
 }
