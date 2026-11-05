@@ -2,7 +2,7 @@
 // engine running in this process (helpers.ts).
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { PassThrough, Readable } from "node:stream";
@@ -110,6 +110,35 @@ test("a file changed since the last render is sent again, the others are not", a
   assert.equal(result.engine.sentFiles, 1);
 });
 
+test("bytes the engine holds under another path or another episode are copied there, not sent again", async () => {
+  const first = episode();
+  const engine = fakeEngine();
+  const renderer = (key: string) => remoteRenderer({ host: "render-box", key, exec: engine.exec, git: cleanGit, peers, env: {} });
+  assert.equal((await renderer("ch/series/ep1")(first.options)).engine.sentFiles, 3);
+
+  // Another episode, elsewhere here, with the same picture and kit and one new sound.
+  const second = episode();
+  const sound = Buffer.from("a new sound");
+  writeFileSync(path.join(second.ep, "media", "new.wav"), sound);
+  const timeline = structuredClone(second.options.timeline) as { assets: Record<string, unknown> };
+  timeline.assets.voice = { path: "media/new.wav", hash: sha256(sound), kind: "audio" };
+  const logs: string[] = [];
+  const result = await remoteRenderer({ host: "render-box", key: "ch/series/ep2", exec: engine.exec, git: cleanGit, peers, env: {}, onLog: (l) => logs.push(l) })({ ...second.options, timeline });
+  assert.equal(result.engine.sentFiles, 1, "only the new sound travels");
+  assert.equal(result.engine.sentBytes, sound.length);
+  const copied = path.join(engine.cache, "ch", "series", "ep2", ...mirrorPath(path.join(second.ep, "media", "a.png")).split("/"));
+  assert.deepEqual(readFileSync(copied), second.img);
+  const index = JSON.parse(readFileSync(path.join(engine.cache, "ch", "series", "ep2", "index.json"), "utf-8")) as Record<string, { hash: string }>;
+  assert.equal(index[mirrorPath(path.join(second.ep, "media", "a.png"))]!.hash, sha256(second.img), "the copy is indexed like a file received");
+
+  // A held file changed since it was indexed is not trusted: it is sent.
+  const third = episode();
+  writeFileSync(path.join(engine.cache, "ch", "series", "ep1", ...mirrorPath(path.join(first.ep, "media", "a.png")).split("/")), "tampered!!!");
+  writeFileSync(path.join(engine.cache, "ch", "series", "ep2", ...mirrorPath(path.join(second.ep, "media", "a.png")).split("/")), "tampered!!!");
+  const again = await renderer("ch/series/ep3")(third.options);
+  assert.equal(again.engine.sentFiles, 1, "the picture is sent; the sound and the kit are copied");
+});
+
 test("a render the engine refuses arrives as its error, problems included, and leaves no video", async () => {
   const { options } = episode();
   const engine = fakeEngine({
@@ -170,4 +199,25 @@ test("pinMismatches compares installed binaries with engine.env's pins", () => {
   assert.deepEqual(pinMismatches(pins, { node: "v9.8.7", ffmpeg: "ffmpeg version n1.2.3-4-gabc Copyright", bun: "0.1.2" }), []);
   assert.equal(pinMismatches(pins, { node: "v1.0.0", ffmpeg: null, bun: "0.1.3" }).length, 3);
   assert.deepEqual(pinMismatches({}, { node: "v1.0.0", ffmpeg: null, bun: null }), []);
+});
+
+test("a held file whose index no longer tells its bytes is not adopted: its copy is hashed", async () => {
+  const first = episode();
+  const engine = fakeEngine();
+  const renderer = (key: string) => remoteRenderer({ host: "render-box", key, exec: engine.exec, git: cleanGit, peers, env: {} });
+  await renderer("ch/series/ep1")(first.options);
+  const held = path.join(engine.cache, "ch", "series", "ep1", ...mirrorPath(path.join(first.ep, "media", "a.png")).split("/"));
+  writeFileSync(held, "X".repeat(first.img.length));
+  // Its index still says the old hash for its size and modification time:
+  // what a rewrite that puts the time back, or a coarse clock, leaves behind.
+  const indexFile = path.join(engine.cache, "ch", "series", "ep1", "index.json");
+  const index = JSON.parse(readFileSync(indexFile, "utf-8")) as Record<string, { size: number; mtimeMs: number; hash: string }>;
+  index[mirrorPath(path.join(first.ep, "media", "a.png"))]!.mtimeMs = statSync(held).mtimeMs;
+  writeFileSync(indexFile, JSON.stringify(index));
+
+  const second = episode();
+  const result = await renderer("ch/series/ep2")(second.options);
+  assert.equal(result.engine.sentFiles, 1, "the picture travels: the bytes held are not the ones indexed");
+  const copied = path.join(engine.cache, "ch", "series", "ep2", ...mirrorPath(path.join(second.ep, "media", "a.png")).split("/"));
+  assert.deepEqual(readFileSync(copied), second.img);
 });

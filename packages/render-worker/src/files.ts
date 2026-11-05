@@ -6,6 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { RenderTimelineOptions } from "@av/remotion-composer";
 import { mirrorPath, PROTOCOL_VERSION, RenderWorkerError, type ManifestEntry, type RenderJob } from "./protocol.js";
@@ -14,6 +15,33 @@ export async function sha256File(file: string): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
   return `sha256:${hash.digest("hex")}`;
+}
+
+const remembered = new Map<string, Promise<string>>();
+/** A file changed this recently may change again within one tick of a coarse clock (FAT, SMB: 2 s). */
+const SETTLED_NS = 3_000_000_000n;
+
+/**
+ * sha256File, read once per process while the file's identity, size,
+ * modification and change times stay the same, as git's index keeps them:
+ * every shared render hashed every picture again, and so did the render on
+ * this machine right after. The change time is the kernel's: a writer that
+ * puts the modification time back still changes it. A file changed in the
+ * last few seconds is read every time (git's "racily clean").
+ */
+export async function sha256FileCached(file: string): Promise<string> {
+  const s = await stat(file, { bigint: true });
+  const key = `${s.ino !== 0n ? `${s.dev}:${s.ino}` : path.resolve(file)}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+  const now = BigInt(Date.now()) * 1_000_000n;
+  let pending = remembered.get(key);
+  if (!pending) {
+    pending = sha256File(file);
+    if (now - s.mtimeNs < SETTLED_NS || now - s.ctimeNs < SETTLED_NS) return pending;
+    pending.catch(() => remembered.delete(key));
+    if (remembered.size >= 4096) remembered.delete(remembered.keys().next().value!);
+    remembered.set(key, pending);
+  }
+  return pending;
 }
 
 export interface JobFile {
@@ -56,7 +84,7 @@ export async function prepareJob(options: RenderTimelineOptions): Promise<Prepar
       problems.push({ code: "missing-file", message: `${where}: ${local} is not a file`, path: where });
       return null;
     }
-    const actual = await sha256File(local);
+    const actual = await sha256FileCached(local);
     if (actual !== hash) {
       problems.push({ code: "hash-mismatch", message: `${where}: ${local} is ${actual}, expected ${hash}`, path: where });
       return null;

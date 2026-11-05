@@ -8,11 +8,12 @@
 //   out.mp4        the last render, for `fetch`
 //   drawn/         a shared render's segments: drawn here, or received from other engines
 //
-// Nothing is shared between episodes and nothing is removed.
+// Nothing is removed. A file one episode was sent is copied for another that
+// needs the same bytes (`diff`), never sent twice.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -70,7 +71,7 @@ export async function runEngine(argv: readonly string[], io: EngineIO, ctx: Engi
         return answer(io, { synced: sha });
       }
       case "diff":
-        return answer(io, await diff(jobDir(ctx, args[0]), io.stdin));
+        return answer(io, await diff(jobDir(ctx, args[0]), io.stdin, ctx.cache));
       case "receive":
         return answer(io, await receive(jobDir(ctx, args[0]), io.stdin));
       case "render":
@@ -147,34 +148,105 @@ function writeIndex(dir: string, index: Index): void {
   renameSync(`${file}.tmp`, file);
 }
 
-async function diff(dir: string, stdin: EngineIO["stdin"]): Promise<{ missing: string[] }> {
+async function diff(dir: string, stdin: EngineIO["stdin"], cacheRoot?: string): Promise<{ missing: string[] }> {
   const manifest = parseJson<ManifestEntry[]>(await readAll(stdin), "the manifest");
   if (!Array.isArray(manifest)) throw new RenderWorkerError("bad-request", "the manifest is not a list");
   const index = readIndex(dir);
   const missing: string[] = [];
   let changed = false;
+  const lacking: { rel: string; file: string; entry: ManifestEntry }[] = [];
   for (const entry of manifest) {
     const rel = checkJobPath(entry.path);
     const file = path.join(dir, ...rel.split("/"));
     if (!existsSync(file)) {
-      missing.push(rel);
+      lacking.push({ rel, file, entry });
       continue;
     }
     const stat = statSync(file);
     const known = index[rel];
     if (stat.size !== entry.size) {
-      missing.push(rel);
+      lacking.push({ rel, file, entry });
     } else if (known && known.size === stat.size && known.mtimeMs === stat.mtimeMs && known.hash === entry.hash) {
       continue;
     } else {
       const hash = await sha256File(file);
       index[rel] = { size: stat.size, mtimeMs: stat.mtimeMs, hash };
       changed = true;
-      if (hash !== entry.hash) missing.push(rel);
+      if (hash !== entry.hash) lacking.push({ rel, file, entry });
     }
+  }
+  // A file this engine already holds by its content — under another path, or
+  // another episode's (a theme's pictures, a picture renamed) — is copied
+  // here rather than sent again.
+  const held = lacking.length > 0 ? heldByContent(dir, index, cacheRoot) : null;
+  for (const { rel, file, entry } of lacking) {
+    const from = held?.get(entry.hash);
+    if (!from || !(await adopt(from, file, entry))) {
+      missing.push(rel);
+      continue;
+    }
+    index[rel] = { size: entry.size, mtimeMs: statSync(file).mtimeMs, hash: entry.hash };
+    changed = true;
   }
   if (changed) writeIndex(dir, index);
   return { missing };
+}
+
+/** A file indexed here or in another episode, by hash, still as its index recorded it. */
+interface HeldFile { file: string; size: number; mtimeMs: number }
+
+/** Every file this engine's indexes record, by hash: this episode's first, then the others'. */
+function heldByContent(dir: string, index: Index, cacheRoot?: string): Map<string, HeldFile> {
+  const held = new Map<string, HeldFile>();
+  const add = (jobDir: string, records: Index) => {
+    for (const [rel, record] of Object.entries(records)) {
+      if (held.has(record.hash)) continue;
+      try {
+        held.set(record.hash, { file: path.join(jobDir, ...checkJobPath(rel).split("/")), size: record.size, mtimeMs: record.mtimeMs });
+      } catch { /* not a path this engine writes */ }
+    }
+  };
+  add(dir, index);
+  if (!cacheRoot) return held;
+  const dirs = (parent: string): string[] => {
+    try {
+      return readdirSync(parent, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(parent, e.name));
+    } catch {
+      return [];
+    }
+  };
+  // <cache>/<channel>/<series>/<episode>
+  for (const channel of dirs(cacheRoot)) {
+    for (const series of dirs(channel)) {
+      for (const episode of dirs(series)) if (path.resolve(episode) !== path.resolve(dir)) add(episode, readIndex(episode));
+    }
+  }
+  return held;
+}
+
+/**
+ * Copies `from` to `file` when it is still the file its index recorded and
+ * the copy hashes to what the job asks for; whether it did. Another
+ * episode's index is trusted to find a candidate, never for its bytes: the
+ * copy is read here, which costs a local disk read instead of a transfer.
+ */
+async function adopt(from: HeldFile, file: string, entry: ManifestEntry): Promise<boolean> {
+  const part = `${file}.part`;
+  try {
+    const stat = statSync(from.file);
+    if (!stat.isFile() || stat.size !== from.size || stat.mtimeMs !== from.mtimeMs || stat.size !== entry.size) return false;
+    mkdirSync(path.dirname(file), { recursive: true });
+    copyFileSync(from.file, part);
+    if (statSync(part).size !== entry.size || (await sha256File(part)) !== entry.hash) {
+      rmSync(part, { force: true });
+      return false;
+    }
+    renameSync(part, file);
+    return true;
+  } catch {
+    rmSync(part, { force: true });
+    return false;
+  }
 }
 
 /** Files under `root`: the job's files/ (recorded in index.json), or a shared render's drawn/. */
