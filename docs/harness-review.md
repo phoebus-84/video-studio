@@ -101,8 +101,7 @@ empty required outputs, expired leases and missing budget reservations fail clos
 blocks downstream work; two sessions cannot select conflicting outputs; restart
 recovers the same attempt; dry-run performs no production writes or paid calls.
 
-**Candidates and selection (avg-qr4.6, see the
-[design doc](superpowers/specs/2026-10-01-candidates-and-take-selection-design.md)):**
+**Candidates and selection (avg-qr4.6):**
 the "record candidate" and "atomically select" steps now exist at stage
 granularity.
 - `complete()` keeps a read-only copy of every accepted attempt under
@@ -112,8 +111,7 @@ granularity.
   is refused rather than silently winning.
 - Selecting a different take marks the stages that depend on it stale.
 
-**Budget reservations (avg-91o, see the
-[design doc](superpowers/specs/2026-10-02-spend-ledger-design.md)):** the CLI
+**Budget reservations (avg-91o):** the CLI
 and the gateway each used to configure a budget guard that said yes to
 everything, and the in-memory `BudgetLedger` had no callers. The money was
 spent inside Pi's tools, where no stage-level guard could see it.
@@ -130,8 +128,7 @@ spent inside Pi's tools, where no stage-level guard could see it.
 
 ### P0 — “Human approval” needs an authenticated, revision-bound origin (addressed for the API and Pi's shell by accident; deliberate same-user access remains with avg-qr4.8)
 
-**Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval" — see
-the [design doc](superpowers/specs/2026-09-24-authenticated-revision-bound-approval-design.md)):**
+**Evidence (fixed, avg-qr4.3 "authenticated, revision-bound approval"):**
 Pi *used to* have `pva_approve`; runtime `cmdApprove` wrote `actor: "human"`
 regardless of who invoked the command, and the decision was not bound to an
 output hash. Pi now has `pva_request_approval` instead: the gateway resolves

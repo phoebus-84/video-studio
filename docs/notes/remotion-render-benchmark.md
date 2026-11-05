@@ -2,7 +2,7 @@
 
 Issue `avg-tk7.2`, 2026-10-06. Measured before deciding the cutover from the
 FFmpeg composer to `@av/remotion-composer` (`avg-tk7.6`), as the
-[design note](remotion-composer-design.md) requires: "if it is an order of
+design note (since replaced by [ADR-0034](../adr/0034-a-layered-kit-based-edit-timeline.md)) required: "if it is an order of
 magnitude slower, … the default-provider flip should be reconsidered".
 
 ## Verdict

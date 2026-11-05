@@ -47,7 +47,6 @@ QTW_ALIGN_LIVE=1 pytest tests/test_alignment.py   # also a real alignment (macOS
 - [macOS CLI](docs/MACOS-CLI.md) — installation, LaunchAgent lifecycle, diagnostics, synthesis, and recovery
 - [Local voice cloning](docs/VOICE-CLONING.md) — consented Base enrollment, private references, synthesis, revocation, and limitations
 - [Contributing](docs/CONTRIBUTING.md) — development setup and conventions
-- [Releasing](docs/RELEASING.md) — clean-room gates, signed tags, checksums, provenance, verification, and incidents
 - [Changelog](CHANGELOG.md) — production release capabilities, security boundary, and explicit quality limitations
 - [TTS quality pipeline](docs/TTS-QUALITY-PIPELINE.md) — investigation, architecture, evaluation design, and implementation plan
 - [English normalization](docs/NORMALIZATION.md) — supported spoken forms, lexicon policy, diagnostics, and source mapping
@@ -65,4 +64,4 @@ QTW_ALIGN_LIVE=1 pytest tests/test_alignment.py   # also a real alignment (macOS
 
 ## Plan
 
-Run `bd list`, `bd graph`, and `bd show <id>`.
+Work is tracked once, for the whole repository, at its root; this module keeps no plan of its own.

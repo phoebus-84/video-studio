@@ -123,19 +123,11 @@ The registry never claims an unsupported combination exists. The
 
 - All hardware-independent tests pass: `pytest`
 - `python -m compileall -q src` and `git diff --check` pass
-- `mkdocs build --strict` and wheel/sdist metadata checks pass
 - No model weights, private voice references, listener audio, or unblinding keys are staged
 - Live MLX dependencies remain lazy in hardware-independent tests
 - Documentation and the OpenAPI schema reflect API changes
 
-## Beads workflow
+## Issue tracking
 
-This project uses Beads for issue tracking. See `PLAN.md` for the dependency graph.
+Work is tracked once, for the whole repository, at its root.
 
-```bash
-bd ready          # Find available work
-bd show <id>      # Read issue details
-bd update <id> --claim  # Claim an issue
-```
-
-Follow the active Beads profile. Do not push code or Dolt data unless the user or active repository profile explicitly authorizes it.

@@ -31,4 +31,4 @@ Add a tool here once, against Pi's API — both harnesses get it.
 
 ## Plan
 
-Run `bd list`, `bd graph`, and `bd show <id>`.
+Work is tracked once, for the whole repository, at its root; this module keeps no plan of its own.

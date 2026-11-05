@@ -125,4 +125,4 @@ Install with `bun install`.
 
 ## Plan
 
-The detailed implementation graph is stored in Beads. Run `bd list`, `bd graph`, and `bd show <id>` from this directory.
+Work is tracked once, for the whole repository, at its root; this module keeps no plan of its own.

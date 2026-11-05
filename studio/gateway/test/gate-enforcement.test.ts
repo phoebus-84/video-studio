@@ -19,8 +19,7 @@
 // exist, and avg-qr4.3's task 8 gave `complete()` the missing write — an
 // `approval-requested` record, appended the moment a reviewed stage
 // completes — so the original assertion that such a record names by hash
-// what it wants reviewed has an object to make again. See
-// .superpowers/sdd/2026-09-20-gateway-as-transport/task-4-report.md.
+// what it wants reviewed has an object to make again.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
