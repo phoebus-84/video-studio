@@ -56,8 +56,8 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0048-tools-written-once-served-to-any-harness) holds 48 accepted
-decisions. The ones that most shape the code:
+[`adr/`](./adr/) holds the decision records. Its index gives each one's
+status: read it first, since some describe code that has since changed. The ones that most shape the code:
 
 | ADR | Decision |
 |---|---|
@@ -83,5 +83,6 @@ decisions. The ones that most shape the code:
 | [0047](./adr/0047-audio-edits-are-recipes) | Audio edits are recipes: cut on words, mixed, mastered, reproducible |
 | [0048](./adr/0048-tools-written-once-served-to-any-harness) | The agent's tools are written once, for Pi, and served to other harnesses over MCP |
 
-ADR-0022 (independent repositories per module) is superseded by 0032.
-ADR-0009 (FFmpeg compiles a typed edit timeline) is superseded by 0034.
+ADR-0022 (independent repositories per module) is superseded by 0032,
+ADR-0009 (FFmpeg compiles a typed edit timeline) by 0034, and ADR-0023 (a
+flat workspace layout) by the workspace contract's layout 2.

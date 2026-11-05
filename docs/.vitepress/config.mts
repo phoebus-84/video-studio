@@ -33,7 +33,7 @@ function adrLinks() {
   const dir = join(DOCS, "adr");
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith(".md"))
+    .filter((f) => /^\d{4}-.*\.md$/.test(f))
     .sort()
     .reverse()
     .map((file) => {
@@ -64,7 +64,7 @@ export default defineConfig({
       { text: "Install", link: "/install" },
       { text: "Run", link: "/running" },
       { text: "Architecture", link: "/architecture" },
-      { text: "Decisions", link: "/adr/0032-single-repository-with-reusable-packages" },
+      { text: "Decisions", link: "/adr/" },
     ],
 
     sidebar: [
@@ -105,7 +105,7 @@ export default defineConfig({
       {
         text: "Decision records",
         collapsed: true,
-        items: adrLinks(),
+        items: [{ text: "Index and status", link: "/adr/" }, ...adrLinks()],
       },
     ],
 

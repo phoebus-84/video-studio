@@ -34,7 +34,6 @@ it grows a dependency on `studio/*`. Studio-specific integration lives in
 - [Normalization](../reference/voice/docs/normalization.md)
 - [Operator](../reference/voice/docs/operator.md)
 - [Production acceptance](../reference/voice/docs/production-acceptance.md)
-- [Releasing](../reference/voice/docs/releasing.md)
 - [Segmentation](../reference/voice/docs/segmentation.md)
 - [Signal validation](../reference/voice/docs/signal-validation.md)
 - [TTS quality pipeline](../reference/voice/docs/tts-quality-pipeline.md)
