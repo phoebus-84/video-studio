@@ -27,18 +27,22 @@ export const OPERATOR_KEY_STORAGE = "vs-operator-key";
  * authentication, and into production bundles.
  */
 export function validOperatorKey(key: string): boolean {
-  // The gateway generates 32 random bytes as unpadded base64url (43 ASCII characters).
-  // Refuse pasted paths, formatted shell output, Unicode and whitespace before
-  // they can become an Authorization header. Never include the value in errors.
-  return /^[A-Za-z0-9_-]{43}$/.test(key);
+  // The contract (readOperatorKey) accepts any non-empty file content, trimmed;
+  // the gateway generates 43 base64url characters, but a key written by hand
+  // (hex, base64) is just as valid. The browser refuses only what cannot be
+  // that content sent as a bearer credential: whitespace, control characters
+  // and Unicode (a fetch header would throw on them), quotes and backslashes
+  // (a pasted path or quoted shell output). Never include the value in errors.
+  return /^[\x21-\x7E]+$/.test(key) && !/["'`\\]/.test(key);
 }
 
 export function credentialFor(storage: Pick<Storage, "getItem">, gatewayToken: string): string {
+  // A stored key that is not one is ignored, not thrown: a throw here stops
+  // the whole studio from starting, the sign-in that would replace the key
+  // included. The agent token is the safe failure; hasOperatorKey then
+  // reports "not signed in".
   const operatorKey = storage.getItem(OPERATOR_KEY_STORAGE);
-  if (operatorKey) {
-    if (!validOperatorKey(operatorKey)) throw new Error("Stored operator key has an invalid format. Sign in again using only the file's contents (43 characters, no path or quotes).");
-    return operatorKey;
-  }
+  if (operatorKey && validOperatorKey(operatorKey)) return operatorKey;
   return storage.getItem("vs-gateway-token") || gatewayToken;
 }
 
@@ -50,7 +54,7 @@ export function credentialFor(storage: Pick<Storage, "getItem">, gatewayToken: s
 export function saveOperatorKey(storage: Pick<Storage, "setItem" | "removeItem">, key: string): void {
   const trimmed = key.trim();
   if (trimmed) {
-    if (!validOperatorKey(trimmed)) throw new Error("Invalid operator key format. Copy only the file's contents: 43 letters, digits, '-' or '_' characters, without a path or quotes.");
+    if (!validOperatorKey(trimmed)) throw new Error("Invalid operator key format. Paste only the file's contents, without a path, quotes or spaces.");
     storage.setItem(OPERATOR_KEY_STORAGE, trimmed);
   } else storage.removeItem(OPERATOR_KEY_STORAGE);
 }
