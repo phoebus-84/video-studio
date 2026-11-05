@@ -1363,6 +1363,7 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
               : `${render.concurrency} Chrome tab(s)`;
           const lines = [
             `✅ output/${render.renderId}.mp4 — ${render.result.durationSeconds.toFixed(1)}s, ${mb}MB, ${render.result.profile}, ${where}`,
+            ...(engine?.warnings ?? []).map((warning) => `⚠️ shared render: ${warning}`),
             ...(render.rebuilt ? [`timeline rebuilt: ${render.rebuilt}`] : [`rendered ${EDIT_TIMELINE_PATH} as it stands`]),
             ...(render.compiledBy
               ? [`compiled by ${render.compiledBy.compiler} from episode-spec.json revision ${render.compiledBy.revision}`

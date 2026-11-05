@@ -29,7 +29,54 @@ const chromiumGl = (): (typeof glBackends)[number] | null => {
 // Chrome for Testing reaches a GPU (e.g. WSL's D3D12 through Mesa).
 const chromeMode = () => process.env.AVG_CHROME_MODE?.trim() === 'chrome-for-testing' ? 'chrome-for-testing' as const : 'headless-shell' as const;
 const ffprobe = () => process.env.FFPROBE_PATH || 'ffprobe';
-const run = (args: string[]) => exec(ffmpeg(), ['-hide_banner', '-loglevel', 'error', '-y', ...args], {maxBuffer: 8 * 1024 * 1024});
+
+/**
+ * FFmpeg that could not start (Windows 0xC0000142, or no memory or process for
+ * it) is retried: the split, the joins and the final mux of a render that took
+ * an hour would otherwise lose it at its last step (2026-10-20).
+ */
+export const startFailed = (error: unknown): boolean => {
+  const code = (error as {code?: unknown}).code;
+  return code === 3221225794 || code === -1073741502 || (typeof code === 'string' && /^(EAGAIN|ENOMEM|EMFILE|ENFILE)$/.test(code));
+};
+/** Up to `tries` starts, waiting 2 s, then 4 s, … between them; any other failure is final. */
+export async function retryStart<T>(start: () => Promise<T>, tries = 3,
+  pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await start();
+    } catch (error) {
+      if (attempt >= tries || !startFailed(error)) throw error;
+      await pause(2000 * attempt);
+    }
+  }
+}
+const run = (args: string[], tries = 3): Promise<{stdout: string; stderr: string}> =>
+  retryStart(() => exec(ffmpeg(), ['-hide_banner', '-loglevel', 'error', '-y', ...args], {maxBuffer: 8 * 1024 * 1024}), tries);
+
+type Closable = {close: (options: {silent: boolean}) => Promise<void>};
+/**
+ * One browser per lane, opened on first use and reused across its runs. A lane
+ * whose browser could not open, or whose run failed, drops it: the run drawn
+ * again opens a new one instead of awaiting the same rejected launch, or a
+ * browser that crashed (2026-10-26). While the pictures draw, a lane's browser
+ * serves that lane alone; the browser sound pass runs after them.
+ */
+export function browserLanes<B extends Closable>(open: () => Promise<B>, pool?: Promise<B>[]) {
+  // A pool (a segment drawer's) outlives this render: its browsers are opened
+  // into it and dropped from it, but closed only by its owner.
+  const opened: Promise<B>[] = pool ?? [];
+  const close = async (browser?: Promise<B>) => { await (await browser?.catch(() => null))?.close({silent: true}).catch(() => {}); };
+  return {
+    get: (lane = 0) => opened[lane] ??= open(),
+    drop: async (lane: number) => {
+      const browser = opened[lane];
+      delete opened[lane];
+      await close(browser);
+    },
+    closeAll: async () => { if (!pool) await Promise.all(opened.map(close)); },
+  };
+}
 
 // Explicit settings shared by every independently decodable, silent H.264 segment.
 const encoding = {
@@ -257,8 +304,7 @@ export async function renderWithCache(options: {
   // Reuse each browser across misses, rather than launching Chrome each second.
   // A whole-video hit with no audio never opens one.
   const browsers = Math.max(1, Math.floor(options.browsers ?? 1));
-  const opened: Promise<Browser>[] = options.browserPool ?? [];
-  const getBrowser = (lane = 0) => opened[lane] ??= timed(`open browser ${lane}`, () => openBrowser('chrome', {chromeMode: chromeMode(), chromiumOptions: {gl: chromiumGl()}}));
+  const lanes = browserLanes(() => timed('open browser', () => openBrowser('chrome', {chromeMode: chromeMode(), chromiumOptions: {gl: chromiumGl()}})), options.browserPool);
   const tabsEach = options.concurrency ? Math.max(1, Math.floor(options.concurrency / browsers)) : null;
   // Each half is reported by how far it is. A soundtrack FFmpeg mixes goes
   // beside the pictures; a browser sound pass waits for them (see below).
@@ -319,7 +365,7 @@ export async function renderWithCache(options: {
       .filter((t) => t.type === 'audio' || t.items.length > 0);
     const audioProps = {...inputProps, pass: 'sound' as const, timeline: {...timeline, tracks}};
     await renderMedia({
-      ...common, concurrency: soundTabs(options.concurrency), puppeteerInstance: await getBrowser(), ...withProps(audioProps), codec: 'wav', enforceAudioTrack: true,
+      ...common, concurrency: soundTabs(options.concurrency), puppeteerInstance: await lanes.get(), ...withProps(audioProps), codec: 'wav', enforceAudioTrack: true,
       outputLocation: audio, sampleRate,
       onProgress: ({progress}) => { audioDone = progress; report(); },
     });
@@ -345,12 +391,17 @@ export async function renderWithCache(options: {
         // moves every later keyframe off the second: scene-cut detection off.
         const first = segments[0]!, last = segments.at(-1)!;
         const whole = segments.length === 1 ? outputs[0]! : path.join(work, `run-${first.from}.mp4`);
-        await timed(`frames ${first.from}-${last.to} (lane ${lane})`, async () => renderMedia({
-          ...common, concurrency: browsers > 1 ? tabsEach : common.concurrency, ...encoding, puppeteerInstance: await getBrowser(lane),
-          ...withProps(silentProps), outputLocation: whole,
-          frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
-          onProgress: ({progress}) => onRunProgress(progress),
-        }));
+        try {
+          await timed(`frames ${first.from}-${last.to} (lane ${lane})`, async () => renderMedia({
+            ...common, concurrency: browsers > 1 ? tabsEach : common.concurrency, ...encoding, puppeteerInstance: await lanes.get(lane),
+            ...withProps(silentProps), outputLocation: whole,
+            frameRange: [first.from, last.to], gopSize: timeline.fps, ffmpegOverride: keyframesEverySecond,
+            onProgress: ({progress}) => onRunProgress(progress),
+          }));
+        } catch (error) {
+          await lanes.drop(lane);
+          throw error;
+        }
         if (segments.length === 1) return;
         const cuts = segments.slice(1).map((segment) => segment.from - first.from);
         const pattern = path.join(work, `run-${first.from}-%05d.mp4`);
@@ -420,7 +471,7 @@ export async function renderWithCache(options: {
     options.onProgress?.(1);
     return hasAudio && loudness ? {...cacheReport, loudness} : cacheReport;
   } finally {
-    if (!options.browserPool) await closeBrowsers(opened);
+    await lanes.closeAll();
   }
 }
 
@@ -459,5 +510,5 @@ export async function joinSegments(
 export type Browser = Awaited<ReturnType<typeof openBrowser>>;
 
 export async function closeBrowsers(opened: readonly Promise<Browser>[]): Promise<void> {
-  await Promise.all(opened.map(async (browser) => (await browser.catch(() => null))?.close({silent: true})));
+  await Promise.all(opened.map(async (browser) => (await browser?.catch(() => null))?.close({silent: true}).catch(() => {})));
 }

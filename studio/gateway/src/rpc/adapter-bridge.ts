@@ -13,11 +13,27 @@ export interface AdapterStatus {
   detail: string;
 }
 
+/** Runs ffmpeg with these arguments and returns its stdout; throws when it cannot run. */
+export type FfmpegRunner = (args: string[]) => Promise<string>;
+
+const runFfmpeg: FfmpegRunner = async (args) => {
+  // ffmpeg directly, not through a shell pipeline: `head` and `grep` exist
+  // on Windows only when Git's tools are on PATH, and without them a
+  // working ffmpeg was reported as not found.
+  const { execFileSync } = await import("node:child_process");
+  return execFileSync("ffmpeg", ["-hide_banner", ...args], { encoding: "utf-8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+};
+
+/** Filters the composition needs: burnt-in captions and loudness normalisation. */
+const REQUIRED_FILTERS = ["subtitles", "loudnorm"];
+
 export class AdapterBridge {
   private ttsUrl: string;
+  private ffmpeg: FfmpegRunner;
 
-  constructor(ttsUrl = "http://127.0.0.1:5197") {
+  constructor(ttsUrl = "http://127.0.0.1:5197", ffmpeg: FfmpegRunner = runFfmpeg) {
     this.ttsUrl = ttsUrl;
+    this.ffmpeg = ffmpeg;
   }
 
   /** Probe all providers and return consolidated health. */
@@ -29,7 +45,8 @@ export class AdapterBridge {
       this.checkFfmpeg(),
     ]);
 
-    const details = providers.map((p) => `${p.name}: ${p.status}`).join(", ");
+    // The reason travels with the status: "fal: degraded (User is locked. Reason: TOP_UP.)".
+    const details = providers.map((p) => `${p.name}: ${p.status}${p.detail ? ` (${p.detail})` : ""}`).join(", ");
     const hasDown = providers.some((p) => p.status === "down");
     const hasDegraded = providers.some((p) => p.status === "degraded");
     const allUnknown = providers.every((p) => p.status === "unknown");
@@ -54,6 +71,10 @@ export class AdapterBridge {
       return { name: "fal", status: "unknown", detail: "FAL_KEY not set" };
     }
 
+    // An empty input: fal checks the key and the account before the input,
+    // so a locked account answers 403 and a bad key 401, while a usable one
+    // gets a 422 for the missing prompt and nothing is generated. The probe
+    // used to generate a real image, billed on every health check.
     try {
       const res = await fetch("https://fal.run/fal-ai/flux/dev", {
         method: "POST",
@@ -61,22 +82,20 @@ export class AdapterBridge {
           Authorization: `Key ${key}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          prompt: "health check",
-          image_size: "square_hd",
-          num_inference_steps: 1,
-          num_images: 1,
-        }),
+        body: "{}",
         signal: AbortSignal.timeout(10000),
       });
 
-      if (res.ok) {
-        const data = await res.json() as Record<string, unknown>;
-        const hasImages = "images" in data;
-        return { name: "fal", status: "ready", detail: hasImages ? "connected" : "response without images" };
+      if (res.ok || res.status === 422) {
+        return { name: "fal", status: "ready", detail: "key accepted" };
+      }
+      if (res.status === 401) {
+        return { name: "fal", status: "down", detail: "invalid FAL_KEY" };
       }
       if (res.status === 402 || res.status === 403) {
-        return { name: "fal", status: "degraded", detail: "balance exhausted or locked" };
+        const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+        const why = typeof body.detail === "string" ? body.detail : "balance exhausted or locked";
+        return { name: "fal", status: "degraded", detail: why };
       }
       return { name: "fal", status: "down", detail: `HTTP ${res.status}` };
     } catch (err) {
@@ -103,18 +122,19 @@ export class AdapterBridge {
 
   /** Check FFmpeg availability. */
   private async checkFfmpeg(): Promise<AdapterStatus> {
+    let ver: string, filters: string;
     try {
-      const { execSync } = await import("node:child_process");
-      const ver = execSync("ffmpeg -version 2>&1 | head -1", { encoding: "utf-8", timeout: 3000 }).trim();
-      const hasSubtitles = execSync("ffmpeg -filters 2>&1 | grep -c subtitles", { encoding: "utf-8", timeout: 3000 }).trim();
-      const hasLoudnorm = execSync("ffmpeg -filters 2>&1 | grep -c loudnorm", { encoding: "utf-8", timeout: 3000 }).trim();
-      return {
-        name: "ffmpeg",
-        status: "ready",
-        detail: `${ver.split(" ")[0]} ${ver.split(" ")[2]} (subtitles=${hasSubtitles}, loudnorm=${hasLoudnorm})`,
-      };
+      ver = (await this.ffmpeg(["-version"])).split(/\r?\n/)[0]!.trim();
+      filters = await this.ffmpeg(["-filters"]);
     } catch {
       return { name: "ffmpeg", status: "down", detail: "ffmpeg not found" };
     }
+    // A filter line is " T.. name  A->A  description": the name is the second column.
+    const names = new Set(filters.split(/\r?\n/).map((line) => line.trim().split(/\s+/)[1]));
+    const missing = REQUIRED_FILTERS.filter((name) => !names.has(name));
+    const version = `${ver.split(" ")[0]} ${ver.split(" ")[2]}`;
+    // It runs, but cannot burn captions or level the sound: not ready to compose.
+    if (missing.length > 0) return { name: "ffmpeg", status: "degraded", detail: `${version} without ${missing.join(", ")}` };
+    return { name: "ffmpeg", status: "ready", detail: version };
   }
 }

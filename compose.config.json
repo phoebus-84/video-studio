@@ -127,6 +127,15 @@
       },
       "docs": "docs/packages/remotion-composer.md"
     },
+    "render-worker": {
+      "path": "packages/render-worker",
+      "kind": "node",
+      "standalone": true,
+      "summary": "Renders a remotion-composer edit timeline on other machines over SSH, or shares its one-second segments among several: code by git push, files by content hash, the video back, checked. Optional at run time: without a host, a render stays on this machine.",
+      "capabilities": [],
+      "requires": {},
+      "docs": "docs/packages/render-worker.md"
+    },
     "contracts": {
       "path": "studio/contracts",
       "kind": "node",
@@ -232,6 +241,7 @@
         "infographics",
         "video-composer",
         "remotion-composer",
+        "render-worker",
         "contracts",
         "series",
         "episode",
@@ -264,6 +274,7 @@
         "infographics",
         "video-composer",
         "remotion-composer",
+        "render-worker",
         "contracts",
         "series",
         "episode",
@@ -293,6 +304,7 @@
         "terminal-recorder",
         "video-composer",
         "remotion-composer",
+        "render-worker",
         "contracts",
         "series",
         "episode",
@@ -312,7 +324,7 @@
     },
     "blender": {
       "summary": "Local 3D production with the agent and browser; no cloud image or MLX voice requirement.",
-      "components": ["blender", "video-composer", "remotion-composer", "contracts", "series", "episode", "runtime", "pipelines", "agent", "adapters", "gateway", "web"],
+      "components": ["blender", "video-composer", "remotion-composer", "render-worker", "contracts", "series", "episode", "runtime", "pipelines", "agent", "adapters", "gateway", "web"],
       "skills": ["shared", "studio"],
       "defaultProviders": {
         "video.compose": "remotion-composer"
