@@ -28,12 +28,20 @@ Reusable outside this project. They know nothing about episodes or pipelines.
 
 | Package | Capabilities |
 |---|---|
-| [blender](./packages/blender) | `scene.create`, `scene.render` |
-| [voice](./packages/voice) | `speech.synthesize` |
-| [fal-media](./packages/fal-media) | `image.generate`, `image.edit` |
+| [remotion-composer](./packages/remotion-composer) | `video.compose` (edit timelines) |
+| [render-worker](./packages/render-worker) | renders on other machines |
+| [voice](./packages/voice) | `speech.synthesize`, `speech.align` |
+| [fal-media](./packages/fal-media) | `image.generate`, `image.edit`, `video.generate` |
+| [codex-image](./packages/codex-image) | `image.generate`, `image.edit` |
 | [graphics](./packages/graphics) | `graphics.render` |
 | [infographics](./packages/infographics) | `graphics.animate` |
-| [video-composer](./packages/video-composer) | `video.compose`, `media.probe` |
+| [terminal-recorder](./packages/terminal-recorder) | `terminal.record` |
+| [blender](./packages/blender) | `scene.create`, `scene.render` |
+| [video-composer](./packages/video-composer) | `video.compose` (multitrack), `media.probe` |
+
+Three more packages are used by the studio's tools but not yet listed in
+`compose.config.json`: `archive-media` (licensed archive and stock media),
+`audio-edit` (audio recipes) and `elevenlabs` (alignment by ElevenLabs).
 
 ## Studio
 

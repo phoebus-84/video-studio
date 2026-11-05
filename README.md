@@ -1,9 +1,10 @@
 # Agentic Video Studio
 
 Turns one prompt plus source material into a validated, narrated, illustrated
-1080p video. Pi is the creative executive producer; a deterministic runtime
-keeps pipeline state; dedicated packages generate media; FFmpeg compiles the
-result; a gateway connects Pi to a browser studio.
+video. An agent — Pi, or Claude Code through the studio's MCP server — is the
+executive producer; a deterministic runtime keeps pipeline state; dedicated
+packages generate media; Remotion renders the episode's edit timeline and
+FFmpeg masters and checks it; a gateway connects the agent to a browser studio.
 
 ## The shape of this repository
 
@@ -26,12 +27,19 @@ narrate episodes is the studio's business, not the tool's.
 
 | Package | What it is on its own |
 |---|---|
-| `packages/blender` | Editable 3D scenes, Geometry Nodes, Eevee/Cycles animation and Poly Haven assets |
-| `packages/voice` | Speech synthesis and voice cloning on MLX |
-| `packages/fal-media` | Tracked image generation/editing against fal.ai |
-| `packages/graphics` | Deterministic SVG/PNG code frames, diagrams, titles |
+| `packages/remotion-composer` | Renders a layered, kit-based edit timeline with Remotion, then normalises loudness |
+| `packages/render-worker` | Renders that timeline on other machines over SSH, or shares it among several |
+| `packages/voice` | Speech synthesis, voice cloning, forced alignment and transcription on MLX |
+| `packages/fal-media` | Tracked image and video generation against fal.ai, with provenance and cost |
+| `packages/codex-image` | Image generation and editing through an OpenAI subscription or the Images API |
+| `packages/elevenlabs` | ElevenLabs client: forced alignment, with rate and retry rules |
+| `packages/archive-media` | Free archive and stock media with verifiable licences |
+| `packages/audio-edit` | Audio cut on words, layered, ducked and mastered from a recipe |
+| `packages/graphics` | Deterministic SVG/PNG code frames, diagrams, callouts, titles |
 | `packages/infographics` | Frame-accurate animated infographics via Remotion |
-| `packages/video-composer` | Typed edit timeline → FFmpeg filter graph, plus QA |
+| `packages/terminal-recorder` | A terminal session recorded to video from a VHS tape |
+| `packages/blender` | Editable 3D scenes, Geometry Nodes, Eevee/Cycles animation and Poly Haven assets |
+| `packages/video-composer` | Typed timeline → FFmpeg filter graph; probes and QA; multitrack mixes |
 
 | Studio module | Role |
 |---|---|
@@ -40,9 +48,9 @@ narrate episodes is the studio's business, not the tool's.
 | `studio/episode` | An episode on disk, produced: timeline built or compiled, checked, rendered |
 | `studio/runtime` | Snapshots, leases, staleness, journal, policy |
 | `studio/pipelines` | Built-in pipeline manifests |
-| `studio/agent` | The Pi executive-producer package |
+| `studio/agent` | The executive-producer tools: a Pi extension, served to Claude Code over MCP |
 | `studio/adapters` | Stage adapters: the code that performs a stage, matched by contract |
-| `studio/gateway` | Pi RPC ownership and event streaming |
+| `studio/gateway` | Agent sessions (Pi RPC or the Claude Agent SDK) and event streaming |
 | `studio/web` | Browser studio |
 
 ## Install
@@ -60,7 +68,8 @@ Then [run the agent](docs/running.md):
 
 ```bash
 ln -sfn /path/to/your/library library    # once — where episodes live
-pi -e studio/agent/extensions/index.ts
+pi -e studio/agent/extensions/index.ts   # Pi
+claude                                   # or Claude Code, from the repository root
 ```
 
 You do not have to take all of it. `npm run compose -- --list` shows the

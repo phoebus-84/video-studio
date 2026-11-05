@@ -100,10 +100,13 @@ holds the rooms to them. `vpr template release` copies a release to a new
 version pinned to a sealed theme, and `pva_upgrade_spec` moves an episode's
 spec to it (its revision goes up; the sheet must be reviewed again).
 
-This is the contract for forthcoming series compilers. Existing episode
-initialization and composition do not yet create or consume it. Path helpers
-are `seriesTemplatePath` and `seriesReferencePath` in `layout.mjs`;
-`EPISODE_SPEC_PATH` names the editorial file.
+`pva_init_spec` creates an episode's spec from a release, and
+`pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet` and
+`pva_compose_video` compile and render it with the release's compiler and
+validator (ADR-0041). An episode without a spec is built from its scene images
+and narration instead. Path helpers are `seriesTemplatePath` and
+`seriesReferencePath` in `layout.mjs`; `EPISODE_SPEC_PATH` names the editorial
+file.
 
 ## File ownership
 

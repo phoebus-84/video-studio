@@ -63,12 +63,14 @@ an artist can Save As a native revision and render that file without rebuilding
 it from the original script. Automated runs require an explicitly agreed plan
 and budget; a script trust flag is not a human approval.
 
-**Current limitation:** active CLI run/status paths still rely heavily on file
-existence and stage instructions, and the legacy gateway autopilot is hard-coded.
-The full state-machine, approval and budget guarantees are not yet integrated
-end to end. Do not interpret a declared gate as proof that direct tool calls are
-mechanically blocked. See the [harness review](harness-review.md) for evidence and
-priority fixes before unattended execution.
+**Current limitation:** the CLI, the gateway and the agent's pipeline tools
+share one execution service — leases, the journal, reviews and the spend
+ledger — and the gateway performs the stages that have a `studio/adapters`
+descriptor. The agent's pipeline tools reach that service only through the
+gateway, so with no gateway running they fail. A declared gate holds a
+stage's completion, not the production tools: `pva_generate_image` and the
+other capability tools are bounded by the spend ledger, not by a gate. See the
+[harness review](harness-review.md) before unattended execution.
 
 ## The series-production family
 
