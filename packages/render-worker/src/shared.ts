@@ -60,6 +60,8 @@ export interface SharedRenderResult extends RenderResult {
     sentBytes: number;
     assembler: string;
     shares: SharedShare[];
+    /** What did not go as asked: a machine that left, a chunk drawn again elsewhere, speeds not saved. */
+    warnings: string[];
   };
 }
 
@@ -91,6 +93,13 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     if (local && !render.cacheDir) throw new RenderWorkerError("bad-request", "a shared render that draws or assembles here needs the render's cacheDir");
 
     const log = options.onLog ?? (() => undefined);
+    // Warnings reach the result as well as the log: a machine that left is
+    // part of what the render did, not only of how it went.
+    const warnings: string[] = [];
+    const warn = (line: string) => {
+      warnings.push(line);
+      log(`warning: ${line}`);
+    };
     const abort = new AbortController();
     const stop = () => abort.abort(options.signal?.reason);
     options.signal?.addEventListener("abort", stop, { once: true });
@@ -105,6 +114,8 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
     let assembly = 0;
     let reported = 0;
     let cachedHere = 0;
+    /** The seconds this machine's cache holds: the local assembly takes them from there. */
+    let cachedSet = new Set<number>();
     const report = () => {
       const drawn = (cachedHere + segmentsDone + [...chunkDone.values()].reduce((a, b) => a + b, 0)) / total;
       reported = Math.max(reported, 0.9 * Math.min(1, drawn) + 0.1 * assembly);
@@ -247,6 +258,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         const cached = new Set(await (options.cached ?? (options.draw ? async () => [] : async () => (await openLocal()).cached()))());
         const missing = toDraw.filter((i) => !cached.has(i));
         cachedHere = cached.size;
+        cachedSet = cached;
         const local = runs.find((r) => r.host === LOCAL);
         const alone = local !== undefined && cached.size > 0 && missing.length / local.weight <= ALONE_SECONDS;
         if (alone && runs.length > 1) drawing = runs.filter((r) => r.host === LOCAL);
@@ -274,7 +286,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
           // It holds nothing yet: the others draw its part, unless it must assemble.
           if (host === assembler || abort.signal.aborted) throw error;
           queue.leave(host);
-          log(`warning: ${host} does not draw, the others draw its part: ${(error as Error).message}`);
+          warn(`${host} does not draw, the others draw its part: ${(error as Error).message}`);
           return;
         }
       }
@@ -285,7 +297,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         const session = sessions.get(host);
         sessions.delete(host);
         void session?.then((s) => s.close()).catch(() => undefined);
-        log(`warning: ${host} failed on ${chunk[0]}–${chunk.at(-1)}, the others draw them: ${(error as Error).message}`);
+        warn(`${host} failed on ${chunk[0]}–${chunk.at(-1)}, the others draw them: ${(error as Error).message}`);
         report();
         wakeQueue();
       };
@@ -351,7 +363,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
               if (abort.signal.aborted) return;
               forget(chunk);
               queue.lost(host, chunk);
-              if (queue.failed(host)) log(`warning: ${host}'s ${chunk[0]}–${chunk.at(-1)} did not arrive, the others draw them: ${(error as Error).message}`);
+              if (queue.failed(host)) warn(`${host}'s ${chunk[0]}–${chunk.at(-1)} did not arrive, the others draw them: ${(error as Error).message}`);
               else giveBack(chunk, error);
             }
           }).finally(() => wakeQueue());
@@ -442,8 +454,20 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
         try {
           recordSpeeds(options.speedsFile, runs.map((r) => ({ key: r.key, segments: drawnNow.get(r.host) ?? 0, seconds: seconds.get(r.host) ?? 0 })));
         } catch (error) {
-          log(`warning: the machines' speeds were not saved: ${(error as Error).message}`);
+          warn(`the machines' speeds were not saved: ${(error as Error).message}`);
         }
+      }
+
+      // Every second must come from a machine that was asked to draw it, or
+      // from this machine's cache. When every engine left, the seconds they
+      // took are nobody's: the assembly would draw them itself, here or on a
+      // remote assembler, which is the work the operator sent elsewhere.
+      const have = assembler === LOCAL ? new Set([...held.keys(), ...cachedSet]) : new Set(assemblerHas.keys());
+      const undrawn = Array.from({ length: total }, (_, i) => i).filter((i) => !have.has(i));
+      if (undrawn.length > 0) {
+        const seconds = runsOf(undrawn).map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(", ");
+        throw new RenderWorkerError("no-engine",
+          `no machine of ${drawers.join(", ")} drew second(s) ${seconds}${warnings.length ? `: ${warnings.join("; ")}` : ""}`);
       }
 
       log(`${assembler} assembles the video`);
@@ -464,14 +488,12 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
             host: LOCAL, commit: null,
             ...(render.concurrency !== undefined ? { concurrency: render.concurrency } : {}),
             ...(render.browsers !== undefined ? { browsers: render.browsers } : {}),
-            ...sent, assembler, shares,
+            ...sent, assembler, shares, warnings,
           },
         };
       }
 
       const engine = await engineOf(assembler);
-      const missing = runs.flatMap((r) => r.segments).filter((i) => !assemblerHas.has(i));
-      if (missing.length > 0) throw new RenderWorkerError("missing-file", `${assembler} lacks segments ${missing.join(", ")}`);
       const drawn = Object.fromEntries([...assemblerHas].map(([i, hash]) => [String(i), hash]));
       const result = await renderOn<RenderResult & { engine?: EngineAnswer }>(engine, { ...(await prepared()).job, ...(render.loudness ? { loudness: render.loudness } : {}), drawn }, onAssembly);
       await fetchVideo(engine, render.outputPath, result);
@@ -479,7 +501,7 @@ export function sharedRenderer(options: SharedRendererOptions): (render: RenderT
       return {
         ...rendered,
         path: render.outputPath,
-        engine: { host: engine.target.name, ...engineFacts(answered ?? answers.get(assembler), engine.sha), ...sent, assembler, shares },
+        engine: { host: engine.target.name, ...engineFacts(answered ?? answers.get(assembler), engine.sha), ...sent, assembler, shares, warnings },
       };
     } finally {
       options.signal?.removeEventListener("abort", stop);

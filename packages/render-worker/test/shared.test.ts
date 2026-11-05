@@ -401,3 +401,27 @@ test("a correction: cached seconds are not drawn, and a few missing ones are dra
   assert.deepEqual(called, [], "no engine even started");
   assert.equal(result.engine.shares.reduce((n, s) => n + s.segments, 0), 2);
 });
+
+test("when every engine leaves, nothing is drawn here: the render fails and says why", async () => {
+  // The operator sent the work elsewhere: the assembly must not draw the
+  // seconds no engine drew on the machine it was meant to spare.
+  const { options } = episode();
+  const { engines, exec } = machines();
+  engines.get("box-a")!.unreachable.add("someone@100.64.0.10");
+  let assembled = false;
+  await assert.rejects(
+    renderer(exec, { hosts: ["box-a"], cached: async () => [], renderLocal: async (o) => { assembled = true; return fakeRender(o); } })(options),
+    (error: Error & { code?: string }) => error.code === "no-engine" && /second\(s\) 0–4/.test(error.message) && /box-a does not draw/.test(error.message),
+  );
+  assert.equal(assembled, false, "the local renderer was never called");
+  assert.ok(!existsSync(options.outputPath));
+});
+
+test("a machine that left is in the result's warnings, not only in the log", async () => {
+  const { options } = episode();
+  const { engines, exec } = machines();
+  engines.get("box-a")!.unreachable.add("someone@100.64.0.10");
+  const result = await renderer(exec, { hosts: ["local", "box-a"] })(options);
+  assert.equal(result.engine.warnings.length, 1);
+  assert.match(result.engine.warnings[0]!, /box-a does not draw/);
+});
