@@ -108,9 +108,8 @@ describe("pva_generate_image on the ledger", () => {
 
   it("never calls fal when the budget cannot cover the image", async () => {
     budget(4_000);
-    const result = await generate();
-    expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toMatch(/past its \$0\.004 budget/);
+    // Thrown, as a Pi tool failure must be (docs/contributing.md).
+    await expect(generate()).rejects.toThrow(/past its \$0\.004 budget/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(journal()).toEqual([]);
   });
@@ -118,8 +117,7 @@ describe("pva_generate_image on the ledger", () => {
   it("releases a call fal refused, so a bad request costs nothing", async () => {
     budget(1_000_000);
     fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ detail: "bad prompt" }), { status: 422 }));
-    const result = await generate();
-    expect(result.isError).toBe(true);
+    await expect(generate()).rejects.toThrow();
     expect(journal().map((e) => e.type)).toEqual(["spend-reserved", "spend-released"]);
   });
 
@@ -128,7 +126,7 @@ describe("pva_generate_image on the ledger", () => {
     fetchMock.mockImplementation(async (url: string) => url.startsWith("https://fal.run/")
       ? new Response(JSON.stringify({ images: [{ url: "https://cdn.example/s1.jpg" }] }), { status: 200 })
       : new Response("gone", { status: 404 }));
-    await generate();
+    await expect(generate()).rejects.toThrow();
     expect(journal().map((e) => e.type)).toEqual(["spend-reserved", "spend-settled"]);
   });
 

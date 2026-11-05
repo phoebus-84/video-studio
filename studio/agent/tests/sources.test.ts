@@ -125,9 +125,8 @@ describe("episode tools in a source", () => {
   it("refuses a paid image in a source before writing anything, saying how to do without", async () => {
     mkdirSync(join(root, "poesia", "sources", "lampo"), { recursive: true });
     const run = await capability();
-    const refused = await run("pva_generate_image", { channel: "poesia", source: "lampo", sceneId: "cielo", prompt: "a storm" });
-    expect(refused.isError).toBe(true);
-    expect(refused.content[0].text).toMatch(/a source has no budget.*openai-codex/);
+    await expect(run("pva_generate_image", { channel: "poesia", source: "lampo", sceneId: "cielo", prompt: "a storm" }))
+      .rejects.toThrow(/a source has no budget.*openai-codex/);
     expect(existsSync(join(root, "poesia", "sources", "lampo", "assets"))).toBe(false);
   });
 

@@ -10,7 +10,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
 import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { remoteRenderer, sharedRenderer, type RemoteRenderResult, type SharedRenderResult } from "@av/render-worker";
 import { extname, join } from "node:path";
 import { resolveConfig, DEFAULT_TTS_WORKER_URL } from "./config.js";
@@ -71,6 +71,22 @@ import {
 // ── Inline fal client (avoids dynamic import complexity in Pi) ──────────────
 
 const DEFAULT_MODEL = DEFAULT_FAL_MODEL;
+
+/** Most images pva_generate_images draws in one call. */
+export const MAX_IMAGE_BATCH = 8;
+
+/** Run a process without blocking the event loop; resolves with its exit status and output. */
+function runProcess(command: string, args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf-8"); });
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf-8"); });
+    child.on("error", (err) => resolve({ status: null, stdout, stderr: stderr + err.message }));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
 
 /**
  * Generate through an OpenAI ChatGPT/Codex plan.
@@ -509,7 +525,141 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     },
   });
 
-  // --- Tool: pva_generate_image (fal.ai or an OpenAI plan) -----------------
+  // --- Tool: pva_generate_image / pva_generate_images (fal.ai or an OpenAI plan)
+
+  const IMAGE_PARAMS = {
+    sceneId: Type.String({ description: "Scene ID (e.g. s1, s2)" }),
+    prompt: Type.String({ description: "Image generation prompt" }),
+    outputWidth: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096, description: "Optional normalized output width" })),
+    outputHeight: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096, description: "Optional normalized output height" })),
+    referenceImagePaths: Type.Optional(Type.Array(Type.String(), {
+      maxItems: 5,
+      description: "Existing episode-relative images used as continuity references (Codex provider only)",
+    })),
+  };
+
+  interface ImageRequest extends WorkspaceParams {
+    sceneId: string;
+    prompt: string;
+    outputWidth?: number;
+    outputHeight?: number;
+    referenceImagePaths?: string[];
+  }
+
+  /**
+   * One picture, start to finish. Nothing here holds a lock across the
+   * provider call: the spend ledger is locked only to reserve and to settle
+   * (withSpend), and each picture writes its own files, so any number of these
+   * can run at once.
+   */
+  async function generateOneImage(
+    params: ImageRequest,
+    signal: AbortSignal | undefined,
+    ctx: { modelRegistry: { getApiKeyForProvider(provider: string): Promise<string | undefined> } },
+  ): Promise<{ text: string; details: Record<string, unknown> }> {
+    if (!params.sceneId.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)) {
+      throw new Error("sceneId must contain only letters, numbers, underscores, and hyphens");
+    }
+    if ((params.outputWidth === undefined) !== (params.outputHeight === undefined)) {
+      throw new Error("outputWidth and outputHeight must be supplied together");
+    }
+    const workspace = where(params);
+    const dir = workspace.dir;
+    const libraryRoot = process.env["AVG_LIBRARY_ROOT"] || join(process.cwd(), "library");
+    const provider = resolveImageProvider(libraryRoot, params.channel, params.series);
+    // A source has no budget: a paid provider is refused before anything is written.
+    if (provider.kind === "fal" && workspace.kind === "source") {
+      throw new Error(`image generation with fal is paid, and a source has no budget: set image.provider: openai-codex in the channel's pipeline.yaml, fetch an archive picture (pva_fetch_media), or generate it in an episode`);
+    }
+    const imgDir = join(dir, "assets", "images");
+    mkdirSync(imgDir, { recursive: true });
+    const referenceImages: CodexReferenceImage[] = [];
+    for (const relativePath of params.referenceImagePaths ?? []) {
+      const guard = await guardWorkspacePath(LIBRARY_ROOT, where(params), relativePath,
+      );
+      if (!guard.allowed) throw new Error(guard.reason ?? "Reference image path rejected");
+      const fullPath = join(dir, relativePath);
+      if (!existsSync(fullPath)) throw new Error(`Reference image not found: ${relativePath}`);
+      referenceImages.push({
+        data: readFileSync(fullPath),
+        mimeType: imageMimeType(fullPath),
+      });
+    }
+    if (provider.kind === "fal" && referenceImages.length > 0) {
+      throw new Error("referenceImagePaths requires image.provider: openai-codex");
+    }
+
+    // The two providers return different encodings, so the extension comes
+    // from the result rather than being assumed — the previous code wrote
+    // every image as .jpg whatever the bytes actually were.
+    const result =
+      provider.kind === "codex"
+        ? await generateImageViaCodex(params.prompt, provider.model, ctx.modelRegistry, referenceImages, signal)
+        : await (async () => {
+            // Through the episode's spend ledger (avg-91o): reserved
+            // before the request, settled after, refused over budget.
+            const fal = await paidCall(
+              { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "image generation with fal") },
+              { capability: "image.generate", provider: "fal", model: provider.model, purpose: `image ${params.sceneId}` },
+              async (spend) => ({ value: await generateImage(params.prompt, provider.model, spend) }),
+            );
+            return {
+              data: fal.data,
+              model: fal.model,
+              provider: "fal",
+              seed: fal.seed,
+              extension: "jpg",
+            } as const;
+          })();
+
+    const fileName = `${params.sceneId}.${result.extension}`;
+    const outPath = join(imgDir, fileName);
+    if (params.outputWidth !== undefined && params.outputHeight !== undefined) {
+      const sourceDir = join(imgDir, "source");
+      mkdirSync(sourceDir, { recursive: true });
+      const sourcePath = join(sourceDir, fileName);
+      writeFileSync(sourcePath, result.data);
+      // Asynchronous: images drawn at once must not wait on each other's ffmpeg.
+      const normalized = await runProcess("ffmpeg", [
+        "-y",
+        "-i", sourcePath,
+        "-vf", `scale=${params.outputWidth}:${params.outputHeight}:force_original_aspect_ratio=increase,crop=${params.outputWidth}:${params.outputHeight}`,
+        "-frames:v", "1",
+        outPath,
+      ]);
+      if (normalized.status !== 0 || !existsSync(outPath)) {
+        throw new Error(`Image normalization failed: ${(normalized.stderr || normalized.stdout).trim().slice(-1000)}`);
+      }
+    } else {
+      writeFileSync(outPath, result.data);
+    }
+
+    const outputSize = statSync(outPath).size;
+    const seed = "seed" in result ? result.seed : undefined;
+    const summary = [
+      `✅ ${fileName} — ${(outputSize / 1024).toFixed(0)}KB`,
+      `(${result.provider}/${result.model}${seed !== undefined ? `, seed: ${seed}` : ""})`,
+    ].join(" ");
+
+    return {
+      text: summary,
+      details: {
+        path: outPath,
+        size: outputSize,
+        provider: result.provider,
+        ...(params.outputWidth !== undefined && params.outputHeight !== undefined
+          ? { dimensions: `${params.outputWidth}x${params.outputHeight}` }
+          : {}),
+        model: result.model,
+        ...(seed !== undefined ? { seed } : {}),
+        ...("revisedPrompt" in result && result.revisedPrompt
+          ? { revisedPrompt: result.revisedPrompt }
+          : {}),
+      },
+    };
+  }
+
+  const imageFailure = (err: unknown) => `❌ Failed: ${err instanceof Error ? err.message : String(err)}`;
 
   pi.registerTool({
     name: "pva_generate_image",
@@ -517,126 +667,85 @@ export function registerCapabilityTools(pi: ExtensionAPI): void {
     description:
       "Generate an image with the provider this series configured — a fal.ai model, or gpt-image through an " +
       "OpenAI ChatGPT/Codex plan when pipeline.yaml sets image.provider to openai-codex. Saves directly to " +
-      "episode assets/images/.",
+      "episode assets/images/. For several images, call pva_generate_images once: it draws them all at the same time.",
     parameters: Type.Object({
       ...WORKSPACE_PARAMS,
-      sceneId: Type.String({ description: "Scene ID (e.g. s1, s2)" }),
-      prompt: Type.String({ description: "Image generation prompt" }),
-      outputWidth: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096, description: "Optional normalized output width" })),
-      outputHeight: Type.Optional(Type.Integer({ minimum: 64, maximum: 4096, description: "Optional normalized output height" })),
-      referenceImagePaths: Type.Optional(Type.Array(Type.String(), {
-        maxItems: 5,
-        description: "Existing episode-relative images used as continuity references (Codex provider only)",
-      })),
+      ...IMAGE_PARAMS,
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      try {
-        if (!params.sceneId.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)) {
-          throw new Error("sceneId must contain only letters, numbers, underscores, and hyphens");
-        }
-        if ((params.outputWidth === undefined) !== (params.outputHeight === undefined)) {
-          throw new Error("outputWidth and outputHeight must be supplied together");
-        }
-        const workspace = where(params);
-        const dir = workspace.dir;
-        const libraryRoot = process.env["AVG_LIBRARY_ROOT"] || join(process.cwd(), "library");
-        const provider = resolveImageProvider(libraryRoot, params.channel, params.series);
-        // A source has no budget: a paid provider is refused before anything is written.
-        if (provider.kind === "fal" && workspace.kind === "source") {
-          throw new Error(`image generation with fal is paid, and a source has no budget: set image.provider: openai-codex in the channel's pipeline.yaml, fetch an archive picture (pva_fetch_media), or generate it in an episode`);
-        }
-        const imgDir = join(dir, "assets", "images");
-        mkdirSync(imgDir, { recursive: true });
-        const referenceImages: CodexReferenceImage[] = [];
-        for (const relativePath of params.referenceImagePaths ?? []) {
-          const guard = await guardWorkspacePath(LIBRARY_ROOT, where(params), relativePath,
-          );
-          if (!guard.allowed) throw new Error(guard.reason ?? "Reference image path rejected");
-          const fullPath = join(dir, relativePath);
-          if (!existsSync(fullPath)) throw new Error(`Reference image not found: ${relativePath}`);
-          referenceImages.push({
-            data: readFileSync(fullPath),
-            mimeType: imageMimeType(fullPath),
+      // A failure is thrown, never returned with isError: Pi takes a returned
+      // result for a success (docs/contributing.md); the MCP host folds the
+      // throw into an error result.
+      const { text, details } = await generateOneImage(params, signal, ctx);
+      return { content: [{ type: "text" as const, text }], details };
+    },
+  });
+
+  // Several pictures in ONE call, drawn concurrently. A harness may run the
+  // tool calls of one turn one after another (Claude Code does, for every MCP
+  // tool not marked read-only), so a batch of pva_generate_image calls can take
+  // N times as long as one. This tool makes the concurrency ours, in both
+  // harnesses.
+  pi.registerTool({
+    name: "pva_generate_images",
+    label: "Generate Images",
+    description:
+      `Generate up to ${MAX_IMAGE_BATCH} images of one episode (or channel source) at the same time, each exactly as ` +
+      "pva_generate_image would: same provider, same files in assets/images/, same spend ledger. Four images take " +
+      "about as long as one. Each image succeeds or fails on its own; the result lists every one.",
+    parameters: Type.Object({
+      ...WORKSPACE_PARAMS,
+      images: Type.Array(Type.Object(IMAGE_PARAMS), {
+        minItems: 1,
+        maxItems: MAX_IMAGE_BATCH,
+        description: "The images to draw; sceneIds must differ",
+      }),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const { images, ...workspace } = params;
+      // Two sceneIds that differ only by case name one file where the
+      // filesystem ignores case (Windows, macOS): both would be drawn and
+      // paid for, and one silently lost. They are refused like a repeat.
+      const ids = images.map((image) => image.sceneId.toLowerCase());
+      const repeated = ids.findIndex((id, index) => ids.indexOf(id) !== index);
+      if (repeated !== -1) {
+        const first = images[ids.indexOf(ids[repeated]!)]!.sceneId;
+        const again = images[repeated]!.sceneId;
+        throw new Error(first === again
+          ? `sceneId ${again} appears twice; each image needs its own`
+          : `sceneIds ${first} and ${again} name the same file on a case-insensitive filesystem; each image needs its own`);
+      }
+      let done = 0;
+      const settled = await Promise.allSettled(images.map(async (image) => {
+        try {
+          return await generateOneImage({ ...workspace, ...image }, signal, ctx);
+        } finally {
+          done += 1;
+          onUpdate?.({
+            content: [{ type: "text" as const, text: `${done}/${images.length} images done (${image.sceneId})` }],
+            details: {},
           });
         }
-        if (provider.kind === "fal" && referenceImages.length > 0) {
-          throw new Error("referenceImagePaths requires image.provider: openai-codex");
-        }
-
-        // The two providers return different encodings, so the extension comes
-        // from the result rather than being assumed — the previous code wrote
-        // every image as .jpg whatever the bytes actually were.
-        const result =
-          provider.kind === "codex"
-            ? await generateImageViaCodex(params.prompt, provider.model, ctx.modelRegistry, referenceImages, signal)
-            : await (async () => {
-                // Through the episode's spend ledger (avg-91o): reserved
-                // before the request, settled after, refused over budget.
-                const fal = await paidCall(
-                  { libraryRoot: LIBRARY_ROOT, ...episodeOf(where(params), "image generation with fal") },
-                  { capability: "image.generate", provider: "fal", model: provider.model, purpose: `image ${params.sceneId}` },
-                  async (spend) => ({ value: await generateImage(params.prompt, provider.model, spend) }),
-                );
-                return {
-                  data: fal.data,
-                  model: fal.model,
-                  provider: "fal",
-                  seed: fal.seed,
-                  extension: "jpg",
-                } as const;
-              })();
-
-        const fileName = `${params.sceneId}.${result.extension}`;
-        const outPath = join(imgDir, fileName);
-        if (params.outputWidth !== undefined && params.outputHeight !== undefined) {
-          const sourceDir = join(imgDir, "source");
-          mkdirSync(sourceDir, { recursive: true });
-          const sourcePath = join(sourceDir, fileName);
-          writeFileSync(sourcePath, result.data);
-          const normalized = spawnSync("ffmpeg", [
-            "-y",
-            "-i", sourcePath,
-            "-vf", `scale=${params.outputWidth}:${params.outputHeight}:force_original_aspect_ratio=increase,crop=${params.outputWidth}:${params.outputHeight}`,
-            "-frames:v", "1",
-            outPath,
-          ], { encoding: "utf-8" });
-          if (normalized.status !== 0 || !existsSync(outPath)) {
-            throw new Error(`Image normalization failed: ${(normalized.stderr || normalized.stdout).trim().slice(-1000)}`);
-          }
-        } else {
-          writeFileSync(outPath, result.data);
-        }
-
-        const outputSize = statSync(outPath).size;
-        const seed = "seed" in result ? result.seed : undefined;
-        const summary = [
-          `✅ ${fileName} — ${(outputSize / 1024).toFixed(0)}KB`,
-          `(${result.provider}/${result.model}${seed !== undefined ? `, seed: ${seed}` : ""})`,
-        ].join(" ");
-
-        return {
-          content: [{ type: "text" as const, text: summary }],
-          details: {
-            path: outPath,
-            size: outputSize,
-            provider: result.provider,
-            ...(params.outputWidth !== undefined && params.outputHeight !== undefined
-              ? { dimensions: `${params.outputWidth}x${params.outputHeight}` }
-              : {}),
-            model: result.model,
-            ...(seed !== undefined ? { seed } : {}),
-            ...("revisedPrompt" in result && result.revisedPrompt
-              ? { revisedPrompt: result.revisedPrompt }
-              : {}),
-          },
-        };
-      } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: `❌ Failed: ${err instanceof Error ? err.message : String(err)}` }],
-          details: {},
-          isError: true as unknown as boolean,
-        };
+      }));
+      const lines = settled.map((outcome, index) =>
+        outcome.status === "fulfilled" ? outcome.value.text : `${images[index]!.sceneId}: ${imageFailure(outcome.reason)}`);
+      const failed = settled.filter((outcome) => outcome.status === "rejected").length;
+      // Nothing was drawn: that is a failed call, thrown so that Pi sees it.
+      // A partial batch returns, listing what failed.
+      if (failed === images.length) {
+        throw new Error([`0/${images.length} images generated`, ...lines].join("\n"));
       }
+      return {
+        content: [{
+          type: "text" as const,
+          text: [`${images.length - failed}/${images.length} images generated`, ...lines].join("\n"),
+        }],
+        details: {
+          images: settled.map((outcome, index) => outcome.status === "fulfilled"
+            ? { sceneId: images[index]!.sceneId, ok: true, ...outcome.value.details }
+            : { sceneId: images[index]!.sceneId, ok: false, error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason) }),
+        },
+      };
     },
   });
 

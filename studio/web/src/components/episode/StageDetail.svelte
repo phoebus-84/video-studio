@@ -8,7 +8,7 @@
    * confirmation dialog after it.
    */
   import { episode } from "$lib/episode-store.svelte.ts";
-  import { production, actionsFor } from "$lib/production-store.svelte.ts";
+  import { production, actionsFor, canClaimForAgent } from "$lib/production-store.svelte.ts";
   import { hasOperatorKey } from "$lib/gateway.svelte.ts";
   import { untrack } from "svelte";
   import { rerunConsequence, upstreamOf, downstreamOf } from "$lib/stage-graph";
@@ -36,6 +36,13 @@
     : actions.includes("run") ? "run" : null);
   const busy = $derived(production.busyStage !== null || production.loading);
   const signedIn = hasOperatorKey();
+  const showClaim = $derived(canClaimForAgent(liveStage, production.source, true));
+  const canClaim = $derived(showClaim && signedIn);
+
+  async function claim(): Promise<void> {
+    if (!stage || busy || !statusIsCurrent || !canClaim) return;
+    await production.claimStage(stage.id);
+  }
 
   // This canvas must work without the optional inspector ProductionPanel.
   // Track only episode identity, not the state load() itself writes.
@@ -80,6 +87,12 @@
           <span class="sd-state" data-state={state}>{state ? STAGE_LABELS[state] : ""}</span>
         </div>
         <div class="sd-actions">
+          {#if showClaim}
+            <button class="sd-primary" onclick={claim} disabled={busy || !canClaim}
+              title="Lease this stage for the agent to perform. Does not run an adapter or approve the result.">
+              {busy ? "Working…" : "Claim for agent"}
+            </button>
+          {/if}
           {#if primaryAction}
             <button class="sd-primary" onclick={act} disabled={busy}>
               {busy ? "Working…" : primaryAction === "approve" ? "Approve stage"
@@ -90,6 +103,13 @@
         </div>
       </header>
 
+      {#if showClaim}
+        {#if !signedIn}
+          <p class="sd-feedback">Claim for agent is disabled: this browser is not signed in as operator. Use “sign in as operator” in this window's header and save your key. Signing in in another window or at another address does not sign in here.</p>
+        {:else}
+          <p class="sd-feedback">For creative work without an automatic handler, use Claim for agent, then give the returned leaseId to the agent. The lease expires; completion and review remain separate.</p>
+        {/if}
+      {/if}
       {#if statusIsCurrent && production.error}
         <p class="sd-feedback sd-error" role="alert">{production.error}</p>
       {/if}

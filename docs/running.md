@@ -92,7 +92,8 @@ Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_appr
 `pva_plan_rerun`, `pva_check_staleness`, `pva_budget_status`,
 `pva_capability_status`
 
-Production: `pva_generate_image`, `pva_synthesize_speech`, `pva_register_take`,
+Production: `pva_generate_image`, `pva_generate_images` (several at once, drawn
+concurrently), `pva_synthesize_speech`, `pva_register_take`,
 `pva_synthesize_nonverbal_audio`, `pva_synthesize_sound`, `pva_render_graphics`,
 `pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
 `pva_upgrade_spec`, `pva_propose_reference`,
@@ -941,6 +942,21 @@ The gateway's `POST …/budget/reservations/:id/release` has the same rule.
 environment holds `FAL_KEY`, so a `curl` from its shell reaches fal with no
 reservation, and spend lines are not signed. This is the same same-user
 boundary as the operator key (avg-qr4.8).
+
+## Handing a creative stage to the agent
+
+`Run stage` invokes an automatic adapter; it cannot write a brief or script.
+For creative work, sign in as operator in the browser, select the stage, and
+choose **Claim for agent**. This leases the stage without executing it. The
+button is offered for runnable stages and stages blocked solely by the
+attendance requirement; the gateway still checks dependencies, budget and
+reviews. File-driven episodes do not use this action.
+
+Give the returned `leaseId` and expiry to the agent, not your operator key.
+The agent performs the work and calls `pva_complete_stage` with that exact
+lease and its output paths. An expired lease needs a new operator claim.
+Completing the work does not approve it: any human review gate still applies.
+Signing in does not turn the agent's own requests into operator requests.
 
 ## The operator key
 
