@@ -96,6 +96,16 @@ build if an absolute path reappears.
 Reach for a package by name, never by relative path. `../../other/src/thing.ts`
 is a boundary violation even when it happens to resolve.
 
+## The application knows no library
+
+A channel's, a series' or an episode's name never appears in `studio/`,
+`packages/`, `skills/`, `tools/` or `docs/` (ADR-0044): what a channel wants is
+written in its own skills, in its library. `npm run check:library-names`
+reads the names from the library on this machine and fails on any it finds in
+the application's tracked files; with no library (CI) it passes. Tests,
+fixtures, evaluation records and sealed kits are left out unless you pass
+`--all`. A name that is an ordinary word goes in `library/.app-names-allowed`.
+
 ## Documentation
 
 The site is [VitePress](https://vitepress.dev):
