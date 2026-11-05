@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash, randomInt } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
   createFalClient,
@@ -44,7 +44,6 @@ export interface Flux3MaxGenerateParams {
   reasoningLevel?: "low" | "high";
   generateAudio?: boolean;
   seed?: number;
-  overwrite?: boolean;
 }
 
 interface LivePrice {
@@ -90,13 +89,18 @@ export async function generateFlux3MaxVideo(
   }
 
   const libraryRoot = process.env.AVG_LIBRARY_ROOT || join(process.cwd(), "library");
+  // The destination is guarded like the images are: text-to-video names no
+  // image, and channel, series and episode alone must not leave the library.
+  const destination = await guardEpisodePath(libraryRoot, params.channel, params.series, params.episode, "assets/video/flux-3-max");
+  if (!destination.allowed) throw new Error(destination.reason ?? "Episode path rejected");
   const dir = episodePath(libraryRoot, params.channel, params.series, params.episode);
   const videoDir = join(dir, "assets", "video", "flux-3-max");
   const outputPath = join(videoDir, `${params.name}.mp4`);
   const provenancePath = join(videoDir, `${params.name}.provenance.json`);
-  if (existsSync(outputPath) && !params.overwrite) {
-    throw new Error(`assets/video/flux-3-max/${params.name}.mp4 already exists: pick another name, or pass overwrite: true`);
-  }
+  // A generated clip is an immutable attempt (ADR-0021): a taken name is
+  // refused, never replaced.
+  const taken = () => new Error(`assets/video/flux-3-max/${params.name}.mp4 already exists: pick another name`);
+  if (existsSync(outputPath) || existsSync(provenancePath)) throw taken();
 
   const config = await resolveConfig();
   if (!config.falKeyRef) throw new Error("FAL_KEY env var not set");
@@ -132,96 +136,114 @@ export async function generateFlux3MaxVideo(
     seed,
   };
   const requestHash = createHash("sha256").update(JSON.stringify(parameters)).digest("hex").slice(0, 20);
-  onUpdate?.(`Submitting ${params.name} to FLUX 3 Max (720p, ${params.durationSeconds}s, estimated $${estimatedCost})…`, {
-    name: params.name,
-    profileId: profile.profileId,
-  });
 
-  const client = createFalClient(config.falKeyRef);
-  const startedMs = Date.now();
-  const heartbeat = setInterval(() => {
-    onUpdate?.(`FLUX 3 Max ${params.name}: waiting on fal… ${Math.round((Date.now() - startedMs) / 1000)}s`, {
-      name: params.name,
-      elapsedMs: Date.now() - startedMs,
-    });
-  }, HEARTBEAT_MS);
-  heartbeat.unref?.();
-
-  let result;
-  try {
-    result = await paidCall(
-      { libraryRoot, channel: params.channel, series: params.series, episode: params.episode },
-      {
-        capability: "video.generate",
-        provider: "fal",
-        model: profile.profileId,
-        purpose: `clip ${params.name}`,
-        estimate: {
-          estimate: { currency: livePrice.currency, micros: toMicros(estimatedCost) },
-          priced: true,
-          profile: profile.profileId,
-        },
-      },
-      async (spend) => {
-        spend.sending();
-        try {
-          const generated = await client.submitAndWait({
-            idempotencyKey: `${params.channel}-${params.series}-${params.episode}-${params.name}-${requestHash}`,
-            binding: { endpointId: profile.endpointId, contractVersion: profile.contractVersion, baseUrl: "" },
-            parameters,
-            timeoutMs: MAX_WAIT_MS,
-          }, signal, { maxWaitMs: MAX_WAIT_MS });
-          return { value: generated, cost: providerCost(generated.cost), providerRequestId: generated.providerRequestId };
-        } catch (error) {
-          if (error instanceof FalValidationError || (error instanceof FalHttpError && error.status >= 400 && error.status < 500 && error.status !== 429)) {
-            spend.refused();
-          }
-          throw error;
-        }
-      },
-    );
-  } finally {
-    clearInterval(heartbeat);
-  }
-
-  const output = result.outputs.find((item) => item.contentType.startsWith("video/")) ?? result.outputs[0];
-  if (!output) throw new Error("FLUX 3 Max completed without a video output");
-  const download = await fetch(output.url, { signal });
-  if (!download.ok) throw new Error(`Failed to download FLUX 3 Max output: HTTP ${download.status}`);
-  const data = Buffer.from(await download.arrayBuffer());
+  // The name is taken before anything is spent: a second call with the same
+  // name, at the same moment, is refused here instead of overwriting this one.
   mkdirSync(videoDir, { recursive: true });
-  writeFileSync(outputPath, data);
+  try {
+    closeSync(openSync(outputPath, "wx"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw taken();
+    throw error;
+  }
+  let written = false;
+  try {
+    onUpdate?.(`Submitting ${params.name} to FLUX 3 Max (720p, ${params.durationSeconds}s, estimated $${estimatedCost.toFixed(4)})…`, {
+      name: params.name,
+      profileId: profile.profileId,
+    });
 
-  const provenance = {
-    version: 1,
-    provider: "fal.ai",
-    model: "FLUX 3 Max",
-    endpointId: profile.endpointId,
-    profileId: result.profileId,
-    schemaFingerprint: result.schemaFingerprint,
-    providerRequestId: result.providerRequestId,
-    idempotencyKey: result.idempotencyKey,
-    prompt: params.prompt,
-    mode: imageMode ? "image-to-video" : "text-to-video",
-    ...(params.imagePath ? { imagePath: params.imagePath, imageSha256: createHash("sha256").update(readFileSync(startPath!)).digest("hex") } : {}),
-    ...(params.endImagePath ? { endImagePath: params.endImagePath, endImageSha256: createHash("sha256").update(readFileSync(endPath!)).digest("hex") } : {}),
-    durationSeconds: params.durationSeconds,
-    resolution: "720p",
-    aspectRatio: parameters.aspect_ratio,
-    reasoningLevel: parameters.reasoning_level,
-    generateAudio: parameters.generate_audio,
-    seed,
-    authenticatedUnitPrice: livePrice,
-    billingUnits,
-    billingUnitsPerOutputSecond: FLUX3_MAX_720P_BILLING_UNITS_PER_OUTPUT_SECOND,
-    estimatedCost: { amount: estimatedCost, currency: livePrice.currency },
-    cost: result.cost,
-    outputUrl: output.url,
-    outputSha256: createHash("sha256").update(data).digest("hex"),
-    completedAt: result.completedAt.toISOString(),
-  };
-  writeFileSync(provenancePath, JSON.stringify(provenance, null, 2));
-  return { outputPath, provenancePath, costUsd: result.cost?.amount ?? estimatedCost, seed, size: data.length };
+    const client = createFalClient(config.falKeyRef);
+    const startedMs = Date.now();
+    const heartbeat = setInterval(() => {
+      onUpdate?.(`FLUX 3 Max ${params.name}: waiting on fal… ${Math.round((Date.now() - startedMs) / 1000)}s`, {
+        name: params.name,
+        elapsedMs: Date.now() - startedMs,
+      });
+    }, HEARTBEAT_MS);
+    heartbeat.unref?.();
+
+    let result;
+    try {
+      result = await paidCall(
+        { libraryRoot, channel: params.channel, series: params.series, episode: params.episode },
+        {
+          capability: "video.generate",
+          provider: "fal",
+          model: profile.profileId,
+          purpose: `clip ${params.name}`,
+          estimate: {
+            estimate: { currency: livePrice.currency, micros: toMicros(estimatedCost) },
+            priced: true,
+            profile: profile.profileId,
+          },
+        },
+        async (spend) => {
+          spend.sending();
+          try {
+            const generated = await client.submitAndWait({
+              idempotencyKey: `${params.channel}-${params.series}-${params.episode}-${params.name}-${requestHash}`,
+              binding: { endpointId: profile.endpointId, contractVersion: profile.contractVersion, baseUrl: "" },
+              parameters,
+              timeoutMs: MAX_WAIT_MS,
+            }, signal, { maxWaitMs: MAX_WAIT_MS });
+            return { value: generated, cost: providerCost(generated.cost), providerRequestId: generated.providerRequestId };
+          } catch (error) {
+            if (error instanceof FalValidationError || (error instanceof FalHttpError && error.status >= 400 && error.status < 500 && error.status !== 429)) {
+              spend.refused();
+            }
+            throw error;
+          }
+        },
+      );
+    } finally {
+      clearInterval(heartbeat);
+    }
+
+    const output = result.outputs.find((item) => item.contentType.startsWith("video/")) ?? result.outputs[0];
+    if (!output) throw new Error("FLUX 3 Max completed without a video output");
+    const download = await fetch(output.url, { signal });
+    if (!download.ok) throw new Error(`Failed to download FLUX 3 Max output: HTTP ${download.status}`);
+    const data = Buffer.from(await download.arrayBuffer());
+    writeFileSync(outputPath, data);
+    written = true;
+
+    const provenance = {
+      version: 1,
+      provider: "fal.ai",
+      model: "FLUX 3 Max",
+      endpointId: profile.endpointId,
+      profileId: result.profileId,
+      schemaFingerprint: result.schemaFingerprint,
+      providerRequestId: result.providerRequestId,
+      idempotencyKey: result.idempotencyKey,
+      prompt: params.prompt,
+      mode: imageMode ? "image-to-video" : "text-to-video",
+      ...(params.imagePath ? { imagePath: params.imagePath, imageSha256: createHash("sha256").update(readFileSync(startPath!)).digest("hex") } : {}),
+      ...(params.endImagePath ? { endImagePath: params.endImagePath, endImageSha256: createHash("sha256").update(readFileSync(endPath!)).digest("hex") } : {}),
+      durationSeconds: params.durationSeconds,
+      resolution: "720p",
+      aspectRatio: parameters.aspect_ratio,
+      reasoningLevel: parameters.reasoning_level,
+      generateAudio: parameters.generate_audio,
+      seed,
+      authenticatedUnitPrice: livePrice,
+      billingUnits,
+      billingUnitsPerOutputSecond: FLUX3_MAX_720P_BILLING_UNITS_PER_OUTPUT_SECOND,
+      estimatedCost: { amount: estimatedCost, currency: livePrice.currency },
+      cost: result.cost,
+      outputUrl: output.url,
+      outputSha256: createHash("sha256").update(data).digest("hex"),
+      completedAt: result.completedAt.toISOString(),
+    };
+    writeFileSync(provenancePath, JSON.stringify(provenance, null, 2), { flag: "wx" });
+    return { outputPath, provenancePath, costUsd: result.cost?.amount ?? estimatedCost, seed, size: data.length };
+  } finally {
+    // No clip was written: the name is free again.
+    if (!written) {
+      try { unlinkSync(outputPath); } catch { /* already gone */ }
+    }
+  }
 }
 
 export function registerFlux3MaxTools(pi: ExtensionAPI): void {
@@ -242,7 +264,6 @@ export function registerFlux3MaxTools(pi: ExtensionAPI): void {
       reasoningLevel: Type.Optional(StringEnum(["low", "high"] as const, { default: "high" })),
       generateAudio: Type.Optional(Type.Boolean({ default: true })),
       seed: Type.Optional(Type.Integer({ minimum: 0 })),
-      overwrite: Type.Optional(Type.Boolean({ default: false })),
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const result = await generateFlux3MaxVideo(params, signal, (message, details) => onUpdate?.({
