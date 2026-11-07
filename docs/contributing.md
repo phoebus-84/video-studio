@@ -104,7 +104,11 @@ written in its own skills, in its library. `npm run check:library-names`
 reads the names from the library on this machine and fails on any it finds in
 the application's tracked files; with no library (CI) it passes. Tests,
 fixtures, evaluation records and sealed kits are left out unless you pass
-`--all`. A name that is an ordinary word goes in `library/.app-names-allowed`.
+`--all`; a vendored tree (one with a `VENDORED.md`) is never read. A name that
+is an ordinary word goes in `library/.app-names-allowed`.
+
+It is not yet part of `npm run check`: against the operator's library it still
+reports names to move (#88, #89). Run it by hand until #89 puts it back.
 
 ## Documentation
 

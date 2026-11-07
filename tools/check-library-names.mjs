@@ -9,7 +9,8 @@
 // at check time, and looks for them in the application's tracked files.
 //
 // With no library here (CI, a fresh clone) it has nothing to compare and
-// passes. On the operator's machine, `npm run check` runs it before a push.
+// passes. On the operator's machine, run it by hand before a push (#89 puts it
+// back in `npm run check` once the library's names are out).
 //
 //   node tools/check-library-names.mjs [--library <dir>] [--all]
 //
@@ -130,10 +131,24 @@ export function findNames(files, names, allowed = new Set()) {
   return hits;
 }
 
+/**
+ * The files of `listed` (paths relative to the repository) the check reads.
+ * A tree with a VENDORED.md is upstream's and never edited here, so a name
+ * in it could not be moved: it is not read, even with --all.
+ */
+export function applicationFiles(listed, { all = false } = {}) {
+  const vendored = listed
+    .filter((f) => /(^|\/)VENDORED\.md$/.test(f))
+    .map((f) => f.slice(0, f.length - "VENDORED.md".length));
+  return listed.filter((f) =>
+    SCANNED.test(f) && !SKIPPED.test(f) && !BINARY.test(f) &&
+    !vendored.some((dir) => f.startsWith(dir)) &&
+    (all || (!TESTS.test(f) && !SEALED.test(f))));
+}
+
 function trackedFiles({ all }) {
   const listed = execSync("git ls-files", { cwd: ROOT, encoding: "utf-8" }).trim().split("\n").filter(Boolean);
-  return listed.filter((f) =>
-    SCANNED.test(f) && !SKIPPED.test(f) && !BINARY.test(f) && (all || (!TESTS.test(f) && !SEALED.test(f))));
+  return applicationFiles(listed, { all });
 }
 
 function main() {

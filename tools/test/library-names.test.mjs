@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { libraryNames, findNames } from "../check-library-names.mjs";
+import { libraryNames, findNames, applicationFiles } from "../check-library-names.mjs";
 
 async function library(t) {
   const root = await mkdtemp(join(tmpdir(), "library-names-"));
@@ -56,4 +56,17 @@ test("an allowed name is not reported, and structural folder names are never nam
   assert.equal(names.some((n) => n.name === "series"), false);
   const hits = findNames([{ path: "docs/c.md", text: "An intro to the studio." }], names, new Set(["intro"]));
   assert.deepEqual(hits, []);
+});
+
+test("a vendored tree is never read; tests are read only with --all", () => {
+  const listed = [
+    "skills/shared/upstream/VENDORED.md",
+    "skills/shared/upstream/SKILL.md",
+    "skills/shared/upstream/deep/notes.md",
+    "skills/shared/ours.md",
+    "studio/agent/tests/a.test.ts",
+    "library/x.md",
+  ];
+  assert.deepEqual(applicationFiles(listed), ["skills/shared/ours.md"]);
+  assert.deepEqual(applicationFiles(listed, { all: true }), ["skills/shared/ours.md", "studio/agent/tests/a.test.ts"]);
 });
