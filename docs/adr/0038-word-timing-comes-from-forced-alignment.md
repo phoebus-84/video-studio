@@ -13,7 +13,7 @@ post-processing and `alignTake` in `@studio/episode`, and the agent's
 A series episode's narration takes each need a `WordTiming` (`avg-7zp.1`):
 every word of the written text with its start and end in the take's audio.
 Captions, cues and the series compilers are built on it. Nothing measured
-one: a person had to supply the files. CreativeStudio transcribes with
+one: a person had to supply the files. The predecessor project transcribes with
 whisper.cpp and reconciles the transcription with the script. The studio's
 standing rule for audio: Qwen stays the local speech engine, ElevenLabs is
 an option a person chooses, never a replacement.
@@ -47,21 +47,21 @@ One pass aligns at most 300 s of audio; longer takes are aligned in parts.
 
 ### The measurement behind it (2026-10-07)
 
-On CreativeStudio's San Martino recital (Italian, 30.8 s, 62 words):
+On a recital from the predecessor project (Italian, 30.8 s, 62 words):
 Qwen kept the exact text, 62 of 62 words; mlx-whisper small misheard
 several ("ghierti", "più viginando", "come soli") and only 51 of its words
 mapped back. Raw, the two agreed within 40 ms (median); Qwen's faults —
 words running over the following pause, three of zero length — are what
 the post-processing corrects, after which the ends agree within 80 ms
 (p90), and where starts still differ the silences show Qwen right.
-Alignment took 2.2 s once the model was loaded. CreativeStudio's recitals
+Alignment took 2.2 s once the model was loaded. The predecessor project's recitals
 run 19–43 s.
 
 ## Consequences
 
 - Takes get their timing from their audio; a person no longer writes it.
 - The voice worker gains a second model and a route; it stays one process.
-- The ElevenLabs client (`@av/elevenlabs`) follows CreativeStudio's rate
+- The ElevenLabs client (`@av/elevenlabs`) follows the predecessor project's rate
   rules: one call at a time; two retries, only for 429 and 503 (answers
   that say nothing was processed), waiting `Retry-After` up to 30 s; never
   for auth, quota or another 5xx, after which the work may have been done
@@ -80,7 +80,7 @@ run 19–43 s.
 ## Amendment: verifying a take (avg-8hs.3)
 
 Forced alignment cannot tell a word said from a word missing: it places every
-word of the text, squeezing a missing one into a few frames. San Martino's
+word of the text, squeezing a missing one into a few frames. That recital's
 recital lost its fourth line, and its timing still showed «urla e biancheggia
 il mar» as five 80 ms words.
 

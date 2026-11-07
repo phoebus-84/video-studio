@@ -164,7 +164,7 @@ illustration, Beatrix Potter inspired.
 ### Full API payload (production):
 ```json
 {
-  "prompt": "\"Tom Thumb\" storybook illustration: A cozy cottage interior...",
+  "prompt": "\"The Lighthouse Keeper\" storybook illustration: A cozy cottage interior...",
   "aspect_ratio": "16:9",
   "resolution": "2K",
   "output_format": "jpeg",

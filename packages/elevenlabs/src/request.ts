@@ -1,6 +1,6 @@
-// One ElevenLabs request at a time per process, with CreativeStudio's rules
-// (UP-39): at most two retries, only for 429 and 503 — answers that say the
-// request was not processed — waiting Retry-After (seconds or a date; or 2 s,
+// One ElevenLabs request at a time per process: at most two retries, only for
+// 429 and 503 — answers that say the request was not processed — waiting
+// Retry-After (seconds or a date; or 2 s,
 // then 4 s), and none when it asks for more than 30 s; never a retry for auth
 // or quota, nor for another 5xx, after which the work may have been done and
 // billed; a connection lost after the request left is `uncertain` and is not

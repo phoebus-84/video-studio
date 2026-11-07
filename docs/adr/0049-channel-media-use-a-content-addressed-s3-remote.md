@@ -106,7 +106,7 @@ classifier can propose rules without extending the lock's merge semantics.
 - Production validation is still a separate operator step: configure the
   chosen server, push the channel, restore an episode in a fresh clone, run
   `--check --verify`, and verify its existing signed layout review. The test
-  suite does not claim this has been done on `ambient-through-time`.
+  suite does not claim this has been done on a real channel.
 - To satisfy an **all-files-matching** check after cloning, upload and pull
   `--tier all` or rebuild the excluded derived media and deliveries. Default
   selective backup alone cannot satisfy that stronger criterion. Shared media

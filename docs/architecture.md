@@ -7,53 +7,67 @@
 
 ## Product boundary
 
-The MVP produces faceless, narrated, illustrated YouTube explainers:
+The studio produces narrated, illustrated videos, one-off or as episodes of a
+series:
 
-- 1920x1080, 16:9, H.264/AAC MP4;
-- typically 3 to 8 minutes;
-- one primary narrator;
-- generated illustrations plus deterministic code and infographic frames;
-- segment-level captions;
-- FFmpeg composition and verification;
-- no YouTube upload or scheduling.
-
-The architecture permits later output profiles for Shorts, Instagram, TikTok, and Facebook without putting publishing concerns in the production core.
+- output profiles `youtube-1920x1080` (16:9) and `vertical-1080x1920` (9:16),
+  H.264/AAC MP4;
+- one or more narrators, synthesized locally or recorded, as takes;
+- generated, archive and deterministic pictures, generated clips, Blender
+  shots, terminal recordings and infographics;
+- captions by word for takes aligned to their text, by narration segment
+  otherwise;
+- composition by Remotion from a declarative edit timeline, then loudness and
+  a render audit by FFmpeg;
+- no upload or scheduling.
 
 ## Control plane
 
-Pi is the **Executive Producer**. It interprets intent, performs editorial work, chooses explicit provider bindings, calls production tools, reviews results, and reacts to feedback.
+The agent — Pi, or Claude Code through the studio's MCP server (ADR-0048) — is
+the **Executive Producer**. It interprets intent, performs editorial work,
+chooses explicit provider bindings, calls production tools, reviews results,
+and reacts to feedback. Both harnesses get the same tools, written once in
+`studio/agent/src/`.
 
 The **Pipeline Runtime** is deterministic. It resolves manifests, freezes snapshots, validates artifacts, leases stages, enforces policies, records attempts and events, computes staleness, and resumes interrupted runs. It never writes creative prose or silently selects a provider.
 
-The **Agent Gateway** owns Pi RPC processes. Browser clients connect to the gateway, not to Pi stdin/stdout. The gateway associates sessions with episodes, maps comments to `prompt`, `steer`, or `follow_up`, handles extension UI requests, and streams both Pi and production events.
+The **Agent Gateway** owns the agent sessions the browser talks to: Pi RPC processes or Claude Agent SDK sessions (`AVG_AGENT_BACKEND`). Browser clients connect to the gateway, not to the agent's stdin/stdout. The gateway associates sessions with episodes, maps comments to `prompt`, `steer`, or `follow_up`, handles extension UI requests, and streams both agent and production events. It never produces an artifact (ADR-0027).
 
 ## Data plane
 
-Stages request provider-neutral capabilities. The initial implementations are:
+Stages request provider-neutral capabilities (`studio/contracts/src/vocabulary.mjs`):
 
-- `image.generate` and `image.edit`: fal media adapter;
-- `speech.synthesize`: local Qwen3-TTS worker on MLX;
-- `graphics.render`: deterministic SVG, diagram, and code-frame renderer;
-- `video.compose` and `media.probe`: FFmpeg composer;
+- `image.generate` and `image.edit`: fal (`@av/fal-media`) or an OpenAI route (`@av/codex-image`);
+- `video.generate`: fal — MiniMax H3, Wan 2.2 and FLUX 3 Max clips;
+- `speech.synthesize`: the local Qwen3-TTS worker on MLX (`packages/voice`);
+- `speech.align`: the same worker, or ElevenLabs when asked (`@av/elevenlabs`);
+- `graphics.render`: deterministic SVG, diagram and code-frame renderer;
+- `graphics.animate`: Remotion infographics;
+- `terminal.record`: VHS terminal recordings;
+- `video.compose`: `@av/remotion-composer` for edit timelines; `@av/video-composer` (FFmpeg) for multitrack mixes;
+- `media.probe`: FFmpeg probes;
 - `scene.create` and `scene.render`: Blender editable 3D scenes and background
   Eevee/Cycles previews/animation, with a Pi-directed artist-handoff workflow.
 
-The provider selected by Pi is recorded in the episode's pipeline snapshot. Adapters do not silently fall back.
+Archive and stock media (`@av/archive-media`) and audio edits (`@av/audio-edit`)
+are tools rather than stage capabilities.
 
 ## End-to-end flow
 
 ```text
 Terminal prompt or GUI action
-  -> Pi executive producer
+  -> the agent (Pi or Claude Code) as executive producer
   -> pipeline runtime opens/leases a stage
-  -> Pi reads the stage skill and current artifacts
-  -> Pi calls one or more capability tools
+  -> the agent reads the stage skill and current artifacts
+  -> the agent calls one or more capability tools
   -> adapters persist jobs and immutable attempts
-  -> Pi writes the canonical stage artifact
+  -> the agent writes the canonical stage artifact
   -> runtime validates and records the attempt
   -> policy either continues or awaits approval
-  -> edit timeline compiles through FFmpeg
-  -> render QA determines Current Deliverable
+  -> the edit timeline is built (or compiled from the series' spec)
+  -> a layout sheet is read and, for a series episode, approved by a person
+  -> Remotion renders the timeline; FFmpeg masters the sound
+  -> the render audit determines Current Deliverable
 ```
 
 ## Reliability model

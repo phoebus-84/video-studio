@@ -7,7 +7,7 @@ console.log("═══ ACCEPTANCE DEMO ═══\n");
 await p.goto("http://localhost:5199", { waitUntil: "networkidle", timeout: 15000 });
 await p.waitForTimeout(2000);
 
-// Navigate to Little Red
+// Open the first episode of the first channel
 await p.locator(".channel-chevron-btn").first().click();
 await p.waitForTimeout(600);
 await p.locator("button.episode-row").first().click();

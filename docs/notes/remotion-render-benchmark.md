@@ -2,7 +2,7 @@
 
 Issue `avg-tk7.2`, 2026-10-06. Measured before deciding the cutover from the
 FFmpeg composer to `@av/remotion-composer` (`avg-tk7.6`), as the
-[design note](remotion-composer-design.md) requires: "if it is an order of
+design note (since replaced by [ADR-0034](../adr/0034-a-layered-kit-based-edit-timeline.md)) required: "if it is an order of
 magnitude slower, … the default-provider flip should be reconsidered".
 
 ## Verdict
@@ -69,7 +69,7 @@ engines. A 1-minute calibration gave the same ratio (Remotion 41 fps, FFmpeg
 - `avg-tk7.6` may proceed with the cutover.
 - Optional: expose `chromiumOptions.gl` (default `angle` on macOS) in
   `renderTimeline` — a memory saving, not a speed-up.
-- Re-run this benchmark when the "Dentro i versi" kits exist (`avg-dcf.4`).
+- Re-run this benchmark on a timeline drawn with a channel's own stage kits.
 
 ## PR #73: Apple Silicon recheck (2026-10-18)
 
@@ -80,7 +80,7 @@ not inferred from a PC result:
 - FFmpeg 9.0.1, Remotion 4.0.505, native mac-arm64 Chrome Headless Shell;
 - 20 seconds, 600 frames, 1920×1080, **four tabs total** in both picture
   configurations; one browser of four versus two browsers of two;
-- the first 20 seconds of the `museo-autore-stage@1.0.0` timeline, with
+- the first 20 seconds of a series template's stage timeline (kit version 1.0.0), with
   **synthetic media substituted in a temporary copy**: a 3840×2160 test
   picture and a 30-second 48 kHz tone. The episode's original media are not
   present on this machine, so this is a real kit with surrogate media,

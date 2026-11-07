@@ -1,4 +1,4 @@
-// Shared normalization for the native stock providers. No CreativeStudio runtime dependency.
+// Shared normalization for the native stock providers.
 import { ArchiveError } from "../errors.js";
 import { licenceFromUrl, unknownLicence } from "../licence.js";
 import { creditLine } from "../text.js";

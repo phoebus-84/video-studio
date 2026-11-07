@@ -147,8 +147,8 @@ ffmpeg or `pva_edit_audio` (its single mix graph does not get through an hour):
   (`{ path, in, out }` to choose a piece's playable stretch; a silent head and
   tail are cut otherwise). Default: every audio file in `assets/music/`. The
   soundtrack is **music only**: never put ambiences or effects from
-  `assets/sounds/` in it (ambient-through-time is music only unless the
-  operator says otherwise).
+  `assets/sounds/` in it, unless the operator or the channel's own skill says
+  otherwise.
 - `master` defaults to the render `current.json` names; `seed` defaults to
   one derived from the episode slug, so a rerun gives the same soundtrack.
 - The video is the master looped by stream copy; the soundtrack is a seeded

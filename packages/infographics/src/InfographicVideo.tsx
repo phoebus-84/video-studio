@@ -134,7 +134,7 @@ const SceneChrome: React.FC<{
     <Background spec={spec} />
     <div style={{position: 'absolute', top: 42, left: 64, right: 64, display: 'flex', alignItems: 'center', gap: 18}}>
       <div style={{fontFamily: mono, fontSize: 18, color: spec.palette.accent, letterSpacing: 3}}>
-        {spec.brandEyebrow ?? 'DYNE / FREE SOFTWARE'}
+        {spec.brandEyebrow ?? ''}
       </div>
       <div style={{height: 1, flex: 1, background: `${spec.palette.paper}33`}} />
       <div style={{fontFamily: mono, fontSize: 17, color: spec.palette.muted}}>
@@ -143,7 +143,7 @@ const SceneChrome: React.FC<{
     </div>
     {children}
     <div style={{position: 'absolute', left: 64, bottom: 42, fontFamily: mono, fontSize: 16, color: `${spec.palette.paper}77`}}>
-      {spec.brandFooter ?? 'FREE SOFTWARE / SINCE 2004'}
+      {spec.brandFooter ?? ''}
     </div>
   </AbsoluteFill>;
 };

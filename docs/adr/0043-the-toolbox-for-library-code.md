@@ -9,7 +9,7 @@ Accepted (`avg-d1x`, phase 3). Implemented:
 ## Context
 
 ADR-0041 and ADR-0042 let a series release carry its compiler and validator, and a channel or a series carry kits. Code written in the library needs the application's helpers, without copying them and without depending on what changes.
-- **Compilers.** The three compilers each carry the same private helpers: frames, rounding, word normalization, tokens, the deterministic noise, lanes, `isObject`. The two dentro-i-versi compilers each find the n-th spoken word their own way.
+- **Compilers.** The three compilers each carry the same private helpers: frames, rounding, word normalization, tokens, the deterministic noise, lanes, `isObject`. The first channel's two compilers each find the n-th spoken word their own way.
 - **Kits.** The composer's kits share frozen, versioned libraries under `kits/lib/<name>/<version>`: fonts, font metrics, stage maths, stage props, the look, the lesson stage, the interpreter. The fonts load `.woff2` files once for every kit.
 
 ## Decision
@@ -18,7 +18,7 @@ ADR-0041 and ADR-0042 let a series release carry its compiler and validator, and
 - **For compilers and validators: `@studio/series/toolbox/<version>`.**
   - Version 1.0.0 holds `frames`, `round3`, `tokens`, `normalizeWord` (with a locale), `noise`, `isObject`, `lanes`, `findWord`, `problem` and `kitsOf`.
   - `frames`, `round3`, `tokens`, `normalizeWord`, `noise`, `isObject` and `lanes` behave exactly as the compilers' private copies; its tests hold them to those copies.
-  - `findWord` (the n-th time a take says a word) is a superset of the two dentro-i-versi lookups, not a copy of either:
+  - `findWord` (the n-th time a take says a word) is a superset of the two lookups of the first channel's compilers, not a copy of either:
     - it matches the parts around an apostrophe, as the long's cues do;
     - it falls back to a prefix when asked, as the short's `word:` does;
     - a word that normalizes to nothing finds nothing.
@@ -36,5 +36,5 @@ ADR-0041 and ADR-0042 let a series release carry its compiler and validator, and
 
 ## Consequences
 
-- **Phase 4 can move dentro-i-versi's kits out.** They import these libraries. The ones that are the channel's own (`lib/dentro-i-versi`, `lib/hall-fx`) move with them.
+- **Phase 4 can move the first channel's kits out.** They import these libraries. The ones that are the channel's own (`lib/<channel>`, `lib/hall-fx`) move with them.
 - **The skill points here.** The `author-series` skill (phase 5) points Pi to the toolbox and the kit libraries as what to import, and what never to copy.

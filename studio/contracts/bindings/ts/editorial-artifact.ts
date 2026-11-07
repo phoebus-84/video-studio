@@ -14,7 +14,7 @@ export interface TapeMetadata {
   outputFormat?: "mp4" | "gif" | "webm" | "png";
   /** VHS version used to render. Recorded in the tape file or added at render time. */
   vhsVersion?: string;
-  /** Reference to the VHS theme used (e.g., 'dyne'). Inlined in the tape, tracked here for search. */
+  /** Reference to the VHS theme used (e.g., 'studio-dark'). Inlined in the tape, tracked here for search. */
   themeId?: string;
   estimatedDurationSeconds?: number;
 }

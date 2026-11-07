@@ -1622,7 +1622,7 @@ const VALUE_FLAGS = new Set([
  *
  * Shared by `run`, `complete` and `rerun` because the naive version —
  * `args.find((a) => !a.startsWith("--"))` — is actively destructive now that
- * `run` writes. `vpr run --library a/b/c childrens/fairy-tales/ep` took
+ * `run` writes. `vpr run --library a/b/c my-channel/my-series/ep` took
  * `a/b/c` as the episode, leased a stage and journaled `stage-leased` and
  * `stage-started` under a library the user never named. While `run` only
  * printed advice this was harmless nonsense; claiming made it corruption of

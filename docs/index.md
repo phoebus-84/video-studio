@@ -28,12 +28,20 @@ Reusable outside this project. They know nothing about episodes or pipelines.
 
 | Package | Capabilities |
 |---|---|
-| [blender](./packages/blender) | `scene.create`, `scene.render` |
-| [voice](./packages/voice) | `speech.synthesize` |
-| [fal-media](./packages/fal-media) | `image.generate`, `image.edit` |
+| [remotion-composer](./packages/remotion-composer) | `video.compose` (edit timelines) |
+| [render-worker](./packages/render-worker) | renders on other machines |
+| [voice](./packages/voice) | `speech.synthesize`, `speech.align` |
+| [fal-media](./packages/fal-media) | `image.generate`, `image.edit`, `video.generate` |
+| [codex-image](./packages/codex-image) | `image.generate`, `image.edit` |
 | [graphics](./packages/graphics) | `graphics.render` |
 | [infographics](./packages/infographics) | `graphics.animate` |
-| [video-composer](./packages/video-composer) | `video.compose`, `media.probe` |
+| [terminal-recorder](./packages/terminal-recorder) | `terminal.record` |
+| [blender](./packages/blender) | `scene.create`, `scene.render` |
+| [video-composer](./packages/video-composer) | `video.compose` (multitrack), `media.probe` |
+
+Three more packages are used by the studio's tools but not yet listed in
+`compose.config.json`: `archive-media` (licensed archive and stock media),
+`audio-edit` (audio recipes) and `elevenlabs` (alignment by ElevenLabs).
 
 ## Studio
 
@@ -56,8 +64,8 @@ synced into the site at build time from where they live next to the code.
 
 ## Decision records
 
-[`adr/`](./adr/0048-tools-written-once-served-to-any-harness) holds 48 accepted
-decisions. The ones that most shape the code:
+[`adr/`](./adr/) holds the decision records. Its index gives each one's
+status: read it first, since some describe code that has since changed. The ones that most shape the code:
 
 | ADR | Decision |
 |---|---|
@@ -83,5 +91,6 @@ decisions. The ones that most shape the code:
 | [0047](./adr/0047-audio-edits-are-recipes) | Audio edits are recipes: cut on words, mixed, mastered, reproducible |
 | [0048](./adr/0048-tools-written-once-served-to-any-harness) | The agent's tools are written once, for Pi, and served to other harnesses over MCP |
 
-ADR-0022 (independent repositories per module) is superseded by 0032.
-ADR-0009 (FFmpeg compiles a typed edit timeline) is superseded by 0034.
+ADR-0022 (independent repositories per module) is superseded by 0032,
+ADR-0009 (FFmpeg compiles a typed edit timeline) by 0034, and ADR-0023 (a
+flat workspace layout) by the workspace contract's layout 2.

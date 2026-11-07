@@ -8,7 +8,7 @@ Code frames, architecture diagrams, flow diagrams, title frames, callouts, compa
 
 ## Why separate from image generation
 
-Generated images are useful for illustrations but unreliable for exact code, labels, diagrams, and localized text. This module gives documentation episodes a precise visual path and gives fairy tales deterministic titles and captions.
+Generated images are useful for illustrations but unreliable for exact code, labels, diagrams, and localized text. This module gives documentation episodes a precise visual path and gives stories deterministic titles and captions.
 
 ## Safety
 
@@ -22,4 +22,4 @@ the distinction between cooperative deadlines and host-enforced isolation.
 
 ## Plan
 
-Run `bd list`, `bd graph`, and `bd show <id>`.
+Work is tracked once, for the whole repository, at its root; this module keeps no plan of its own.

@@ -54,7 +54,7 @@ From the repository root:
 pi -e studio/agent/extensions/index.ts
 ```
 
-That drops you into Pi's TUI with the studio extension loaded: 25 production
+That drops you into Pi's TUI with the studio extension loaded: the production
 tools and the slash commands below. Add a prompt to go straight to work, or
 `-p` for one non-interactive answer:
 
@@ -73,32 +73,53 @@ pi list                       # confirm it is registered
 
 | Command | Purpose |
 |---|---|
-| `/video` | Start or continue an episode |
+| `/video create <channel>/<series>/<episode>` | Create an episode (and its channel and series when missing) |
+| `/video resume <channel>/<series>/<episode>` | Resume production on an episode |
+| `/video status [<path>]` | Production status, for one episode or all |
 | `/vstatus` | Stage status for the current episode |
 | `/ctx` | Show resolved channel / series / episode context |
 | `/skills` | List discovered skills |
 | `/request-approval` | Ask the operator to review a stage waiting at a gate |
-| `/resume` | Resume an interrupted run |
 | `/render` | Render the current timeline |
-| `/create` | Create a channel, series or episode |
-| `/status` | Overall workspace status |
+| `/dashboard` | Show or hide the production dashboard in the TUI |
 
 ### Tools the agent can call
 
-Workspace: `pva_channels`, `pva_series`, `pva_episodes`, `pva_episode_detail`,
-`pva_create_channel`, `pva_create_series`, `pva_create_episode`, `pva_journal`
+Every tool the studio registers, by group. A tool's own description is the
+authority on its parameters.
 
-Pipeline: `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`, `pva_request_approval`,
-`pva_plan_rerun`, `pva_check_staleness`, `pva_budget_status`,
-`pva_capability_status`
-
-Production: `pva_generate_image`, `pva_generate_images` (several at once, drawn
-concurrently), `pva_synthesize_speech`, `pva_register_take`,
-`pva_synthesize_nonverbal_audio`, `pva_synthesize_sound`, `pva_render_graphics`,
-`pva_render_terminal`, `pva_render_vector_animation`, `pva_init_spec`,
-`pva_upgrade_spec`, `pva_propose_reference`,
-`pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`, `pva_compose_video`, `pva_compare_versions`, `pva_compose_multitrack_video`,
-`pva_probe_media`
+- **Health:** `pva_version`, `pva_diagnostics`, `pva_config`, `pva_health`,
+  `pva_rpc_health`, `pva_capability_status`.
+- **Workspace:** `pva_channels`, `pva_series`, `pva_episodes`,
+  `pva_episode_detail`, `pva_create_channel`, `pva_create_series`,
+  `pva_create_episode`, `pva_create_source`, `pva_sources`,
+  `pva_gather_context`.
+- **Skills:** `pva_list_skills`, `pva_load_skill`.
+- **Pipeline:** `pva_snapshot`, `pva_run_pipeline`, `pva_run_stage`,
+  `pva_claim_stage`, `pva_complete_stage`, `pva_request_approval`,
+  `pva_plan_rerun`, `pva_check_staleness`, `pva_budget_status`,
+  `pva_journal`. **These ten reach the execution service through the
+  gateway** (`AVG_GATEWAY_URL`, with `AVG_GATEWAY_TOKEN` or `.gateway-token`):
+  with no gateway running they fail, while every other tool works without one.
+- **Pictures and clips:** `pva_generate_image`, `pva_generate_images`
+  (several at once, drawn concurrently), `pva_generate_wan_video`,
+  `pva_generate_minimax_h3_video`, `pva_generate_flux3_max_video`,
+  `pva_stitch_video_clips`, `pva_render_graphics`, `pva_render_terminal`,
+  `pva_render_vector_animation`, `pva_derive_media`.
+- **Archive and local media:** `pva_search_media`, `pva_fetch_media`,
+  `pva_search_local_media`, `pva_reuse_local_media`, `pva_mapillary`,
+  `pva_poly_haven`, `pva_check_provenance`.
+- **Voice and sound:** `pva_voices`, `pva_synthesize_speech`,
+  `pva_write_narration_manifest`, `pva_register_take`, `pva_align_take`,
+  `pva_verify_take`, `pva_edit_audio`, `pva_analyze_audio`,
+  `pva_synthesize_nonverbal_audio`, `pva_synthesize_sound`.
+- **3D:** `pva_blender_probe`, `pva_blender_create_scene`,
+  `pva_blender_render`.
+- **Series episodes:** `pva_init_spec`, `pva_upgrade_spec`,
+  `pva_check_episode`, `pva_propose_reference`.
+- **Timeline and render:** `pva_build_timeline`, `pva_layout_sheet`,
+  `pva_record_sheet_reading`, `pva_compose_video`, `pva_compare_versions`,
+  `pva_compose_multitrack_video`, `pva_extend_episode`, `pva_probe_media`.
 
 `pva_synthesize_sound` makes a series' sounds at $0, locally: wind, sea, rain,
 fire, steam, birds, thunder, applause, a whoosh, a shimmer, and a music bed (a
@@ -287,8 +308,9 @@ The voice worker can speak with an enrolled clone voice, through the Qwen3-TTS
 - **Sampling:** `temperature` and `repetitionPenalty` can be set on any
   voice. Without them the worker's defaults apply: temperature 0.7, and a
   repetition penalty of 1.5 for a clone or 1.05 for a preset. Values out of
-  range are refused before synthesis. On Novembre the recital read better at
-  1.1, synthesized one stanza at a time with each verse on its own line.
+  range are refused before synthesis. For recited verse, a repetition
+  penalty near 1.1, one stanza at a time with each verse on its own line, is
+  a reasonable first try.
 - **The receipt** names the voice's revision, the reference's hashes, the
   model, the seed, and the sampling when it was set.
 - **A channel's characters** name their voice in `voices/registry.local.json`.
@@ -887,7 +909,7 @@ vpr channel media my-channel --check --episode my-series/ep001 --verify --librar
 ```
 
 Alternatively rebuild excluded derivatives/deliveries, then verify their hashes.
-The test on `ambient-through-time` and acceptance of its existing signed layout
+The test on a real channel and acceptance of its existing signed layout
 sheet by `pva_compose_video` remain an operator-run production check. No transfer
 creates an approval, and approval verification still requires the existing
 shared operator HMAC key (ADR-0045). A render on another machine need not be

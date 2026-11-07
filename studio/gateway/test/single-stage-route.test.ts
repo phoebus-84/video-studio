@@ -882,8 +882,29 @@ describe("the event publisher's stage transitions", () => {
     const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null, pollMs: 60_000 });
     publisher.start({} as unknown as WorkspaceWatcher);
     publisher.stop();
-    // `start` fires one poll immediately and does not hand back its promise.
-    // Let it land before afterEach deletes the library out from under it.
+    // Let anything in flight land before afterEach deletes the library.
     await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+
+  it("polls on its interval only the episodes it was asked about", async () => {
+    // It used to poll one hard-coded episode of a past library on every tick.
+    const { root, dir } = await episodeDir();
+    vi.stubEnv("AVG_LIBRARY_ROOT", root);
+    const { bus, seen } = capture();
+    const publisher = new EventPublisher({ bus, libraryRoot: root, operatorKey: null, pollMs: 20 });
+    publisher.start({} as unknown as WorkspaceWatcher);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(seen).toHaveLength(0);
+
+      await publisher.pollForEpisode(REF);
+      await seedCompleted(dir, "brief");
+      await vi.waitFor(() => {
+        expect(seen.map((e) => e.data.stageId)).toContain("brief");
+      }, { timeout: 2_000, interval: 20 });
+    } finally {
+      publisher.stop();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   });
 });

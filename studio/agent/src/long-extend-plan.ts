@@ -5,8 +5,8 @@
 // which piece plays where, how each one joins the next, and how the hours are
 // cut into chunks that render in parallel and join sample-exact.
 //
-// Ported from the plan that made 03-cahokia-notte's approved 1 h version
-// (assets/audio/music-1h.plan.py): pieces drawn from a shuffled bag, never the
+// Ported from the plan that made the first approved 1 h version
+// (an episode's assets/audio/music-1h.plan.py): pieces drawn from a shuffled bag, never the
 // same twice in a row; whole pieces mostly, sometimes a long section; joined
 // by a 3–6 s crossfade or a 1–3 s gap; each levelled to the same loudness.
 // ---------------------------------------------------------------------------

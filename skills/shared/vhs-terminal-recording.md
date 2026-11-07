@@ -117,15 +117,14 @@ Sleep 2s
 
 ## Visual Identity
 
-The channel's visual identity comes from `<episode-root>/../../vhs-theme.json`
-(channel workspace). The skill includes a default theme for when no channel
-theme is present.
+The channel's visual identity comes from `library/<channel>/vhs-theme.json`.
+The skill includes a neutral default theme for when the channel has none.
 
 ### Default VHS Theme (fallback)
 
 ```json
 {
-  "name": "Dyne",
+  "name": "Studio Dark",
   "black": "#0D0D0D",
   "red": "#D77733",
   "green": "#6B8F5E",

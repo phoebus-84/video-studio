@@ -76,7 +76,7 @@ in place of `series` and `episode`).
 - **Voice for video:** about −16 LUFS integrated, true peak −1 dBTP.
 - **Beds and ambiences:** 15–20 dB under the voice. Effects sit where they
   belong, rarely louder than the voice.
-- **Pauses in verse** (Dentro i versi, UP-60):
+- **Pauses in verse** (a starting point for recited poetry):
   - about 0.8–0.9 s at a verse end or after a comma or colon;
   - about 1.3 s at a stanza end;
   - about 0.5 s across an enjambment.

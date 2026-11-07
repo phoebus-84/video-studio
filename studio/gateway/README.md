@@ -14,4 +14,4 @@ The gateway does not make creative decisions and does not replace the pipeline r
 
 ## Plan
 
-Run `bd list`, `bd graph`, and `bd show <id>`.
+Work is tracked once, for the whole repository, at its root; this module keeps no plan of its own.

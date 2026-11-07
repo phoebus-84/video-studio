@@ -24,4 +24,4 @@ Per ADR-0029: `skills/` here is the single source of truth. `../.pi/skills/` is 
 
 ## Plan
 
-Run `bd list`, `bd graph`, and `bd show <id>` for the detailed plan.
+Work is tracked once, for the whole repository, at its root; this module keeps no plan of its own.
