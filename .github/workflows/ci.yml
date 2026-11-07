@@ -95,8 +95,21 @@ jobs:
         with:
           node-version: "22"
 
+      # FFmpeg 7 or later (ADR-0047: `-/filter_complex` reads a graph from a
+      # file). Ubuntu's package is 6.1, so take a static 9.0 build, the branch
+      # the operator's machine runs, checked against the release's checksums.
       - name: Install media tooling
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick
+        env:
+          FFMPEG_BUILD: ffmpeg-n9.0-latest-linux64-gpl-9.0
+        run: |
+          sudo apt-get update && sudo apt-get install -y imagemagick
+          base=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/$FFMPEG_BUILD.tar.xz"
+          curl -fsSL "$base/checksums.sha256" | grep " $FFMPEG_BUILD.tar.xz\$" | sha256sum -c -
+          tar -xf "$FFMPEG_BUILD.tar.xz"
+          echo "$RUNNER_TEMP/$FFMPEG_BUILD/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/$FFMPEG_BUILD/bin/ffmpeg" -hide_banner -version | head -1
 
       - run: bun install --frozen-lockfile
 

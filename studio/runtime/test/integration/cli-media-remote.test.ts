@@ -138,7 +138,9 @@ describe("S3 conditional and multipart writes", { timeout: 30_000 }, () => {
     const store = s3MediaStore({ bucket: "media", endpoint: remote.endpoint, region: "auto" });
     try {
       expect(await store.put("large", file, entry)).toBe(true);
-      expect(remote.objects.get("large")).toEqual(data);
+      // Buffer.equals, not toEqual: a deep equality walks 9 MiB byte by byte, and
+      // on a CI runner that alone took the heap past its limit.
+      expect(remote.objects.get("large")?.equals(data)).toBe(true);
       expect(remote.requests.filter((r) => r.method === "PUT" && r.query.includes("partNumber"))).toHaveLength(2);
       expect(remote.requests.find((r) => r.method === "POST" && r.query.includes("uploadId"))?.headers["if-none-match"]).toBe("*");
       expect(await store.put("large", file, entry)).toBe(false);
