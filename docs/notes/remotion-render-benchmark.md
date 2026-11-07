@@ -80,7 +80,7 @@ not inferred from a PC result:
 - FFmpeg 9.0.1, Remotion 4.0.505, native mac-arm64 Chrome Headless Shell;
 - 20 seconds, 600 frames, 1920×1080, **four tabs total** in both picture
   configurations; one browser of four versus two browsers of two;
-- the first 20 seconds of the `museo-autore-stage@1.0.0` timeline, with
+- the first 20 seconds of a series template's stage timeline (kit version 1.0.0), with
   **synthetic media substituted in a temporary copy**: a 3840×2160 test
   picture and a 30-second 48 kHz tone. The episode's original media are not
   present on this machine, so this is a real kit with surrogate media,

@@ -33,7 +33,7 @@ series/
 series:
   id: once-upon-a-time
   name: "Once Upon a Time"
-  description: "Fairy tales adapted for children ages 6-9"
+  description: "Folk stories retold for children ages 6-9"
   pipelines:
     - pipeline: fairy-tale
       version: "1.0.0"
