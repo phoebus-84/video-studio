@@ -67,7 +67,7 @@ export function hasOperatorKey(storage: Pick<Storage, "getItem"> = localStorage)
 export function getGatewayClient(): GatewayClient {
   if (!_client) {
     const baseUrl = localStorage.getItem("vs-gateway-url") ?? "http://127.0.0.1:5198";
-    const token = credentialFor(localStorage, __GATEWAY_TOKEN__);
+    const token = credentialFor(localStorage, import.meta.env.VITE_GATEWAY_TOKEN ?? "");
     _client = new GatewayClient({
       baseUrl,
       tokenProvider: () => token,
