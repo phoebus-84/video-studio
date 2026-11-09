@@ -1,12 +1,14 @@
 # Documentation
 
-Everything is here, in one place.
+Technical documentation for the Video Studio application. The product website,
+recipes and selected films are maintained separately in `video-studio-site`.
 
 ## Start
 
 | Document | What it answers |
 |---|---|
 | [Install and composition](./install) | How do I install this, and choose which pieces are wired? |
+| [Channel Git and media storage](./workspace#git-and-storage) | How do we version a channel, share media and continue work on another machine? |
 | [Running the agent](./running) | How do I actually run it? |
 | [Repository layout](./repository-layout) | Why is the tree split into `packages/` and `studio/`, and where does my code go? |
 | [Contributing](./contributing) | How do I add a package, capability, skill or pipeline? |
@@ -90,6 +92,7 @@ status: read it first, since some describe code that has since changed. The ones
 | [0046](./adr/0046-archive-media-carry-licence-and-evidence) | Archive media carry their licence and its evidence |
 | [0047](./adr/0047-audio-edits-are-recipes) | Audio edits are recipes: cut on words, mixed, mastered, reproducible |
 | [0048](./adr/0048-tools-written-once-served-to-any-harness) | The agent's tools are written once, for Pi, and served to other harnesses over MCP |
+| [0049](./adr/0049-channel-media-use-a-content-addressed-s3-remote) | Channel media use a content-addressed S3-compatible remote |
 
 ADR-0022 (independent repositories per module) is superseded by 0032,
 ADR-0009 (FFmpeg compiles a typed edit timeline) by 0034, and ADR-0023 (a

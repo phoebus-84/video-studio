@@ -61,8 +61,10 @@ npm run compose -- --profile=full # wire the pieces you want
 npm run doctor                    # check this machine can run them
 ```
 
-That is the whole install. See [`docs/install.md`](docs/install.md) for
-profiles, system requirements, and credentials.
+This installs and wires the workspace, not every external tool or provider.
+See [`docs/install.md`](docs/install.md) for profiles, requirements and
+credentials. `npm run demo:render` runs a small asset-free render once the
+workspace and FFmpeg are ready.
 
 Then [run the agent](docs/running.md):
 
@@ -72,14 +74,22 @@ pi -e studio/agent/extensions/index.ts   # Pi
 claude                                   # or Claude Code, from the repository root
 ```
 
+The browser UI is optional; the agent's pipeline tools still need a running
+gateway for stage tracking, approval requests and budget status. See the
+[running guide](docs/running.md).
+
 You do not have to take all of it. `npm run compose -- --list` shows the
 profiles; `--profile=voice` gives you just the voice tool, `--profile=render`
 just the rendering packages.
 
 ## Documentation
 
-Everything is under [`docs/`](docs/index.md) — one place, one index. It is a
-VitePress site:
+The product website, recipes and selected films live in the independent
+`video-studio-site` Git project. Its build does not depend on this workspace;
+it imports an explicit snapshot of the technical reference when requested.
+
+The application documentation remains under [`docs/`](docs/index.md), with its
+own lightweight VitePress reference site:
 
 ```bash
 npm run docs:dev     # http://localhost:5173
@@ -88,6 +98,7 @@ npm run docs:build   # also fails on any dead internal link
 
 - [Install and composition](docs/install.md)
 - [Running the agent](docs/running.md)
+- [Channel Git and media storage](docs/workspace.md#git-and-storage) — version text and restore media by hash
 - [Architecture](docs/architecture.md)
 - [Domain language](docs/context.md)
 - [Workspace layout](docs/workspace.md)

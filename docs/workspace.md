@@ -111,8 +111,8 @@ file.
 ## File ownership
 
 - Markdown with YAML frontmatter: human and agent editorial content.
-- YAML: declarative configuration, scenes, and timeline.
-- JSON: typed editorial episode specs and template data, generated manifests, reports, and current pointers.
+- YAML: declarative configuration, pipeline manifests and scene descriptions.
+- JSON: typed episode specs, layered edit timelines, template data, generated manifests, reports and current pointers.
 - JSONL: append-only events and review history.
 - Media: immutable attempt files named with stable IDs, never `final-final-2`.
 

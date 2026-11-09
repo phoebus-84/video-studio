@@ -1,9 +1,9 @@
 # Architecture
 
-> This describes the target architecture. Some active CLI/gateway paths do not
-> yet enforce its execution, approval and review guarantees. See the
-> [source-level harness review](harness-review.md) before relying on unattended
-> production.
+This page describes the current responsibilities and boundaries. It is not a
+promise of unattended, one-prompt production. See the
+[harness review](harness-review.md) for implementation gaps and the
+[running guide](running.md) for prerequisites.
 
 ## Product boundary
 
@@ -29,7 +29,10 @@ chooses explicit provider bindings, calls production tools, reviews results,
 and reacts to feedback. Both harnesses get the same tools, written once in
 `studio/agent/src/`.
 
-The **Pipeline Runtime** is deterministic. It resolves manifests, freezes snapshots, validates artifacts, leases stages, enforces policies, records attempts and events, computes staleness, and resumes interrupted runs. It never writes creative prose or silently selects a provider.
+**The execution service**, in `studio/runtime`, tracks pipeline snapshots,
+leases, attempts, dependencies, staleness, reviews and the spend ledger. The CLI
+and gateway use that service. It does not write prose or silently choose a
+creative provider.
 
 The **Agent Gateway** owns the agent sessions the browser talks to: Pi RPC processes or Claude Agent SDK sessions (`AVG_AGENT_BACKEND`). Browser clients connect to the gateway, not to the agent's stdin/stdout. The gateway associates sessions with episodes, maps comments to `prompt`, `steer`, or `follow_up`, handles extension UI requests, and streams both agent and production events. It never produces an artifact (ADR-0027).
 
@@ -52,7 +55,7 @@ Stages request provider-neutral capabilities (`studio/contracts/src/vocabulary.m
 Archive and stock media (`@av/archive-media`) and audio edits (`@av/audio-edit`)
 are tools rather than stage capabilities.
 
-## End-to-end flow
+## From sources to a candidate
 
 ```text
 Terminal prompt or GUI action
@@ -70,39 +73,59 @@ Terminal prompt or GUI action
   -> the render audit determines Current Deliverable
 ```
 
-## Reliability model
+The service can execute stages with a registered adapter. Other stages need
+agent work through claim/complete, not an invented automatic handler.
+`pva_init_spec`, `pva_build_timeline`, `pva_check_episode`, `pva_layout_sheet`
+and `pva_compose_video` already consume the series-release contracts; series
+compilation is not a future placeholder.
 
-- Every episode stores an immutable resolved pipeline snapshot.
-- Editorial artifacts are revisioned and written atomically.
-- Generated assets and stage executions are immutable attempts.
-- An append-only JSONL journal records lifecycle events.
-- Derivatives record source revisions; edits mark only affected outputs stale.
-- Stage leases prevent Pi and GUI actions from racing on canonical writes.
-- Provider request IDs are persisted before polling so jobs survive restarts.
-- A deliverable is current only if dependencies are current or explicitly accepted.
+## What reviews and audits mean
 
-## Autonomy
+- A human review gate requires an authenticated operator decision. The agent
+  requests review; it cannot approve through the agent API.
+- A stage gate holds completion/advancement. It is **not a blanket lock on all
+  media tools** or on arbitrary shell/API calls.
+- Spec-driven renders check the current layout sheet against the timeline and
+  its review policy. Source changes can invalidate earlier reviews.
+- The render audit checks the file against its expected streams, dimensions,
+  duration, decoding and applicable audio/loop requirements. A failed render
+  retains a report rather than silently becoming the current deliverable.
+- A current-render pointer and a technically passing file do **not** establish
+  editorial acceptance, publication permission or quality at every frame.
+- Supported paid tools use budget reservations and spend records. Calls outside
+  those tools can bypass the ledger. Policy names such as `autopilot` are not
+  a universal billing or safety boundary.
 
-Approval policies are `autopilot`, `guided`, and `manual`. Autopilot is the normal one-prompt route, but stops for budget overflow, paid actions above policy, material downgrades, unavailable required capabilities, validation failures, conflicting edits, and policy or licensing blockers.
+Review the actual film and audio. See [revision checks](running.md#comparing-two-versions)
+and the [harness review](harness-review.md) for the limits of sampled evidence,
+same-user access and execution guarantees.
 
-## Source safety
+## Files, history and collaboration
 
-Repository input is pinned to an exact commit and treated as untrusted. The documentation pipeline reads source without running hooks, package installation, builds, examples, or repository binaries. Executing examples is a later opt-in sandbox capability, not an MVP default.
+The library stores channels, series and episodes as files. The application
+ships no channel's creative format. Series releases pin their compiler,
+validator, theme and kits; generated attempts and earlier deliveries should be
+preserved rather than overwritten.
 
-## Quality gates
+A channel can be its own Git repository. Text files and production records are
+versioned there; `media.lock.jsonl` identifies media by path, hash and size (or a
+relative symlink target). An optional S3-compatible remote stores media bytes
+by content hash. Cloning the repository and restoring verified media is a
+handoff, not real-time co-editing or a distributed production lock.
 
-Before an MP4 becomes current, the system verifies:
+See [channel media transfer](running.md#channel-media-backup-and-restore) for the actual commands, access controls
+and operator-key requirements, and [workspace](workspace.md) for the file
+contracts. Packages never depend on studio concepts; the one-way code boundary
+is enforced by `npm run check:boundaries`.
 
-- pipeline and artifact schema validity;
-- no unresolved stale dependency unless explicitly accepted;
-- expected duration, resolution, codecs, frame rate, and pixel format;
-- sampled frames are decodable and not blank;
-- narration is present and segment durations agree with the timeline;
-- integrated loudness, true peak, and clipping are within the output profile;
-- captions exist and fit within safe areas;
-- all selected assets have provenance and production roles;
-- spend reconciles against the episode budget.
+## Source safety and historical decisions
 
-## Lessons retained from OpenMontage
+Repository inputs should be pinned and treated as untrusted material. Research
+is not permission to run source hooks, installation scripts or examples; any
+execution needs an explicit, appropriate trust policy.
 
-The design keeps OpenMontage's strongest ideas: agent-first creative direction, YAML pipeline manifests, Markdown director skills, schema-valid artifacts, explicit gates, immutable attempts, provenance, budget controls, and a filesystem-derived living storyboard. It intentionally narrows the capability surface and adds a deterministic state runtime because direct editing, RPC feedback, and selective re-execution require stronger concurrency and staleness semantics.
+Decision records preserve why the design changed. Older records may describe
+YAML timelines, a flat workspace or FFmpeg as the episode renderer; they are
+not all current contracts. Follow later decisions and check their status where
+provided. Current schemas, registrations and implementation take precedence
+over an old plan or an illustrative library project.
