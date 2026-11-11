@@ -49,7 +49,7 @@ def probe_ffmpeg() -> DepProbe:
         return DepProbe(
             name="ffmpeg",
             status=DepStatus.MISSING,
-            detail="ffmpeg not found on PATH. Install via: brew install ffmpeg",
+            detail="ffmpeg not found on PATH. Install FFmpeg for your OS and add its bin directory to PATH",
         )
 
     try:
@@ -117,20 +117,30 @@ def probe_mlx_audio() -> DepProbe:
 # ---------------------------------------------------------------------------
 
 
+def probe_torch() -> DepProbe:
+    try:
+        from qwen_tts_worker.backends import resolve_runtime
+        plan = resolve_runtime()
+        if plan.engine_version == "not-installed":
+            return DepProbe("qwen-torch", DepStatus.MISSING, detail="Install qwen-tts-worker[torch]")
+        return DepProbe("qwen-torch", DepStatus.OK, version=plan.engine_version,
+                        detail=f"PyTorch {plan.runtime_version}, {plan.device}, {plan.dtype}, {plan.attention}; no model loaded")
+    except Exception as exc:
+        return DepProbe("qwen-torch", DepStatus.ERROR, detail=str(exc))
+
+
 def probe_all() -> tuple[DepProbe, ...]:
     """Run all external dependency probes and return results.
 
     Each probe is self-contained — a failure in one does not prevent
     the others from running.
     """
-    # Map of probe function → canonical name for error labelling.
-    _PROBE_NAMES: dict = {
-        probe_ffmpeg: "ffmpeg",
-        probe_mlx_audio: "mlx-audio",
-    }
+    from qwen_tts_worker.backends import backend_name
+    engine_probe = probe_mlx_audio if backend_name() == "mlx" else probe_torch
+    _PROBE_NAMES = {probe_ffmpeg: "ffmpeg", engine_probe: "inference-runtime"}
 
     results: list[DepProbe] = []
-    for probe_fn in (probe_ffmpeg, probe_mlx_audio):
+    for probe_fn in (probe_ffmpeg, engine_probe):
         try:
             results.append(probe_fn())
         except Exception as exc:

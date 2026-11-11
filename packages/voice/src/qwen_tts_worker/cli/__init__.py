@@ -73,7 +73,7 @@ def download_model(
         from huggingface_hub import snapshot_download  # type: ignore[import-untyped]
     except ImportError as exc:
         raise DownloadError(
-            "huggingface_hub is required. Install qwen-tts-worker with its 'mlx' extra."
+            "huggingface_hub is required. Install qwen-tts-worker with its selected 'mlx' or 'torch' extra."
         ) from exc
     temporary = Path(tempfile.mkdtemp(prefix=f".{spec.directory_name}.", dir=models_root))
     try:
@@ -185,7 +185,7 @@ def _human_bytes(value: int) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Install a pinned Qwen3-TTS MLX checkpoint.")
+    parser = argparse.ArgumentParser(description="Install a pinned Qwen3-TTS checkpoint for QTW_BACKEND.")
     parser.add_argument("size", choices=sorted({spec.size for spec in MODEL_SPECS}))
     parser.add_argument("--profile", choices=sorted({spec.profile for spec in MODEL_SPECS}), default="custom_voice")
     parser.add_argument("--models-dir", type=Path)

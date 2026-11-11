@@ -146,7 +146,8 @@ class TestSettingsDirectoryCreation:
         Settings()
         assert d.exists()
         assert d.is_dir()
-        assert d.stat().st_mode & 0o777 == 0o700
+        if os.name == "posix":  # Windows privacy is an ACL property, not chmod bits.
+            assert d.stat().st_mode & 0o777 == 0o700
 
     def test_outputs_dir_created(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         d = tmp_path / "test_outputs"
@@ -155,4 +156,5 @@ class TestSettingsDirectoryCreation:
         Settings()
         assert d.exists()
         assert d.is_dir()
-        assert d.stat().st_mode & 0o777 == 0o700
+        if os.name == "posix":  # Keep the POSIX guarantee without asserting fictitious Windows ACLs.
+            assert d.stat().st_mode & 0o777 == 0o700

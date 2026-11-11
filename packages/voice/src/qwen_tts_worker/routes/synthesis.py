@@ -27,6 +27,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from qwen_tts_worker.model_lifecycle import model_lifecycle
+from qwen_tts_worker.backends import serialized_generation
 
 
 router = APIRouter()
@@ -130,6 +131,7 @@ class SynthesisResult(BaseModel):
     created_at: str
     completed_at: str | None = None
     error: str | None = None
+    runtime: dict | None = None
 
 
 class SynthesizeResponse(BaseModel):
@@ -357,11 +359,12 @@ def validate_live_wav(data: bytes) -> WavInfo:
 
 def _load_generate_audio():
     """Import the optional MLX entry point only when live synthesis begins."""
-    from mlx_audio.tts.generate import generate_audio
+    from qwen_tts_worker.backends import generate_audio
 
     return generate_audio
 
 
+@serialized_generation
 def synthesize_with_qwen(
     request: SynthesizeRequest,
     model: CustomVoiceModel,
@@ -370,13 +373,18 @@ def synthesize_with_qwen(
 ) -> tuple[bytes, WavInfo]:
     """Map validated request controls exactly to mlx-audio 0.4.6."""
 
+    from qwen_tts_worker.backends import TorchModel
+
     generate_audio = _load_generate_audio()
-    _seed_mlx(request.seed)
+    portable = isinstance(backend_model, TorchModel)
+    if not portable:
+        _seed_mlx(request.seed)
     temporary_dir = Path(tempfile.mkdtemp(prefix="qwen-tts-"))
     try:
         generate_audio(
             text=request.text,
             model=backend_model,
+            **({'seed': request.seed} if portable else {}),
             voice=speaker,
             instruct=request.instruct,
             speed=1.0,
@@ -446,8 +454,10 @@ def _model_path() -> Path:
         return Path(configured).expanduser()
     models_dir = os.environ.get("QTW_MODELS_DIR")
     if models_dir:
-        return Path(models_dir).expanduser() / DEFAULT_CUSTOMVOICE_MODEL.name
-    return DEFAULT_CUSTOMVOICE_MODEL
+        from qwen_tts_worker.models.catalog import get_model_spec
+        return get_model_spec("1.7B", "custom_voice").path_under(Path(models_dir).expanduser())
+    from qwen_tts_worker.models.catalog import get_model_spec
+    return get_model_spec("1.7B", "custom_voice").path_under(DEFAULT_CUSTOMVOICE_MODEL.parent)
 
 
 @router.post(
@@ -511,6 +521,8 @@ async def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
                         time.monotonic() - generation_started
                     )
                 model_identity = loaded.identity_sha256
+                from qwen_tts_worker.backends import loaded_runtime
+                result.runtime = loaded_runtime(loaded.instance)
 
         voices_root = Path(
             os.environ.get(

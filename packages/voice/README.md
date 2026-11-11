@@ -1,18 +1,20 @@
 # qwen-tts-worker
 
-Persistent local Qwen3-TTS service optimized for Apple Silicon through MLX.
+Persistent local Qwen3-TTS service: MLX/Metal on Apple Silicon, or official Qwen/PyTorch on CPU, CUDA and ROCm. Backend-specific checkpoints, one shared API and warm-model lifecycle.
+
+For Linux, Windows, Intel Mac or non-Metal GPU execution, see **[Portable backends](docs/backends.md)**. It includes installation, tuning, readiness, tested scope and the GGUF assessment.
 
 ## Owns
 
 Model discovery/download state, load and unload lifecycle, one reusable model cache, voice profiles, synthesis job queue, progress, cancellation, segment outputs, health/resource diagnostics, and canonical WAV metadata.
 
-It also aligns: `POST /align` returns when each word of a known text is said in an audio file, with Qwen3-ForcedAligner (`QTW_ALIGN_MODEL`, default `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`, downloaded and loaded on first use). See [the API contract](docs/API.md#forced-alignment).
+With the MLX backend it also aligns: `POST /align` returns when each word of a known text is said in an audio file, with Qwen3-ForcedAligner (`QTW_ALIGN_MODEL`, default `mlx-community/Qwen3-ForcedAligner-0.6B-8bit`, downloaded and loaded on first use). See [the API contract](docs/API.md#forced-alignment).
 
 ## Design correction over the prototype
 
 The worker does not spawn and reload Python for every Pi tool call. A typed local API keeps models warm and makes narration jobs resumable and observable. Audio transcoding and final mixing remain FFmpeg composer responsibilities.
 
-## Quick start
+## Apple Silicon quick start
 
 ```bash
 python3.12 -m venv .venv
@@ -42,6 +44,7 @@ QTW_ALIGN_LIVE=1 pytest tests/test_alignment.py   # also a real alignment (macOS
 
 ## Documentation
 
+- [Portable backends](docs/backends.md) — CPU/CUDA/ROCm/MLX selection, tuning, provenance and limitations
 - [API Contract](docs/API.md) — public HTTP API reference
 - [Operator Guide](docs/OPERATOR.md) — deployment, configuration, monitoring
 - [macOS CLI](docs/MACOS-CLI.md) — installation, LaunchAgent lifecycle, diagnostics, synthesis, and recovery

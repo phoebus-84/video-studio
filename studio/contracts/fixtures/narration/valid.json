@@ -11,7 +11,7 @@
     "requestFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "phase": "completed",
     "profile": {
       "schemaVersion": "0.1.0", "profileId": "narrator-v1", "profileRevision": "1",
-      "model": {"modelId": "qwen-customvoice", "modelProfile": "custom_voice", "modelHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "quantization": "8bit", "mlxAudioVersion": "0.4.6", "mlxVersion": "0.32.0"},
+      "model": {"modelId": "qwen-customvoice", "modelProfile": "custom_voice", "modelHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "quantization": "none", "mlxAudioVersion": "not-applicable", "mlxVersion": "not-applicable", "runtime": {"backend": "torch", "device": "cpu", "dtype": "float32", "attention": "sdpa", "cpuThreads": 2, "runtimeVersion": "2.15.0", "engineVersion": "0.1.1"}},
       "speaker": "serena", "language": "english", "sampleRate": 24000, "channels": 1, "sampleWidthBytes": 2,
       "sampling": {"temperature": 0.7, "topK": 50, "topP": 1, "repetitionPenalty": 1.05, "maxTokens": 1200, "seed": 42}
     },

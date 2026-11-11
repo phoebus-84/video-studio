@@ -109,11 +109,16 @@ def _doctor(args: argparse.Namespace) -> int:
     models_dir = args.models_dir.expanduser().resolve()
     checks: list[dict[str, Any]] = []
     def add(name: str, ok: bool, detail: str) -> None: checks.append({"name": name, "ok": ok, "detail": detail})
-    add("macOS", platform.system() == "Darwin", platform.platform())
-    machine = platform.machine().lower(); add("Apple Silicon", machine in {"arm64", "aarch64"}, machine)
+    from qwen_tts_worker.backends import backend_name, resolve_runtime
+    backend = backend_name()
+    add("platform", True, platform.platform())
+    try:
+        add("inference runtime", True, json.dumps(resolve_runtime().as_dict(), sort_keys=True))
+    except (RuntimeError, ValueError, ImportError) as exc:
+        add("inference runtime", False, str(exc))
     add("Python", sys.version_info >= (3, 10), platform.python_version())
     add("FFmpeg", shutil.which("ffmpeg") is not None, shutil.which("ffmpeg") or "not found")
-    for module in ("mlx", "mlx_audio", "huggingface_hub"):
+    for module in (("mlx", "mlx_audio", "huggingface_hub") if backend == "mlx" else ("torch", "qwen_tts", "huggingface_hub")):
         add(f"module:{module}", importlib.util.find_spec(module) is not None, "available" if importlib.util.find_spec(module) else "missing")
     free = shutil.disk_usage(models_dir.parent if models_dir.parent.exists() else Path.home()).free
     add("free disk", free >= 5_000_000_000, f"{free / 2**30:.1f} GiB")
@@ -136,11 +141,13 @@ def _doctor(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="qwen-tts", description="Local Qwen3-TTS control tool for macOS")
+    parser = argparse.ArgumentParser(prog="qwen-tts", description="Local Qwen3-TTS control tool for MLX, CPU, CUDA and ROCm")
+    parser.add_argument("--backend", choices=("auto", "mlx", "torch"), default=None)
+    parser.add_argument("--device", default=None, help="auto, cpu, cuda, or cuda:N; ROCm uses cuda:N")
     parser.add_argument("--url", default=os.environ.get("QTW_URL", "http://127.0.0.1:8000"))
     sub = parser.add_subparsers(dest="command", required=True)
 
-    install = sub.add_parser("install", help="install one pinned MLX checkpoint")
+    install = sub.add_parser("install", help="install one pinned checkpoint for the selected backend")
     install.add_argument("size", choices=sorted({item.size for item in MODEL_SPECS}))
     install.add_argument("--profile", choices=sorted({item.profile for item in MODEL_SPECS}), default="custom_voice")
     install.add_argument("--models-dir", type=Path, default=_default_models_dir())
@@ -177,6 +184,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
+    if getattr(args, "backend", None) is not None:
+        os.environ["QTW_BACKEND"] = args.backend
+    if getattr(args, "device", None) is not None:
+        os.environ["QTW_DEVICE"] = args.device
     if args.command == "install":
         print(download_model(args.models_dir, args.size, profile=args.profile, replace=args.replace)); return 0
     if args.command == "doctor": return _doctor(args)

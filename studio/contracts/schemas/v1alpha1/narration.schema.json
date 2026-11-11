@@ -64,6 +64,19 @@
         "pauseAfterMs": {"type": "integer", "minimum": 0, "maximum": 10000}
       }
     },
+    "RuntimeIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backend", "device", "dtype", "attention", "cpuThreads", "runtimeVersion", "engineVersion"],
+      "properties": {
+        "backend": {"enum": ["mlx", "torch"]},
+        "device": {"type": "string", "minLength": 1, "maxLength": 64},
+        "dtype": {"type": "string", "minLength": 1, "maxLength": 64},
+        "attention": {"type": "string", "minLength": 1, "maxLength": 64},
+        "cpuThreads": {"type": ["integer", "null"], "minimum": 1, "maximum": 1024},
+        "runtimeVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "engineVersion": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
     "ModelIdentity": {
       "type": "object", "additionalProperties": false,
       "required": ["modelId", "modelProfile", "modelHash", "quantization", "mlxAudioVersion", "mlxVersion"],
@@ -73,7 +86,8 @@
         "modelHash": {"$ref": "identity.schema.json#/$defs/ContentHash"},
         "quantization": {"type": "string", "minLength": 1, "maxLength": 64},
         "mlxAudioVersion": {"type": "string", "minLength": 1, "maxLength": 64},
-        "mlxVersion": {"type": "string", "minLength": 1, "maxLength": 64}
+        "mlxVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "runtime": {"$ref": "#/$defs/RuntimeIdentity"}
       }
     },
     "SamplingProfile": {

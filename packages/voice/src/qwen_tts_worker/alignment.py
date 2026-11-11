@@ -58,6 +58,9 @@ def audio_seconds(audio_path: str) -> float:
 
 
 def _default_loader(repo: str) -> Any:
+    from qwen_tts_worker.backends import backend_name
+    if backend_name() != "mlx":
+        raise RuntimeError("Forced alignment is currently MLX-only; portable TTS does not imply portable alignment")
     from mlx_audio.stt.utils import load_model
 
     return load_model(repo)

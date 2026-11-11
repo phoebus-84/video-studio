@@ -1,4 +1,4 @@
-"""Thread-safe single-model lifecycle for the local MLX TTS runtime."""
+"""Thread-safe single-model lifecycle for local inference runtimes."""
 
 from __future__ import annotations
 
@@ -49,6 +49,7 @@ class LifecycleSnapshot:
     loaded_at_monotonic: float | None
     last_used_monotonic: float | None
     last_error: str | None
+    runtime: dict[str, Any] | None
 
 
 Loader = Callable[[str], Any]
@@ -57,12 +58,17 @@ StatusSetter = Callable[[ModelStatus], None]
 
 
 def _default_loader(path: str) -> Any:
-    from mlx_audio.tts.utils import load_model
+    from qwen_tts_worker.backends import load_model
 
-    return load_model(model_path=path)
+    return load_model(path)
 
 
 def _default_unloader(model: Any) -> None:
+    from qwen_tts_worker.backends import TorchModel
+
+    if isinstance(model, TorchModel):
+        model.close()
+        return
     del model
     gc.collect()
     try:
@@ -99,8 +105,10 @@ class ModelLifecycleManager:
         loader: Loader = _default_loader,
         unloader: Unloader = _default_unloader,
         status_setter: StatusSetter = lambda status: None,
+        identity_context: Callable[[], str] = lambda: '',
     ) -> None:
         self._loader = loader
+        self._identity_context = identity_context
         self._unloader = unloader
         self._status_setter = status_setter
         self._condition = threading.Condition(threading.RLock())
@@ -108,7 +116,7 @@ class ModelLifecycleManager:
         self._model: Any = None
         self._path: Path | None = None
         self._identity: str | None = None
-        self._identity_cache: dict[tuple[str, int, int, int, int], str] = {}
+        self._identity_cache: dict[tuple[Any, ...], str] = {}
         self._active = 0
         self._load_attempts = 0
         self._loads = 0
@@ -124,23 +132,22 @@ class ModelLifecycleManager:
     def _model_identity(self, path: Path) -> str:
         config = path / "config.json"
         weights = path / "model.safetensors"
-        config_stat = config.stat()
-        weights_stat = weights.stat()
-        key = (
-            str(path),
-            config_stat.st_size,
-            config_stat.st_mtime_ns,
-            weights_stat.st_size,
-            weights_stat.st_mtime_ns,
-        )
+        files = [config, weights]
+        files.extend(file for name in ("generation_config.json", "tokenizer_config.json", "merges.txt", "vocab.json",
+                                       "speech_tokenizer/config.json", "speech_tokenizer/model.safetensors")
+                     if (file := path / name).is_file())
+        context = self._identity_context()
+        key = (str(path), context, *((str(file.relative_to(path)), file.stat().st_size, file.stat().st_mtime_ns)
+                                    for file in files))
         cached = self._identity_cache.get(key)
         if cached:
             return cached
         digest = hashlib.sha256()
-        digest.update(b"qwen-model-identity-v1\0")
-        digest.update(_hash_file(config).encode())
-        digest.update(b"\0")
-        digest.update(_hash_file(weights).encode())
+        digest.update(b"qwen-model-identity-v2\0")
+        digest.update(context.encode())
+        for file in files:
+            digest.update(b"\0" + str(file.relative_to(path)).encode() + b"\0")
+            digest.update(_hash_file(file).encode())
         identity = digest.hexdigest()
         self._identity_cache = {key: identity}
         return identity
@@ -279,7 +286,19 @@ class ModelLifecycleManager:
         return self.unload(wait=False)
 
     def snapshot(self) -> LifecycleSnapshot:
-        active_memory, peak_memory = _memory()
+        from qwen_tts_worker.backends import TorchModel
+
+        model = self._model
+        runtime = model.plan.as_dict() if isinstance(model, TorchModel) else None
+        if isinstance(model, TorchModel):
+            torch = model.torch
+            if model.plan.device.startswith('cuda:'):
+                active_memory = int(torch.cuda.memory_allocated(model.plan.device))
+                peak_memory = int(torch.cuda.max_memory_allocated(model.plan.device))
+            else:
+                active_memory, peak_memory = None, None
+        else:
+            active_memory, peak_memory = _memory()
         with self._condition:
             return LifecycleSnapshot(
                 state=self._state,
@@ -298,7 +317,10 @@ class ModelLifecycleManager:
                 loaded_at_monotonic=self._loaded_at,
                 last_used_monotonic=self._last_used,
                 last_error=self._last_error,
+                runtime=runtime,
             )
 
 
-model_lifecycle = ModelLifecycleManager(status_setter=set_model_status)
+from qwen_tts_worker.backends import runtime_key
+
+model_lifecycle = ModelLifecycleManager(status_setter=set_model_status, identity_context=runtime_key)

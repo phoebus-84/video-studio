@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -26,11 +27,12 @@ class ModelSpec:
     revision: str
     expected_disk_bytes: int
     verified_files: tuple[VerifiedFile, ...]
+    backend: Literal["mlx", "torch"] = "mlx"
 
     @property
     def directory_name(self) -> str:
         profile_slug = {"custom_voice": "customvoice", "voice_design": "voicedesign", "base": "base"}[self.profile]
-        return f"qwen3-tts-{self.size.casefold()}-{profile_slug}-8bit"
+        return f"qwen3-tts-{self.size.casefold()}-{profile_slug}-{'8bit' if self.backend == 'mlx' else 'torch'}"
 
     def path_under(self, root: Path) -> Path:
         return root / self.directory_name
@@ -101,8 +103,20 @@ MODEL_SPECS: tuple[ModelSpec, ...] = (
 )
 
 
-def get_model_spec(size: str, profile: str) -> ModelSpec:
-    for spec in MODEL_SPECS:
+TORCH_MODEL_SPECS: tuple[ModelSpec, ...] = tuple(
+    ModelSpec(**{**item, "verified_files": tuple(VerifiedFile(**file) for file in item["verified_files"])}, backend="torch")
+    for item in json.loads(Path(__file__).with_name("torch-catalog.json").read_text(encoding="utf-8"))
+)
+
+
+def model_specs(backend: str | None = None) -> tuple[ModelSpec, ...]:
+    from qwen_tts_worker.backends import backend_name
+
+    return MODEL_SPECS if backend_name(backend) == "mlx" else TORCH_MODEL_SPECS
+
+
+def get_model_spec(size: str, profile: str, *, backend: str | None = None) -> ModelSpec:
+    for spec in model_specs(backend):
         if spec.size == size and spec.profile == profile:
             return spec
     available = ", ".join(f"{item.size}/{item.profile}" for item in MODEL_SPECS)

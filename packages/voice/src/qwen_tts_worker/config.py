@@ -67,6 +67,12 @@ class Settings(BaseSettings):
         description="Synthesis provider mode. 'fake' is an explicit CI-only mode; live failures never fall back to it.",
     )
 
+    backend: Literal["auto", "mlx", "torch"] = "auto"
+    device: str = "auto"
+    dtype: Literal["auto", "float32", "float16", "bfloat16"] = "auto"
+    attention: Literal["sdpa", "eager", "flash_attention_2"] = "sdpa"
+    cpu_threads: int | None = Field(default=None, ge=1, le=1024)
+
     align_model: str = Field(
         default="mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
         description="Forced-alignment model for POST /align (avg-8hs.2), loaded on first use.",
@@ -87,7 +93,7 @@ class Settings(BaseSettings):
 
     workers: Literal[1] = Field(
         default=1,
-        description="Exactly one process owns the warm MLX lifecycle.",
+        description="Exactly one process owns the warm inference lifecycle.",
     )
 
     max_concurrent_attempt_jobs: int = Field(
