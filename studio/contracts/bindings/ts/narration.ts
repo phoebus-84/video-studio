@@ -54,6 +54,16 @@ export interface NarrationSegment {
   pauseAfterMs: number;
 }
 
+export interface RuntimeIdentity {
+  backend: "mlx" | "torch";
+  device: string;
+  dtype: string;
+  attention: string;
+  cpuThreads: number | null;
+  runtimeVersion: string;
+  engineVersion: string;
+}
+
 export interface ModelIdentity {
   modelId: string;
   modelProfile: "custom_voice";
@@ -61,6 +71,7 @@ export interface ModelIdentity {
   quantization: string;
   mlxAudioVersion: string;
   mlxVersion: string;
+  runtime?: RuntimeIdentity;
 }
 
 export interface SamplingProfile {

@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import FrozenSet
 
-from qwen_tts_worker.models.catalog import MODEL_SPECS, ModelSpec, get_model_spec
+from qwen_tts_worker.models.catalog import MODEL_SPECS, ModelSpec, get_model_spec, model_specs
 
 
 class ModelSize(str, Enum):
@@ -39,10 +39,11 @@ _REQUIRED_FILES: tuple[str, ...] = (
 class ModelEntry:
     size: ModelSize
     profile: ModelProfile
+    backend: str | None = None
 
     @property
     def spec(self) -> ModelSpec:
-        return get_model_spec(self.size.value, self.profile.value)
+        return get_model_spec(self.size.value, self.profile.value, backend=self.backend)
 
 
 class InstallStatus(str, Enum):
@@ -69,8 +70,11 @@ class ModelStatusReport:
 class ModelRegistry:
     """Inspect immutable profile-specific directories from the shared catalogue."""
 
-    def __init__(self, models_root: Path) -> None:
+    def __init__(self, models_root: Path, *, backend: str | None = None) -> None:
+        from qwen_tts_worker.backends import backend_name
+
         self._root = models_root
+        self._backend = backend_name(backend)
 
     @property
     def root(self) -> Path:
@@ -78,8 +82,8 @@ class ModelRegistry:
 
     def known_entries(self) -> tuple[ModelEntry, ...]:
         return tuple(
-            ModelEntry(ModelSize(spec.size), ModelProfile(spec.profile))
-            for spec in MODEL_SPECS
+            ModelEntry(ModelSize(spec.size), ModelProfile(spec.profile), self._backend)
+            for spec in model_specs(self._backend)
         )
 
     def scan(self) -> tuple[ModelStatusReport, ...]:
@@ -92,10 +96,11 @@ class ModelRegistry:
         return self._scan_entry(entry)
 
     def _dir_for(self, entry: ModelEntry) -> Path:
-        return entry.spec.path_under(self._root)
+        return get_model_spec(entry.size.value, entry.profile.value, backend=self._backend).path_under(self._root)
 
     def _scan_entry(self, entry: ModelEntry) -> ModelStatusReport:
-        spec = entry.spec; directory = self._dir_for(entry)
+        spec = get_model_spec(entry.size.value, entry.profile.value, backend=self._backend)
+        directory = self._dir_for(entry)
         common = {"size": entry.size, "profile": entry.profile, "path": directory,
                   "repository": spec.repository, "revision": spec.revision}
         if not directory.exists():

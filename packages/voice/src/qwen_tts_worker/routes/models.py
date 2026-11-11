@@ -97,7 +97,7 @@ async def get_model(size: str, profile: str) -> ModelStatusReport:
 
 @router.get("/models/diagnostics")
 async def model_diagnostics() -> dict:
-    """Run mlx-audio and FFmpeg dependency probes and return results.
+    """Run selected-runtime and FFmpeg dependency probes and return results.
 
     Returns a dict with probe statuses — useful for human operators
     and automated health checks.  Does **not** load any model.
@@ -116,6 +116,22 @@ async def model_diagnostics() -> dict:
             for p in probes
         ]
     }
+
+
+@router.get("/models/backend")
+async def selected_backend() -> dict:
+    """Report actual selected device/options; readiness is not a quality claim."""
+    from qwen_tts_worker.backends import backend_name, resolve_runtime
+    try:
+        runtime = resolve_runtime().as_dict()
+        installed = runtime["engine_version"] != "not-installed" and runtime["runtime_version"] != "not-installed"
+        return {"ready": installed, "runtime": runtime, "capabilities": {
+            "custom_voice": True, "consented_clone": True,
+            "forced_alignment": backend_name() == "mlx",
+            "transcription": backend_name() == "mlx",
+        }, "note": "Readiness does not mean a checkpoint is installed or live synthesis has been validated."}
+    except (RuntimeError, ValueError, ImportError) as exc:
+        return {"ready": False, "error": str(exc)}
 
 
 @router.get("/models/runtime")

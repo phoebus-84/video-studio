@@ -101,6 +101,13 @@ def canonical_attempt(attempt: SynthesisAttempt) -> dict[str, Any]:
         "completedAt": attempt.completed_at.isoformat(),
         "processingSeconds": attempt.processing_seconds,
     }
+    if profile.model.runtime is not None:
+        runtime = profile.model.runtime
+        result["profile"]["model"]["runtime"] = {
+            "backend": runtime.backend, "device": runtime.device, "dtype": runtime.dtype,
+            "attention": runtime.attention, "cpuThreads": runtime.cpu_threads,
+            "runtimeVersion": runtime.runtime_version, "engineVersion": runtime.engine_version,
+        }
     if attempt.raw_wav is not None:
         result["rawWav"] = canonical_wav(attempt.raw_wav)
     if attempt.failure is not None:

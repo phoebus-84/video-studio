@@ -19,6 +19,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 from qwen_tts_worker.config import Settings
+from qwen_tts_worker.backends import GENERATION_LOCK
 from qwen_tts_worker.model_lifecycle import model_lifecycle
 from qwen_tts_worker.models.catalog import get_model_spec
 from qwen_tts_worker.models.registry import InstallStatus, ModelEntry, ModelProfile, ModelRegistry, ModelSize
@@ -68,6 +69,7 @@ class CloneSynthesisResult(BaseModel):
     channels: Literal[1] = 1
     created_at: datetime
     warning: str | None = None
+    runtime: dict | None = None
 
 
 def enroll_clone(payload: CloneEnrollmentRequest, settings: Settings) -> VoiceProfile:
@@ -112,7 +114,7 @@ def synthesize_clone(voice_id: UUID, request: CloneSynthesisRequest, settings: S
     if hashlib.sha256(reference_data).hexdigest() != profile.reference_audio_sha256:
         raise CloneError("reference audio integrity mismatch")
     spec = get_model_spec(request.model_size, "base")
-    mode = settings.tts_mode; started = time.monotonic(); model_identity = None
+    mode = settings.tts_mode; started = time.monotonic(); model_identity = None; runtime = None
     if mode == "live":
         registry = ModelRegistry(settings.models_dir)
         report = registry.validate_directory(ModelEntry(ModelSize(request.model_size), ModelProfile.BASE))
@@ -125,15 +127,20 @@ def synthesize_clone(voice_id: UUID, request: CloneSynthesisRequest, settings: S
         data = _generate_silent_wav(max(0.25, len(request.text.split()) / 2.5))
         warning = "FAKE TTS MODE ENABLED: generated audio is a silent CI fixture and must not be published"
     else:
-        from mlx_audio.tts.generate import generate_audio
-        _seed_mlx(request.seed)
+        from qwen_tts_worker.backends import TorchModel, generate_audio
         temporary = Path(tempfile.mkdtemp(prefix="qtw-clone-"))
         try:
             with model_lifecycle.acquire(spec.path_under(settings.models_dir)) as loaded:
                 model_identity = loaded.identity_sha256
-                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                portable = isinstance(loaded.instance, TorchModel)
+                from qwen_tts_worker.backends import loaded_runtime
+                runtime = loaded_runtime(loaded.instance)
+                with GENERATION_LOCK, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    if not portable:
+                        _seed_mlx(request.seed)
                     generate_audio(
                         text=request.text, model=loaded.instance,
+                        **({'seed': request.seed} if portable else {}),
                         ref_audio=str(reference), ref_text=profile.reference_text,
                         lang_code=request.language, temperature=request.temperature,
                         top_k=request.top_k, top_p=request.top_p,
@@ -163,5 +170,5 @@ def synthesize_clone(voice_id: UUID, request: CloneSynthesisRequest, settings: S
         reference_text_sha256=profile.reference_text_sha256,
         seed=request.seed, wav_path=str(destination), wav_sha256=hashlib.sha256(data).hexdigest(),
         duration_seconds=info.duration_seconds if info else max(0.25, len(request.text.split()) / 2.5),
-        created_at=datetime.now(timezone.utc), warning=warning,
+        created_at=datetime.now(timezone.utc), warning=warning, runtime=runtime,
     )

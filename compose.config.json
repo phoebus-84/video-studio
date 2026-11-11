@@ -14,7 +14,7 @@
       "path": "packages/voice",
       "kind": "python",
       "standalone": true,
-      "summary": "Speech synthesis and voice cloning on MLX. Usable on its own as a voice tool; knows nothing about episodes or pipelines.",
+      "summary": "Local Qwen speech synthesis and consented voice cloning with MLX or PyTorch (CPU, CUDA, ROCm). Usable on its own; knows nothing about episodes or pipelines.",
       "capabilities": [
         "speech.synthesize"
       ],

@@ -45,6 +45,9 @@ def language_code(language: str) -> str | None:
 
 
 def _default_run(path: str, **kwargs: Any) -> dict[str, Any]:
+    from qwen_tts_worker.backends import backend_name
+    if backend_name() != "mlx":
+        raise RuntimeError("Transcription is currently MLX-only; portable TTS does not imply portable ASR")
     import mlx_whisper
 
     return mlx_whisper.transcribe(path, **kwargs)

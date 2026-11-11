@@ -9,7 +9,7 @@
 | FFmpeg + ffprobe | `video.compose`, `media.probe`, `graphics.animate` | `brew install ffmpeg` |
 | Headless Chrome | `video.compose` (Remotion renders in it) | nothing to install: Remotion downloads `chrome-headless-shell` into `node_modules/.remotion` on the first render; `npm run doctor` says whether it is there |
 | ImageMagick | vector animation in the agent | `brew install imagemagick` |
-| Python 3 | `packages/voice` (MLX speech) | Apple Silicon for MLX acceleration |
+| Python 3.12 | `packages/voice` (local speech) | MLX on Apple Silicon; PyTorch for CPU/CUDA/ROCm — see [portable backends](reference/voice/docs/backends.md) |
 | Blender 4.2–4.x or 5.2.x LTS | `scene.create`, `scene.render` | 5.2.1 live tested; bundled Python; set `BLENDER_BIN` if needed |
 
 Credentials are environment-only (ADR-0030) — never committed:
@@ -50,8 +50,9 @@ npm run doctor                     # check this machine can run them
 ```
 
 Runtimes are pinned in `mise.toml` and are not interchangeable — most sharply
-for `packages/voice`, whose hash-pinned Python dependencies exist only as cp312
-wheels. Without mise, match those versions by hand; a newer `python3` fails
+for `packages/voice`'s MLX installation, whose hash-pinned dependencies exist
+only as cp312 wheels. The portable Torch extra is installed separately; choose
+Torch/Torchaudio wheels for the target CPU/GPU, rather than applying the MLX lock. Without mise, match those versions by hand; a newer `python3` fails
 midway through the voice install with what looks like a broken dependency.
 
 `bun install` runs `compose` automatically afterwards, so a plain

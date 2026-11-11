@@ -33,8 +33,9 @@ __pycache__/
 *.pyc
 .coverage
 
-# Model weights are fetched, never committed.
+# Model weights are fetched, never committed. This Python package is source.
 models/
+!packages/voice/src/qwen_tts_worker/models/
 
 # The workspace library is production data — channels, episodes and generated
 # media (ADR-0021: generated media is immutable and not auto-committed).

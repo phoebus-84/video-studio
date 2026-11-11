@@ -42,8 +42,8 @@ Stages request provider-neutral capabilities (`studio/contracts/src/vocabulary.m
 
 - `image.generate` and `image.edit`: fal (`@av/fal-media`) or an OpenAI route (`@av/codex-image`);
 - `video.generate`: fal — MiniMax H3, Wan 2.2 and FLUX 3 Max clips;
-- `speech.synthesize`: the local Qwen3-TTS worker on MLX (`packages/voice`);
-- `speech.align`: the same worker, or ElevenLabs when asked (`@av/elevenlabs`);
+- `speech.synthesize`: the local Qwen3-TTS worker with MLX or PyTorch CPU/CUDA/ROCm (`packages/voice`);
+- `speech.align`: the same worker's MLX-only aligner, or ElevenLabs when asked (`@av/elevenlabs`);
 - `graphics.render`: deterministic SVG, diagram and code-frame renderer;
 - `graphics.animate`: Remotion infographics;
 - `terminal.record`: VHS terminal recordings;

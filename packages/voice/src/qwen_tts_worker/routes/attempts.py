@@ -142,9 +142,14 @@ def _durable_generator(
     if provider_mode == "fake":
         # Explicit fake mode remains visibly labeled by worker startup and response profile.
         return _generate_silent_wav(max(0.1, len(segment.spoken_text.split()) * 0.5))
+    if profile.model.runtime is not None:
+        from qwen_tts_worker.backends import resolve_runtime
+        if profile.model.runtime.model_dump() != resolve_runtime().as_dict():
+            raise ValueError("Runtime changed since submission; refusing a stale job/cache identity")
     model_path = settings.model_path
     if model_path is None:
-        model_path = settings.models_dir / "qwen3-tts-1.7b-customvoice-8bit"
+        from qwen_tts_worker.models.catalog import get_model_spec
+        model_path = get_model_spec("1.7B", "custom_voice").path_under(settings.models_dir)
     model = inspect_customvoice_model(model_path)
     if _sha256_file(model.path / "model.safetensors") != profile.model.model_sha256:
         raise ValueError("SynthesisProfile model SHA-256 does not match installed weights")
@@ -173,7 +178,7 @@ def _durable_generator(
                 data, _ = synthesize_with_qwen(request, model, speaker, loaded.instance)
             if captured_stdout.getvalue() or captured_stderr.getvalue():
                 logging.getLogger("qwen-tts-worker").debug(
-                    "Suppressed mlx-audio console output during durable synthesis",
+                    "Suppressed backend console output during durable synthesis",
                     extra={
                         "stdout_bytes": len(captured_stdout.getvalue()),
                         "stderr_bytes": len(captured_stderr.getvalue()),
@@ -193,9 +198,19 @@ def _http_error(exc: AttemptStoreError) -> HTTPException:
 @router.post("", response_model=DurableAttemptJob, status_code=202)
 def submit_attempt(request: SubmitAttemptRequest) -> DurableAttemptJob:
     settings = Settings()
+    profile = request.profile
+    if settings.tts_mode == "live":
+        from qwen_tts_worker.backends import backend_name, resolve_runtime
+        from qwen_tts_worker.models.quality import RuntimeIdentity
+
+        runtime = RuntimeIdentity(**resolve_runtime().as_dict())
+        if profile.model.runtime is not None and profile.model.runtime != runtime:
+            raise HTTPException(status_code=409, detail="Requested profile runtime differs from the selected worker runtime")
+        if backend_name() == "torch" and profile.model.runtime is None:
+            raise HTTPException(status_code=409, detail="Portable durable profiles must record model.runtime; see GET /models/backend")
     return attempt_store().submit(
         request.segment,
-        request.profile,
+        profile,
         use_cache=request.use_cache,
         provider_mode=settings.tts_mode,
     )

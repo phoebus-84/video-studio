@@ -1,6 +1,6 @@
 # voice
 
-> Speech synthesis and voice cloning on MLX. Usable on its own as a voice tool; knows nothing about episodes or pipelines.
+> Local Qwen speech synthesis and consented voice cloning with MLX or PyTorch (CPU, CUDA, ROCm). Usable on its own; knows nothing about episodes or pipelines.
 
 |  |  |
 |---|---|
@@ -39,6 +39,7 @@ it grows a dependency on `studio/*`. Studio-specific integration lives in
 - [TTS quality pipeline](../reference/voice/docs/tts-quality-pipeline.md)
 - [Voice cloning](../reference/voice/docs/voice-cloning.md)
 - [Voice direction](../reference/voice/docs/voice-direction.md)
+- [Backends](../reference/voice/docs/backends.md)
 - [Index](../reference/voice/docs/index.md)
 
 ---

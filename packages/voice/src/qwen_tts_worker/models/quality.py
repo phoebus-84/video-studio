@@ -174,6 +174,16 @@ class SegmentPlan(FrozenContract):
     pause_after_ms: int = Field(default=0, ge=0, le=10_000)
 
 
+class RuntimeIdentity(FrozenContract):
+    backend: Literal["mlx", "torch"]
+    device: str = Field(..., min_length=1, max_length=64)
+    dtype: str = Field(..., min_length=1, max_length=64)
+    attention: str = Field(..., min_length=1, max_length=64)
+    cpu_threads: int | None = Field(default=None, ge=1, le=1024)
+    runtime_version: str = Field(..., min_length=1, max_length=64)
+    engine_version: str = Field(..., min_length=1, max_length=64)
+
+
 class ModelIdentity(FrozenContract):
     """Exact model and runtime identity used by a synthesis profile."""
 
@@ -183,6 +193,7 @@ class ModelIdentity(FrozenContract):
     quantization: str = Field(..., min_length=1, max_length=64)
     mlx_audio_version: str = Field(..., min_length=1, max_length=64)
     mlx_version: str = Field(..., min_length=1, max_length=64)
+    runtime: RuntimeIdentity | None = None
 
 
 class SamplingProfile(FrozenContract):
@@ -214,6 +225,10 @@ class SynthesisProfile(FrozenContract):
 def synthesis_fingerprint(segment: SegmentPlan, profile: SynthesisProfile) -> str:
     """Hash every input that can affect generated speech or canonical WAV bytes."""
 
+    # Preserve historical MLX fingerprints exactly when runtime was not recorded.
+    profile_data = profile.model_dump(mode="json")
+    if profile.model.runtime is None:
+        profile_data["model"].pop("runtime", None)
     material = {
         "fingerprint_version": "0.1.0",
         "spoken_text": segment.spoken_text,
@@ -223,7 +238,7 @@ def synthesis_fingerprint(segment: SegmentPlan, profile: SynthesisProfile) -> st
         "preprocessing_version": segment.preprocessing_version,
         "context": segment.context.model_dump(mode="json"),
         "direction": segment.direction.model_dump(mode="json"),
-        "profile": profile.model_dump(mode="json"),
+        "profile": profile_data,
     }
     canonical = json.dumps(
         material,

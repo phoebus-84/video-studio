@@ -8,6 +8,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import signal
 import sys
 
@@ -25,6 +26,11 @@ def main() -> None:
     separate lifecycle phase managed by the model registry.
     """
     settings = Settings()
+    # The compatibility route reads process configuration; export typed .env values too.
+    for name in ("backend", "device", "dtype", "attention", "cpu_threads", "model_path", "tts_mode"):
+        value = getattr(settings, name)
+        if value is not None:
+            os.environ["QTW_" + name.upper()] = str(value)
 
     # Configure structured logging before anything else.
     configure_logging(settings.log_level, settings.log_format)
