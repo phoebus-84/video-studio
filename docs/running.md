@@ -1,7 +1,7 @@
 # Running the agent
 
-Three ways to run, in increasing order of moving parts. Everything below was
-executed against this repository, not inferred.
+Three ways to run, in increasing order of moving parts. Check tool readiness
+on your machine; an installed package is not proof that every provider works.
 
 ## 0. Once: install and point at a library
 
@@ -21,8 +21,8 @@ mise, match the versions in `mise.toml` by hand.
 
 The agent works on a **library** — the on-disk tree of channels, series and
 episodes described in [the workspace layout](./workspace). It defaults to `./library`
-relative to where you start Pi. If your library lives outside the repository — the existing 1.7GB one
-does — link it in:
+relative to where you start the agent. If your library lives outside the
+repository, link it in:
 
 ```bash
 ln -sfn /path/to/your/library library
@@ -413,7 +413,8 @@ not taken for an idle call (Claude Code gives a silent stdio call 30 minutes;
 
 ## 2. Agent plus gateway plus web studio
 
-The gateway owns Pi RPC processes and streams events to the browser. Start it
+The gateway manages browser-facing agent sessions and streams events. It also
+serves the agent's pipeline tools over HTTP. Start it
 in its own terminal:
 
 ```bash
@@ -445,9 +446,11 @@ cd studio/web
 npm run dev            # http://localhost:5173
 ```
 
-The agent finds the gateway at `http://127.0.0.1:5198` and authenticates with
-`library/.gateway-token`. Override with `AVG_GATEWAY_URL` and
-`AVG_GATEWAY_TOKEN`.
+The agent finds the gateway at `http://127.0.0.1:5198`; `AVG_GATEWAY_URL`
+overrides it. The gateway writes its token to `.gateway-token` in its own
+working directory (`studio/gateway/` with the commands above). The pipeline
+tools look for `.gateway-token` only in the agent's working directory, so set
+`AVG_GATEWAY_TOKEN` to the gateway's token (or copy the file there).
 
 ### Which agent the studio drives
 

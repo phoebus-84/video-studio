@@ -113,6 +113,6 @@ export default defineConfig({
 
     search: { provider: "local" },
 
-    docFooter: { prev: true, next: true },
+    docFooter: { prev: "Previous page", next: "Next page" },
   },
 });
