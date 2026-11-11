@@ -1,5 +1,12 @@
 # ADR-0050: Portable Qwen inference preserves the worker boundary
 
+## Status
+
+Proposed in [PR #95](https://github.com/phoebus-84/video-studio/pull/95).
+Extends [ADR-0018](0018-typescript-is-the-control-plane-python-isolated-to-mlx.md)
+to portable local inference while preserving the TypeScript control plane
+and the deliberate Python worker/API boundary.
+
 ## Decision
 
 `packages/voice` retains its local worker API, consent-gated voice store,
