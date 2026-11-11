@@ -20,7 +20,6 @@ jobs:
       QTW_DEVICE: cpu
       QTW_RUN_TORCH_SMOKE: "1"
       QTW_TORCH_SMOKE_MODEL: ${{ github.workspace }}/packages/voice/models/qwen3-tts-0.6b-customvoice-torch
-      QTW_SMOKE_REPORT: ${{ runner.temp }}/voice-cpu-report.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,6 +33,7 @@ jobs:
         run: qwen-tts install 0.6B --models-dir packages/voice/models
       - name: Real offline CPU synthesis in English and Italian
         env:
+          QTW_SMOKE_REPORT: ${{ runner.temp }}/voice-cpu-report.json
           HF_HUB_OFFLINE: "1"
           TRANSFORMERS_OFFLINE: "1"
         run: python -m pytest packages/voice/tests/test_torch_opt_in_smoke.py -q -s
